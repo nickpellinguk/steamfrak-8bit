@@ -94,6 +94,30 @@ GUARD &90
 .src        SKIP 2          \ background cache pointer
 .mask       SKIP 4          \ non-empty cells of a cached column
 .initcol    SKIP 1
+.keys_found SKIP 1
+.gems_found SKIP 1
+.won        SKIP 1          \ frames of the level-complete flash left, 0 = playing
+.save_cp    SKIP 1          \ save a checkpoint when Trogg next stands still
+.have_cp    SKIP 1
+.restarts   SKIP 1          \ restarts from a checkpoint (for medals, later)
+.pc_col     SKIP 1
+.pc_end     SKIP 1
+.ct_img     SKIP 1          \ collision workspace
+.ct_l       SKIP 2
+.ct_t       SKIP 2
+.co_i       SKIP 1
+.ct_c0      SKIP 1
+.ct_c1      SKIP 1
+.c_dx       SKIP 2
+.c_dy       SKIP 1
+.c_dxb      SKIP 1
+.c_dyb      SKIP 1
+.c_oimg     SKIP 1
+.c_rs       SKIP 1
+.c_rows     SKIP 1
+.c_tl       SKIP 1
+.pt         SKIP 2
+.po         SKIP 2
 .loops      SKIP 1          \ main loop counter (for timing checks)
 .firsty     SKIP 2
 .bank       SKIP 1
@@ -150,10 +174,9 @@ GUARD SCREEN
 .vdu_loop
     lda vdu_init,x : jsr OSWRCH
     inx : cpx #vdu_init_end - vdu_init : bne vdu_loop
-    \ Background colour for this level
-    lda #19 : jsr OSWRCH : lda #0 : jsr OSWRCH
-    lda #LEVEL_BG : jsr OSWRCH
-    lda #0 : jsr OSWRCH : jsr OSWRCH : jsr OSWRCH
+    \ The level data lives in sideways RAM bank 6 and stays paged in while the
+    \ game runs (routines that page in other banks put it back afterwards)
+    lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL
 }
 
 \ Double buffering: the screen is drawn in whichever of main RAM (buffer 0) and
@@ -161,16 +184,45 @@ GUARD SCREEN
 \ swapped at vertical sync. Each buffer keeps its own scroll position and its
 \ own copy of the background saved under Trogg.
 
+\ Start (or restart) the level from scratch
 .level_start
 {
+    ldx #NUM_DRAW - 1
+    lda #1
+.objs
+    sta alive,x : dex : bpl objs
+    lda #0 : sta keys_found : sta gems_found : sta have_cp : sta save_cp : sta restarts
     lda #LO(TROGG_START_X) : sta tx : lda #HI(TROGG_START_X) : sta tx+1
     lda #LO(TROGG_START_Y) : sta ty : lda #HI(TROGG_START_Y) : sta ty+1
+    lda #0 : sta tface
+    jmp redraw_all
+}
+
+\ Go back to the last checkpoint (the state saved after collecting a key)
+.restore_checkpoint
+{
+    inc restarts
+    ldx #NUM_DRAW - 1
+.objs
+    lda cp_alive,x : sta alive,x : dex : bpl objs
+    lda cp_keys : sta keys_found
+    lda cp_gems : sta gems_found
+    lda cp_tx : sta tx : lda cp_tx+1 : sta tx+1
+    lda cp_ty : sta ty : lda cp_ty+1 : sta ty+1
+    lda cp_face : sta tface
+    lda #0 : sta save_cp
+}
+    \ fall through
+
+\ Reset Trogg's movement state and redraw both screen buffers from scratch
+.redraw_all
+{
     lda #ST_STAND : sta tstate
-    lda #0 : sta tface : sta tclimb : sta xvel : sta anim : sta dead
+    lda #0 : sta tclimb : sta xvel : sta anim : sta dead : sta won
     sta ud_db : sta lr_db
+    jsr set_palette
 
     jsr calc_scroll
-    \ Clear both buffers and draw the scenery into each
     ldx #1
 .init_buffer
     stx back
@@ -183,7 +235,8 @@ GUARD SCREEN
     dec initcol : bpl init_col
     ldx back
     lda newcol : sta bscroll,x
-    lda #0 : sta bdrawn,x
+    lda #0 : sta bdrawn,x : sta bfrak,x : sta pend_hi,x
+    lda #&FF : sta pend_lo,x
     dex : bpl init_buffer
     lda #1 : sta front              \ buffer 0 is drawn first
 }
@@ -198,32 +251,51 @@ GUARD SCREEN
     jsr set_window_clip
     lda savebuf_lo,x : sta sbase : lda savebuf_hi,x : sta sbase+1
 
-    \ Erase Trogg from where he was last drawn in this buffer
+    \ Once Trogg is dead and this buffer already shows the FRAK! bubble, nothing
+    \ changes until the restart, so don't redraw
+    lda dead : beq redraw
+    lda bfrak,x : beq redraw
+    jmp show
+.redraw
+    \ Erase Trogg (and his speech bubble) from where they were last drawn here
 .^t_restore
+    lda #PM_RESTORE : sta p_mode
+    lda bfrak,x : beq no_frak
+    jsr frak_params
+    jsr plot
+    jsr trogg_sbase
+.no_frak
     lda bdrawn,x : beq not_drawn
     lda bimg,x : sta p_img
-    lda bxl,x : sta p_x : lda bxh,x : sta p_x+1
-    lda byl,x : sta p_y : lda byh,x : sta p_y+1
-    lda #PM_RESTORE : sta p_mode
+    jsr trogg_params
     jsr plot
 .not_drawn
 
-    \ Bring this buffer's scroll position up to date
+    \ Bring this buffer's scroll position up to date, and repaint anything collected
 .^t_scroll
     jsr do_scroll
     ldx back
     lda scrollcol : sta bscroll,x
+    jsr do_pending
 
     \ Draw Trogg, saving what's underneath
 .^t_draw
+    lda #PM_SAVE : sta p_mode
     jsr trogg_image : sta p_img
     ldx back : sta bimg,x
-    lda tx : sta p_x : sta bxl,x : lda tx+1 : sta p_x+1 : sta bxh,x
-    lda ty : sta p_y : sta byl,x : lda ty+1 : sta p_y+1 : sta byh,x
+    lda tx : sta bxl,x : lda tx+1 : sta bxh,x
+    lda ty : sta byl,x : lda ty+1 : sta byh,x
     lda #1 : sta bdrawn,x
-    lda #PM_SAVE : sta p_mode
+    jsr trogg_params
     jsr plot
+    \ ... and "FRAK!" if he's dead
+    ldx back
+    lda dead : sta bfrak,x : beq show
+    jsr frak_params
+    jsr plot
+    jsr trogg_sbase
 
+.^show
     \ Show it at the next vertical sync
     inc loops
 .^t_vsync
@@ -237,13 +309,57 @@ GUARD SCREEN
     dec dead : beq restart
     jmp main_loop
 .restart
+    lda have_cp : beq from_scratch
+    jmp restore_checkpoint
+.from_scratch
     jmp level_start
 .alive
+    lda won : beq playing
+    jsr win_tick : bcc still_winning
+    jmp level_start
+.still_winning
+    jmp main_loop
+.playing
 .^t_logic
     jsr read_keys
     jsr trogg_update
+    lda dead : bne logic_done
+    jsr check_collisions
+    jsr check_checkpoint
+.logic_done
 .^t_logic_done
     jmp main_loop
+}
+
+\ p_x/p_y = where Trogg was drawn in the back buffer; save area = start of savebuf
+.trogg_params
+{
+    ldx back
+    lda bxl,x : sta p_x : lda bxh,x : sta p_x+1
+    lda byl,x : sta p_y : lda byh,x : sta p_y+1
+    rts
+}
+
+\ The FRAK! speech bubble goes at (x + 12, y - 26), with its background saved
+\ after Trogg's in the save buffer
+FRAK_SAVE_OFFSET = 288
+.frak_params
+{
+    jsr trogg_params
+    lda #IMG_Frak : sta p_img
+    lda p_x : clc : adc #12 : sta p_x : bcc nc : inc p_x+1 : .nc
+    lda p_y : sec : sbc #26 : sta p_y : bcs nb : dec p_y+1 : .nb
+    lda savebuf_lo,x : clc : adc #LO(FRAK_SAVE_OFFSET) : sta sbase
+    lda savebuf_hi,x : adc #HI(FRAK_SAVE_OFFSET) : sta sbase+1
+    rts
+}
+
+\ Point sbase back at Trogg's save area for the back buffer
+.trogg_sbase
+{
+    ldx back
+    lda savebuf_lo,x : sta sbase : lda savebuf_hi,x : sta sbase+1
+    rts
 }
 
 ACCCON = &FE34                      \ Master: bit 0 = display shadow, bit 2 = CPU uses shadow
@@ -411,6 +527,7 @@ CACHE_HI = &8100
     lda #PM_PLOT : sta p_mode
     ldx #0
 .loop
+    lda alive,x : beq skip                               \ already collected
     lda draw_c1,x : cmp clip_l : beq skip : bcc skip     \ ends at or before clip_l
     lda draw_c0,x : cmp clip_r : bcs skip                \ starts at or after clip_r
     lda draw_img,x : sta p_img
@@ -617,8 +734,10 @@ ENDMACRO
 {
     COLUMN_SETUP
 .loop
-    lda (dp),y : tax
+    lda (dp),y : beq clear              \ fully transparent byte: leave the screen alone
+    tax
     lda (ptr),y : and masktab,x : ora identity,x : sta (ptr),y
+.clear
     iny : cpy yend : bne loop
     dec cellsleft : beq done
     STEP_CELL
@@ -631,10 +750,16 @@ ENDMACRO
 {
     COLUMN_SETUP
 .loop
-    lda (dp),y : tax
+    lda (dp),y : beq clear              \ fully transparent byte: just save the screen
+    tax
     lda (ptr),y : sta (sp),y
     and masktab,x : ora identity,x : sta (ptr),y
     iny : cpy yend : bne loop
+    beq cell_done
+.clear
+    lda (ptr),y : sta (sp),y
+    iny : cpy yend : bne loop
+.cell_done
     dec cellsleft : beq done
     STEP_CELL
     jmp loop
@@ -653,6 +778,268 @@ ENDMACRO
     jmp loop
 .done
     rts
+}
+
+\ ------------------------------------------------------------------------------
+\ Palette
+\ ------------------------------------------------------------------------------
+
+.set_palette
+    lda #LEVEL_BG
+\ Set logical colour 0 (the background) to physical colour A
+.set_bg
+{
+    pha
+    lda #19 : jsr OSWRCH : lda #0 : jsr OSWRCH
+    pla : jsr OSWRCH
+    lda #0 : jsr OSWRCH : jsr OSWRCH : jsr OSWRCH
+    rts
+}
+
+\ ------------------------------------------------------------------------------
+\ Collected objects: queued column repaints
+\ ------------------------------------------------------------------------------
+
+\ Queue byte columns [draw_c0,x, draw_c1,x) to be repainted in both buffers
+.queue_repaint
+{
+    ldy #1
+.loop
+    lda draw_c0,x : cmp pend_lo,y : bcs lo_ok : sta pend_lo,y
+.lo_ok
+    lda draw_c1,x : cmp pend_hi,y : bcc hi_ok : sta pend_hi,y
+.hi_ok
+    dey : bpl loop
+    rts
+}
+
+\ Repaint the back buffer's queued columns (the visible ones; the rest will be
+\ repainted correctly when they scroll into view)
+.do_pending
+{
+    ldx back
+    lda pend_lo,x : cmp pend_hi,x : bcs none
+    \ pc_col = max(pend_lo, scrollcol), pc_end = min(pend_hi, scrollcol + 80)
+    cmp scrollcol : bcs lo_ok : lda scrollcol
+.lo_ok
+    sta pc_col
+    lda scrollcol : clc : adc #SCREEN_COLS : sta pc_end
+    lda pend_hi,x : cmp pc_end : bcs hi_ok : sta pc_end
+.hi_ok
+    lda #&FF : sta pend_lo,x
+    lda #0 : sta pend_hi,x
+.loop
+    lda pc_col : cmp pc_end : bcs none
+    jsr repaint_column
+    inc pc_col
+    jmp loop
+.none
+    rts
+}
+
+\ ------------------------------------------------------------------------------
+\ Collisions between Trogg and keys, gems and meanies
+\
+\ Like GameMaker's precise collisions, but using the leftmost and rightmost solid
+\ pixel of each row (the "spans", in sideways RAM bank 6): after a bounding-box
+\ check, Trogg and the object collide if their spans overlap on any shared row.
+\ ------------------------------------------------------------------------------
+
+.check_collisions
+{
+    jsr trogg_image : sta ct_img : tax
+    sec : lda tx : sbc img_xo,x : sta ct_l : lda tx+1 : sbc #0 : sta ct_l+1
+    sec : lda ty : sbc img_yo,x : sta ct_t : lda ty+1 : sbc #0 : sta ct_t+1
+    \ Trogg's byte columns: [ct_c0, ct_c0 + 8), for a quick first test
+    lda ct_l+1 : bmi left_edge
+    lda ct_l : sta tmp : lda ct_l+1
+    lsr a : ror tmp : lsr a : ror tmp
+    lda tmp : jmp have_c0
+.left_edge
+    lda #0
+.have_c0
+    sta ct_c0
+    clc : adc #8 : sta ct_c1
+    lda ROMSEL_COPY : pha
+    lda #SPANS_BANK : sta ROMSEL_COPY : sta ROMSEL
+    lda #0 : sta co_i
+.loop
+    ldx co_i
+    lda alive,x : beq next
+    lda draw_c1,x : cmp ct_c0 : bcc next : beq next  \ object ends left of Trogg
+    lda draw_c0,x : cmp ct_c1 : bcs next             \ object starts right of Trogg
+    \ c_dx = object left - Trogg left; must be in -64..63
+    sec : lda draw_ll,x : sbc ct_l : sta c_dx
+    lda draw_lh,x : sbc ct_l+1
+    jsr in_range_64 : bcc next
+    \ c_dy = object top - Trogg top
+    sec : lda draw_tl,x : sbc ct_t : sta c_dx+1
+    lda draw_th,x : sbc ct_t+1
+    sta tmp+1 : lda c_dx+1 : sta c_dy : lda tmp+1
+    jsr in_range_64_dy : bcc next
+    jsr hit_test : bcc next
+    ldx co_i
+    jsr collide
+.next
+    inc co_i
+    lda co_i : cmp #NUM_DRAW : bne loop
+    pla : sta ROMSEL_COPY : sta ROMSEL
+    rts
+}
+
+\ A = high byte, c_dx = low byte of a 16-bit difference: carry set if -64..63
+.in_range_64
+{
+    beq pos
+    cmp #&FF : bne no
+    lda c_dx : cmp #&C0 : rts       \ carry set if >= -64
+.pos
+    lda c_dx : cmp #64 : bcs no
+    sec : rts
+.no
+    clc : rts
+}
+.in_range_64_dy
+{
+    beq pos
+    cmp #&FF : bne no
+    lda c_dy : cmp #&C0 : rts
+.pos
+    lda c_dy : cmp #64 : bcs no
+    sec : rts
+.no
+    clc : rts
+}
+
+\ Does Trogg (image ct_img) overlap object co_i at offset (c_dx, c_dy)?
+\ Carry set if so. The spans bank must be paged in.
+.hit_test
+{
+    ldx co_i
+    lda draw_img,x : sta c_oimg
+    \ Offsets biased by 128 so that everything is an unsigned compare
+    lda c_dx : eor #&80 : sta c_dxb
+    lda c_dy : eor #&80 : sta c_dyb
+    \ Tight bounding boxes: object x0 + dx <= trogg x1  and  object x1 + dx >= trogg x0
+    ldx c_oimg : ldy ct_img
+    lda img_bx0,x : clc : adc c_dxb : sta tmp
+    lda img_bx1,y : ora #&80 : cmp tmp : bcc early_miss
+    lda img_bx1,x : clc : adc c_dxb : sta tmp
+    lda img_bx0,y : ora #&80 : sta tmp+1
+    lda tmp : cmp tmp+1 : bcc early_miss
+    \ ... and the same vertically
+    lda img_by0,x : clc : adc c_dyb : sta tmp
+    lda img_by1,y : ora #&80 : cmp tmp : bcc early_miss
+    lda img_by1,x : clc : adc c_dyb : sta tmp
+    lda img_by0,y : ora #&80 : sta tmp+1
+    lda tmp : cmp tmp+1 : bcc early_miss
+
+    jmp rows
+.early_miss
+    clc : rts
+.rows
+    \ Shared rows, in Trogg's coordinates: rs = max(0, dy), re = min(trogg h, dy + object h)
+    lda c_dy : bpl dy_pos
+    lda #0
+.dy_pos
+    sta c_rs
+    lda c_dy : clc : adc img_h,x            \ dy + object height (signed, -64..105)
+    bmi early_miss
+    cmp img_h,y : bcc re_ok : lda img_h,y
+.re_ok
+    sec : sbc c_rs : beq early_miss : bcc early_miss
+    sta c_rows
+
+    \ pT = trogg spans + rs*2, pO = object spans + (rs - dy)*2
+    lda c_rs : asl a : clc : adc img_span_lo,y : sta pt
+    lda img_span_hi,y : adc #0 : sta pt+1
+    lda c_rs : sec : sbc c_dy : asl a : clc : adc img_span_lo,x : sta po
+    lda img_span_hi,x : adc #0 : sta po+1
+
+    ldy #0
+.row
+    lda (pt),y : cmp #255 : beq skip_row    \ Trogg's row is empty
+    sta c_tl
+    lda (po),y : cmp #255 : beq skip_row    \ object's row is empty
+    clc : adc c_dxb : sta tmp               \ object left (biased)
+    iny
+    lda (pt),y : ora #&80 : cmp tmp : bcc row_miss     \ Trogg right < object left
+    lda (po),y : clc : adc c_dxb : sta tmp             \ object right (biased)
+    lda c_tl : ora #&80 : sta tmp+1
+    lda tmp : cmp tmp+1 : bcs hit                      \ object right >= Trogg left
+.row_miss
+    iny
+    jmp next_row
+.skip_row
+    iny : iny
+.next_row
+    dec c_rows : bne row
+.miss
+    clc : rts
+.hit
+    sec : rts
+}
+
+\ Trogg has touched object X
+.collide
+{
+    lda draw_kind,x
+    cmp #KIND_MEANIE : bne pickup
+    jmp trogg_dies
+.pickup
+    lda #0 : sta alive,x
+    jsr queue_repaint
+    lda draw_kind,x
+    cmp #KIND_GEM : bne not_gem
+    inc gems_found
+    rts
+.not_gem
+    cmp #KIND_KEY : bne done
+    inc keys_found
+    lda keys_found : cmp #NUM_KEYS : bne more_keys
+    lda #WIN_FRAMES : sta won           \ all the keys: level complete!
+    rts
+.more_keys
+    lda #1 : sta save_cp                \ checkpoint once Trogg is standing still
+.done
+    rts
+}
+
+\ Save a checkpoint after collecting a key, once Trogg is standing on a platform
+.check_checkpoint
+{
+    lda save_cp : beq done
+    lda tstate : cmp #ST_WALK + 1 : bcs done      \ standing or walking only
+    lda #0 : sta save_cp
+    lda #1 : sta have_cp
+    ldx #NUM_DRAW - 1
+.objs
+    lda alive,x : sta cp_alive,x : dex : bpl objs
+    lda keys_found : sta cp_keys
+    lda gems_found : sta cp_gems
+    lda tx : sta cp_tx : lda tx+1 : sta cp_tx+1
+    lda ty : sta cp_ty : lda ty+1 : sta cp_ty+1
+    lda tface : sta cp_face
+.done
+    rts
+}
+
+\ Level complete: flash the background, then start again. Carry set when done.
+WIN_FRAMES = 150
+.win_tick
+{
+    dec won : beq finished
+    lda won : and #7 : bne not_yet
+    lda won : and #8 : beq bg
+    lda #7 : jsr set_bg                 \ white
+    clc : rts
+.bg
+    jsr set_palette
+.not_yet
+    clc : rts
+.finished
+    jsr set_palette
+    sec : rts
 }
 
 \ ------------------------------------------------------------------------------
@@ -1183,7 +1570,6 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
 
 INCLUDE "src/gen/tables.asm"
 INCLUDE "src/gen/sprites.asm"
-INCLUDE "src/gen/level.asm"
 
 \ Screen address of each character row (level row R lives at char index R*80 MOD 2560)
 .rowaddr_lo
@@ -1199,6 +1585,18 @@ NEXT
 
 \ Per-buffer state (not saved to disc)
 .bscroll    SKIP 2
+.bfrak      SKIP 2          \ FRAK! bubble drawn in this buffer
+.pend_lo    SKIP 2          \ columns waiting to be repainted, per buffer
+.pend_hi    SKIP 2
+MAX_OBJECTS = 64
+ASSERT NUM_DRAW <= MAX_OBJECTS
+.alive      SKIP MAX_OBJECTS        \ 1 = object not yet collected
+.cp_alive   SKIP MAX_OBJECTS        \ checkpoint copy
+.cp_tx      SKIP 2
+.cp_ty      SKIP 2
+.cp_face    SKIP 1
+.cp_keys    SKIP 1
+.cp_gems    SKIP 1
 .bdrawn     SKIP 2
 .bimg       SKIP 2
 .bxl        SKIP 2
@@ -1207,12 +1605,28 @@ NEXT
 .byh        SKIP 2
 .savebuf0   SKIP 512                \ background saved under Trogg, per buffer
 .savebuf1   SKIP 512
+.ram_top
 
 SAVE "FRAK", start, end, start
 
+\ ------------------------------------------------------------------------------
+\ Level data, in sideways RAM bank 6 above the collision spans
+\ ------------------------------------------------------------------------------
+
+LEVEL_BANK = SPANS_BANK
+LEVEL_DATA = &A000
+CLEAR &8000, &C000
+ORG LEVEL_DATA
+GUARD &C000
+.level_data
+INCLUDE "src/gen/level.asm"
+.level_data_end
+SAVE "LEVEL", level_data, level_data_end
+PRINT "Level data:", level_data_end - level_data, "bytes in bank", LEVEL_BANK
+
 INCLUDE "src/gen/disc.asm"
 
-PRINT "Code from", ~start, "to", ~end, "(", end - start, "bytes ), free:", SCREEN - P%
+PRINT "Code from", ~start, "to", ~end, "(", end - start, "bytes ), free:", SCREEN - ram_top
 \ Addresses used by test scripts (profiling and poking variables)
 PRINT "TIMING", ~main_loop, ~t_restore, ~t_scroll, ~t_draw, ~t_vsync, ~t_after_vsync, ~t_logic, ~t_logic_done
-PRINT "SYMBOLS loops", ~loops, "newcol", ~newcol, "dead", ~dead, "tx", ~tx, "ty", ~ty, "tstate", ~tstate, "fallt", ~fallt, "dead", ~dead, "anim", ~anim, "p_img", ~p_img, "bank", ~bank, "oldbank", ~oldbank, "dptr", ~dptr, "scrollcol", ~scrollcol
+PRINT "SYMBOLS loops", ~loops, "keys_found", ~keys_found, "gems_found", ~gems_found, "won", ~won, "have_cp", ~have_cp, "restarts", ~restarts, "alive", ~alive, "newcol", ~newcol, "dead", ~dead, "tx", ~tx, "ty", ~ty, "tstate", ~tstate, "fallt", ~fallt, "dead", ~dead, "anim", ~anim, "p_img", ~p_img, "bank", ~bank, "oldbank", ~oldbank, "dptr", ~dptr, "scrollcol", ~scrollcol

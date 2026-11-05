@@ -4,9 +4,18 @@ A back-port of the Steam/HTML5 version of **Frak!** to the BBC Master 128, writt
 assembly for [BeebAsm](https://github.com/stardot/beebasm). It works from the data and logic of
 the web version (the `steamfrak` repository).
 
-**Status: milestone 1.** One level (Read&Weep) is playable with Trogg walking, jumping,
-falling, climbing and dying from long falls. The screen scrolls smoothly at 50 frames a second.
-Not done yet: keys, gems, meanies and collisions, the yoyo, balloons and daggers, sound, menus,
+**Status: milestone 2.** One level (Read&Weep) is playable from start to finish:
+
+* Trogg walks, jumps, falls (dying from long falls) and climbs.
+* The screen scrolls smoothly at 50 frames a second.
+* Gems and keys can be collected.
+* Touching a meanie kills Trogg, with the "FRAK!" speech bubble.
+* Collecting a key sets a checkpoint, as in the Steam version: dying returns Trogg there, and
+  gems collected since come back.
+* Collecting every key completes the level. For now the background just flashes and the level
+  restarts; there is no text drawing yet.
+
+Not done yet: moving meanies, the yoyo, balloons and daggers, timer and medals, sound, menus,
 the other 54 levels, and vertically scrolling levels.
 
 ## Building
@@ -40,19 +49,20 @@ node run.mjs "wait:1500 shot:start down:KeyX wait:100 up:KeyX shot:walked" scree
 | Data converter: sprites, levels, jump table, background cache | `tools/convert.py` |
 | Main loop, double buffering, scrolling | `src/frak.asm` (top) |
 | Sprite plotter (masked, with save/restore) | `plot`, `col_plot` / `col_save` / `col_restore` |
+| Collisions, pickups, checkpoints | `check_collisions`, `hit_test`, `collide`, `check_checkpoint` |
 | Platform and ladder queries | `platform_find`, `ladder_find` (ports of `PlatformFind` / `LadderFind`) |
 | Trogg movement | `trogg_standing`, `trogg_falling`, `trogg_climbing` (ports of `TroggStanding` etc.) |
-| Generated data | `src/gen/*`, `build/GFX4-5`, `build/CACHE` |
+| Generated data | `src/gen/*`, `build/GFX4-5`, `build/SPANS`, `build/CACHE` |
 
 ### Memory map (Master 128)
 
 | Address | Contents |
 |---|---|
 | `&0000-&008F` | zero page variables |
-| `&1100-&2FFF` | code, level data, tables, Trogg's save buffers |
+| `&1100-&2FFF` | code, tables, Trogg's save buffers (about 500 bytes free) |
 | `&3000-&7FFF` | MODE 1 screen, **double buffered**: main RAM and shadow RAM |
 | SWRAM banks 4-5 | sprites, pre-shifted (27KB) |
-| SWRAM bank 6 | free |
+| SWRAM bank 6 | collision spans (`&8000`), level data (`&A000`); stays paged in while playing |
 | SWRAM bank 7 | the level's platforms and ladders, pre-rendered (8KB for level 1) |
 
 ### Sprites
@@ -84,6 +94,22 @@ The build stops with an error if a level places something at a position with no 
   for each non-empty character cell plus a 32-bit mask per column. Keys, gems and meanies are
   then plotted on top.
 
+### Collisions
+
+GameMaker tested Trogg against keys, gems and meanies pixel by pixel. Here the converter stores
+each image's leftmost and rightmost solid pixel on every row (its "spans", in bank 6). Each
+frame:
+
+1. A quick test compares Trogg's byte columns with each object's column range (two byte compares).
+2. For objects beside him, a test of the solid pixels' bounding boxes follows.
+3. Finally, Trogg and the object collide if their spans overlap on any row they share.
+
+That is exact for convex shapes and very close for these sprites.
+
+Collected objects are erased by repainting their columns from the background cache. That is
+queued separately for each screen buffer, so it happens after Trogg's saved background has been
+put back.
+
 ### Movement and physics
 
 Positions are whole pixels. The Steam version's sub-pixel jumping and falling (gravity 0.05
@@ -96,6 +122,11 @@ The game runs one logic tick per 50Hz frame, so it is 5/6 of the Steam version's
 
 ### Timing
 
-A frame (1/50 s) is 40,000 cycles. Measured in jsbeeb: erasing Trogg takes about 8,500,
-drawing him about 16,000, the game logic about 2,500, and repainting a newly scrolled-in
-column 8,000-11,000.
+A frame (1/50 s) is 40,000 cycles. Measured in jsbeeb:
+
+| Step | Cycles |
+|---|---|
+| Erasing Trogg | about 8,500 |
+| Drawing him (fully transparent bytes are skipped) | 13,000-15,500 |
+| Game logic, including collisions | about 3,500 |
+| Repainting a newly scrolled-in column | 8,000-11,000 |
