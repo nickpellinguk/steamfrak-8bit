@@ -256,6 +256,7 @@ ORG &0E00
 .rr_i       SKIP 1          \ the next Scrubbly in turn to move
 .cm_left    SKIP 1
 .cm_count   SKIP 1
+.cm_q       SKIP 5          \ moves left this frame, per kind
 .m_ncol     SKIP 1          \ raw_setup: the sprite's byte columns, first cell,
 .m_wb       SKIP 1          \ and range of full cells
 .m_ntop     SKIP 1
@@ -2990,13 +2991,15 @@ ENDIF
 \ right. Each one plotted is damage too, for the ones after it.
 \
 \ What is drawn (and collided with) is the display position d_*. Scrubblies near
-\ the window catch up with their real position at most SCRUB_MOVES at a time per
+\ the window catch up with their real position a few at a time per
 \ drawn frame, taking turns; everything else catches up every frame.
 \ ------------------------------------------------------------------------------
 
 MAX_DMG = 40
 DONE = &80                          \ n_chg: already redrawn this frame
-SCRUB_MOVES = 2
+\ Moves per drawn frame for each kind: none, Scrubbly, Poglet, Hooter, platform
+.turn_quota EQUB 0, 1, 2, 3, 0
+TURN_MOVES = 1 + 2 + 3
 
 \ Record damage rectangle dm_c0..dm_c1, dm_y0..dm_y1. Preserves X.
 .add_damage
@@ -3037,8 +3040,10 @@ IF NUM_SLOW > 0
 \ window (view_l .. view_l + WINDOW_W + 128) that isn't riding a moving platform
 .takes_turns
 {
-    lda sl_kind,x : cmp #SL_SCRUBBLY : bne no
-    lda sl_plat,x : cmp #255 : bne no
+    ldy sl_kind,x : lda turn_quota,y : beq no
+    cpy #SL_SCRUBBLY : bne kind_ok
+    lda sl_plat,x : cmp #255 : bne no        \ (one riding a moving platform keeps up)
+.kind_ok
     lda s_xl,x : sec : sbc view_l : sta tmp
     lda s_xh,x : sbc view_l+1 : bmi no
     cmp #HI(WINDOW_W + 128) : bcc yes : bne no
@@ -3064,8 +3069,11 @@ IF NUM_SLOW > 0
     jsr commit_one
 .next
     dex : bpl loop
-    \ Scrubblies' turns
-    lda #SCRUB_MOVES : sta cm_left
+    \ Meanies' turns
+    ldy #4
+.quotas
+    lda turn_quota,y : sta cm_q,y : dey : bpl quotas
+    lda #TURN_MOVES : sta cm_left
     lda #NUM_SLOW : sta cm_count
     ldx rr_i
 .turn
@@ -3078,6 +3086,8 @@ IF NUM_SLOW > 0
     lda s_yl,x : cmp d_yl,x : bne move
     lda s_yh,x : cmp d_yh,x : beq tnext
 .move
+    ldy sl_kind,x : lda cm_q,y : beq tnext   \ this kind has had its moves
+    sec : sbc #1 : sta cm_q,y
     jsr commit_one
     dec cm_left : beq tdone
 .tnext

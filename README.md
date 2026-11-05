@@ -157,9 +157,10 @@ since that buffer last drew them, or something painted over them:
   cells it will completely cover over empty background aren't erased first, and the sprite is
   copied into them without masking (`raw_setup`, `PM_RAWPLOT`).
 * What is drawn, and what Trogg and the yoyo collide with, is each sprite's display position.
-  Scrubblies near the screen take turns to catch up with where they really are, at most two a
-  drawn frame (`SCRUB_MOVES`), so they move in steps of several pixels. Everything else is
-  shown where it is every frame.
+  Meanies near the screen take turns to catch up with where they really are, so they move in
+  steps of several pixels. Each drawn frame moves at most one Scrubbly, two Poglets and three
+  Hooters (`turn_quota`). Moving platforms, and Scrubblies riding them, are shown where they are
+  every frame.
 
 Moving objects have 16.8 fixed-point positions and
 8.8 velocities, so they move at the Steam version's fractional speeds. Spawn positions use a
@@ -212,9 +213,9 @@ with 7 balloons and daggers on screen. Insane, with 8-9 on screen, runs at 21-22
 
 Levels with lots of moving meanies are still slow. A Scrubbly is 33×42 pixels: redrawing one
 that has moved costs about 18,000 cycles in each buffer (8,000 to erase, 10,000 to plot), so
-each move costs about 36,000. B_1 (16 Scrubblies) runs at about 12fps with two moves a frame,
-or 19-20fps with one. B_2's Poglets and B_3's Hooters don't take turns yet and run at
-11-14fps, and D_3 at about 10fps. D_1 (moving platforms) holds 23-25fps. The game speed stays right however slow the drawing gets.
+each move costs about 36,000. On Easy, B_1 (16 Scrubblies) runs at 17-19fps, B_2 (Poglets) at
+16-18fps and B_3 (Hooters) at 12-15fps. D_3, with many moving platforms, runs at about 10fps.
+D_1 holds 23-25fps. The game speed stays right however slow the drawing gets.
 
 ### Timing
 
