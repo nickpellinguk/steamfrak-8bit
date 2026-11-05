@@ -25,12 +25,15 @@ SCREEN      = &3000
 SCREEN_COLS = 80            \ byte columns visible across the screen (320 pixels)
 WINDOW_W    = 320           \ visible width in level pixels
 
+INCLUDE "src/gen/level_consts.asm"
+
 \ Frame rate: the screen is redrawn at 25 frames a second, and the game logic
 \ runs one tick per vertical sync (50 a second): normally two per drawn frame.
 FRAMES_PER_DRAW = 2             \ vertical syncs (1/50 s) per drawn frame
 MAX_TICKS_PER_FRAME = 4         \ game logic runs one tick per vertical sync, up to this many per frame
 
-MAX_LOG = 16                    \ draw-log entries per screen buffer
+MAX_LOG = 48                    \ draw-log entries per screen buffer
+LOG_SPRITE7 = 2                 \ (draw log kinds: 0 sprite, 1 line, 2 sprite saved in another bank)
 MAX_MOVERS = 12                 \ moving objects: balloons, daggers, meanies flying off
 
 \ Save areas: 1KB per screen buffer for the backgrounds under moving things,
@@ -59,6 +62,7 @@ ST_YOYO_BACK = 5
 PM_PLOT     = 0             \ masked plot
 PM_SAVE     = 1             \ masked plot, saving the background first
 PM_RESTORE  = 2             \ put the saved background back
+PM_SAVEONLY = 3             \ only save the background (into another bank)
 
 \ Keys (negative INKEY numbers, as OSBYTE &81 wants them)
 KEY_Z       = &9E           \ -98
@@ -125,6 +129,7 @@ GUARD &90
 .last_flip  SKIP 1          \ vsyncs at the last buffer flip
 .firsty     SKIP 2
 .bank       SKIP 1
+.p_sbank    SKIP 1          \ save bank for PM_SAVEONLY
 .oldbank    SKIP 1
 
 \ Platform/ladder queries
@@ -148,6 +153,8 @@ ORG &0E00
 .yb_t       SKIP 2
 .sfree      SKIP 2          \ next free byte in the back buffer's save area
 .send       SKIP 2          \ end of that save area
+.sfree7     SKIP 2          \ the same for the slow save area (in p_sbank)
+.send7      SKIP 2
 .mv_i       SKIP 1
 .bal_timer  SKIP 1          \ ticks until the next balloon
 .dag_timer  SKIP 1          \ ticks until the next dagger
@@ -159,7 +166,12 @@ ORG &0E00
 .mul_b      SKIP 1
 .mul_lo     SKIP 1
 .mvc_i      SKIP 1          \ mover collision loop
-.view_l     SKIP 2          \ left edge of the window - 64, in level pixels
+.view_l     SKIP 2          \ left edge of the window - margin, in level pixels
+.sl_i       SKIP 1
+.cur_plat   SKIP 1          \ platform Trogg is standing on, 255 = none
+.plat_hit   SKIP 1
+.last_px    SKIP 2          \ where that platform was last tick
+.last_py    SKIP 2
 .hl_p0      SKIP 1          \ hline workspace
 .hl_p1      SKIP 1
 .hl_c0      SKIP 1
@@ -230,7 +242,6 @@ ORG &0E00
 
 MAX_OBJECTS = 64
 ASSERT NUM_DRAW <= MAX_OBJECTS
-ASSERT MAX_LOG = 16                 \ (log_slot and restore_log multiply by 16)
 .alive      SKIP MAX_OBJECTS        \ 1 = object not yet collected
 .cp_alive   SKIP MAX_OBJECTS        \ checkpoint copy
 .cp_tx      SKIP 2
@@ -240,17 +251,6 @@ ASSERT MAX_LOG = 16                 \ (log_slot and restore_log multiply by 16)
 .cp_gems    SKIP 1
 .cp_bal     SKIP 1
 .cp_dag     SKIP 1
-.log_n      SKIP 2                  \ draw log entries per buffer
-.log_kind   SKIP 2 * MAX_LOG
-.log_img    SKIP 2 * MAX_LOG
-.log_xl     SKIP 2 * MAX_LOG
-.log_xh     SKIP 2 * MAX_LOG
-.log_yl     SKIP 2 * MAX_LOG
-.log_yh     SKIP 2 * MAX_LOG
-.log_x1l    SKIP 2 * MAX_LOG
-.log_x1h    SKIP 2 * MAX_LOG
-.log_sbl    SKIP 2 * MAX_LOG
-.log_sbh    SKIP 2 * MAX_LOG
 .mv_active  SKIP MAX_MOVERS         \ moving objects: kind, or 0 if the slot is free
 .mv_img     SKIP MAX_MOVERS
 .mv_xf      SKIP MAX_MOVERS         \ position, 16.8 fixed point (fraction, low, high)
@@ -299,6 +299,7 @@ GUARD SCREEN
     lda #0 : sta keys_found : sta gems_found : sta have_cp : sta save_cp : sta restarts
     sta bal_timer : sta dag_timer
     lda vsyncs : ora #1 : sta rng : lda #&5A : sta rng+1
+    jsr slow_init
     lda #LO(TROGG_START_X) : sta tx : lda #HI(TROGG_START_X) : sta tx+1
     lda #LO(TROGG_START_Y) : sta ty : lda #HI(TROGG_START_Y) : sta ty+1
     lda #0 : sta tface
@@ -318,6 +319,7 @@ GUARD SCREEN
     lda cp_ty : sta ty : lda cp_ty+1 : sta ty+1
     lda cp_face : sta tface
     lda cp_bal : sta bal_timer : lda cp_dag : sta dag_timer
+    jsr slow_restore_checkpoint
     lda #0 : sta save_cp
 }
     \ fall through
@@ -389,6 +391,14 @@ GUARD SCREEN
     lda savebuf_lo,x : sta sfree : lda savebuf_hi,x : sta sfree+1
     lda savebuf_end_lo,x : sta send : lda savebuf_end_hi,x : sta send+1
 
+    \ Moving platforms and meanies ("slow sprites"), behind everything else, with
+    \ their backgrounds saved in this buffer's slow save area
+    ldx back
+    lda slowsave_bank,x : sta p_sbank
+    lda slowsave_lo,x : sta sfree7 : lda slowsave_hi,x : sta sfree7+1
+    lda #LO(&C000) : sta send7 : lda #HI(&C000) : sta send7+1
+    jsr draw_slow
+
     \ view_l = left edge of the window - 64, for skipping off-screen movers
     lda scrollcol : sta view_l : lda #0 : sta view_l+1
     asl view_l : rol view_l+1 : asl view_l : rol view_l+1
@@ -417,7 +427,11 @@ GUARD SCREEN
     lda mv_img,x : sta p_img
     lda mv_xl,x : sta p_x : lda mv_xh,x : sta p_x+1
     lda mv_yl,x : sta p_y : lda mv_yh,x : sta p_y+1
+    lda mv_active,x : cmp #MV_FLYING : beq big
     jsr log_sprite
+    jmp next_mover
+.big
+    jsr log_sprite7                 \ meanies are big: save in the slow save area
 .next_mover
     inc mv_i : lda mv_i : cmp #MAX_MOVERS : beq movers_done
     jmp movers
@@ -504,6 +518,7 @@ TICK_WON = 2
     lda #TICK_WON : rts
 .playing
     jsr read_keys
+    jsr update_slow
     jsr trogg_update
     jsr spawn_hazards
     jsr update_movers
@@ -537,6 +552,38 @@ EVNTV = &0220
     rts
 }
 
+\ Draw every slow sprite (moving platform or meanie) near the window
+.slowsave_bank  EQUB SLOWSAVE0_BANK, SLOWSAVE1_BANK
+.slowsave_lo    EQUB LO(SLOWSAVE0_START), LO(SLOWSAVE1_START)
+.slowsave_hi    EQUB HI(SLOWSAVE0_START), HI(SLOWSAVE1_START)
+
+.draw_slow
+{
+IF NUM_SLOW > 0
+    \ view_l = left edge of the window - 160 (platforms can be 140 pixels wide)
+    lda scrollcol : sta view_l : lda #0 : sta view_l+1
+    asl view_l : rol view_l+1 : asl view_l : rol view_l+1
+    lda view_l : sec : sbc #160 : sta view_l : lda view_l+1 : sbc #0 : sta view_l+1
+    lda #0 : sta sl_i
+.loop
+    ldx sl_i
+    lda s_alive,x : beq next
+    \ x - view_l must be in 0 .. WINDOW_W + 320
+    lda s_xl,x : sec : sbc view_l : sta tmp
+    lda s_xh,x : sbc view_l+1 : bmi next
+    cmp #HI(WINDOW_W + 320) : bcc on_screen : bne next
+    lda tmp : cmp #LO(WINDOW_W + 320) : bcs next
+.on_screen
+    lda sl_img,x : sta p_img
+    lda s_xl,x : sta p_x : lda s_xh,x : sta p_x+1
+    lda s_yl,x : sta p_y : lda s_yh,x : sta p_y+1
+    jsr log_sprite7
+.next
+    inc sl_i : lda sl_i : cmp #NUM_SLOW : bne loop
+ENDIF
+    rts
+}
+
 \ ------------------------------------------------------------------------------
 \ Draw log: everything moving that was drawn into a buffer, so it can be erased
 \
@@ -551,8 +598,8 @@ LOG_LINE = 1
 \ Log index for entry log_n[back] of the back buffer -> X
 .log_slot
 {
-    lda back : asl a : asl a : asl a : asl a
-    ldx back : clc : adc log_n,x
+    ldx back : lda log_base,x
+    clc : adc log_n,x
     tax
     rts
 }
@@ -604,6 +651,33 @@ LINE_SAVE = 24                      \ bytes: the longest line is about 82 pixels
     rts
 }
 
+\ Draw a big moving sprite (platform or meanie) at (p_x, p_y): its background is
+\ saved in the back buffer's slow save area (another sideways RAM bank, which has
+\ far more room), then it is plotted.
+.log_sprite7
+{
+    ldx back : lda log_n,x : cmp #MAX_LOG : bcs no_room
+    ldx p_img
+    lda sfree7 : clc : adc img_svl,x : sta tmp
+    lda sfree7+1 : adc img_svh,x : sta tmp+1
+    lda send7 : cmp tmp : lda send7+1 : sbc tmp+1 : bcc no_room
+    jsr log_slot
+    lda #LOG_SPRITE7 : sta log_kind,x
+    lda p_img : sta log_img,x
+    lda sfree7 : sta log_sbl,x : sta sbase : lda sfree7+1 : sta log_sbh,x : sta sbase+1
+    lda p_sbank : sta log_bank,x
+    ldx back : inc log_n,x
+    lda #PM_SAVEONLY : sta p_mode
+    jsr plot
+    lda sptr : sta sfree7 : lda sptr+1 : sta sfree7+1
+    lda #PM_PLOT : sta p_mode
+    jsr plot
+.no_room
+    rts
+}
+
+.log_base EQUB 0, MAX_LOG
+
 \ Erase everything logged in the back buffer, most recent first
 .restore_log
 {
@@ -611,14 +685,22 @@ LINE_SAVE = 24                      \ bytes: the longest line is about 82 pixels
     lda log_n,x : beq done
 .loop
     ldx back : dec log_n,x
-    lda back : asl a : asl a : asl a : asl a : clc : adc log_n,x : tax
+    ldy back : lda log_base,y : clc : adc log_n,x : tax
     lda log_img,x : sta p_img
     lda log_xl,x : sta p_x : lda log_xh,x : sta p_x+1
     lda log_yl,x : sta p_y : lda log_yh,x : sta p_y+1
     lda log_x1l,x : sta q_x : lda log_x1h,x : sta q_x+1
     lda log_sbl,x : sta sbase : lda log_sbh,x : sta sbase+1
     lda #PM_RESTORE : sta p_mode
-    lda log_kind,x : bne line
+    lda log_kind,x : beq sprite
+    cmp #LOG_SPRITE7 : bne line
+    \ saved in another bank: page it in to put the background back
+    lda ROMSEL_COPY : pha
+    lda log_bank,x : sta ROMSEL_COPY : sta ROMSEL
+    jsr restore_saved
+    pla : sta ROMSEL_COPY : sta ROMSEL
+    jmp next
+.sprite
     jsr restore_saved
     jmp next
 .line
@@ -919,9 +1001,17 @@ CACHE_HI = &8100
     \ The save pointer starts at sbase even if nothing turns out to be visible
     \ (the draw log uses where it ends up as the next free save position)
     lda sbase : sta sptr : lda sbase+1 : sta sptr+1
+    lda ROMSEL_COPY : sta oldbank
+    \ PM_SAVEONLY saves the background into a save area in another sideways RAM
+    \ bank (p_sbank), which stays paged in throughout
+    lda p_mode : cmp #PM_SAVEONLY : bne not_saveonly
+    lda p_sbank : sta ROMSEL_COPY : sta ROMSEL
+    jmp header
+.not_saveonly
     \ When saving, the save area starts with a record header (see restore_saved):
     \ column count (0 until we know better), y0, cells, first_end, last_end, rows
-    lda p_mode : cmp #PM_SAVE : bne no_header
+    cmp #PM_SAVE : bne no_header
+.header
     ldy #0 : tya : sta (sptr),y
     lda sptr : clc : adc #SAVE_HEADER : sta sptr : bcc no_header : inc sptr+1
 .no_header
@@ -949,7 +1039,7 @@ CACHE_HI = &8100
     lda #0 : sta firsty : sta firsty+1
     jmp rows_done
 .nothing
-    rts
+    jmp exit
 .top_ok
     lda top : sta firsty : lda #0 : sta firsty+1
     \ rows = min(hgt, 256 - top)
@@ -979,7 +1069,7 @@ CACHE_HI = &8100
     sta cend
     cmp cidx : beq none : bcs some
 .none
-    rts
+    jmp exit
 .some
 
     \ Sprite data address and bank for this shift
@@ -1005,8 +1095,9 @@ CACHE_HI = &8100
 .skip_done
 
     \ Page in the sprite bank
-    lda ROMSEL_COPY : sta oldbank
+    lda p_mode : cmp #PM_SAVEONLY : beq bank_ok
     lda bank : sta ROMSEL_COPY : sta ROMSEL
+.bank_ok
 
     \ Character row and line of the first visible row
     lda firsty : and #7 : sta y0
@@ -1026,7 +1117,8 @@ CACHE_HI = &8100
     lda tmp : sta first_end
 .multi
     \ Record the layout and column count in the save header
-    lda p_mode : cmp #PM_SAVE : bne no_layout
+    lda p_mode : cmp #PM_SAVE : beq layout : cmp #PM_SAVEONLY : bne no_layout
+.layout
     ldy #1
     lda y0 : sta (sbase),y : iny
     lda cells : sta (sbase),y : iny
@@ -1055,7 +1147,8 @@ CACHE_HI = &8100
     sta ptr+1
     lda dcol : sta dptr : lda dcol+1 : sta dptr+1
     \ when saving, record this column's screen address
-    lda p_mode : cmp #PM_SAVE : bne do_col
+    lda p_mode : cmp #PM_SAVE : beq address : cmp #PM_SAVEONLY : bne do_col
+.address
     ldy #0 : lda ptr : sta (sptr),y : iny : lda ptr+1 : sta (sptr),y
     lda sptr : clc : adc #2 : sta sptr : bcc do_col : inc sptr+1
 .do_col
@@ -1069,6 +1162,7 @@ CACHE_HI = &8100
     inc cidx
     lda cidx : cmp cend : bne col_loop
 
+.exit
     lda oldbank : sta ROMSEL_COPY : sta ROMSEL
     rts
 }
@@ -1105,8 +1199,8 @@ SAVE_HEADER = 6
     rts
 }
 
-.col_routines_lo EQUB LO(col_plot), LO(col_save), LO(col_restore)
-.col_routines_hi EQUB HI(col_plot), HI(col_save), HI(col_restore)
+.col_routines_lo EQUB LO(col_plot), LO(col_save), LO(col_restore), LO(col_saveonly)
+.col_routines_hi EQUB HI(col_plot), HI(col_save), HI(col_restore), HI(col_saveonly)
 
 \ Column routines: ptr = screen address of the column's first cell, dptr = its
 \ sprite data, sptr = save buffer. y0, cells, first_end and last_end describe
@@ -1162,6 +1256,19 @@ ENDMACRO
     lda (ptr),y : sta (sp),y
     iny : cpy yend : bne loop
 .cell_done
+    dec cellsleft : beq done
+    STEP_CELL
+    jmp loop
+.done
+    rts
+}
+
+.col_saveonly
+{
+    COLUMN_SETUP
+.loop
+    lda (ptr),y : sta (sp),y
+    iny : cpy yend : bne loop
     dec cellsleft : beq done
     STEP_CELL
     jmp loop
@@ -1405,6 +1512,20 @@ FOR r, 0, 127
 NEXT
 
 .end
+
+\ Draw logs (not saved to disc)
+.log_n      SKIP 2                  \ draw log entries per buffer
+.log_kind   SKIP 2 * MAX_LOG
+.log_img    SKIP 2 * MAX_LOG
+.log_xl     SKIP 2 * MAX_LOG
+.log_xh     SKIP 2 * MAX_LOG
+.log_yl     SKIP 2 * MAX_LOG
+.log_yh     SKIP 2 * MAX_LOG
+.log_x1l    SKIP 2 * MAX_LOG
+.log_x1h    SKIP 2 * MAX_LOG
+.log_sbl    SKIP 2 * MAX_LOG
+.log_sbh    SKIP 2 * MAX_LOG
+.log_bank   SKIP 2 * MAX_LOG          \ sideways RAM bank of the save record (LOG_SPRITE7)
 
 \ Per-buffer state (not saved to disc)
 .bscroll    SKIP 2
@@ -1738,6 +1859,7 @@ ENDMACRO
     dec mvc_i : bmi m_done
     jmp mloop
 .m_done
+    jsr collide_slow
     pla : sta ROMSEL_COPY : sta ROMSEL
     rts
 }
@@ -1863,6 +1985,9 @@ ENDMACRO
 {
     lda save_cp : beq done
     lda tstate : cmp #ST_WALK + 1 : bcs done      \ standing or walking only
+    \ ... on a platform that isn't moving
+    ldx cur_plat : cpx #255 : beq done
+    lda plat_moving,x : bne done
     lda #0 : sta save_cp
     lda #1 : sta have_cp
     ldx #NUM_DRAW - 1
@@ -1874,6 +1999,7 @@ ENDMACRO
     lda ty : sta cp_ty : lda ty+1 : sta cp_ty+1
     lda tface : sta cp_face
     lda bal_timer : sta cp_bal : lda dag_timer : sta cp_dag
+    jsr slow_save_checkpoint
 .done
     rts
 }
@@ -2014,7 +2140,30 @@ ENDMACRO
 \ Trogg movement (ports of TroggStanding, TroggFalling and TroggClimbing)
 \ ------------------------------------------------------------------------------
 
+\ Trogg's movement for one tick. He is carried along by the platform he was
+\ standing on (as in GameMaker, by however far it moved since last tick).
 .trogg_update
+{
+    lda cur_plat : cmp #255 : beq no_ride
+    tay
+    lda plat_xl,y : sec : sbc last_px : sta tmp : lda plat_xh,y : sbc last_px+1 : sta tmp+1
+    lda tx : clc : adc tmp : sta tx : lda tx+1 : adc tmp+1 : sta tx+1
+    lda plat_yl,y : sec : sbc last_py : sta tmp : lda plat_yh,y : sbc last_py+1 : sta tmp+1
+    lda ty : clc : adc tmp : sta ty : lda ty+1 : adc tmp+1 : sta ty+1
+    lda #255 : sta cur_plat
+.no_ride
+    jsr trogg_move
+    \ remember where his platform is now
+    lda cur_plat : cmp #255 : beq done
+    lda dead : bne done
+    ldy cur_plat
+    lda plat_xl,y : sta last_px : lda plat_xh,y : sta last_px+1
+    lda plat_yl,y : sta last_py : lda plat_yh,y : sta last_py+1
+.done
+    rts
+}
+
+.trogg_move
 {
     lda tstate
     cmp #ST_FALL : bne not_fall : jmp trogg_falling
@@ -2035,6 +2184,7 @@ ENDMACRO
     lda ty : sta q_y1 : lda ty+1 : sta q_y1+1
     lda ty : clc : adc #1 : sta q_y2 : lda ty+1 : adc #0 : sta q_y2+1
     jsr platform_find
+    lda res_i : sta plat_hit
     lda res_found : bne on_platform
     \ walked off the edge
     jsr move_to_qx
@@ -2069,6 +2219,7 @@ ENDMACRO
     rts
 
 .walk
+    lda plat_hit : sta cur_plat
     jsr move_to_qx
     lda doyoyo : beq no_yoyo
     jmp start_yoyo
@@ -2355,6 +2506,7 @@ YOYO_HIT_SPEED = 8                  \ pixels a tick that a yoyoed meanie flies o
 
 .yoyo_out
 {
+    jsr platform_under
     lda doyoyo : beq turn
     lda yo_len+1 : cmp #YOYO_MAX : bcs turn
     lda yo_len : clc : adc #LO(YOYO_STEP) : sta yo_len
@@ -2374,6 +2526,7 @@ YOYO_HIT_SPEED = 8                  \ pixels a tick that a yoyoed meanie flies o
 
 .yoyo_back
 {
+    jsr platform_under
     lda yo_len : sec : sbc #LO(YOYO_STEP) : sta yo_len
     lda yo_len+1 : sbc #HI(YOYO_STEP) : sta yo_len+1
     bcc home : bmi home
@@ -2383,6 +2536,19 @@ YOYO_HIT_SPEED = 8                  \ pixels a tick that a yoyoed meanie flies o
 .home
     lda #ST_STAND : sta tstate
     lda #0 : sta yo_len : sta yo_len+1
+    rts
+}
+
+\ cur_plat = the platform Trogg is standing on (if any), so he rides it
+.platform_under
+{
+    lda tx : sta q_x : lda tx+1 : sta q_x+1
+    lda ty : sta q_y1 : lda ty+1 : sta q_y1+1
+    lda ty : clc : adc #1 : sta q_y2 : lda ty+1 : adc #0 : sta q_y2+1
+    jsr platform_find
+    lda res_found : beq none
+    lda res_i : sta cur_plat
+.none
     rts
 }
 
@@ -2467,7 +2633,333 @@ YOYO_HIT_SPEED = 8                  \ pixels a tick that a yoyoed meanie flies o
     dec mvc_i : bmi m_done
     jmp mloop
 .m_done
+    jsr yoyo_slow
     lda yo_hit : cmp #1             \ carry set if hit
+    rts
+}
+
+\ ------------------------------------------------------------------------------
+\ Moving platforms and meanies ("slow sprites"): ports of the Step events of
+\ oPlatform, oScrubbly, oPoglet and oHooter. Their ranges were worked out by the
+\ converter, the way the GameMaker objects did on their first step.
+\ Positions are 16.8 fixed point, velocities 8.8.
+\ ------------------------------------------------------------------------------
+
+SLOW_PAUSE = 30                     \ platforms pause this long at each end
+HOOTER_GRAVITY = 13                 \ 0.05 pixels/tick^2 in 8.8 fixed point
+
+\ Start of level: everything at its starting position
+.slow_init
+{
+IF NUM_SLOW > 0
+    ldx #NUM_SLOW - 1
+.loop
+    lda #1 : sta s_alive,x
+    lda #0 : sta s_xf,x : sta s_yf,x
+    lda sl_x0l,x : sta s_xl,x : lda sl_x0h,x : sta s_xh,x
+    lda sl_y0l,x : sta s_yl,x : lda sl_y0h,x : sta s_yh,x
+    lda sl_vf,x : sta s_vf,x : lda sl_vi,x : sta s_vi,x
+    lda sl_kind,x : cmp #SL_HOOTER : bne vel_ok
+    lda #0 : sta s_vf,x : sta s_vi,x        \ Hooters start still, then jump
+.vel_ok
+    lda sl_vy,x : sta s_vy,x
+    lda sl_wait,x : sta s_wait,x
+    dex : bpl loop
+ENDIF
+    ldx #NUM_PLATS - 1
+.plats
+    lda plat_x0l,x : sta plat_xl,x : lda plat_x0h,x : sta plat_xh,x
+    lda plat_y0l,x : sta plat_yl,x : lda plat_y0h,x : sta plat_yh,x
+    dex : bpl plats
+    lda #255 : sta cur_plat
+    rts
+}
+
+\ Checkpoints: copy the moving state (and platform positions) to / from the copies
+MACRO COPY_SLOW from, to
+IF NUM_SLOW > 0
+    ldx #NUM_SLOW - 1
+.loop
+    lda from,x : sta to,x
+    dex : bpl loop
+ENDIF
+ENDMACRO
+MACRO COPY_PLATS from, to
+    ldx #NUM_PLATS - 1
+.loop
+    lda from,x : sta to,x
+    dex : bpl loop
+ENDMACRO
+
+.slow_save_checkpoint
+    COPY_SLOW s_alive, cps_alive
+    COPY_SLOW s_xf, cps_xf
+    COPY_SLOW s_xl, cps_xl
+    COPY_SLOW s_xh, cps_xh
+    COPY_SLOW s_yf, cps_yf
+    COPY_SLOW s_yl, cps_yl
+    COPY_SLOW s_yh, cps_yh
+    COPY_SLOW s_vf, cps_vf
+    COPY_SLOW s_vi, cps_vi
+    COPY_SLOW s_vy, cps_vy
+    COPY_SLOW s_wait, cps_wait
+    COPY_PLATS plat_xl, cpp_xl
+    COPY_PLATS plat_xh, cpp_xh
+    COPY_PLATS plat_yl, cpp_yl
+    COPY_PLATS plat_yh, cpp_yh
+    rts
+
+.slow_restore_checkpoint
+    COPY_SLOW cps_alive, s_alive
+    COPY_SLOW cps_xf, s_xf
+    COPY_SLOW cps_xl, s_xl
+    COPY_SLOW cps_xh, s_xh
+    COPY_SLOW cps_yf, s_yf
+    COPY_SLOW cps_yl, s_yl
+    COPY_SLOW cps_yh, s_yh
+    COPY_SLOW cps_vf, s_vf
+    COPY_SLOW cps_vi, s_vi
+    COPY_SLOW cps_vy, s_vy
+    COPY_SLOW cps_wait, s_wait
+    COPY_PLATS cpp_xl, plat_xl
+    COPY_PLATS cpp_xh, plat_xh
+    COPY_PLATS cpp_yl, plat_yl
+    COPY_PLATS cpp_yh, plat_yh
+    lda #255 : sta cur_plat
+    rts
+
+\ tmp = |sl_v| (the default speed, as a positive 8.8 number) for slow sprite X
+.abs_speed
+{
+    lda sl_vf,x : sta tmp : lda sl_vi,x : sta tmp+1
+    bpl done
+    lda #0 : sec : sbc tmp : sta tmp : lda #0 : sbc tmp+1 : sta tmp+1
+.done
+    rts
+}
+
+\ One tick of movement for every slow sprite
+.update_slow
+{
+IF NUM_SLOW > 0
+    ldx #NUM_SLOW - 1
+.loop
+    lda s_alive,x : beq next
+    lda sl_kind,x
+    cmp #SL_PLATFORM : bne not_plat
+    jsr move_platform : jmp next
+.not_plat
+    cmp #SL_SCRUBBLY : bne not_scrub
+    jsr move_scrubbly : jmp next
+.not_scrub
+    cmp #SL_POGLET : bne not_pog
+    jsr move_poglet : jmp next
+.not_pog
+    jsr move_hooter
+.next
+    dex : bpl loop
+ENDIF
+    rts
+}
+
+.move_platform
+{
+    lda s_wait,x : beq go
+    dec s_wait,x
+    rts
+.go
+    \ x += vx (+1/-1), bouncing off the ends of its range with a pause
+    lda s_vi,x : beq y_move : bmi left
+    inc s_xl,x : bne nc1 : inc s_xh,x : .nc1
+    lda sl_amaxl,x : cmp s_xl,x : lda sl_amaxh,x : sbc s_xh,x : bcs y_move
+    lda sl_amaxl,x : sta s_xl,x : lda sl_amaxh,x : sta s_xh,x
+    lda #&FF : sta s_vi,x : lda #SLOW_PAUSE : sta s_wait,x
+    jmp y_move
+.left
+    lda s_xl,x : bne nb1 : dec s_xh,x : .nb1 : dec s_xl,x
+    lda s_xl,x : cmp sl_aminl,x : lda s_xh,x : sbc sl_aminh,x : bcs y_move
+    lda sl_aminl,x : sta s_xl,x : lda sl_aminh,x : sta s_xh,x
+    lda #1 : sta s_vi,x : lda #SLOW_PAUSE : sta s_wait,x
+.y_move
+    \ y += vy likewise
+    lda s_vy,x : beq store : bmi up
+    inc s_yl,x : bne nc2 : inc s_yh,x : .nc2
+    lda sl_bmaxl,x : cmp s_yl,x : lda sl_bmaxh,x : sbc s_yh,x : bcs store
+    lda sl_bmaxl,x : sta s_yl,x : lda sl_bmaxh,x : sta s_yh,x
+    lda #&FF : sta s_vy,x : lda #SLOW_PAUSE : sta s_wait,x
+    jmp store
+.up
+    lda s_yl,x : bne nb2 : dec s_yh,x : .nb2 : dec s_yl,x
+    lda s_yl,x : cmp sl_bminl,x : lda s_yh,x : sbc sl_bminh,x : bcs store
+    lda sl_bminl,x : sta s_yl,x : lda sl_bminh,x : sta s_yh,x
+    lda #1 : sta s_vy,x : lda #SLOW_PAUSE : sta s_wait,x
+.store
+    \ ... and update the platform table that Trogg stands on
+    ldy sl_plat,x
+    lda s_xl,x : sta plat_xl,y : lda s_xh,x : sta plat_xh,y
+    lda s_yl,x : sta plat_yl,y : lda s_yh,x : sta plat_yh,y
+    rts
+}
+
+\ Scrubbly: patrols its platform between amin and amax
+.move_scrubbly
+{
+    ldy #0 : lda s_vi,x : bpl xs : dey : .xs : sty tmp
+    clc
+    lda s_xf,x : adc s_vf,x : sta s_xf,x
+    lda s_xl,x : adc s_vi,x : sta s_xl,x
+    lda s_xh,x : adc tmp : sta s_xh,x
+    \ x < amin ?
+    lda s_xl,x : cmp sl_aminl,x : lda s_xh,x : sbc sl_aminh,x : bcs not_low
+    lda sl_aminl,x : sta s_xl,x : lda sl_aminh,x : sta s_xh,x : lda #0 : sta s_xf,x
+    jsr abs_speed
+    lda tmp : sta s_vf,x : lda tmp+1 : sta s_vi,x
+    jmp follow
+.not_low
+    \ x > amax ?
+    lda sl_amaxl,x : cmp s_xl,x : lda sl_amaxh,x : sbc s_xh,x : bcc high
+    lda sl_amaxl,x : cmp s_xl,x : bne follow
+    lda sl_amaxh,x : cmp s_xh,x : bne follow
+    lda s_xf,x : beq follow
+.high
+    lda sl_amaxl,x : sta s_xl,x : lda sl_amaxh,x : sta s_xh,x : lda #0 : sta s_xf,x
+    jsr abs_speed
+    lda #0 : sec : sbc tmp : sta s_vf,x : lda #0 : sbc tmp+1 : sta s_vi,x
+.follow
+    \ some ride up and down with a moving platform
+    ldy sl_plat,x : cpy #255 : beq done
+    lda plat_yl,y : sta s_yl,x : lda plat_yh,y : sta s_yh,x
+.done
+    rts
+}
+
+\ Poglet: climbs up and down between amin and amax
+.move_poglet
+{
+    ldy #0 : lda s_vi,x : bpl ys : dey : .ys : sty tmp
+    clc
+    lda s_yf,x : adc s_vf,x : sta s_yf,x
+    lda s_yl,x : adc s_vi,x : sta s_yl,x
+    lda s_yh,x : adc tmp : sta s_yh,x
+    lda s_yl,x : cmp sl_aminl,x : lda s_yh,x : sbc sl_aminh,x : bcs not_low
+    lda sl_aminl,x : sta s_yl,x : lda sl_aminh,x : sta s_yh,x : lda #0 : sta s_yf,x
+    jsr abs_speed
+    lda tmp : sta s_vf,x : lda tmp+1 : sta s_vi,x
+    rts
+.not_low
+    lda sl_amaxl,x : cmp s_yl,x : lda sl_amaxh,x : sbc s_yh,x : bcc high
+    lda sl_amaxl,x : cmp s_yl,x : bne done
+    lda sl_amaxh,x : cmp s_yh,x : bne done
+    lda s_yf,x : beq done
+.high
+    lda sl_amaxl,x : sta s_yl,x : lda sl_amaxh,x : sta s_yh,x : lda #0 : sta s_yf,x
+    jsr abs_speed
+    lda #0 : sec : sbc tmp : sta s_vf,x : lda #0 : sbc tmp+1 : sta s_vi,x
+.done
+    rts
+}
+
+\ Hooter: jumps up and down on the spot (after an initial sleep)
+.move_hooter
+{
+    lda s_wait,x : beq go
+    dec s_wait,x
+    rts
+.go
+    \ v -= gravity; y -= v
+    lda s_vf,x : sec : sbc #HOOTER_GRAVITY : sta s_vf,x
+    lda s_vi,x : sbc #0 : sta s_vi,x
+    ldy #0 : lda s_vi,x : bpl vs : dey : .vs : sty tmp      \ sign extension of v
+    lda s_yf,x : sec : sbc s_vf,x : sta s_yf,x
+    lda s_yl,x : sbc s_vi,x : sta s_yl,x
+    lda s_yh,x : sbc tmp : sta s_yh,x
+    \ below its base? land and jump again
+    lda sl_y0l,x : cmp s_yl,x : lda sl_y0h,x : sbc s_yh,x : bcc land
+    lda sl_y0l,x : cmp s_yl,x : bne done
+    lda sl_y0h,x : cmp s_yh,x : bne done
+    lda s_yf,x : beq done
+.land
+    lda sl_y0l,x : sta s_yl,x : lda sl_y0h,x : sta s_yh,x : lda #0 : sta s_yf,x
+    lda sl_vf,x : sta s_vf,x : lda sl_vi,x : sta s_vi,x
+.done
+    rts
+}
+
+\ Trogg against moving meanies (they kill him)
+.collide_slow
+{
+IF NUM_SLOW > 0
+    lda #NUM_SLOW - 1 : sta mvc_i
+.loop
+    ldx mvc_i
+    lda s_alive,x : beq next
+    lda sl_kind,x : cmp #SL_PLATFORM : beq next
+    ldy sl_img,x : sty c_oimg
+    lda s_xl,x : sec : sbc img_xo,y : sta tmp : lda s_xh,x : sbc #0 : sta tmp+1
+    lda tmp : sec : sbc ct_l : sta c_dx : lda tmp+1 : sbc ct_l+1
+    jsr in_range_64 : bcc next
+    ldx mvc_i : ldy c_oimg
+    lda s_yl,x : sec : sbc img_yo,y : sta tmp : lda s_yh,x : sbc #0 : sta tmp+1
+    lda tmp : sec : sbc ct_t : sta c_dy : lda tmp+1 : sbc ct_t+1
+    jsr in_range_64_dy : bcc next
+    jsr hit_test : bcc next
+    jsr trogg_dies
+.next
+    dec mvc_i : bpl loop
+ENDIF
+    rts
+}
+
+\ The yoyo against moving meanies: a hit one flies off (as a mover). Sets yo_hit.
+.yoyo_slow
+{
+IF NUM_SLOW > 0
+    lda #NUM_SLOW - 1 : sta mvc_i
+.loop
+    ldx mvc_i
+    lda s_alive,x : bne alive
+    jmp next
+.alive
+    lda sl_kind,x : cmp #SL_PLATFORM : bne meanie
+    jmp next
+.meanie
+    ldy sl_img,x
+    lda s_xl,x : sec : sbc img_xo,y : sta tmp : lda s_xh,x : sbc #0 : sta tmp+1
+    lda yb_r : cmp tmp : lda yb_r+1 : sbc tmp+1 : bvc v1 : eor #&80 : .v1 : bpl ok1
+    jmp next
+.ok1
+    lda tmp : clc : adc img_w,y : sta tmp : lda tmp+1 : adc #0 : sta tmp+1
+    lda yb_l : cmp tmp : lda yb_l+1 : sbc tmp+1 : bvc v2 : eor #&80 : .v2 : bmi ok2
+    jmp next
+.ok2
+    lda s_yl,x : sec : sbc img_yo,y : sta tmp : lda s_yh,x : sbc #0 : sta tmp+1
+    lda yo_y : cmp tmp : lda yo_y+1 : sbc tmp+1 : bvc v3 : eor #&80 : .v3 : bpl ok3
+    jmp next
+.ok3
+    lda tmp : clc : adc img_h,y : sta tmp : lda tmp+1 : adc #0 : sta tmp+1
+    lda yb_t : cmp tmp : lda yb_t+1 : sbc tmp+1 : bvc v4 : eor #&80 : .v4 : bmi ok4
+    jmp next
+.ok4
+    \ Hit: it flies off in the yoyo's direction
+    lda #1 : sta yo_hit
+    lda #0 : sta s_alive,x
+    jsr find_mover : bcc slot
+    jmp next
+.slot
+    lda #MV_FLYING : sta mv_active,y
+    lda sl_img,x : sta mv_img,y
+    lda s_xl,x : sta mv_xl,y : lda s_xh,x : sta mv_xh,y
+    lda s_yl,x : sta mv_yl,y : lda s_yh,x : sta mv_yh,y
+    lda #YOYO_HIT_SPEED
+    ldx tface : beq right
+    lda #256 - YOYO_HIT_SPEED
+.right
+    sta mv_vxi,y
+.next
+    dec mvc_i : bmi done
+    jmp loop
+.done
+ENDIF
     rts
 }
 
@@ -2489,6 +2981,34 @@ GUARD LOGIC_CODE
 INCLUDE "src/gen/level.asm"
 INCLUDE "src/gen/fall.asm"
 INCLUDE "src/gen/collide.asm"
+\ Moving platforms and meanies: current state, and copies for checkpoints
+SLOW_N = NUM_SLOW + 1                   \ (+1 so a level with none still assembles)
+.s_alive    SKIP SLOW_N
+.s_xf       SKIP SLOW_N
+.s_xl       SKIP SLOW_N
+.s_xh       SKIP SLOW_N
+.s_yf       SKIP SLOW_N
+.s_yl       SKIP SLOW_N
+.s_yh       SKIP SLOW_N
+.s_vf       SKIP SLOW_N
+.s_vi       SKIP SLOW_N
+.s_vy       SKIP SLOW_N
+.s_wait     SKIP SLOW_N
+.cps_alive  SKIP SLOW_N
+.cps_xf     SKIP SLOW_N
+.cps_xl     SKIP SLOW_N
+.cps_xh     SKIP SLOW_N
+.cps_yf     SKIP SLOW_N
+.cps_yl     SKIP SLOW_N
+.cps_yh     SKIP SLOW_N
+.cps_vf     SKIP SLOW_N
+.cps_vi     SKIP SLOW_N
+.cps_vy     SKIP SLOW_N
+.cps_wait   SKIP SLOW_N
+.cpp_xl     SKIP NUM_PLATS
+.cpp_xh     SKIP NUM_PLATS
+.cpp_yl     SKIP NUM_PLATS
+.cpp_yh     SKIP NUM_PLATS
 .level_data_end
 SAVE "LEVEL", level_data, level_data_end
 PRINT "Level data:", level_data_end - level_data, "bytes in bank", LEVEL_BANK
@@ -2498,4 +3018,4 @@ INCLUDE "src/gen/disc.asm"
 PRINT "Code from", ~start, "to", ~end, "(", end - start, "bytes ), free:", SCREEN - ram_top
 \ Addresses used by test scripts (profiling and poking variables)
 PRINT "TIMING", ~main_loop, ~t_restore, ~t_scroll, ~t_draw, ~t_vsync, ~t_after_vsync, ~t_logic, ~t_logic_done
-PRINT "SYMBOLS loops", ~loops, "mv_img", ~mv_img, "mv_vxi", ~mv_vxi, "mv_vyi", ~mv_vyi, "mv_vyf", ~mv_vyf, "mv_yl", ~mv_yl, "mv_yh", ~mv_yh, "mv_pause", ~mv_pause, "bal_timer", ~bal_timer, "dag_timer", ~dag_timer, "bscroll", ~bscroll, "front", ~front, "vsyncs", ~vsyncs, "yo_len", ~yo_len, "mv_active", ~mv_active, "mv_xl", ~mv_xl, "mv_xh", ~mv_xh, "tface", ~tface, "keys_found", ~keys_found, "gems_found", ~gems_found, "won", ~won, "have_cp", ~have_cp, "restarts", ~restarts, "alive", ~alive, "newcol", ~newcol, "dead", ~dead, "tx", ~tx, "ty", ~ty, "tstate", ~tstate, "fallt", ~fallt, "dead", ~dead, "anim", ~anim, "p_img", ~p_img, "bank", ~bank, "oldbank", ~oldbank, "dptr", ~dptr, "scrollcol", ~scrollcol
+PRINT "SYMBOLS loops", ~loops, "s_alive", ~s_alive, "s_xl", ~s_xl, "s_xh", ~s_xh, "s_yl", ~s_yl, "s_yh", ~s_yh, "cur_plat", ~cur_plat, "plat_xl", ~plat_xl, "plat_xh", ~plat_xh, "plat_yl", ~plat_yl, "mv_img", ~mv_img, "mv_vxi", ~mv_vxi, "mv_vyi", ~mv_vyi, "mv_vyf", ~mv_vyf, "mv_yl", ~mv_yl, "mv_yh", ~mv_yh, "mv_pause", ~mv_pause, "bal_timer", ~bal_timer, "dag_timer", ~dag_timer, "bscroll", ~bscroll, "front", ~front, "vsyncs", ~vsyncs, "yo_len", ~yo_len, "mv_active", ~mv_active, "mv_xl", ~mv_xl, "mv_xh", ~mv_xh, "tface", ~tface, "keys_found", ~keys_found, "gems_found", ~gems_found, "won", ~won, "have_cp", ~have_cp, "restarts", ~restarts, "alive", ~alive, "newcol", ~newcol, "dead", ~dead, "tx", ~tx, "ty", ~ty, "tstate", ~tstate, "fallt", ~fallt, "dead", ~dead, "anim", ~anim, "p_img", ~p_img, "bank", ~bank, "oldbank", ~oldbank, "dptr", ~dptr, "scrollcol", ~scrollcol

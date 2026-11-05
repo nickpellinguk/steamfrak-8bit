@@ -25,6 +25,7 @@ column is "height" bytes, top to bottom), which is the order the plotter walks t
 import json
 import math
 import os
+import re
 import sys
 
 from PIL import Image
@@ -205,11 +206,45 @@ def platform_find(plats, x, y1, y2):
     return best
 
 
+SL_SCRUBBLY, SL_POGLET, SL_HOOTER, SL_PLATFORM = 1, 2, 3, 4
+
+
+def platform_find_index(plats, x, y1, y2):
+    """PlatformFind: the platform whose top is first in [ceil(y1), y2) under column x, or None."""
+    best = None
+    for i, (px, py, pw, ph) in enumerate(plats):
+        if math.ceil(y1) <= py < y2 and px <= x < px + pw:
+            if best is None or py < plats[best][1]:
+                best = i
+    return best
+
+
+def ladder_find_down(ladders, x, y1, y2):
+    """LadderFind going down (not on a platform): the ladder index found, or None."""
+    ry, found = y1, None
+    for i, (lx, ly, lh, ext) in enumerate(ladders):
+        if abs(x - lx) > 6:
+            continue
+        if ry < ly + lh - 1 and y2 >= ly:
+            found = i
+            ry = min(y2, ly + lh - 1)
+            if ry == y2:
+                break
+    return found
+
+
+def fixed88(v):
+    return int(round(v * 256))
+
+
 def build_level(data, room_name):
     room = data.rooms[room_name]
-    plats, ladders, draw, trogg = [], [], [], None
+    plats, plat_order, ladders, draw, trogg = [], [], [], [], None
+    moving_enabled = False
     for order, inst in enumerate(room['inst']):
         obj, x, y = inst[0], int(inst[1]), int(inst[2])
+        if obj == 'oRoom':
+            moving_enabled = bool(data.props(inst).get('moving_enabled'))
         kind = data.kind(obj)
         spr = data.sprite_of(obj)
         if obj == 'oTrogg':
@@ -220,6 +255,7 @@ def build_level(data, room_name):
         info = data.sprites[spr]
         if kind == 'oPlatform':
             plats.append((x, y, info['w'], info['h']))
+            plat_order.append(order)
         draw.append((DEPTH[kind], order, spr, x, y, obj))
     # Ladders reach up to the platform above them (LadderAdd)
     for order, inst in enumerate(room['inst']):
@@ -231,10 +267,94 @@ def build_level(data, room_name):
         found = platform_find(plats, x, y - LADDER_EXTRA_LENGTH, y - 1)
         extra = 0 if found is None else y - found - 1
         ladders.append((x, y - extra, h + extra, extra))
+
+    # "Slow sprites": moving platforms and meanies, with their motion worked out the way the
+    # GameMaker objects did on their first step (oPlatform, oScrubbly, oPoglet, oHooter)
+    slow = []
+    moving_orders = set()
+    for pi, (px, py, pw, ph) in enumerate(plats):
+        inst = room['inst'][plat_order[pi]]
+        p = data.props(inst)
+        if not any(p.get(k) for k in ('scan_left', 'scan_right', 'scan_up', 'scan_down')):
+            continue
+        xl = xr = px
+        yu = yd = py
+        if p.get('scan_left'):
+            for xco in range(px - 1, -1, -1):
+                if platform_find_index(plats, xco, py, py + ph) is not None:
+                    xl = xco + 1
+                    break
+        if p.get('scan_right'):
+            for xco in range(px + pw, 1000):
+                if platform_find_index(plats, xco, py, py + ph) is not None:
+                    xr = xco - pw
+                    break
+        hits = lambda yco: (platform_find_index(plats, px - 1, yco - 1, yco) is not None or
+                            platform_find_index(plats, px + pw, yco - 1, yco) is not None)
+        if p.get('scan_up'):
+            for yco in range(py - 1, -1, -1):
+                if hits(yco):
+                    yu = yco - 1
+                    break
+        if p.get('scan_down'):
+            for yco in range(py + 1, 1000):
+                if hits(yco):
+                    yd = yco - 1
+                    break
+        vx = (1 if p.get('start_moving_right') else -1) if xl != xr else 0
+        vy = (1 if p.get('start_moving_up') else -1) if yu != yd else 0     # (sic: "up" = +1)
+        if vx == 0 and vy == 0:
+            continue
+        moving_orders.add(plat_order[pi])
+        slow.append({'kind': SL_PLATFORM, 'spr': data.sprite_of(inst[0]), 'x': px, 'y': py,
+                     'amin': xl, 'amax': xr, 'bmin': yu, 'bmax': yd, 'v': vx * 256, 'vy': vy,
+                     'plat': pi, 'wait': 5})
+    if moving_enabled:
+        for order, inst in enumerate(room['inst']):
+            obj, x, y = inst[0], int(inst[1]), int(inst[2])
+            if data.kind(obj) != 'oMeanie':
+                continue
+            p = data.props(inst)
+            spr = data.sprite_of(obj)
+            item = None
+            if obj == 'oScrubbly':
+                pi = platform_find_index(plats, x, y - 1, y + 3)
+                v = fixed88(p.get('default_x_velocity', 0))
+                if pi is not None and v:
+                    px, py, pw, ph = plats[pi]
+                    item = {'kind': SL_SCRUBBLY, 'amin': px + 8, 'amax': px + pw - 1 - 8, 'v': v,
+                            'plat': pi if p.get('follow_platform_y') else 255}
+            elif obj == 'oPoglet':
+                v = fixed88(p.get('default_y_velocity', 0))
+                lo = hi = None
+                if p.get('yoff_min', 0) or p.get('yoff_max', 0):
+                    lo, hi = y + p.get('yoff_min', 0), y + p.get('yoff_max', 0)
+                else:
+                    li = ladder_find_down(ladders, x, y - 16, y + 4)
+                    if li is not None:
+                        lx, ly, lh, ext = ladders[li]
+                        lo, hi = ly + 30, ly + lh - 1 + 14
+                if lo is not None and v:
+                    item = {'kind': SL_POGLET, 'amin': lo, 'amax': hi,
+                            'v': -v if p.get('initially_go_down') else v}
+            elif obj == 'oHooter':
+                v = fixed88(p.get('initial_jump_velocity', 0))
+                if v:
+                    item = {'kind': SL_HOOTER, 'v': v, 'wait': min(255, int(p.get('initial_sleep_ticks', 0)))}
+            if item:
+                base = {'spr': spr, 'x': x, 'y': y, 'amin': 0, 'amax': 0, 'bmin': 0, 'bmax': 0,
+                        'vy': 0, 'plat': 255, 'wait': 0}
+                base.update(item)
+                slow.append(base)
+                moving_orders.add(order)
+
+    draw = [d for d in draw if d[1] not in moving_orders]
     draw.sort(key=lambda d: (-d[0], d[1]))
+    plat_moving = [1 if o in moving_orders else 0 for o in plat_order]
     return {
         'w': room['w'], 'h': room['h'], 'bg': BG_PHYSICAL.get(room['bg'], 6),
-        'trogg': trogg, 'plats': plats, 'ladders': ladders, 'draw': draw,
+        'trogg': trogg, 'plats': plats, 'plat_moving': plat_moving, 'ladders': ladders,
+        'draw': draw, 'slow': slow, 'moving_enabled': moving_enabled,
     }
 
 
@@ -475,6 +595,35 @@ def main():
     out.append(asm_bytes('plat_yl', [v[1] & 0xFF for v in p]))
     out.append(asm_bytes('plat_yh', [v[1] >> 8 for v in p]))
     out.append(asm_bytes('plat_w', [v[2] for v in p]))
+    # Starting positions (moving platforms change plat_xl.. as they go) and moving flags
+    out.append(asm_bytes('plat_x0l', [v[0] & 0xFF for v in p]))
+    out.append(asm_bytes('plat_x0h', [v[0] >> 8 for v in p]))
+    out.append(asm_bytes('plat_y0l', [v[1] & 0xFF for v in p]))
+    out.append(asm_bytes('plat_y0h', [v[1] >> 8 for v in p]))
+    out.append(asm_bytes('plat_moving', lev['plat_moving']))
+    # Slow sprites: moving platforms and meanies
+    sl = lev['slow']
+    out.append('NUM_SLOW = %d' % len(sl))
+    out.append('SL_SCRUBBLY = %d' % SL_SCRUBBLY)
+    out.append('SL_POGLET = %d' % SL_POGLET)
+    out.append('SL_HOOTER = %d' % SL_HOOTER)
+    out.append('SL_PLATFORM = %d' % SL_PLATFORM)
+    out.append('MOVING_ENABLED = %d' % (1 if lev['moving_enabled'] else 0))
+    w16 = lambda name, key: (out.append(asm_bytes(name + 'l', [v[key] & 0xFF for v in sl])),
+                             out.append(asm_bytes(name + 'h', [(v[key] >> 8) & 0xFF for v in sl])))
+    out.append(asm_bytes('sl_kind', [v['kind'] for v in sl]))
+    out.append(asm_bytes('sl_img', [image_id[(v['spr'], 0)] for v in sl]))
+    w16('sl_x0', 'x')
+    w16('sl_y0', 'y')
+    w16('sl_amin', 'amin')
+    w16('sl_amax', 'amax')
+    w16('sl_bmin', 'bmin')
+    w16('sl_bmax', 'bmax')
+    out.append(asm_bytes('sl_vf', [v['v'] & 0xFF for v in sl]))
+    out.append(asm_bytes('sl_vi', [(v['v'] >> 8) & 0xFF for v in sl]))
+    out.append(asm_bytes('sl_vy', [v['vy'] & 0xFF for v in sl]))
+    out.append(asm_bytes('sl_plat', [v['plat'] for v in sl]))
+    out.append(asm_bytes('sl_wait', [v['wait'] for v in sl]))
     lad = lev['ladders']
     out.append(asm_bytes('lad_xl', [v[0] & 0xFF for v in lad]))
     out.append(asm_bytes('lad_xh', [v[0] >> 8 for v in lad]))
@@ -493,6 +642,15 @@ def main():
     cache = render_background(data, lev, frames_of)
     open(os.path.join(build, 'CACHE'), 'wb').write(cache)
     out.append('CACHE_BANK = %d' % CACHE_BANK)
+    # Save areas for the backgrounds under moving platforms and meanies, one per screen
+    # buffer: the free space at the top of the emptiest sprite bank, and above the cache
+    spare = min(range(len(banks)), key=lambda i: len(banks[i]))
+    areas = [(BANKS[spare], 0x8000 + len(banks[spare])), (CACHE_BANK, 0x8000 + len(cache))]
+    for i, (bank, start) in enumerate(areas):
+        out.append('SLOWSAVE%d_BANK = %d' % (i, bank))
+        out.append('SLOWSAVE%d_START = &%04X' % (i, start))
+        if 0xC000 - start < 1024:
+            print('Warning: only %d bytes for saving moving sprites in bank %d' % (0xC000 - start, bank))
     # Run-time draw list: only the things that aren't in the pre-rendered background
     d = [item for item in lev['draw'] if item[0] not in CACHE_BG_DEPTHS]
     out.append('NUM_DRAW = %d' % len(d))
@@ -527,11 +685,18 @@ def main():
     out.append(asm_bytes('draw_lh', [(v >> 8) & 0xFF for v in lefts]))
     out.append(asm_bytes('draw_tl', [v & 0xFF for v in tops]))
     out.append(asm_bytes('draw_th', [(v >> 8) & 0xFF for v in tops]))
-    open(os.path.join(gen, 'level.asm'), 'w').write('\n'.join(out) + '\n')
+    # Constants go in their own file, included at the top of frak.asm (BeebAsm's IF needs
+    # them defined before use); the tables stay in level.asm (assembled into bank 6)
+    consts = [l for l in out if re.match(r'^[A-Z_][A-Z0-9_]* = ', l)]
+    tables = [l for l in out if l not in consts]
+    open(os.path.join(gen, 'level_consts.asm'), 'w').write(
+        '\\ Level constants - GENERATED by tools/convert.py, do not edit\n' + '\n'.join(consts) + '\n')
+    open(os.path.join(gen, 'level.asm'), 'w').write('\n'.join(tables) + '\n')
 
     used = [len(b) for b in banks if b]
     print('images: %d, sprite banks used: %s bytes, level %s: %d platforms, %d ladders, %d objects, '
-          'background cache %d bytes' % (len(directory), used, room_name, len(p), len(lad), len(d), len(cache)))
+          '%d moving, background cache %d bytes' % (len(directory), used, room_name, len(p), len(lad), len(d),
+                                                   len(lev['slow']), len(cache)))
 
 
 if __name__ == '__main__':

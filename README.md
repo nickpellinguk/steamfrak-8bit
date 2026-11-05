@@ -4,7 +4,8 @@ A back-port of the Steam/HTML5 version of **Frak!** to the BBC Master 128, writt
 assembly for [BeebAsm](https://github.com/stardot/beebasm). It works from the data and logic of
 the web version (the `steamfrak` repository).
 
-**Status: milestone 4.** One level (Read&Weep) is playable from start to finish:
+**Status: milestone 5.** One level (Read&Weep) is playable from start to finish, and the
+moving meanies and platforms of other levels work too:
 
 * Trogg walks, jumps, falls (dying from long falls) and climbs.
 * The screen scrolls smoothly at a steady 25 frames a second, with the game logic at 50 ticks a second.
@@ -18,10 +19,15 @@ the web version (the `steamfrak` repository).
   deadly; the yoyo pops balloons and knocks daggers away.
 * Collecting a key sets a checkpoint, as in the Steam version: dying returns Trogg there, and
   gems collected since come back.
+* Moving meanies: Scrubblies patrol their platform, Poglets climb up and down their ladder, and
+  Hooters jump. Their ranges, speeds and start directions come from the Steam version's object
+  settings. The yoyo knocks them flying.
+* Moving platforms go back and forth (or up and down) and pause at each end. Trogg rides them.
+  Standing on a moving platform doesn't set a checkpoint.
 * Collecting every key completes the level. For now the background just flashes and the level
   restarts; there is no text drawing yet.
 
-Not done yet: moving meanies and platforms, Trogg-movable platforms, a difficulty menu, timer and medals, sound, menus,
+Not done yet: Trogg-movable platforms, springs, a difficulty menu, timer and medals, sound, menus,
 the other 54 levels, and vertically scrolling levels.
 
 ## Building
@@ -31,6 +37,7 @@ You need BeebAsm and Python 3 with Pillow, and the `steamfrak` repository alongs
 ```sh
 pip install pillow
 BEEBASM=/path/to/beebasm ./build.sh                # STEAMFRAK=../steamfrak, LEVEL=room_A_1
+LEVEL=room_B_1 BEEBASM=/path/to/beebasm ./build.sh # Scrubblies (B_2 Poglets, B_3 Hooters, D_1 lifts)
 DIFFICULTY=6 BEEBASM=/path/to/beebasm ./build.sh   # 0 none, 1 Easy (default), 2 Hard, 4 Harder, 6 Insane
 ```
 
@@ -62,6 +69,8 @@ node run.mjs "wait:1500 shot:start down:KeyX wait:100 up:KeyX shot:walked" scree
 | Draw log (erasing moving things), lines, moving objects | `log_sprite`, `log_line`, `restore_log`, `hline`, `update_movers` |
 | Yoyo | `start_yoyo`, `yoyo_out`, `yoyo_back`, `yoyo_collide` |
 | Balloons and daggers | `spawn_hazards`, `spawn_balloon`, `spawn_dagger`, `update_movers` |
+| Moving meanies and platforms | `update_slow`, `move_platform`, `move_scrubbly`, `move_poglet`, `move_hooter`, `draw_slow`, `collide_slow`, `yoyo_slow` |
+| Riding platforms | `trogg_update`, `platform_under` |
 | Collisions, pickups, checkpoints | `check_collisions`, `hit_test`, `collide`, `check_checkpoint` |
 | Platform and ladder queries | `platform_find`, `ladder_find` (ports of `PlatformFind` / `LadderFind`) |
 | Trogg movement | `trogg_standing`, `trogg_falling`, `trogg_climbing` (ports of `TroggStanding` etc.) |
@@ -78,8 +87,9 @@ node run.mjs "wait:1500 shot:start down:KeyX wait:100 up:KeyX shot:walked" scree
 | `&1100-&2FFF` | drawing code and its tables (about 2.9KB free) |
 | `&3000-&7FFF` | MODE 1 screen, **double buffered**: main RAM and shadow RAM |
 | SWRAM banks 4-5 | sprites, pre-shifted (27KB) |
-| SWRAM bank 6 | collision spans (`&8000`), level data, jump table and collision tables (`&9000`), and the **game logic** (`&A000`): Trogg's movement, platforms and ladders, collisions, the yoyo, balloons and daggers. Stays paged in while playing |
-| SWRAM bank 7 | the level's platforms and ladders, pre-rendered (8KB for level 1) |
+| SWRAM bank 6 | collision spans (`&8000`), level data, jump table and collision tables (`&9000`), and the **game logic** (`&A000`): Trogg's movement, platforms and ladders, collisions, the yoyo, balloons, daggers, moving meanies and platforms. Stays paged in while playing |
+| SWRAM bank 7 | the level's platforms and ladders, pre-rendered (8KB for level 1), then save space for moving sprites |
+| top of SWRAM bank 4 or 5 | more save space for moving sprites (whichever bank the sprites leave emptiest) |
 
 ### Sprites
 
@@ -124,7 +134,13 @@ column's screen address and saved bytes. That way erasing just replays it, witho
 sprite's geometry. Part of the save area is kept for Trogg, the yoyo and the FRAK! bubble, so
 he is always drawn even when the screen is busy.
 
-Moving objects (balloons, daggers, meanies flying off) have 16.8 fixed-point positions and
+Moving meanies and platforms, balloons, daggers and meanies flying off are too many for the
+1KB save area, so their background is saved in spare sideways RAM instead (`LOG_SPRITE7`): the
+plotter pages in the save bank to save, then the sprite bank to draw. The converter takes moving
+meanies and platforms out of the pre-rendered background, so a platform's background is just
+sky and whatever static scenery lies behind it.
+
+Moving objects have 16.8 fixed-point positions and
 8.8 velocities, so they move at the Steam version's fractional speeds. Spawn positions use a
 16-bit xorshift random number generator.
 
@@ -144,6 +160,18 @@ Collected objects are erased by repainting their columns from the background cac
 queued separately for each screen buffer, so it happens after Trogg's saved background has been
 put back.
 
+### Moving meanies and platforms
+
+These are ported from the Steam objects' step code: `oPlatform`, `oScrubbly`, `oPoglet` and
+`oHooter`. The converter does the work that GameMaker did at room start: it finds each
+platform's range (by scanning for obstructions, as `oPlatform` does on its first step), the
+platform each Scrubbly walks on and the ladder each Poglet climbs, and writes their ranges and
+speeds as tables. Positions are 16.8 fixed point and velocities 8.8. A checkpoint saves all of
+their positions, so dying puts them back where they were when the key was collected.
+
+Trogg rides a platform by being moved, at the start of each tick, by however far it moved since
+the last one, as in GameMaker.
+
 ### Movement and physics
 
 Positions are whole pixels. The Steam version's sub-pixel jumping and falling (gravity 0.05
@@ -158,8 +186,13 @@ two ticks run per drawn frame. A vertical-sync event handler counts syncs. If dr
 frame overruns, that frame simply runs three ticks, so the game speed never changes. Timers
 such as the death pause count game ticks, not drawn frames.
 
-Measured frame rates: Easy holds 25fps. Hard dips to 24 and Harder to 21 at their busiest,
+Measured frame rates on Read&Weep: Easy holds 25fps. Hard dips to 24 and Harder to 21 at their busiest,
 with 7 balloons and daggers on screen. Insane, with 8-9 on screen, runs at 21-22fps.
+
+Levels with lots of moving meanies are much slower for now. A Scrubbly costs about 30,000 cycles
+a frame to erase, save under and draw, so B_1 (16 Scrubblies) runs at about 6fps, and B_2 and
+B_3 at about 11fps. D_1 (moving platforms only) holds 25fps. The game speed stays right however
+slow the drawing gets.
 
 ### Timing
 
