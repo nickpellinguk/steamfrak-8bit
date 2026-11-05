@@ -69,7 +69,8 @@ node run.mjs "wait:1500 shot:start down:KeyX wait:100 up:KeyX shot:walked" scree
 | Draw log (erasing moving things), lines, moving objects | `log_sprite`, `log_line`, `restore_log`, `hline`, `update_movers` |
 | Yoyo | `start_yoyo`, `yoyo_out`, `yoyo_back`, `yoyo_collide` |
 | Balloons and daggers | `spawn_hazards`, `spawn_balloon`, `spawn_dagger`, `update_movers` |
-| Moving meanies and platforms | `update_slow`, `move_platform`, `move_scrubbly`, `move_poglet`, `move_hooter`, `draw_slow`, `collide_slow`, `yoyo_slow` |
+| Moving meanies and platforms | `update_slow`, `move_platform`, `move_scrubbly`, `move_poglet`, `move_hooter`, `collide_slow`, `yoyo_slow` |
+| Drawing them | `commit_slow`, `draw_slow`, `slow_rect`, `erase_drawn`, `repaint_rect`, `add_damage` |
 | Riding platforms | `trogg_update`, `platform_under` |
 | Collisions, pickups, checkpoints | `check_collisions`, `hit_test`, `collide`, `check_checkpoint` |
 | Platform and ladder queries | `platform_find`, `ladder_find` (ports of `PlatformFind` / `LadderFind`) |
@@ -134,11 +135,27 @@ column's screen address and saved bytes. That way erasing just replays it, witho
 sprite's geometry. Part of the save area is kept for Trogg, the yoyo and the FRAK! bubble, so
 he is always drawn even when the screen is busy.
 
-Moving meanies and platforms, balloons, daggers and meanies flying off are too many for the
-1KB save area, so their background is saved in spare sideways RAM instead (`LOG_SPRITE7`): the
-plotter pages in the save bank to save, then the sprite bank to draw. The converter takes moving
-meanies and platforms out of the pre-rendered background, so a platform's background is just
-sky and whatever static scenery lies behind it.
+Meanies flying off are too big for the 1KB save area, so their background is saved in spare
+sideways RAM instead (`LOG_SPRITE7`): the plotter pages in the save bank to save, then the
+sprite bank to draw.
+
+### Drawing moving meanies and platforms
+
+Moving meanies and platforms ("slow sprites") are not in the draw log. They stay drawn in each
+screen buffer, which remembers where it drew each one, and are only redrawn when they've moved
+since that buffer last drew them, or something painted over them:
+
+* The converter leaves them out of the pre-rendered background in bank 7, so erasing one just
+  repaints its character cells from there (`repaint_rect`), then re-plots any keys, gems and
+  static meanies in them.
+* Everything repainted in a frame (newly scrolled-in columns, the columns of a collected
+  object, erased slow sprites and the scenery over them) goes in a **damage list**. Every slow
+  sprite overlapping damage is plotted again, in order, and each one plotted is damage for the
+  ones after it, so overlaps come out right.
+* What is drawn, and what Trogg and the yoyo collide with, is each sprite's display position.
+  Scrubblies near the screen take turns to catch up with where they really are, at most two a
+  drawn frame (`SCRUB_MOVES`), so they move in steps of several pixels. Everything else is
+  shown where it is every frame.
 
 Moving objects have 16.8 fixed-point positions and
 8.8 velocities, so they move at the Steam version's fractional speeds. Spawn positions use a
@@ -189,10 +206,11 @@ such as the death pause count game ticks, not drawn frames.
 Measured frame rates on Read&Weep: Easy holds 25fps. Hard dips to 24 and Harder to 21 at their busiest,
 with 7 balloons and daggers on screen. Insane, with 8-9 on screen, runs at 21-22fps.
 
-Levels with lots of moving meanies are much slower for now. A Scrubbly costs about 30,000 cycles
-a frame to erase, save under and draw, so B_1 (16 Scrubblies) runs at about 6fps, and B_2 and
-B_3 at about 11fps. D_1 (moving platforms only) holds 25fps. The game speed stays right however
-slow the drawing gets.
+Levels with lots of moving meanies are still slow. A Scrubbly is 33×42 pixels: erasing one
+costs about 9,000 cycles and plotting it about 13,000, in each buffer, so each move costs about
+44,000. B_1 (16 Scrubblies) runs at about 11fps with two moves a frame, or 19fps with one.
+B_2's Poglets and B_3's Hooters don't take turns yet and run at 10-13fps. D_1 (moving
+platforms) holds 23-25fps. The game speed stays right however slow the drawing gets.
 
 ### Timing
 

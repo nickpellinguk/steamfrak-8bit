@@ -238,6 +238,27 @@ ORG &0E00
 .newcol     SKIP 1
 .dy         SKIP 1
 .fflags     SKIP 1
+.dm_c0      SKIP 1          \ damage rectangle to record (byte columns, pixel rows, inclusive)
+.dm_c1      SKIP 1
+.dm_y0      SKIP 1
+.dm_y1      SKIP 1
+.rr_c0      SKIP 1          \ repaint_rect: byte columns and character cells (inclusive)
+.rr_c1      SKIP 1
+.rr_k0      SKIP 1
+.rr_k1      SKIP 1
+.cellk      SKIP 1
+.curbit     SKIP 1
+.scn_y0     SKIP 1          \ draw_scenery: only items overlapping these rows
+.scn_y1     SKIP 1
+.scn_dmg    SKIP 1          \ ... and record what they cover as damage
+.ds_base    SKIP 1          \ draw_slow: index of this buffer's drawn records
+.rr_i       SKIP 1          \ the next Scrubbly in turn to move
+.cm_left    SKIP 1
+.cm_count   SKIP 1
+.nr_c0      SKIP 1          \ slow_rect results
+.nr_c1      SKIP 1
+.nr_y0      SKIP 1
+.nr_y1      SKIP 1
 
 
 MAX_OBJECTS = 64
@@ -337,6 +358,7 @@ GUARD SCREEN
 .movers
     sta mv_active,x : dex : bpl movers
 
+    jsr slow_reset_display
     jsr calc_scroll
     ldx #1
 .init_buffer
@@ -377,6 +399,7 @@ GUARD SCREEN
     lda bfrak,x : beq redraw
     jmp show
 .redraw
+    lda #0 : sta dmg_n : sta dmg_all       \ nothing repainted yet this frame
 .^t_restore
     jsr restore_log
 
@@ -391,13 +414,17 @@ GUARD SCREEN
     lda savebuf_lo,x : sta sfree : lda savebuf_hi,x : sta sfree+1
     lda savebuf_end_lo,x : sta send : lda savebuf_end_hi,x : sta send+1
 
-    \ Moving platforms and meanies ("slow sprites"), behind everything else, with
-    \ their backgrounds saved in this buffer's slow save area
+    \ Meanies flying off save their backgrounds in this buffer's slow save area
     ldx back
     lda slowsave_bank,x : sta p_sbank
     lda slowsave_lo,x : sta sfree7 : lda slowsave_hi,x : sta sfree7+1
     lda #LO(&C000) : sta send7 : lda #HI(&C000) : sta send7+1
+    \ Moving platforms and meanies ("slow sprites") stay drawn in each buffer;
+    \ only the ones that moved (or were painted over) are redrawn
+.^t_slow
+    jsr commit_slow
     jsr draw_slow
+.^t_slow_done
 
     \ view_l = left edge of the window - 64, for skipping off-screen movers
     lda scrollcol : sta view_l : lda #0 : sta view_l+1
@@ -552,37 +579,11 @@ EVNTV = &0220
     rts
 }
 
-\ Draw every slow sprite (moving platform or meanie) near the window
+\ Slow save areas (in sideways RAM) for meanies flying off
 .slowsave_bank  EQUB SLOWSAVE0_BANK, SLOWSAVE1_BANK
 .slowsave_lo    EQUB LO(SLOWSAVE0_START), LO(SLOWSAVE1_START)
 .slowsave_hi    EQUB HI(SLOWSAVE0_START), HI(SLOWSAVE1_START)
 
-.draw_slow
-{
-IF NUM_SLOW > 0
-    \ view_l = left edge of the window - 160 (platforms can be 140 pixels wide)
-    lda scrollcol : sta view_l : lda #0 : sta view_l+1
-    asl view_l : rol view_l+1 : asl view_l : rol view_l+1
-    lda view_l : sec : sbc #160 : sta view_l : lda view_l+1 : sbc #0 : sta view_l+1
-    lda #0 : sta sl_i
-.loop
-    ldx sl_i
-    lda s_alive,x : beq next
-    \ x - view_l must be in 0 .. WINDOW_W + 320
-    lda s_xl,x : sec : sbc view_l : sta tmp
-    lda s_xh,x : sbc view_l+1 : bmi next
-    cmp #HI(WINDOW_W + 320) : bcc on_screen : bne next
-    lda tmp : cmp #LO(WINDOW_W + 320) : bcs next
-.on_screen
-    lda sl_img,x : sta p_img
-    lda s_xl,x : sta p_x : lda s_xh,x : sta p_x+1
-    lda s_yl,x : sta p_y : lda s_yh,x : sta p_y+1
-    jsr log_sprite7
-.next
-    inc sl_i : lda sl_i : cmp #NUM_SLOW : bne loop
-ENDIF
-    rts
-}
 
 \ ------------------------------------------------------------------------------
 \ Draw log: everything moving that was drawn into a buffer, so it can be erased
@@ -955,9 +956,106 @@ CACHE_HI = &8100
     lda ptr+1 : adc #HI(640) : cmp #&80 : bcc nw : sbc #&50 : .nw : sta ptr+1
     dex : bne cell
     pla : sta ROMSEL_COPY : sta ROMSEL
+    \ moving sprites in this column will need drawing again
+    lda colw : sta dm_c0 : sta dm_c1
+    lda #0 : sta dm_y0 : sta scn_y0 : sta scn_dmg
+    lda #255 : sta dm_y1 : sta scn_y1
+    jsr add_damage
     jsr draw_scenery
     jmp set_window_clip
 }
+
+\ Repaint character cells [rr_k0, rr_k1] of byte columns [rr_c0, rr_c1] (all
+\ visible) from the background cache, then the scenery over them. This is how
+\ moving platforms and meanies are erased. Records damage for what it covers.
+.repaint_rect
+{
+    lda ROMSEL_COPY : pha
+    lda #CACHE_BANK : sta ROMSEL_COPY : sta ROMSEL
+    lda rr_c0 : sta colw
+.col
+    \ ptr = rowaddr[k0] + colw * 8, wrapped
+    lda #0 : sta tmp+1
+    lda colw : asl a : rol tmp+1 : asl a : rol tmp+1 : asl a : rol tmp+1
+    ldx rr_k0
+    clc : adc rowaddr_lo,x : sta ptr
+    lda tmp+1 : adc rowaddr_hi,x
+    cmp #&80 : bcc ok : sbc #&50
+.ok
+    sta ptr+1
+    ldx colw
+    lda CACHE_LO,x : sta src : lda CACHE_HI,x : sta src+1
+    ldy #3
+.getmask
+    lda (src),y : sta mask,y : dey : bpl getmask
+    \ skip the data of the non-empty cells above k0 (count the mask's first k0 bits)
+    lda #0 : sta tmp
+    ldx #0
+    lda rr_k0
+.whole
+    cmp #8 : bcc part
+    pha : lda mask,x : jsr popcount_add : pla
+    inx : sec : sbc #8 : jmp whole
+.part
+    tay : lda mask,x : and topbits,y : jsr popcount_add
+    \ src += 4 + 8 * count
+    lda #0 : sta tmp+1
+    lda tmp : asl a : rol tmp+1 : asl a : rol tmp+1 : asl a : rol tmp+1
+    clc : adc #4 : bcc nc0 : inc tmp+1 : clc : .nc0
+    adc src : sta src : lda tmp+1 : adc src+1 : sta src+1
+    \ walk the mask from cell k0: X = mask byte, curbit = bit within it
+    lda rr_k0 : lsr a : lsr a : lsr a : tax
+    lda rr_k0 : and #7 : tay : lda bitpos,y : sta curbit
+    lda rr_k1 : sec : sbc rr_k0 : sta cellk         \ cells left - 1
+.cell
+    lda mask,x : and curbit : beq empty
+    ldy #0
+    lda (src),y : sta (ptr),y : iny
+    lda (src),y : sta (ptr),y : iny
+    lda (src),y : sta (ptr),y : iny
+    lda (src),y : sta (ptr),y : iny
+    lda (src),y : sta (ptr),y : iny
+    lda (src),y : sta (ptr),y : iny
+    lda (src),y : sta (ptr),y : iny
+    lda (src),y : sta (ptr),y
+    lda src : clc : adc #8 : sta src : bcc next : inc src+1
+    jmp next
+.empty
+    lda #0 : ldy #7
+    sta (ptr),y : dey : sta (ptr),y : dey : sta (ptr),y : dey : sta (ptr),y : dey
+    sta (ptr),y : dey : sta (ptr),y : dey : sta (ptr),y : dey : sta (ptr),y
+.next
+    lsr curbit : bcc same : ror curbit : inx : .same     \ (ror puts &80 back)
+    dec cellk : bmi col_done
+    lda ptr : clc : adc #LO(640) : sta ptr
+    lda ptr+1 : adc #HI(640) : cmp #&80 : bcc cell_hi : sbc #&50 : .cell_hi : sta ptr+1
+    jmp cell
+.col_done
+    lda colw : cmp rr_c1 : beq done
+    inc colw : jmp col
+.done
+    pla : sta ROMSEL_COPY : sta ROMSEL
+    \ the damage, then the scenery over it (which records its own damage)
+    lda rr_c0 : sta dm_c0 : sta clip_l
+    lda rr_c1 : sta dm_c1 : clc : adc #1 : sta clip_r
+    lda rr_k0 : asl a : asl a : asl a : sta dm_y0 : sta scn_y0
+    lda rr_k1 : asl a : asl a : asl a : ora #7 : sta dm_y1 : sta scn_y1
+    jsr add_damage
+    lda #1 : sta scn_dmg
+    jsr draw_scenery
+    jmp set_window_clip
+}
+
+\ tmp += number of bits set in A
+.popcount_add
+{
+    pha : and #15 : tay : lda pc16,y : clc : adc tmp : sta tmp
+    pla : lsr a : lsr a : lsr a : lsr a : tay : lda pc16,y : clc : adc tmp : sta tmp
+    rts
+}
+.pc16    EQUB 0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4
+.topbits EQUB &00, &80, &C0, &E0, &F0, &F8, &FC, &FE
+.bitpos  EQUB &80, &40, &20, &10, &08, &04, &02, &01
 
 \ Draw every scenery item that overlaps [clip_l, clip_r)
 .draw_scenery
@@ -968,15 +1066,42 @@ CACHE_HI = &8100
     lda alive,x : beq skip                               \ already collected
     lda draw_c1,x : cmp clip_l : beq skip : bcc skip     \ ends at or before clip_l
     lda draw_c0,x : cmp clip_r : bcs skip                \ starts at or after clip_r
+    \ rows: skip it if it's entirely above scn_y0 or below scn_y1
+    lda draw_th,x : bne rows_ok
+    lda draw_tl,x : cmp scn_y1 : beq t_ok : bcs skip
+.t_ok
+    ldy draw_img,x : clc : adc img_h,y : bcs rows_ok     \ A = bottom + 1
+    cmp scn_y0 : beq skip : bcc skip
+.rows_ok
     lda draw_img,x : sta p_img
     lda draw_xl,x : sta p_x : lda draw_xh,x : sta p_x+1
     lda draw_yl,x : sta p_y : lda draw_yh,x : sta p_y+1
     txa : pha
     jsr plot
     pla : tax
+    lda scn_dmg : beq skip
+    jsr scenery_damage
 .skip
     inx : cpx #NUM_DRAW : bne loop
     rts
+}
+
+\ Record scenery item X (drawn in columns [clip_l, clip_r)) as damage
+.scenery_damage
+{
+    lda draw_c0,x : cmp clip_l : bcs c0_ok : lda clip_l
+.c0_ok
+    sta dm_c0
+    lda draw_c1,x : cmp clip_r : bcc c1_ok : lda clip_r
+.c1_ok
+    sec : sbc #1 : sta dm_c1
+    lda #0 : sta dm_y0 : lda #255 : sta dm_y1
+    lda draw_th,x : bne rows
+    lda draw_tl,x : sta dm_y0
+    ldy draw_img,x : clc : adc img_h,y : bcs rows
+    sbc #0 : sta dm_y1                  \ (carry clear: subtracts 1)
+.rows
+    jmp add_damage                      \ (preserves X)
 }
 
 \ ptr += 640 (next character row), wrapping within screen memory; Y = 0
@@ -2895,11 +3020,11 @@ IF NUM_SLOW > 0
     lda s_alive,x : beq next
     lda sl_kind,x : cmp #SL_PLATFORM : beq next
     ldy sl_img,x : sty c_oimg
-    lda s_xl,x : sec : sbc img_xo,y : sta tmp : lda s_xh,x : sbc #0 : sta tmp+1
+    lda d_xl,x : sec : sbc img_xo,y : sta tmp : lda d_xh,x : sbc #0 : sta tmp+1
     lda tmp : sec : sbc ct_l : sta c_dx : lda tmp+1 : sbc ct_l+1
     jsr in_range_64 : bcc next
     ldx mvc_i : ldy c_oimg
-    lda s_yl,x : sec : sbc img_yo,y : sta tmp : lda s_yh,x : sbc #0 : sta tmp+1
+    lda d_yl,x : sec : sbc img_yo,y : sta tmp : lda d_yh,x : sbc #0 : sta tmp+1
     lda tmp : sec : sbc ct_t : sta c_dy : lda tmp+1 : sbc ct_t+1
     jsr in_range_64_dy : bcc next
     jsr hit_test : bcc next
@@ -2924,7 +3049,7 @@ IF NUM_SLOW > 0
     jmp next
 .meanie
     ldy sl_img,x
-    lda s_xl,x : sec : sbc img_xo,y : sta tmp : lda s_xh,x : sbc #0 : sta tmp+1
+    lda d_xl,x : sec : sbc img_xo,y : sta tmp : lda d_xh,x : sbc #0 : sta tmp+1
     lda yb_r : cmp tmp : lda yb_r+1 : sbc tmp+1 : bvc v1 : eor #&80 : .v1 : bpl ok1
     jmp next
 .ok1
@@ -2932,7 +3057,7 @@ IF NUM_SLOW > 0
     lda yb_l : cmp tmp : lda yb_l+1 : sbc tmp+1 : bvc v2 : eor #&80 : .v2 : bmi ok2
     jmp next
 .ok2
-    lda s_yl,x : sec : sbc img_yo,y : sta tmp : lda s_yh,x : sbc #0 : sta tmp+1
+    lda d_yl,x : sec : sbc img_yo,y : sta tmp : lda d_yh,x : sbc #0 : sta tmp+1
     lda yo_y : cmp tmp : lda yo_y+1 : sbc tmp+1 : bvc v3 : eor #&80 : .v3 : bpl ok3
     jmp next
 .ok3
@@ -2948,8 +3073,8 @@ IF NUM_SLOW > 0
 .slot
     lda #MV_FLYING : sta mv_active,y
     lda sl_img,x : sta mv_img,y
-    lda s_xl,x : sta mv_xl,y : lda s_xh,x : sta mv_xh,y
-    lda s_yl,x : sta mv_yl,y : lda s_yh,x : sta mv_yh,y
+    lda d_xl,x : sta mv_xl,y : lda d_xh,x : sta mv_xh,y
+    lda d_yl,x : sta mv_yl,y : lda d_yh,x : sta mv_yh,y
     lda #YOYO_HIT_SPEED
     ldx tface : beq right
     lda #256 - YOYO_HIT_SPEED
@@ -2962,6 +3087,274 @@ IF NUM_SLOW > 0
 ENDIF
     rts
 }
+
+
+\ ------------------------------------------------------------------------------
+\ Drawing the slow sprites. They stay drawn in each screen buffer, which
+\ remembers where it drew each one (dr_*). A slow sprite is only redrawn when it
+\ has moved since that buffer last drew it, or something painted over it.
+\
+\ Erasing one repaints its character cells from the background cache (and the
+\ scenery over them). Everything repainted in a frame - scrolled-in columns,
+\ collected objects' columns, erased sprites - goes in the damage list, and every
+\ slow sprite overlapping damage is plotted again, in order, so overlaps stay
+\ right. Each one plotted is damage too, for the ones after it.
+\
+\ What is drawn (and collided with) is the display position d_*. Scrubblies near
+\ the window catch up with their real position at most SCRUB_MOVES at a time per
+\ drawn frame, taking turns; everything else catches up every frame.
+\ ------------------------------------------------------------------------------
+
+MAX_DMG = 40
+SCRUB_MOVES = 2
+
+\ Record damage rectangle dm_c0..dm_c1, dm_y0..dm_y1. Preserves X.
+.add_damage
+{
+    ldy dmg_n : cpy #MAX_DMG : bcs full
+    lda dm_c0 : sta dmg_c0,y
+    lda dm_c1 : sta dmg_c1,y
+    lda dm_y0 : sta dmg_y0,y
+    lda dm_y1 : sta dmg_y1,y
+    inc dmg_n
+    rts
+.full
+    lda #1 : sta dmg_all
+    rts
+}
+
+\ After a restart: everything shown where it really is, and nothing drawn yet
+.slow_reset_display
+{
+IF NUM_SLOW > 0
+    ldx #NUM_SLOW - 1
+.loop
+    jsr commit_one
+    lda #0 : sta dr_on,x : sta dr_on + SLOW_N,x
+    dex : bpl loop
+ENDIF
+    rts
+}
+
+IF NUM_SLOW > 0
+\ d = s for slow sprite X
+.commit_one
+    lda s_xl,x : sta d_xl,x : lda s_xh,x : sta d_xh,x
+    lda s_yl,x : sta d_yl,x : lda s_yh,x : sta d_yh,x
+    rts
+
+\ Carry set if slow sprite X is a Scrubbly that takes turns to move: one near the
+\ window (view_l .. view_l + WINDOW_W + 128) that isn't riding a moving platform
+.takes_turns
+{
+    lda sl_kind,x : cmp #SL_SCRUBBLY : bne no
+    lda sl_plat,x : cmp #255 : bne no
+    lda s_xl,x : sec : sbc view_l : sta tmp
+    lda s_xh,x : sbc view_l+1 : bmi no
+    cmp #HI(WINDOW_W + 128) : bcc yes : bne no
+    lda tmp : cmp #LO(WINDOW_W + 128) : bcs no
+.yes
+    sec : rts
+.no
+    clc : rts
+}
+ENDIF
+
+\ Once per drawn frame: move the display positions on
+.commit_slow
+{
+IF NUM_SLOW > 0
+    \ view_l = left edge of the window - 64
+    lda scrollcol : sta view_l : lda #0 : sta view_l+1
+    asl view_l : rol view_l+1 : asl view_l : rol view_l+1
+    lda view_l : sec : sbc #64 : sta view_l : lda view_l+1 : sbc #0 : sta view_l+1
+    ldx #NUM_SLOW - 1
+.loop
+    jsr takes_turns : bcs next
+    jsr commit_one
+.next
+    dex : bpl loop
+    \ Scrubblies' turns
+    lda #SCRUB_MOVES : sta cm_left
+    lda #NUM_SLOW : sta cm_count
+    ldx rr_i
+.turn
+    inx : cpx #NUM_SLOW : bcc in : ldx #0
+.in
+    lda s_alive,x : beq tnext
+    jsr takes_turns : bcc tnext
+    lda s_xl,x : cmp d_xl,x : bne move
+    lda s_xh,x : cmp d_xh,x : bne move
+    lda s_yl,x : cmp d_yl,x : bne move
+    lda s_yh,x : cmp d_yh,x : beq tnext
+.move
+    jsr commit_one
+    dec cm_left : beq tdone
+.tnext
+    dec cm_count : bne turn
+.tdone
+    stx rr_i
+ENDIF
+    rts
+}
+
+\ Work out where slow sprite X would be drawn (from d_*). Carry set if any of
+\ it is in the window, with its byte columns in nr_c0..nr_c1 and rows in
+\ nr_y0..nr_y1 (inclusive, clamped to the level)
+.slow_rect
+{
+IF NUM_SLOW > 0
+    lda s_alive,x : bne alive
+    clc : rts
+.alive
+    ldy sl_img,x
+    \ left = x - xo, right = left + w - 1 (16-bit signed), as byte columns
+    lda d_xl,x : sec : sbc img_xo,y : sta left : lda d_xh,x : sbc #0 : sta left+1
+    lda left : clc : adc img_w,y : sta tmp : lda left+1 : adc #0 : sta tmp+1
+    lda tmp : bne r1 : dec tmp+1 : .r1 : dec tmp
+    lda left+1 : cmp #&80 : ror left+1 : ror left
+    lda left+1 : cmp #&80 : ror left+1 : ror left
+    lda tmp+1 : cmp #&80 : ror tmp+1 : ror tmp
+    lda tmp+1 : cmp #&80 : ror tmp+1 : ror tmp
+    \ visible if right >= clip_l and left < clip_r
+    lda tmp+1 : bmi out : bne r_ok
+    lda tmp : cmp clip_l : bcc out
+.r_ok
+    lda left+1 : bmi l_neg : bne out
+    lda left : cmp clip_r : bcs out
+    sta nr_c0 : jmp have_l
+.l_neg
+    lda #0 : sta nr_c0
+.have_l
+    lda tmp+1 : beq r_byte
+    lda #255 : sta tmp
+.r_byte
+    lda tmp : sta nr_c1
+    \ top = y - yo, bottom = top + h - 1
+    lda d_yl,x : sec : sbc img_yo,y : sta top : lda d_yh,x : sbc #0 : sta top+1
+    lda top : clc : adc img_h,y : sta tmp : lda top+1 : adc #0 : sta tmp+1
+    lda tmp : bne b1 : dec tmp+1 : .b1 : dec tmp
+    lda tmp+1 : bmi out                    \ bottom < 0
+    beq b_byte : lda #255 : sta tmp
+.b_byte
+    lda tmp : sta nr_y1
+    lda top+1 : bmi t_neg : bne out        \ top >= 256
+    lda top : sta nr_y0
+    sec : rts
+.t_neg
+    lda #0 : sta nr_y0
+    sec : rts
+.out
+    clc
+ENDIF
+    rts
+}
+
+\ Bring the slow sprites in the back buffer up to date
+.draw_slow
+{
+IF NUM_SLOW > 0
+    lda #0 : ldx back : beq b0 : lda #SLOW_N : .b0 : sta ds_base
+    \ 1. Erase the ones that have moved, or gone
+    ldx #NUM_SLOW - 1
+.erase_loop
+    stx sl_i
+    lda #0 : sta n_chg,x
+    jsr slow_rect
+    lda #0 : rol a : sta n_vis,x            \ carry: visible
+    lda ds_base : clc : adc sl_i : tay
+    lda n_vis,x : bne vis
+    \ not visible: erase it if it was drawn
+    lda dr_on,y : bne erase
+    jmp e_next
+.vis
+    lda dr_on,y : beq new
+    lda d_xl,x : cmp dr_xl,y : bne moved
+    lda d_xh,x : cmp dr_xh,y : bne moved
+    lda d_yl,x : cmp dr_yl,y : bne moved
+    lda d_yh,x : cmp dr_yh,y : beq e_next
+.moved
+    lda #1 : sta n_chg,x
+.erase
+    jsr erase_drawn
+    ldx sl_i
+    lda ds_base : clc : adc sl_i : tay
+    lda n_chg,x : beq e_next                \ gone: nothing to draw
+.new
+    lda #1 : sta n_chg,x
+    \ it will be drawn here
+    lda d_xl,x : sta dr_xl,y : lda d_xh,x : sta dr_xh,y
+    lda d_yl,x : sta dr_yl,y : lda d_yh,x : sta dr_yh,y
+    lda nr_c0 : sta dr_c0,y : lda nr_c1 : sta dr_c1,y
+    lda nr_y0 : sta dr_y0,y : lda nr_y1 : sta dr_y1,y
+    lda #1 : sta dr_on,y
+.e_next
+    ldx sl_i : dex : bmi erased
+    jmp erase_loop
+.erased
+    \ 2. Plot, in order, the ones that moved and the ones painted over
+    lda #PM_PLOT : sta p_mode
+    ldx #0
+.plot_loop
+    stx sl_i
+    lda n_vis,x : beq p_next
+    lda ds_base : clc : adc sl_i : tay
+    lda n_chg,x : bne plot_it
+    lda dmg_all : bne plot_it
+    jsr damaged : bcc p_next
+.plot_it
+    ldx sl_i
+    lda sl_img,x : sta p_img
+    lda d_xl,x : sta p_x : lda d_xh,x : sta p_x+1
+    lda d_yl,x : sta p_y : lda d_yh,x : sta p_y+1
+    jsr plot
+    \ ... which is damage for the ones after it
+    lda ds_base : clc : adc sl_i : tay
+    lda dr_c0,y : sta dm_c0 : lda dr_c1,y : sta dm_c1
+    lda dr_y0,y : sta dm_y0 : lda dr_y1,y : sta dm_y1
+    jsr add_damage
+.p_next
+    ldx sl_i : inx : cpx #NUM_SLOW : bne plot_loop
+ENDIF
+    rts
+}
+
+IF NUM_SLOW > 0
+\ Erase the slow sprite drawn at record Y (the visible part of it) and forget it
+.erase_drawn
+{
+    lda #0 : sta dr_on,y
+    lda dr_c0,y : cmp clip_l : bcs c0 : lda clip_l
+.c0
+    sta rr_c0
+    lda clip_r : sec : sbc #1 : cmp dr_c1,y : bcc c1 : lda dr_c1,y
+.c1
+    sta rr_c1
+    cmp rr_c0 : bcc none
+    lda dr_y0,y : lsr a : lsr a : lsr a : sta rr_k0
+    lda dr_y1,y : lsr a : lsr a : lsr a : sta rr_k1
+    jmp repaint_rect
+.none
+    rts
+}
+
+\ Carry set if drawn record Y overlaps any damage
+.damaged
+{
+    ldx dmg_n : beq no
+    dex
+.loop
+    lda dr_c1,y : cmp dmg_c0,x : bcc next      \ ends left of it
+    lda dmg_c1,x : cmp dr_c0,y : bcc next      \ starts right of it
+    lda dr_y1,y : cmp dmg_y0,x : bcc next      \ ends above it
+    lda dmg_y1,x : cmp dr_y0,y : bcc next      \ starts below it
+    sec : rts
+.next
+    dex : bpl loop
+.no
+    clc : rts
+}
+ENDIF
 
 .logic_end
 SAVE "LOGIC", logic_start, logic_end
@@ -3005,6 +3398,27 @@ SLOW_N = NUM_SLOW + 1                   \ (+1 so a level with none still assembl
 .cps_vi     SKIP SLOW_N
 .cps_vy     SKIP SLOW_N
 .cps_wait   SKIP SLOW_N
+.d_xl       SKIP SLOW_N             \ where they are shown (and collided with)
+.d_xh       SKIP SLOW_N
+.d_yl       SKIP SLOW_N
+.d_yh       SKIP SLOW_N
+.n_vis      SKIP SLOW_N             \ draw_slow workspace
+.n_chg      SKIP SLOW_N
+.dr_on      SKIP 2 * SLOW_N         \ where each buffer last drew them
+.dr_xl      SKIP 2 * SLOW_N
+.dr_xh      SKIP 2 * SLOW_N
+.dr_yl      SKIP 2 * SLOW_N
+.dr_yh      SKIP 2 * SLOW_N
+.dr_c0      SKIP 2 * SLOW_N         \ ... and what that covered (byte columns, rows)
+.dr_c1      SKIP 2 * SLOW_N
+.dr_y0      SKIP 2 * SLOW_N
+.dr_y1      SKIP 2 * SLOW_N
+.dmg_n      SKIP 1                  \ damage: areas repainted in this frame
+.dmg_all    SKIP 1
+.dmg_c0     SKIP MAX_DMG
+.dmg_c1     SKIP MAX_DMG
+.dmg_y0     SKIP MAX_DMG
+.dmg_y1     SKIP MAX_DMG
 .cpp_xl     SKIP NUM_PLATS
 .cpp_xh     SKIP NUM_PLATS
 .cpp_yl     SKIP NUM_PLATS
@@ -3017,5 +3431,5 @@ INCLUDE "src/gen/disc.asm"
 
 PRINT "Code from", ~start, "to", ~end, "(", end - start, "bytes ), free:", SCREEN - ram_top
 \ Addresses used by test scripts (profiling and poking variables)
-PRINT "TIMING", ~main_loop, ~t_restore, ~t_scroll, ~t_draw, ~t_vsync, ~t_after_vsync, ~t_logic, ~t_logic_done
-PRINT "SYMBOLS loops", ~loops, "s_alive", ~s_alive, "s_xl", ~s_xl, "s_xh", ~s_xh, "s_yl", ~s_yl, "s_yh", ~s_yh, "cur_plat", ~cur_plat, "plat_xl", ~plat_xl, "plat_xh", ~plat_xh, "plat_yl", ~plat_yl, "mv_img", ~mv_img, "mv_vxi", ~mv_vxi, "mv_vyi", ~mv_vyi, "mv_vyf", ~mv_vyf, "mv_yl", ~mv_yl, "mv_yh", ~mv_yh, "mv_pause", ~mv_pause, "bal_timer", ~bal_timer, "dag_timer", ~dag_timer, "bscroll", ~bscroll, "front", ~front, "vsyncs", ~vsyncs, "yo_len", ~yo_len, "mv_active", ~mv_active, "mv_xl", ~mv_xl, "mv_xh", ~mv_xh, "tface", ~tface, "keys_found", ~keys_found, "gems_found", ~gems_found, "won", ~won, "have_cp", ~have_cp, "restarts", ~restarts, "alive", ~alive, "newcol", ~newcol, "dead", ~dead, "tx", ~tx, "ty", ~ty, "tstate", ~tstate, "fallt", ~fallt, "dead", ~dead, "anim", ~anim, "p_img", ~p_img, "bank", ~bank, "oldbank", ~oldbank, "dptr", ~dptr, "scrollcol", ~scrollcol
+PRINT "TIMING", ~main_loop, ~t_restore, ~t_scroll, ~t_draw, ~t_vsync, ~t_after_vsync, ~t_logic, ~t_logic_done, ~t_slow, ~t_slow_done
+PRINT "SYMBOLS loops", ~loops, "dmg_n", ~dmg_n, "s_alive", ~s_alive, "s_xl", ~s_xl, "s_xh", ~s_xh, "s_yl", ~s_yl, "s_yh", ~s_yh, "cur_plat", ~cur_plat, "plat_xl", ~plat_xl, "plat_xh", ~plat_xh, "plat_yl", ~plat_yl, "mv_img", ~mv_img, "mv_vxi", ~mv_vxi, "mv_vyi", ~mv_vyi, "mv_vyf", ~mv_vyf, "mv_yl", ~mv_yl, "mv_yh", ~mv_yh, "mv_pause", ~mv_pause, "bal_timer", ~bal_timer, "dag_timer", ~dag_timer, "bscroll", ~bscroll, "front", ~front, "vsyncs", ~vsyncs, "yo_len", ~yo_len, "mv_active", ~mv_active, "mv_xl", ~mv_xl, "mv_xh", ~mv_xh, "tface", ~tface, "keys_found", ~keys_found, "gems_found", ~gems_found, "won", ~won, "have_cp", ~have_cp, "restarts", ~restarts, "alive", ~alive, "newcol", ~newcol, "dead", ~dead, "tx", ~tx, "ty", ~ty, "tstate", ~tstate, "fallt", ~fallt, "dead", ~dead, "anim", ~anim, "p_img", ~p_img, "bank", ~bank, "oldbank", ~oldbank, "dptr", ~dptr, "scrollcol", ~scrollcol
