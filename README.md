@@ -70,7 +70,7 @@ node run.mjs "wait:1500 shot:start down:KeyX wait:100 up:KeyX shot:walked" scree
 | Yoyo | `start_yoyo`, `yoyo_out`, `yoyo_back`, `yoyo_collide` |
 | Balloons and daggers | `spawn_hazards`, `spawn_balloon`, `spawn_dagger`, `update_movers` |
 | Moving meanies and platforms | `update_slow`, `move_platform`, `move_scrubbly`, `move_poglet`, `move_hooter`, `collide_slow`, `yoyo_slow` |
-| Drawing them | `commit_slow`, `draw_slow`, `slow_rect`, `erase_drawn`, `repaint_rect`, `add_damage` |
+| Drawing them | `commit_slow`, `draw_slow`, `slow_rect`, `erase_drawn`, `repaint_rect`, `raw_setup`, `col_rawplot`, `add_damage` |
 | Riding platforms | `trogg_update`, `platform_under` |
 | Collisions, pickups, checkpoints | `check_collisions`, `hit_test`, `collide`, `check_checkpoint` |
 | Platform and ladder queries | `platform_find`, `ladder_find` (ports of `PlatformFind` / `LadderFind`) |
@@ -152,6 +152,10 @@ since that buffer last drew them, or something painted over them:
   object, erased slow sprites and the scenery over them) goes in a **damage list**. Every slow
   sprite overlapping damage is plotted again, in order, and each one plotted is damage for the
   ones after it, so overlaps come out right.
+* Most moving meanies never have anything else drawn where they go, apart from platforms and
+  ladders (the converter checks, in `slow_simple_flags`). When one of those moves, the character
+  cells it will completely cover over empty background aren't erased first, and the sprite is
+  copied into them without masking (`raw_setup`, `PM_RAWPLOT`).
 * What is drawn, and what Trogg and the yoyo collide with, is each sprite's display position.
   Scrubblies near the screen take turns to catch up with where they really are, at most two a
   drawn frame (`SCRUB_MOVES`), so they move in steps of several pixels. Everything else is
@@ -206,11 +210,11 @@ such as the death pause count game ticks, not drawn frames.
 Measured frame rates on Read&Weep: Easy holds 25fps. Hard dips to 24 and Harder to 21 at their busiest,
 with 7 balloons and daggers on screen. Insane, with 8-9 on screen, runs at 21-22fps.
 
-Levels with lots of moving meanies are still slow. A Scrubbly is 33×42 pixels: erasing one
-costs about 9,000 cycles and plotting it about 13,000, in each buffer, so each move costs about
-44,000. B_1 (16 Scrubblies) runs at about 11fps with two moves a frame, or 19fps with one.
-B_2's Poglets and B_3's Hooters don't take turns yet and run at 10-13fps. D_1 (moving
-platforms) holds 23-25fps. The game speed stays right however slow the drawing gets.
+Levels with lots of moving meanies are still slow. A Scrubbly is 33×42 pixels: redrawing one
+that has moved costs about 18,000 cycles in each buffer (8,000 to erase, 10,000 to plot), so
+each move costs about 36,000. B_1 (16 Scrubblies) runs at about 12fps with two moves a frame,
+or 19-20fps with one. B_2's Poglets and B_3's Hooters don't take turns yet and run at
+11-14fps, and D_3 at about 10fps. D_1 (moving platforms) holds 23-25fps. The game speed stays right however slow the drawing gets.
 
 ### Timing
 

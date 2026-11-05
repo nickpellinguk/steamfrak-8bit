@@ -409,7 +409,56 @@ def render_background(data, lev, frames_cache):
     for col, off in enumerate(offsets):
         image[col] = off & 0xFF
         image[0x100 + col] = off >> 8
-    return bytes(image + blob)
+    return bytes(image + blob), img
+
+
+def slow_swept(data, v):
+    """The pixel rectangle (left, top, right, bottom) a slow sprite can ever cover, with its
+    columns widened to whole bytes."""
+    info = data.sprites[v['spr']]
+    x0, x1, y0, y1 = v['x'], v['x'], v['y'], v['y']
+    if v['kind'] == SL_PLATFORM:
+        x0, x1 = min(v['x'], v['amin']), max(v['x'], v['amax'])
+        y0, y1 = min(v['y'], v['bmin']), max(v['y'], v['bmax'])
+    elif v['kind'] == SL_SCRUBBLY:
+        x0, x1 = v['amin'], v['amax']
+    elif v['kind'] == SL_POGLET:
+        y0, y1 = v['amin'], v['amax']
+    elif v['kind'] == SL_HOOTER:
+        # simulate a jump (as move_hooter does) to find how high it goes
+        vel, y = v['v'], v['y'] * 256
+        while True:
+            vel -= 13
+            y -= vel
+            if y >= v['y'] * 256:
+                break
+            y0 = min(y0, y // 256)
+    left = ((x0 - info['xo']) // 4) * 4
+    right = ((x1 - info['xo'] + info['w'] - 1) // 4) * 4 + 3
+    return left, y0 - info['yo'], right, y1 - info['yo'] + info['h'] - 1
+
+
+def slow_simple_flags(data, lev, draw):
+    """For each slow sprite, 1 if nothing else is ever drawn in the character cells it can
+    cover: no keys, gems, static meanies or other slow sprites (platforms and ladders are
+    fine, being in the background cache). Those can be redrawn in one pass over their cells,
+    copying the sprite straight in where the background is empty (move_redraw)."""
+    sl = lev['slow']
+    cells = lambda r: (r[0], r[1] // 8 * 8, r[2], r[3] // 8 * 8 + 7)
+    rects = [cells(slow_swept(data, v)) for v in sl]
+    overlap = lambda a, b: a[0] <= b[2] and b[0] <= a[2] and a[1] <= b[3] and b[1] <= a[3]
+    items = []
+    for (_, _, spr, x, y, _) in draw:
+        info = data.sprites[spr]
+        items.append((x - info['xo'], y - info['yo'], x - info['xo'] + info['w'] - 1, y - info['yo'] + info['h'] - 1))
+    flags = []
+    for i, (v, r) in enumerate(zip(sl, rects)):
+        raw = slow_swept(data, v)
+        ok = (v['plat'] == 255 or v['kind'] == SL_PLATFORM) and raw[0] >= 0 and raw[1] >= 0 and raw[3] <= 254
+        ok = ok and not any(overlap(r, rects[j]) for j in range(len(sl)) if j != i)
+        ok = ok and not any(overlap(r, it) for it in items)
+        flags.append(1 if ok else 0)
+    return flags
 
 
 # --- Jump / fall table ---------------------------------------------------------------------------
@@ -639,7 +688,7 @@ def main():
             frames_cache[spr] = sprite_pixels(data, spr)
         return frames_cache[spr]
 
-    cache = render_background(data, lev, frames_of)
+    cache, _ = render_background(data, lev, frames_of)
     open(os.path.join(build, 'CACHE'), 'wb').write(cache)
     out.append('CACHE_BANK = %d' % CACHE_BANK)
     # Save areas for the backgrounds under moving platforms and meanies, one per screen
@@ -654,6 +703,9 @@ def main():
     # Run-time draw list: only the things that aren't in the pre-rendered background
     d = [item for item in lev['draw'] if item[0] not in CACHE_BG_DEPTHS]
     out.append('NUM_DRAW = %d' % len(d))
+    simple = slow_simple_flags(data, lev, d)
+    out.append(asm_bytes('sl_simple', simple))
+    print('moving sprites redrawn in one pass: %d of %d' % (sum(simple), len(simple)))
     ids = [image_id[(spr, 0)] for (_, _, spr, _, _, _) in d]
     for (_, _, spr, x, _, _) in d:
         shift = (x - data.sprites[spr]['xo']) % 4

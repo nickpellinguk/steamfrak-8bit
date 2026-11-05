@@ -63,6 +63,7 @@ PM_PLOT     = 0             \ masked plot
 PM_SAVE     = 1             \ masked plot, saving the background first
 PM_RESTORE  = 2             \ put the saved background back
 PM_SAVEONLY = 3             \ only save the background (into another bank)
+PM_RAWPLOT  = 4             \ masked plot, but copy into the cells marked in rawbits
 
 \ Keys (negative INKEY numbers, as OSBYTE &81 wants them)
 KEY_Z       = &9E           \ -98
@@ -255,6 +256,16 @@ ORG &0E00
 .rr_i       SKIP 1          \ the next Scrubbly in turn to move
 .cm_left    SKIP 1
 .cm_count   SKIP 1
+.m_ncol     SKIP 1          \ raw_setup: the sprite's byte columns, first cell,
+.m_wb       SKIP 1          \ and range of full cells
+.m_ntop     SKIP 1
+.m_nk0      SKIP 1
+.m_kf0      SKIP 1
+.m_kf1      SKIP 1
+.rr_raw     SKIP 1          \ repaint_rect: skip (and note) raw cells
+.rawcol     SKIP 1
+MAX_RAW_COLS = 16
+.rawbits    SKIP MAX_RAW_COLS
 .nr_c0      SKIP 1          \ slow_rect results
 .nr_c1      SKIP 1
 .nr_y0      SKIP 1
@@ -358,6 +369,7 @@ GUARD SCREEN
 .movers
     sta mv_active,x : dex : bpl movers
 
+    lda #0 : sta rr_raw
     jsr slow_reset_display
     jsr calc_scroll
     ldx #1
@@ -712,86 +724,6 @@ LINE_SAVE = 24                      \ bytes: the longest line is about 82 pixels
     rts
 }
 
-\ ------------------------------------------------------------------------------
-\ hline: a 1-pixel black line from (p_x, p_y) to (q_x, p_y), inclusive.
-\ PM_SAVE draws it saving the background at sbase; PM_RESTORE puts it back.
-\ Clipped to the visible window and to the level's 256 rows.
-\ ------------------------------------------------------------------------------
-
-.hline
-{
-    lda sbase : sta sptr : lda sbase+1 : sta sptr+1
-    \ Only rows 0-255
-    lda p_y+1 : beq row_ok
-    rts
-.row_ok
-    \ order the ends: left in left, right in tmp
-    lda q_x : cmp p_x : lda q_x+1 : sbc p_x+1 : bcs ordered
-    lda q_x : sta left : lda q_x+1 : sta left+1
-    lda p_x : sta tmp : lda p_x+1 : sta tmp+1
-    jmp have_ends
-.ordered
-    lda p_x : sta left : lda p_x+1 : sta left+1
-    lda q_x : sta tmp : lda q_x+1 : sta tmp+1
-.have_ends
-    \ byte columns and the pixel within the first and last
-    lda left : and #3 : sta hl_p0
-    lda tmp : and #3 : sta hl_p1
-    lda left+1 : lsr a : lda left : ror a : lsr a : sta hl_c0
-    lda left+1 : lsr a : lsr a : beq on_level        \ off the level?
-    rts
-.on_level
-    lda tmp+1 : lsr a : lda tmp : ror a : lsr a : sta hl_c1
-    lda tmp+1 : lsr a : lsr a : beq c1_ok : lda #255 : sta hl_c1
-.c1_ok
-    \ screen address of the first column on this row
-    lda p_y : and #7 : sta hl_line
-    lda p_y : lsr a : lsr a : lsr a : sta hl_row
-    lda hl_c0 : sta colw
-.col
-    lda colw : cmp clip_l : bcc next_col
-    cmp clip_r : bcs next_col
-    \ which pixels of this byte are on the line?
-    lda #&FF : sta hl_mask
-    lda colw : cmp hl_c0 : bne not_first
-    ldx hl_p0 : lda left_pixels,x : sta hl_mask
-.not_first
-    lda colw : cmp hl_c1 : bne not_last
-    ldx hl_p1 : lda right_pixels,x : and hl_mask : sta hl_mask
-.not_last
-    \ ptr = rowaddr[row] + colw * 8, wrapped; Y = line
-    lda #0 : sta tmp+1
-    lda colw : asl a : rol tmp+1 : asl a : rol tmp+1 : asl a : rol tmp+1
-    ldx hl_row
-    clc : adc rowaddr_lo,x : sta ptr
-    lda tmp+1 : adc rowaddr_hi,x
-    cmp #&80 : bcc ok : sbc #&50
-.ok
-    sta ptr+1
-    ldy hl_line
-    ldx #0
-    lda p_mode : cmp #PM_RESTORE : beq restore
-    lda (ptr),y : sta (sptr,x)
-    \ black is logical colour 1: low bit set, high bit clear, in each masked pixel
-    lda hl_mask : eor #&FF : and (ptr),y : sta tmp
-    lda hl_mask : and #&0F : ora tmp
-    sta (ptr),y
-    jmp advance
-.restore
-    lda (sptr,x) : sta (ptr),y
-.advance
-    inc sptr : bne next_col : inc sptr+1
-.next_col
-    lda colw : cmp hl_c1 : beq done
-    inc colw
-    jmp col
-.done
-    rts
-}
-
-\ Pixel masks (both bits of each pixel) for "pixel p and to its right" / "up to pixel p"
-.left_pixels  EQUB &FF, &77, &33, &11
-.right_pixels EQUB &88, &CC, &EE, &FF
 
 ACCCON = &FE34                      \ Master: bit 0 = display shadow, bit 2 = CPU uses shadow
 
@@ -983,6 +915,98 @@ CACHE_HI = &8100
     cmp #&80 : bcc ok : sbc #&50
 .ok
     sta ptr+1
+    jsr cache_seek
+    lda rr_k1 : sec : sbc rr_k0 : sta cellk         \ cells left - 1
+.cell
+    lda mask,x : and curbit : beq empty
+    ldy #0
+    lda (src),y : sta (ptr),y : iny
+    lda (src),y : sta (ptr),y : iny
+    lda (src),y : sta (ptr),y : iny
+    lda (src),y : sta (ptr),y : iny
+    lda (src),y : sta (ptr),y : iny
+    lda (src),y : sta (ptr),y : iny
+    lda (src),y : sta (ptr),y : iny
+    lda (src),y : sta (ptr),y
+    lda src : clc : adc #8 : sta src : bcc next : inc src+1
+    jmp next
+.empty
+    lda rr_raw : beq clear
+    \ will the sprite cover this cell completely? (then leave it)
+    lda colw : sec : sbc m_ncol : bcc clear
+    cmp m_wb : bcs clear
+    cmp #MAX_RAW_COLS : bcs clear
+    tay
+    lda rr_k1 : sec : sbc cellk                \ this cell
+    cmp m_kf0 : bcc clear
+    cmp m_kf1 : bcs clear
+    sec : sbc m_nk0 : stx tmp : tax
+    lda bitpos_lo,x : ora rawbits,y : sta rawbits,y
+    ldx tmp
+    jmp next
+.clear
+    lda #0 : ldy #7
+    sta (ptr),y : dey : sta (ptr),y : dey : sta (ptr),y : dey : sta (ptr),y : dey
+    sta (ptr),y : dey : sta (ptr),y : dey : sta (ptr),y : dey : sta (ptr),y
+.next
+    lsr curbit : bcc same : ror curbit : inx : .same     \ (ror puts &80 back)
+    dec cellk : bmi col_done
+    lda ptr : clc : adc #LO(640) : sta ptr
+    lda ptr+1 : adc #HI(640) : cmp #&80 : bcc cell_hi : sbc #&50 : .cell_hi : sta ptr+1
+    jmp cell
+.col_done
+    lda colw : cmp rr_c1 : beq done
+    inc colw : jmp col
+.done
+    pla : sta ROMSEL_COPY : sta ROMSEL
+    \ the damage, then the scenery over it (which records its own damage)
+    lda rr_c0 : sta dm_c0 : sta clip_l
+    lda rr_c1 : sta dm_c1 : clc : adc #1 : sta clip_r
+    lda rr_k0 : asl a : asl a : asl a : sta dm_y0 : sta scn_y0
+    lda rr_k1 : asl a : asl a : asl a : ora #7 : sta dm_y1 : sta scn_y1
+    jsr add_damage
+    lda #1 : sta scn_dmg
+    jsr draw_scenery
+    lda #0 : sta rr_raw
+    jmp set_window_clip
+}
+
+\ Moving a slow sprite that nothing else is ever drawn over (see slow_simple_flags
+\ in the converter): the cells it will completely cover over empty background
+\ ("raw" cells) needn't be erased first, and it can be copied into them without
+\ masking. raw_setup works out where those could be for p_img at (p_x, p_y);
+\ repaint_rect with rr_raw set skips them (noting each in rawbits, one byte per
+\ byte column of the sprite, bit n = its nth character cell); then PM_RAWPLOT
+\ copies the sprite into them and plots it masked everywhere else.
+.raw_setup
+{
+    ldx p_img
+    lda p_x : sec : sbc img_xo,x : sta tmp : lda p_x+1 : sbc #0 : sta tmp+1
+    lda tmp : and #3 : clc : adc img_w,x : adc #3 : lsr a : lsr a : sta m_wb
+    lsr tmp+1 : ror tmp : lsr tmp+1 : ror tmp
+    lda tmp : sta m_ncol
+    lda p_y : sec : sbc img_yo,x : sta m_ntop
+    lsr a : lsr a : lsr a : sta m_nk0              \ the sprite's first cell
+    lda m_ntop : clc : adc #7 : lsr a : lsr a : lsr a : sta m_kf0     \ first full cell
+    lda m_ntop : clc : adc img_h,x                 \ (< 256: see the converter)
+    lsr a : lsr a : lsr a : sta m_kf1              \ first cell past the last full one
+    \ only the first 8 cells can be raw
+    lda m_nk0 : clc : adc #8 : cmp m_kf1 : bcs k_ok : sta m_kf1
+.k_ok
+    ldx #MAX_RAW_COLS - 1 : lda #0
+.clr
+    sta rawbits,x : dex : bpl clr
+    lda #1 : sta rr_raw
+    rts
+}
+
+\ tmp += number of bits set in A
+
+\ With the cache bank paged in: find byte column colw's cells from rr_k0 down.
+\ Loads its mask; src = the data of the first non-empty cell at or below rr_k0;
+\ X = the mask byte and curbit the bit for cell rr_k0.
+.cache_seek
+{
     ldx colw
     lda CACHE_LO,x : sta src : lda CACHE_HI,x : sta src+1
     ldy #3
@@ -1006,47 +1030,9 @@ CACHE_HI = &8100
     \ walk the mask from cell k0: X = mask byte, curbit = bit within it
     lda rr_k0 : lsr a : lsr a : lsr a : tax
     lda rr_k0 : and #7 : tay : lda bitpos,y : sta curbit
-    lda rr_k1 : sec : sbc rr_k0 : sta cellk         \ cells left - 1
-.cell
-    lda mask,x : and curbit : beq empty
-    ldy #0
-    lda (src),y : sta (ptr),y : iny
-    lda (src),y : sta (ptr),y : iny
-    lda (src),y : sta (ptr),y : iny
-    lda (src),y : sta (ptr),y : iny
-    lda (src),y : sta (ptr),y : iny
-    lda (src),y : sta (ptr),y : iny
-    lda (src),y : sta (ptr),y : iny
-    lda (src),y : sta (ptr),y
-    lda src : clc : adc #8 : sta src : bcc next : inc src+1
-    jmp next
-.empty
-    lda #0 : ldy #7
-    sta (ptr),y : dey : sta (ptr),y : dey : sta (ptr),y : dey : sta (ptr),y : dey
-    sta (ptr),y : dey : sta (ptr),y : dey : sta (ptr),y : dey : sta (ptr),y
-.next
-    lsr curbit : bcc same : ror curbit : inx : .same     \ (ror puts &80 back)
-    dec cellk : bmi col_done
-    lda ptr : clc : adc #LO(640) : sta ptr
-    lda ptr+1 : adc #HI(640) : cmp #&80 : bcc cell_hi : sbc #&50 : .cell_hi : sta ptr+1
-    jmp cell
-.col_done
-    lda colw : cmp rr_c1 : beq done
-    inc colw : jmp col
-.done
-    pla : sta ROMSEL_COPY : sta ROMSEL
-    \ the damage, then the scenery over it (which records its own damage)
-    lda rr_c0 : sta dm_c0 : sta clip_l
-    lda rr_c1 : sta dm_c1 : clc : adc #1 : sta clip_r
-    lda rr_k0 : asl a : asl a : asl a : sta dm_y0 : sta scn_y0
-    lda rr_k1 : asl a : asl a : asl a : ora #7 : sta dm_y1 : sta scn_y1
-    jsr add_damage
-    lda #1 : sta scn_dmg
-    jsr draw_scenery
-    jmp set_window_clip
+    rts
 }
 
-\ tmp += number of bits set in A
 .popcount_add
 {
     pha : and #15 : tay : lda pc16,y : clc : adc tmp : sta tmp
@@ -1056,6 +1042,7 @@ CACHE_HI = &8100
 .pc16    EQUB 0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4
 .topbits EQUB &00, &80, &C0, &E0, &F0, &F8, &FC, &FE
 .bitpos  EQUB &80, &40, &20, &10, &08, &04, &02, &01
+.bitpos_lo EQUB &01, &02, &04, &08, &10, &20, &40, &80
 
 \ Draw every scenery item that overlaps [clip_l, clip_r)
 .draw_scenery
@@ -1324,8 +1311,8 @@ SAVE_HEADER = 6
     rts
 }
 
-.col_routines_lo EQUB LO(col_plot), LO(col_save), LO(col_restore), LO(col_saveonly)
-.col_routines_hi EQUB HI(col_plot), HI(col_save), HI(col_restore), HI(col_saveonly)
+.col_routines_lo EQUB LO(col_plot), LO(col_save), LO(col_restore), LO(col_saveonly), LO(col_rawplot)
+.col_routines_hi EQUB HI(col_plot), HI(col_save), HI(col_restore), HI(col_saveonly), HI(col_rawplot)
 
 \ Column routines: ptr = screen address of the column's first cell, dptr = its
 \ sprite data, sptr = save buffer. y0, cells, first_end and last_end describe
@@ -1363,6 +1350,34 @@ ENDMACRO
     dec cellsleft : beq done
     STEP_CELL
     jmp loop
+.done
+    rts
+}
+
+.col_rawplot
+{
+    COLUMN_SETUP
+    lda #0 : ldx cidx : cpx #MAX_RAW_COLS : bcs none : lda rawbits,x
+.none
+    sta rawcol
+.cell
+    lsr rawcol : bcs raw
+.loop
+    lda (dp),y : beq clear
+    tax
+    lda (ptr),y : and masktab,x : ora identity,x : sta (ptr),y
+.clear
+    iny : cpy yend : bne loop
+.cell_done
+    dec cellsleft : beq done
+    STEP_CELL
+    jmp cell
+.raw
+    \ a whole cell over empty background (so Y = 0): just copy it
+    FOR n, 1, 8
+    lda (dp),y : sta (ptr),y : iny
+    NEXT
+    jmp cell_done
 .done
     rts
 }
@@ -1492,132 +1507,6 @@ WIN_FRAMES = 150                    \ (game ticks)
 \ ------------------------------------------------------------------------------
 \ Keyboard
 \ ------------------------------------------------------------------------------
-
-\ A = negative INKEY code; returns A = 1 if pressed, else 0.
-\ Reads the keyboard matrix directly through the system VIA, which is much
-\ quicker than OSBYTE &81.
-SYSVIA_ORB  = &FE40
-SYSVIA_DDRA = &FE43
-SYSVIA_ORA  = &FE4F                 \ port A without handshake
-.key_pressed
-{
-    eor #&FF                        \ INKEY -n is internal key number n-1
-    sei
-    ldx #3 : stx SYSVIA_ORB         \ stop the keyboard auto-scan
-    ldx #&7F : stx SYSVIA_DDRA      \ bits 0-6 select the key, bit 7 reads it
-    sta SYSVIA_ORA
-    lda SYSVIA_ORA                  \ bit 7 set if the key is down
-    ldx #&0B : stx SYSVIA_ORB       \ restart the auto-scan
-    cli
-    asl a : lda #0 : rol a
-    rts
-}
-
-.read_keys
-{
-    lda #KEY_Z : jsr key_pressed : sta k_left
-    lda #KEY_LEFT : jsr key_pressed : ora k_left : sta k_left
-    lda #KEY_X : jsr key_pressed : sta k_right
-    lda #KEY_RIGHT : jsr key_pressed : ora k_right : sta k_right
-    lda #KEY_O : jsr key_pressed : sta k_up
-    lda #KEY_UP : jsr key_pressed : ora k_up : sta k_up
-    lda #KEY_K : jsr key_pressed : sta k_down
-    lda #KEY_DOWN : jsr key_pressed : ora k_down : sta k_down
-    lda #KEY_P : jsr key_pressed : sta k_yoyo
-    lda #KEY_SPACE : jsr key_pressed : ora k_yoyo : sta k_yoyo
-
-    \ doyoyo, with debounce: after the yoyo comes back, the key must be released
-    lda yo_db : beq yo_live
-    lda #0 : sta doyoyo
-    lda k_yoyo : bne yo_done
-    sta yo_db
-    beq yo_done
-.yo_live
-    lda k_yoyo : sta doyoyo
-.yo_done
-
-    \ ymove (+1 = up), with debounce after landing/climbing
-    lda ud_db : beq ud_live
-    lda #0 : sta ymove
-    lda k_up : ora k_down : bne ud_done
-    sta ud_db
-    beq ud_done
-.ud_live
-    lda k_up : sec : sbc k_down : sta ymove
-.ud_done
-    lda lr_db : beq lr_live
-    lda #0 : sta xmove
-    lda k_left : ora k_right : bne lr_done
-    sta lr_db
-    beq lr_done
-.lr_live
-    lda k_right : sec : sbc k_left : sta xmove
-.lr_done
-    rts
-}
-
-\ The string runs from Trogg's hand (tx + 12 * direction) to the yoyo, on the
-\ row just above the yoyo's base
-.yoyo_string_params
-{
-    lda yo_x : sta q_x : lda yo_x+1 : sta q_x+1
-    lda tface : bne left
-    lda tx : clc : adc #12 : sta p_x : lda tx+1 : adc #0 : sta p_x+1
-    jmp have_x
-.left
-    lda tx : sec : sbc #12 : sta p_x : lda tx+1 : sbc #0 : sta p_x+1
-.have_x
-    lda yo_y : sec : sbc #1 : sta p_y : lda yo_y+1 : sbc #0 : sta p_y+1
-    rts
-}
-
-\ Yoyo frame: ((length * direction) >> 3) AND 3, as in GameMaker
-.yoyo_image
-{
-    lda yo_len+1
-    ldx tface : beq right
-    eor #&FF : clc : adc #1                 \ negate
-    cmp #&80 : ror a : cmp #&80 : ror a : cmp #&80 : ror a
-    jmp frame
-.right
-    lsr a : lsr a : lsr a
-.frame
-    and #3 : clc : adc #IMG_Yoyo_0
-    rts
-}
-
-\ Which image to draw for Trogg
-.trogg_image
-{
-    lda tstate
-    cmp #ST_WALK : beq walk
-    cmp #ST_CLIMB : beq climb
-    cmp #ST_YOYO_OUT : bcc stand
-    lda tface : bne yl
-    lda #IMG_Trogg_yr : rts
-.yl
-    lda #IMG_Trogg_yl : rts
-.stand
-    lda tface : bne sl
-    lda #IMG_Trogg_sr : rts
-.sl
-    lda #IMG_Trogg_sl : rts
-.walk
-    lda anim : lsr a : lsr a : lsr a : lsr a : lsr a : lsr a   \ top two bits = frame 0..3
-    ldx tface : beq wr
-    clc : adc #IMG_Trogg_wl_0 : rts
-.wr
-    clc : adc #IMG_Trogg_wr_0 : rts
-.climb
-    lda tclimb : beq cn
-    lda anim : asl a : lda #0 : rol a              \ top bit = frame 0..1
-    ldx tclimb : cpx #1 : beq cu
-    clc : adc #IMG_Trogg_cd_0 : rts
-.cu
-    clc : adc #IMG_Trogg_cu_0 : rts
-.cn
-    lda #IMG_Trogg_cn : rts
-}
 
 \ ------------------------------------------------------------------------------
 \ Data
@@ -3106,6 +2995,7 @@ ENDIF
 \ ------------------------------------------------------------------------------
 
 MAX_DMG = 40
+DONE = &80                          \ n_chg: already redrawn this frame
 SCRUB_MOVES = 2
 
 \ Record damage rectangle dm_c0..dm_c1, dm_y0..dm_y1. Preserves X.
@@ -3265,16 +3155,37 @@ IF NUM_SLOW > 0
     lda ds_base : clc : adc sl_i : tay
     lda n_vis,x : bne vis
     \ not visible: erase it if it was drawn
-    lda dr_on,y : bne erase
+    lda dr_on,y : beq not_drawn
+    jmp erase
+.not_drawn
     jmp e_next
 .vis
-    lda dr_on,y : beq new
+    lda dr_on,y : bne was_drawn
+    jmp new
+.was_drawn
     lda d_xl,x : cmp dr_xl,y : bne moved
     lda d_xh,x : cmp dr_xh,y : bne moved
     lda d_yl,x : cmp dr_yl,y : bne moved
-    lda d_yh,x : cmp dr_yh,y : beq e_next
+    lda d_yh,x : cmp dr_yh,y : bne moved
+    jmp e_next
 .moved
     lda #1 : sta n_chg,x
+    \ one nothing else is drawn over: skip erasing where it will be copied in
+    lda sl_simple,x : beq erase
+    lda sl_img,x : sta p_img
+    lda d_xl,x : sta p_x : lda d_xh,x : sta p_x+1
+    lda d_yl,x : sta p_y : lda d_yh,x : sta p_y+1
+    jsr raw_setup
+    ldy ds_base : tya : clc : adc sl_i : tay
+    jsr erase_drawn                         \ (rr_raw is cleared again by it)
+    lda #PM_RAWPLOT : sta p_mode
+    jsr plot
+    lda #PM_PLOT : sta p_mode
+    lda #0 : sta rr_raw
+    ldx sl_i
+    lda ds_base : clc : adc sl_i : tay
+    lda #DONE : sta n_chg,x                 \ (done: no need to plot it again)
+    jmp store
 .erase
     jsr erase_drawn
     ldx sl_i
@@ -3282,6 +3193,7 @@ IF NUM_SLOW > 0
     lda n_chg,x : beq e_next                \ gone: nothing to draw
 .new
     lda #1 : sta n_chg,x
+.store
     \ it will be drawn here
     lda d_xl,x : sta dr_xl,y : lda d_xh,x : sta dr_xh,y
     lda d_yl,x : sta dr_yl,y : lda d_yh,x : sta dr_yh,y
@@ -3299,7 +3211,8 @@ IF NUM_SLOW > 0
     stx sl_i
     lda n_vis,x : beq p_next
     lda ds_base : clc : adc sl_i : tay
-    lda n_chg,x : bne plot_it
+    lda n_chg,x : bmi p_next                \ DONE
+    bne plot_it
     lda dmg_all : bne plot_it
     jsr damaged : bcc p_next
 .plot_it
@@ -3355,6 +3268,216 @@ IF NUM_SLOW > 0
     clc : rts
 }
 ENDIF
+
+\ (These never page another bank in, so they can live here too)
+
+\ A = negative INKEY code; returns A = 1 if pressed, else 0.
+\ Reads the keyboard matrix directly through the system VIA, which is much
+\ quicker than OSBYTE &81.
+SYSVIA_ORB  = &FE40
+SYSVIA_DDRA = &FE43
+SYSVIA_ORA  = &FE4F                 \ port A without handshake
+.key_pressed
+{
+    eor #&FF                        \ INKEY -n is internal key number n-1
+    sei
+    ldx #3 : stx SYSVIA_ORB         \ stop the keyboard auto-scan
+    ldx #&7F : stx SYSVIA_DDRA      \ bits 0-6 select the key, bit 7 reads it
+    sta SYSVIA_ORA
+    lda SYSVIA_ORA                  \ bit 7 set if the key is down
+    ldx #&0B : stx SYSVIA_ORB       \ restart the auto-scan
+    cli
+    asl a : lda #0 : rol a
+    rts
+}
+
+.read_keys
+{
+    lda #KEY_Z : jsr key_pressed : sta k_left
+    lda #KEY_LEFT : jsr key_pressed : ora k_left : sta k_left
+    lda #KEY_X : jsr key_pressed : sta k_right
+    lda #KEY_RIGHT : jsr key_pressed : ora k_right : sta k_right
+    lda #KEY_O : jsr key_pressed : sta k_up
+    lda #KEY_UP : jsr key_pressed : ora k_up : sta k_up
+    lda #KEY_K : jsr key_pressed : sta k_down
+    lda #KEY_DOWN : jsr key_pressed : ora k_down : sta k_down
+    lda #KEY_P : jsr key_pressed : sta k_yoyo
+    lda #KEY_SPACE : jsr key_pressed : ora k_yoyo : sta k_yoyo
+
+    \ doyoyo, with debounce: after the yoyo comes back, the key must be released
+    lda yo_db : beq yo_live
+    lda #0 : sta doyoyo
+    lda k_yoyo : bne yo_done
+    sta yo_db
+    beq yo_done
+.yo_live
+    lda k_yoyo : sta doyoyo
+.yo_done
+
+    \ ymove (+1 = up), with debounce after landing/climbing
+    lda ud_db : beq ud_live
+    lda #0 : sta ymove
+    lda k_up : ora k_down : bne ud_done
+    sta ud_db
+    beq ud_done
+.ud_live
+    lda k_up : sec : sbc k_down : sta ymove
+.ud_done
+    lda lr_db : beq lr_live
+    lda #0 : sta xmove
+    lda k_left : ora k_right : bne lr_done
+    sta lr_db
+    beq lr_done
+.lr_live
+    lda k_right : sec : sbc k_left : sta xmove
+.lr_done
+    rts
+}
+
+\ The string runs from Trogg's hand (tx + 12 * direction) to the yoyo, on the
+\ row just above the yoyo's base
+.yoyo_string_params
+{
+    lda yo_x : sta q_x : lda yo_x+1 : sta q_x+1
+    lda tface : bne left
+    lda tx : clc : adc #12 : sta p_x : lda tx+1 : adc #0 : sta p_x+1
+    jmp have_x
+.left
+    lda tx : sec : sbc #12 : sta p_x : lda tx+1 : sbc #0 : sta p_x+1
+.have_x
+    lda yo_y : sec : sbc #1 : sta p_y : lda yo_y+1 : sbc #0 : sta p_y+1
+    rts
+}
+
+\ Yoyo frame: ((length * direction) >> 3) AND 3, as in GameMaker
+.yoyo_image
+{
+    lda yo_len+1
+    ldx tface : beq right
+    eor #&FF : clc : adc #1                 \ negate
+    cmp #&80 : ror a : cmp #&80 : ror a : cmp #&80 : ror a
+    jmp frame
+.right
+    lsr a : lsr a : lsr a
+.frame
+    and #3 : clc : adc #IMG_Yoyo_0
+    rts
+}
+
+\ Which image to draw for Trogg
+.trogg_image
+{
+    lda tstate
+    cmp #ST_WALK : beq walk
+    cmp #ST_CLIMB : beq climb
+    cmp #ST_YOYO_OUT : bcc stand
+    lda tface : bne yl
+    lda #IMG_Trogg_yr : rts
+.yl
+    lda #IMG_Trogg_yl : rts
+.stand
+    lda tface : bne sl
+    lda #IMG_Trogg_sr : rts
+.sl
+    lda #IMG_Trogg_sl : rts
+.walk
+    lda anim : lsr a : lsr a : lsr a : lsr a : lsr a : lsr a   \ top two bits = frame 0..3
+    ldx tface : beq wr
+    clc : adc #IMG_Trogg_wl_0 : rts
+.wr
+    clc : adc #IMG_Trogg_wr_0 : rts
+.climb
+    lda tclimb : beq cn
+    lda anim : asl a : lda #0 : rol a              \ top bit = frame 0..1
+    ldx tclimb : cpx #1 : beq cu
+    clc : adc #IMG_Trogg_cd_0 : rts
+.cu
+    clc : adc #IMG_Trogg_cu_0 : rts
+.cn
+    lda #IMG_Trogg_cn : rts
+}
+
+
+\ ------------------------------------------------------------------------------
+\ hline: a 1-pixel black line from (p_x, p_y) to (q_x, p_y), inclusive.
+\ PM_SAVE draws it saving the background at sbase; PM_RESTORE puts it back.
+\ Clipped to the visible window and to the level's 256 rows.
+\ ------------------------------------------------------------------------------
+
+.hline
+{
+    lda sbase : sta sptr : lda sbase+1 : sta sptr+1
+    \ Only rows 0-255
+    lda p_y+1 : beq row_ok
+    rts
+.row_ok
+    \ order the ends: left in left, right in tmp
+    lda q_x : cmp p_x : lda q_x+1 : sbc p_x+1 : bcs ordered
+    lda q_x : sta left : lda q_x+1 : sta left+1
+    lda p_x : sta tmp : lda p_x+1 : sta tmp+1
+    jmp have_ends
+.ordered
+    lda p_x : sta left : lda p_x+1 : sta left+1
+    lda q_x : sta tmp : lda q_x+1 : sta tmp+1
+.have_ends
+    \ byte columns and the pixel within the first and last
+    lda left : and #3 : sta hl_p0
+    lda tmp : and #3 : sta hl_p1
+    lda left+1 : lsr a : lda left : ror a : lsr a : sta hl_c0
+    lda left+1 : lsr a : lsr a : beq on_level        \ off the level?
+    rts
+.on_level
+    lda tmp+1 : lsr a : lda tmp : ror a : lsr a : sta hl_c1
+    lda tmp+1 : lsr a : lsr a : beq c1_ok : lda #255 : sta hl_c1
+.c1_ok
+    \ screen address of the first column on this row
+    lda p_y : and #7 : sta hl_line
+    lda p_y : lsr a : lsr a : lsr a : sta hl_row
+    lda hl_c0 : sta colw
+.col
+    lda colw : cmp clip_l : bcc next_col
+    cmp clip_r : bcs next_col
+    \ which pixels of this byte are on the line?
+    lda #&FF : sta hl_mask
+    lda colw : cmp hl_c0 : bne not_first
+    ldx hl_p0 : lda left_pixels,x : sta hl_mask
+.not_first
+    lda colw : cmp hl_c1 : bne not_last
+    ldx hl_p1 : lda right_pixels,x : and hl_mask : sta hl_mask
+.not_last
+    \ ptr = rowaddr[row] + colw * 8, wrapped; Y = line
+    lda #0 : sta tmp+1
+    lda colw : asl a : rol tmp+1 : asl a : rol tmp+1 : asl a : rol tmp+1
+    ldx hl_row
+    clc : adc rowaddr_lo,x : sta ptr
+    lda tmp+1 : adc rowaddr_hi,x
+    cmp #&80 : bcc ok : sbc #&50
+.ok
+    sta ptr+1
+    ldy hl_line
+    ldx #0
+    lda p_mode : cmp #PM_RESTORE : beq restore
+    lda (ptr),y : sta (sptr,x)
+    \ black is logical colour 1: low bit set, high bit clear, in each masked pixel
+    lda hl_mask : eor #&FF : and (ptr),y : sta tmp
+    lda hl_mask : and #&0F : ora tmp
+    sta (ptr),y
+    jmp advance
+.restore
+    lda (sptr,x) : sta (ptr),y
+.advance
+    inc sptr : bne next_col : inc sptr+1
+.next_col
+    lda colw : cmp hl_c1 : beq done
+    inc colw
+    jmp col
+.done
+    rts
+}
+
+\ Pixel masks (both bits of each pixel) for "pixel p and to its right" / "up to pixel p"
+.left_pixels  EQUB &FF, &77, &33, &11
+.right_pixels EQUB &88, &CC, &EE, &FF
 
 .logic_end
 SAVE "LOGIC", logic_start, logic_end
