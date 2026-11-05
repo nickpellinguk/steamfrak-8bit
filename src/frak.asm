@@ -320,6 +320,7 @@ ORG &0E00
 .pl_i0      SKIP 1          \ ... and its cells to paint
 .pl_i1      SKIP 1
 .cpage      SKIP 1
+.pages1     SKIP 1          \ non-zero if the background's dictionary has more than one page
 .u_sx       SKIP 1
 .cmask      SKIP 30         \ a background line's masks
 .ds_base    SKIP 1          \ draw_slow: index of this buffer's drawn records
@@ -1128,6 +1129,13 @@ savebuf1 = &0900
     lda alive,x : beq skip                               \ already collected
     lda draw_c1,x : cmp clip_l : beq skip : bcc skip     \ ends at or before clip_l
     lda draw_c0,x : cmp clip_r : bcs skip                \ starts at or after clip_r
+    \ rows: skip it if it ends above clip_t or starts at or below clip_t + clip_h
+    ldy draw_img,x
+    lda draw_tl,x : clc : adc img_h,y : sta tmp : lda draw_th,x : adc #0 : sta tmp+1
+    lda clip_t : cmp tmp : lda clip_t+1 : sbc tmp+1 : bvc v1 : eor #&80 : .v1 : bpl skip
+    lda clip_t : clc : adc clip_h : sta tmp : lda clip_t+1 : adc #0 : sta tmp+1
+    lda clip_h : bne h_ok : inc tmp+1 : .h_ok                \ (0 = 256)
+    lda draw_tl,x : cmp tmp : lda draw_th,x : sbc tmp+1 : bvc v2 : eor #&80 : .v2 : bpl skip
     lda draw_img,x : sta p_img
     lda draw_xl,x : sta p_x : lda draw_xh,x : sta p_x+1
     lda draw_yl,x : sta p_y : lda draw_yh,x : sta p_y+1
@@ -1135,7 +1143,9 @@ savebuf1 = &0900
     jsr plot
     pla : tax
 .skip
-    inx : cpx num_draw : bcc loop
+    inx : cpx num_draw : bcs done
+    jmp loop
+.done
     rts
 }
 
@@ -3829,13 +3839,15 @@ GUARD OVERLAY_STORE
     lda pl_i1 : sec : sbc pl_i0 : sta cellk         \ cells left - 1
 .cell
     lda cmask,x : and curbit : beq empty
-    \ its dictionary page, from the second and third masks
+    \ its dictionary page, from the second and third masks (if the level has more than one)
     stx u_sx
     lda #0 : sta cpage
+    lda pages1 : beq page_ok
     txa : clc : adc mb : tay
     lda cmask,y : and curbit : beq b8 : inc cpage : .b8
     tya : clc : adc mb : tay
     lda cmask,y : and curbit : beq b9 : inc cpage : inc cpage : .b9
+.page_ok
     ldy #0 : lda (src),y                            \ the cell's number
     inc src : bne nc : inc src+1 : .nc
     ldx cpage : jsr copy_cell
@@ -3876,12 +3888,12 @@ GUARD OVERLAY_STORE
 
 \ tmp += number of bits set in A
 .popcount_add
-{
-    pha : and #15 : tay : lda pc16,y : clc : adc tmp : sta tmp
-    pla : lsr a : lsr a : lsr a : lsr a : tay : lda pc16,y : clc : adc tmp : sta tmp
+    tay : lda bits_in,y : clc : adc tmp : sta tmp
     rts
-}
-.pc16    EQUB 0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4
+.bits_in
+FOR n, 0, 255
+    EQUB (n AND 1) + ((n DIV 2) AND 1) + ((n DIV 4) AND 1) + ((n DIV 8) AND 1) + ((n DIV 16) AND 1) + ((n DIV 32) AND 1) + ((n DIV 64) AND 1) + ((n DIV 128) AND 1)
+NEXT
 .topbits EQUB &00, &80, &C0, &E0, &F0, &F8, &FC, &FE
 .bitpos  EQUB &80, &40, &20, &10, &08, &04, &02, &01
 .bitpos_lo EQUB &01, &02, &04, &08, &10, &20, &40, &80
@@ -4562,6 +4574,7 @@ ASSERT MAX_BG <= &50
     lda u_cnth : ldx u_cntl : beq whole : clc : adc #1 : .whole
     cmp #0 : bne paged : lda #1
 .paged
+    pha : sec : sbc #1 : sta pages1 : pla
     asl a : asl a : asl a : clc : adc #HI(BG_DICT) : sta dp+1 : lda #LO(BG_DICT) : sta dp
     \ each line's address: start + its offset; none for lines past the end
     ldx #0

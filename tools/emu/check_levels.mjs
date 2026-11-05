@@ -30,10 +30,12 @@ for (let li = 0; li < names.length; li++) {
   const e = expect[names[li]];
   if (only && !only.includes(names[li])) continue;
   if (r(sym.cur_level) !== li) {
-    cpu.writemem(sym.cur_level, (li + 54) % 55);     // the one before, then finish it
-    cpu.writemem(sym.won, 1);
-    for (let t = 0; t < 400 && r(sym.cur_level) !== li; t++) await s.runFrames(5);
-    await s.runFrames(150);
+    // the one before, then finish it (again, if Trogg was dying and that was lost)
+    for (let t = 0; t < 400 && r(sym.cur_level) !== li; t++) {
+      if (t % 40 === 0) { cpu.writemem(sym.cur_level, (li + 54) % 55); cpu.writemem(sym.won, 1); }
+      await s.runFrames(5);
+    }
+    await s.runFrames(300);                 // (the biggest levels take about 3 seconds to load)
   }
   const errs = [];
   const cmp = (what, got, want) => { if (JSON.stringify(got) !== JSON.stringify(want)) errs.push(`${what}: got ${JSON.stringify(got)} want ${JSON.stringify(want)}`); };

@@ -4,8 +4,8 @@ A back-port of the Steam/HTML5 version of **Frak!** to the BBC Master 128, writt
 assembly for [BeebAsm](https://github.com/stardot/beebasm). It works from the data and logic of
 the web version (the `steamfrak` repository).
 
-**Status: milestone 6.** All 55 levels are on the disc and in memory at once. The 36 that
-scroll horizontally can be played, one after another:
+**Status: milestone 7.** All 55 levels are in memory at once and can be played, one after
+another, including the 19 that scroll vertically:
 
 * Trogg walks, jumps, falls (dying from long falls) and climbs.
 * The screen scrolls smoothly at a steady 25 frames a second, with the game logic at 50 ticks a second.
@@ -27,8 +27,8 @@ scroll horizontally can be played, one after another:
 * Collecting every key completes the level: the background flashes and the next level starts
   (there is no text drawing yet).
 
-Not done yet: the 19 vertically scrolling levels, Trogg-movable platforms, springs, a
-difficulty menu, timer and medals, sound and menus.
+Not done yet: Trogg-movable platforms, springs, a difficulty menu, timer and medals, sound and
+menus.
 
 ## Building
 
@@ -92,11 +92,11 @@ sprite tables, and every byte of the unrolled background) with what the converte
 | `&0400-&07FF` | save area for the main-RAM screen buffer (BASIC's workspace, unused); while a level loads, the packed level |
 | `&0900-&0CFF` | save area for the shadow screen buffer (RS423/cassette buffers, soft keys, UDGs); while a level loads, a column of the background and the list of things in it |
 | `&0E00-&10FF` | other variables: object states, checkpoint, draw logs, moving objects |
-| `&1100-&2FFF` | drawing code and its tables (726 bytes free) |
-| `&3000-&7FFF` | MODE 1 screen, **double buffered**: main RAM and shadow RAM. While a level loads, the level loader runs at `&6000` (with the screen blanked) |
+| `&1100-&2FFF` | drawing code and its tables (724 bytes free) |
+| `&3000-&7FFF` | MODE 1 screen, **double buffered**: main RAM and shadow RAM. While a level loads (with the screen blanked) it holds the loader's workspace (`&3000-&4FFF`: the dictionary's hash table, a row of the background, the lines being built) and the loader itself (`&6000`) |
 | SWRAM banks 4-5 | sprites, pre-shifted, including unshifted copies of the platforms and ladders to unroll backgrounds from (31.6KB); the last 1.1KB is a save area for meanies flying off |
-| SWRAM bank 6 | collision spans and tables (from `&8000`), the **game logic** (to `&A8AD`), then the current level's tables (2.8KB free). Stays paged in while playing |
-| SWRAM bank 7 | the current level's background, unrolled when it starts: column addresses (`&8000`), the cell dictionary (`&8200`) and the columns (`&9200`, up to 3.2KB); code that needs only bank 7 (`&A000`); the level loader (`&A100`, 3.5KB, copied to `&6000` when a level loads; 2.7KB free above it); a save area for meanies flying off (`&BA00`) |
+| SWRAM bank 6 | collision spans and tables (from `&8000`), the **game logic** (to `&A9CE`), then the current level's tables and the second save area for meanies flying off (1.5KB free). Stays paged in while playing |
+| SWRAM bank 7 | the current level's background, unrolled when it starts (`&8000-&ABFF`, see below); the code that paints it (`&AC00`); the level loader (`&B000`, 3.9KB, copied to `&6000` when a level loads) |
 | HAZEL (`&C000-&DFFF`) and ANDY (`&8000-&8FFF`) | **all 55 levels**, packed: 11.8KB, about 215 bytes each. `&8800-&88FF` of ANDY is left to the MOS |
 
 All 55 levels stay in memory, so nothing is loaded from disc after the start. At boot, `!BOOT`
@@ -122,29 +122,34 @@ Everything else is worked out when the level starts, as GameMaker did when a roo
 * the platform each Scrubbly walks and the ladder each Poglet climbs;
 * the background: the static platforms and then the ladders are drawn, shifted to their pixel
   positions, one byte column at a time into a buffer, and each column is stored in bank 7 (see
-  below). Loading Read&Weep takes 1.5 seconds.
+  below).
 
 ### The background
 
-Each level's background is held in bank 7 as a **dictionary of character cells** and a list of
-cell numbers for each column:
+Each level's background is held in bank 7 as a **dictionary of character cells**, and a list of
+cell numbers for each column (a horizontally scrolling level) or each row of character cells
+(a vertically scrolling one, 80 cells wide) - "lines", either way:
 
-* The dictionary holds each distinct non-empty character cell (8 bytes) once, numbered 0-511 in
-  order of first use. It is stored as 8 tables of 256 bytes, one for each line of a cell (and 8
-  more for cells 256-511), so copying a cell to the screen is just 8 indexed loads.
-* Each byte column has a 4-byte mask of which of its 32 cells aren't empty (bit 7 of the first
-  byte is the top one), a 4-byte mask of which of those have numbers of 256 or more, then one
-  byte for each non-empty cell: the low 8 bits of its number.
-* `&8000` and `&8100` hold each column's address.
+* The dictionary holds each distinct non-empty character cell (8 bytes) once, numbered 0-1023
+  in order of first use, in pages of 256 cells. A page is 8 tables of 256 bytes, one for each
+  line of a cell, so copying a cell to the screen is just 8 indexed loads. A level uses as many
+  pages as it needs (1-3).
+* Each line has three masks - which of its cells aren't empty (bit 7 of the first byte is the
+  top one, or the leftmost), and bits 8 and 9 of their numbers - 4 bytes each for a column, 10
+  for a row, then one byte for each non-empty cell: the low 8 bits of its number.
+* `&8000` and `&8100` hold each line's address; the lines follow the dictionary.
 
-The levels have 156-409 distinct cells each, a lot more than the handful of platform tiles,
+The levels have 156-549 distinct cells each, a lot more than the handful of platform tiles,
 because a tile lands in its cells at whatever vertical offset its platform has, at any of four
-pixel shifts, and overlapping ladders add more. Even so this is about 40% smaller than storing
-each column's cells in full: 3.8-6.5KB per level instead of 4.7-11.5KB. And the layout is the
-same on every level, so the top quarter of bank 7 is always free.
+pixel shifts, and overlapping ladders add more. Backgrounds take 4.0-8.7KB.
 
-While unrolling, `store_column` (in bank 7) looks each new cell up in the dictionary using a hash
-table (the sum of its 8 bytes) with chains, kept in `&BA00-&BFFF` until the level starts.
+`paint_line` (in bank 7) paints any run of cells along a line: a column for a horizontal scroll,
+a row for a vertical one, and part of either when a moving sprite is erased.
+
+While unrolling, `store_line` looks each cell up in the dictionary with a hash table (the sum of
+its 8 bytes) and chains, in screen memory. The lines are built in screen memory too, then copied
+to just after the dictionary once its size is known. Loading takes 1.9 seconds for Read&Weep,
+3 seconds for the busiest level (C_4).
 
 ### Sprites
 
@@ -164,15 +169,22 @@ The build stops with an error if a level places something at a position with no 
 
 * MODE 1 (320×256, 4 colours): background (cyan/green/red per level), black, magenta, yellow.
   That is exactly the Steam version's palette, and its 256-pixel-high playfield maps 1:1.
-* Horizontal scrolling uses the CRTC start address, in 4-pixel steps. Screen memory is
-  addressed in **level coordinates**: level byte-column C on character row R is always at
-  `&3000 + ((C + R*80) MOD 2560) * 8`, however far the screen has scrolled. So a scroll only
-  needs the newly exposed column drawing, and sprites are drawn and erased in level coordinates.
+* Scrolling uses the CRTC start address: horizontally in 4-pixel steps, vertically a character
+  row (8 lines) at a time, following Trogg as the Steam version does (keeping him in the middle,
+  within the level). Screen memory is addressed in **level coordinates**: level byte-column C on
+  character row R is always at `&3000 + ((C + R*80) MOD 2560) * 8`, however far the screen has
+  scrolled, either way. So a scroll only needs the newly exposed column or row drawing, and
+  sprites are drawn and erased in level coordinates.
+* Since column C and C+80 (or row R and R+32) share screen memory, everything is clipped to the
+  window: the plotter clips to its columns and rows (or to the band being repainted).
 * The game draws into whichever of main and shadow RAM is not on display, then flips them at
   vertical sync, so there is no flicker or tearing. Each buffer remembers its own scroll
   position and the background saved under Trogg.
-* Repainting a column copies its cells from the unrolled background in bank 7 (see "The
+* Repainting a column or row copies its cells from the unrolled background in bank 7 (see "The
   background" above). Keys, gems and meanies are then plotted on top.
+* In vertically scrolling levels, as in the Steam version, balloons still start at the bottom
+  of the level and daggers at the top; daggers are the up-and-down ones, falling faster than
+  they move sideways, and both spread wider.
 
 ### Drawing moving things
 
@@ -268,7 +280,8 @@ Levels with lots of moving meanies are still slow. A Scrubbly is 33×42 pixels: 
 that has moved costs about 18,000 cycles in each buffer (8,000 to erase, 10,000 to plot), so
 each move costs about 36,000. On Easy, B_1 (16 Scrubblies) runs at 17-19fps, B_2 (Poglets) at
 16-18fps and B_3 (Hooters) at 12-15fps. D_3, with many moving platforms, runs at about 10fps.
-D_1 holds 23-25fps. The game speed stays right however slow the drawing gets.
+D_1 holds 23-25fps. Of the vertically scrolling levels, C_1 and C_4 run at 13-17fps and D_2
+at 9-13fps. The game speed stays right however slow the drawing gets.
 
 ### Timing
 
