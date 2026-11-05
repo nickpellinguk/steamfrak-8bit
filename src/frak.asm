@@ -1210,12 +1210,7 @@ NEXT
 
 SAVE "FRAK", start, end, start
 
-\ Disc contents
-PUTTEXT "src/boot.txt", "!BOOT", 0
-PUTFILE "build/GFX4", "GFX4", &8000
-PUTFILE "build/GFX5", "GFX5", &8000
-PUTFILE "build/GFX6", "GFX6", &8000
-PUTFILE "build/CACHE", "CACHE", &8000
+INCLUDE "src/gen/disc.asm"
 
 PRINT "Code from", ~start, "to", ~end, "(", end - start, "bytes ), free:", SCREEN - P%
 \ Addresses used by test scripts (profiling and poking variables)

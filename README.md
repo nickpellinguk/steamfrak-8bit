@@ -42,7 +42,7 @@ node run.mjs "wait:1500 shot:start down:KeyX wait:100 up:KeyX shot:walked" scree
 | Sprite plotter (masked, with save/restore) | `plot`, `col_plot` / `col_save` / `col_restore` |
 | Platform and ladder queries | `platform_find`, `ladder_find` (ports of `PlatformFind` / `LadderFind`) |
 | Trogg movement | `trogg_standing`, `trogg_falling`, `trogg_climbing` (ports of `TroggStanding` etc.) |
-| Generated data | `src/gen/*.asm`, `build/GFX4-6`, `build/CACHE` |
+| Generated data | `src/gen/*`, `build/GFX4-5`, `build/CACHE` |
 
 ### Memory map (Master 128)
 
@@ -51,8 +51,23 @@ node run.mjs "wait:1500 shot:start down:KeyX wait:100 up:KeyX shot:walked" scree
 | `&0000-&008F` | zero page variables |
 | `&1100-&2FFF` | code, level data, tables, Trogg's save buffers |
 | `&3000-&7FFF` | MODE 1 screen, **double buffered**: main RAM and shadow RAM |
-| SWRAM banks 4-6 | sprites, pre-shifted to all four pixel positions (46KB) |
+| SWRAM banks 4-5 | sprites, pre-shifted (27KB) |
+| SWRAM bank 6 | free |
 | SWRAM bank 7 | the level's platforms and ladders, pre-rendered (8KB for level 1) |
+
+### Sprites
+
+A MODE 1 byte holds 4 pixels, so a sprite drawn at an arbitrary x needs one copy for each of the
+four pixel positions within a byte. The plotter picks the copy from the low two bits of x. The
+converter only stores the copies the game can use:
+
+* everything that moves (Trogg, meanies, balloons, daggers, the yoyo, moving or movable
+  platforms, springs) gets all four;
+* static keys, gems and meanies get only the pixel positions that some level places them at;
+* static platforms and ladders get none, because they are drawn from the pre-rendered
+  background.
+
+The build stops with an error if a level places something at a position with no stored copy.
 
 ### Screen and scrolling
 
