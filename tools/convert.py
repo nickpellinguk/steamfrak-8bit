@@ -3,19 +3,22 @@
 Build BBC Master data for Frak! from the web version's data files.
 
 Usage:
-    python3 tools/convert.py ../steamfrak [room_name]
+    python3 tools/convert.py ../steamfrak [starting room, default room_A_1]
 
 Reads (from the steamfrak repository):
     js/data/rooms.js, js/data/objects.js, js/data/sprites.js, assets/sprites/*.png
 
 Writes:
-    build/GFX4 ..               pre-shifted MODE 1 sprite data, one file per sideways RAM bank used
+    build/GFX4, GFX5            pre-shifted MODE 1 sprite data for sideways RAM banks 4 and 5
     build/SPANS                 collision spans: solid pixels per row of each image (bank 6)
-    build/CACHE                 the level's platforms and ladders pre-rendered (sideways RAM bank 7)
+    build/PACK                  every level, packed (copied into HAZEL and ANDY at boot)
+    build/levels.json           what the level loader should build for each level (for tests)
     src/gen/sprites.asm         image directory (bank, address, size, origin per shift)
-    src/gen/tables.asm          mask table and the jump/fall table
-    src/gen/level.asm           the level: platforms, ladders and the draw list
-    src/gen/disc.asm, boot.txt  the disc's file list and !BOOT (which banks to load)
+    src/gen/collide.asm         collision boxes and spans, save sizes, what each image is
+    src/gen/levels.asm          where each level is, and the moving meanies' settings
+    src/gen/consts.asm          constants: table sizes, start level, save areas
+    src/gen/tables.asm, fall.asm  mask table and the jump/fall table
+    src/gen/disc.asm, boot.txt  the disc's file list and !BOOT
 
 Sprites are MODE 1 (2 bits per pixel, 4 pixels per byte). Logical colour 0 is the level
 background and is always transparent, so masks are derived at run time from a 256-byte table.
@@ -239,9 +242,11 @@ def fixed88(v):
 
 def build_level(data, room_name):
     room = data.rooms[room_name]
-    plats, plat_order, ladders, draw, trogg = [], [], [], [], None
+    # (stray objects far outside the level are left out)
+    insts = [inst for inst in room['inst'] if -256 <= int(inst[1]) < 2048 and -256 <= int(inst[2]) < 2048]
+    plats, plat_order, plat_spr, ladders, ladder_spr, draw, trogg = [], [], [], [], [], [], None
     moving_enabled = False
-    for order, inst in enumerate(room['inst']):
+    for order, inst in enumerate(insts):
         obj, x, y = inst[0], int(inst[1]), int(inst[2])
         if obj == 'oRoom':
             moving_enabled = bool(data.props(inst).get('moving_enabled'))
@@ -256,12 +261,14 @@ def build_level(data, room_name):
         if kind == 'oPlatform':
             plats.append((x, y, info['w'], info['h']))
             plat_order.append(order)
+            plat_spr.append(spr)
         draw.append((DEPTH[kind], order, spr, x, y, obj))
     # Ladders reach up to the platform above them (LadderAdd)
-    for order, inst in enumerate(room['inst']):
+    for order, inst in enumerate(insts):
         obj, x, y = inst[0], int(inst[1]), int(inst[2])
         if data.kind(obj) != 'oLadder':
             continue
+        ladder_spr.append((data.sprite_of(obj), y))
         info = data.sprites[data.sprite_of(obj)]
         h = info['h'] + LADDER_EXTRA_LENGTH
         found = platform_find(plats, x, y - LADDER_EXTRA_LENGTH, y - 1)
@@ -273,7 +280,7 @@ def build_level(data, room_name):
     slow = []
     moving_orders = set()
     for pi, (px, py, pw, ph) in enumerate(plats):
-        inst = room['inst'][plat_order[pi]]
+        inst = insts[plat_order[pi]]
         p = data.props(inst)
         if not any(p.get(k) for k in ('scan_left', 'scan_right', 'scan_up', 'scan_down')):
             continue
@@ -308,9 +315,11 @@ def build_level(data, room_name):
         moving_orders.add(plat_order[pi])
         slow.append({'kind': SL_PLATFORM, 'spr': data.sprite_of(inst[0]), 'x': px, 'y': py,
                      'amin': xl, 'amax': xr, 'bmin': yu, 'bmax': yd, 'v': vx * 256, 'vy': vy,
-                     'plat': pi, 'wait': 5})
+                     'plat': pi, 'wait': 5,
+                     'pflags': sum(1 << i for i, k in enumerate(('scan_left', 'scan_right', 'scan_up', 'scan_down',
+                                                                  'start_moving_right', 'start_moving_up')) if p.get(k))})
     if moving_enabled:
-        for order, inst in enumerate(room['inst']):
+        for order, inst in enumerate(insts):
             obj, x, y = inst[0], int(inst[1]), int(inst[2])
             if data.kind(obj) != 'oMeanie':
                 continue
@@ -323,27 +332,32 @@ def build_level(data, room_name):
                 if pi is not None and v:
                     px, py, pw, ph = plats[pi]
                     item = {'kind': SL_SCRUBBLY, 'amin': px + 8, 'amax': px + pw - 1 - 8, 'v': v,
-                            'plat': pi if p.get('follow_platform_y') else 255}
+                            'plat': pi if p.get('follow_platform_y') else 255,
+                            'param': (SL_SCRUBBLY, v, 0, 1 if p.get('follow_platform_y') else 0, 0, 0)}
             elif obj == 'oPoglet':
                 v = fixed88(p.get('default_y_velocity', 0))
                 lo = hi = None
+                yoff = (0, 0, 0)
                 if p.get('yoff_min', 0) or p.get('yoff_max', 0):
                     lo, hi = y + p.get('yoff_min', 0), y + p.get('yoff_max', 0)
+                    yoff = (2, p.get('yoff_min', 0), p.get('yoff_max', 0))
                 else:
                     li = ladder_find_down(ladders, x, y - 16, y + 4)
                     if li is not None:
                         lx, ly, lh, ext = ladders[li]
                         lo, hi = ly + 30, ly + lh - 1 + 14
                 if lo is not None and v:
-                    item = {'kind': SL_POGLET, 'amin': lo, 'amax': hi,
-                            'v': -v if p.get('initially_go_down') else v}
+                    vv = -v if p.get('initially_go_down') else v
+                    item = {'kind': SL_POGLET, 'amin': lo, 'amax': hi, 'v': vv,
+                            'param': (SL_POGLET, vv, 0) + yoff}
             elif obj == 'oHooter':
                 v = fixed88(p.get('initial_jump_velocity', 0))
                 if v:
-                    item = {'kind': SL_HOOTER, 'v': v, 'wait': min(255, int(p.get('initial_sleep_ticks', 0)))}
+                    wait = min(255, int(p.get('initial_sleep_ticks', 0)))
+                    item = {'kind': SL_HOOTER, 'v': v, 'wait': wait, 'param': (SL_HOOTER, v, wait, 0, 0, 0)}
             if item:
                 base = {'spr': spr, 'x': x, 'y': y, 'amin': 0, 'amax': 0, 'bmin': 0, 'bmax': 0,
-                        'vy': 0, 'plat': 255, 'wait': 0}
+                        'vy': 0, 'plat': 255, 'wait': 0, 'order': order}
                 base.update(item)
                 slow.append(base)
                 moving_orders.add(order)
@@ -354,6 +368,7 @@ def build_level(data, room_name):
     return {
         'w': room['w'], 'h': room['h'], 'bg': BG_PHYSICAL.get(room['bg'], 6),
         'trogg': trogg, 'plats': plats, 'plat_moving': plat_moving, 'ladders': ladders,
+        'plat_spr': plat_spr, 'ladder_spr': ladder_spr,
         'draw': draw, 'slow': slow, 'moving_enabled': moving_enabled,
     }
 
@@ -508,70 +523,149 @@ def asm_ident(name):
     return ''.join(c if c.isalnum() else '_' for c in name)
 
 
+LEVELS = ['room_0'] + ['room_%s_%d' % (c, n) for c in 'ABCDEF' for n in range(1, 10)]
+# Where the level pack goes: HAZEL (&C000-&DFFF) and ANDY (&8000-&8FFF), except &8800-&88FF of
+# ANDY, which the MOS uses. No level straddles two of these.
+PACK_SEGMENTS = [(0xC000, 0x2000), (0x8000, 0x800), (0x8900, 0x700)]
+SLOWSAVE1 = (7, 0xBA00)         # bank 7, above the unrolled background (which must end below it)
+MAX_PAL = 16
+
+
+def bg_sprites(data):
+    """Sprites drawn as static platforms or ladders in some level (unrolled at run time)."""
+    out = set()
+    for name in LEVELS:
+        for inst in data.rooms[name]['inst']:
+            if data.kind(inst[0]) in ('oPlatform', 'oLadder'):
+                out.add(data.sprite_of(inst[0]))
+    return out
+
+
+def level_tables(data, lev, image_id, simple):
+    """What the 6502 loader should build for a level (for tests/check_levels.mjs)."""
+    p, lad, sl = lev['plats'], lev['ladders'], lev['slow']
+    d = [item for item in lev['draw'] if item[0] not in CACHE_BG_DEPTHS]
+    info = lambda spr: data.sprites[spr]
+    t = {'plat_x': [v[0] for v in p], 'plat_y': [v[1] for v in p], 'plat_w': [v[2] for v in p],
+         'plat_moving': lev['plat_moving'],
+         'lad_x': [v[0] for v in lad], 'lad_y': [v[1] for v in lad], 'lad_h': [v[2] for v in lad],
+         'lad_ext': [v[3] for v in lad],
+         'draw_img': [image_id[(spr, 0)] for (_, _, spr, _, _, _) in d],
+         'draw_x': [v[3] for v in d], 'draw_y': [v[4] for v in d],
+         'sl_kind': [v['kind'] for v in sl], 'sl_img': [image_id[(v['spr'], 0)] for v in sl],
+         'sl_x0': [v['x'] for v in sl], 'sl_y0': [v['y'] for v in sl],
+         'sl_amin': [v['amin'] for v in sl], 'sl_amax': [v['amax'] for v in sl],
+         'sl_bmin': [v['bmin'] for v in sl], 'sl_bmax': [v['bmax'] for v in sl],
+         'sl_v': [v['v'] & 0xFFFF for v in sl], 'sl_vy': [v['vy'] & 0xFF for v in sl],
+         'sl_plat': [v['plat'] for v in sl], 'sl_wait': [v['wait'] for v in sl], 'sl_simple': simple,
+         'trogg': list(lev['trogg']), 'w': lev['w'], 'h': lev['h'], 'bg': lev['bg']}
+    return t
+
+
+def pack_level(data, lev, image_id, params):
+    """
+    A level in its packed form (unpacked by load_level in frak.asm):
+      header: byte columns, character rows, background colour, Trogg's x and y (2 bytes each),
+              flags (bit 0 = meanies move), then counts of: palette entries, platforms, ladders,
+              objects, moving meanies, moving platforms
+      palette: the image of each sprite the level uses
+      platforms, ladders, objects (in drawing order) and moving meanies: 3 bytes each,
+              x low, y low, then x high (bits 0-1), y high (bits 2-3), palette entry (bits 4-7)
+      moving meanies: a byte each, settings (index into sl_params) + 128 if drawn the simple way
+      moving platforms: 2 bytes each, platform number, then scan and direction flags
+              (bits 0-5: scan left, right, up, down, start right, start up; bit 7 = simple)
+    """
+    d = [item for item in lev['draw'] if item[0] not in CACHE_BG_DEPTHS]
+    meanies = [v for v in lev['slow'] if v['kind'] != SL_PLATFORM]
+    mplats = [v for v in lev['slow'] if v['kind'] == SL_PLATFORM]
+    simple = slow_simple_flags(data, lev, d)
+    pal = []
+    def pe(spr):
+        img = image_id[(spr, 0)]
+        if img not in pal:
+            pal.append(img)
+        return pal.index(img)
+    def rec(x, y, spr):
+        assert 0 <= x < 1024 and 0 <= y < 1024, (x, y)
+        return bytes((x & 0xFF, y & 0xFF, (x >> 8) | ((y >> 8) << 2) | (pe(spr) << 4)))
+    body = bytearray()
+    for (x, y, w, h), spr in zip(lev['plats'], lev['plat_spr']):
+        body += rec(x, y, spr)
+    for spr, y in lev['ladder_spr']:
+        lx = lev['ladders'][len(body) // 3 - len(lev['plats'])][0]
+        body += rec(lx, y, spr)
+    for (_, _, spr, x, y, _) in d:
+        body += rec(x, y, spr)
+    for v in meanies:
+        body += rec(v['x'], v['y'], v['spr'])
+    sflags = simple[len(mplats):]
+    for v, sf in zip(meanies, sflags):
+        if v['param'] not in params:
+            params.append(v['param'])
+        body.append(params.index(v['param']) | (128 if sf else 0))
+    for v, sf in zip(mplats, simple):
+        body += bytes((v['plat'], v['pflags'] | (128 if sf else 0)))
+    if len(pal) > MAX_PAL:
+        raise SystemExit('Too many sprites in one level: %d' % len(pal))
+    tx, ty = lev['trogg']
+    head = bytes(((lev['w'] + 3) // 4, (lev['h'] + 7) // 8, lev['bg'], tx & 0xFF, tx >> 8, ty & 0xFF, ty >> 8,
+                  1 if lev['moving_enabled'] else 0, len(pal), len(lev['plats']), len(lev['ladders']),
+                  len(d), len(meanies), len(mplats)))
+    return head + bytes(pal) + bytes(body), simple
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
         sys.exit(1)
     web = sys.argv[1]
-    room_name = sys.argv[2] if len(sys.argv) > 2 else 'room_A_1'
+    start_room = sys.argv[2] if len(sys.argv) > 2 else 'room_A_1'
     data = Data(web)
     gen = os.path.join(ROOT, 'src', 'gen')
     build = os.path.join(ROOT, 'build')
     os.makedirs(gen, exist_ok=True)
     os.makedirs(build, exist_ok=True)
 
-    # ---- graphics
+    # ---- graphics: every sprite any level needs, in sprite banks 4 and 5 (first fit)
     need = needed_shifts(data)
-    images = []     # (sprite, frame) -> image id
+    bg_only = set()
+    for spr in bg_sprites(data):
+        if spr not in need:
+            bg_only.add(spr)
+        need.setdefault(spr, set()).add(0)          # the background is unrolled from these
     banks = [bytearray() for _ in BANKS]
     directory = []  # per image: dict
-    bank_i = 0
     for spr in sorted(need):
         info = data.sprites[spr]
         frames = sprite_pixels(data, spr)
         for f, rows in enumerate(frames):
-            entry = {'name': spr, 'frame': f, 'w': info['w'], 'h': info['h'],
-                     'xo': info['xo'], 'yo': info['yo'], 'shift': {}, 'spans': row_spans(rows)}
+            entry = {'name': spr, 'frame': f, 'w': info['w'], 'h': info['h'], 'xo': info['xo'],
+                     'yo': info['yo'], 'shift': {}, 'spans': None if spr in bg_only else row_spans(rows)}
             for shift in range(4):
                 if shift not in need[spr]:
                     continue
                 blob = shifted_columns(rows, shift)
-                if len(banks[bank_i]) + len(blob) > BANK_SIZE:
-                    bank_i += 1
-                    if bank_i >= len(BANKS):
-                        raise SystemExit('Out of sideways RAM for sprites')
+                for bank_i in range(len(BANKS)):
+                    if len(banks[bank_i]) + len(blob) <= BANK_SIZE:
+                        break
+                else:
+                    raise SystemExit('Out of sideways RAM for sprites')
                 entry['shift'][shift] = (BANKS[bank_i], 0x8000 + len(banks[bank_i]))
                 banks[bank_i] += blob
-            images.append((spr, f))
             directory.append(entry)
     if len(directory) > 255:
         raise SystemExit('Too many images: %d' % len(directory))
-    used_banks = [b for b, blob in zip(BANKS, banks) if blob]
     for b, blob in zip(BANKS, banks):
-        if blob:
-            open(os.path.join(build, 'GFX%d' % b), 'wb').write(bytes(blob))
-    # Collision spans, in their own bank: 2 bytes (left, right) per row of each image
+        open(os.path.join(build, 'GFX%d' % b), 'wb').write(bytes(blob))
+    # Collision spans (assembled at the start of bank 6): 2 bytes (left, right) per row of each
+    # image that can be collided with
     spans_blob = bytearray()
     for e in directory:
         e['span_addr'] = 0x8000 + len(spans_blob)
-        for l, r in e['spans']:
+        for l, r in (e['spans'] or []):
             spans_blob += bytes((l, r))
-    if len(spans_blob) > 0x1000:       # the level data follows at &9000
-        raise SystemExit('Collision spans too big')
     open(os.path.join(build, 'SPANS'), 'wb').write(bytes(spans_blob))
-
-    # Disc contents and !BOOT
-    boot = ['*SRLOAD GFX%d 8000 %d Q' % (b, b) for b in used_banks]
-    boot += ['*SRLOAD SPANS 8000 %d Q' % SPANS_BANK, '*SRLOAD LEVEL 9000 %d Q' % SPANS_BANK,
-             '*SRLOAD LOGIC A000 %d Q' % SPANS_BANK]
-    boot += ['*SRLOAD CACHE 8000 %d Q' % CACHE_BANK, '*RUN FRAK']
-    open(os.path.join(gen, 'boot.txt'), 'w').write('\n'.join(boot) + '\n')
-    disc = ['\\ Disc contents - GENERATED by tools/convert.py, do not edit',
-            'PUTTEXT "src/gen/boot.txt", "!BOOT", 0']
-    disc += ['PUTFILE "build/GFX%d", "GFX%d", &8000' % (b, b) for b in used_banks]
-    disc += ['PUTFILE "build/SPANS", "SPANS", &8000']
-    disc += ['PUTFILE "build/CACHE", "CACHE", &8000']
-    open(os.path.join(gen, 'disc.asm'), 'w').write('\n'.join(disc) + '\n')
+    image_id = {(e['name'], e['frame']): i for i, e in enumerate(directory)}
 
     out = ['\\ Image directory - GENERATED by tools/convert.py, do not edit', '']
     out.append('NUM_IMAGES = %d' % len(directory))
@@ -586,11 +680,10 @@ def main():
         out.append(asm_bytes('img_lo%d' % shift, [e['shift'].get(shift, (0, 0))[1] & 0xFF for e in directory]))
         out.append(asm_bytes('img_hi%d' % shift, [e['shift'].get(shift, (0, 0))[1] >> 8 for e in directory]))
     open(os.path.join(gen, 'sprites.asm'), 'w').write('\n'.join(out) + '\n')
-    # Tight bounding box of the solid pixels, the collision spans and save sizes (level bank)
-    out = ['\\ Collision tables (in the level bank) - GENERATED by tools/convert.py, do not edit', '']
-    out.append('SPANS_BANK = %d' % SPANS_BANK)
+    # Tight bounding box of the solid pixels, the collision spans and save sizes (bank 6)
+    out = ['\\ Collision tables (in bank 6) - GENERATED by tools/convert.py, do not edit', '']
     def bbox(e):
-        rows = [i for i, (l, r) in enumerate(e['spans']) if l != 255]
+        rows = [i for i, (l, r) in enumerate(e['spans'] or []) if l != 255]
         if not rows:
             return (255, 0, 255, 0)
         return (min(e['spans'][i][0] for i in rows), max(e['spans'][i][1] for i in rows), rows[0], rows[-1])
@@ -604,8 +697,20 @@ def main():
     out.append(asm_bytes('img_svh', [v >> 8 for v in sv]))
     out.append(asm_bytes('img_span_lo', [e['span_addr'] & 0xFF for e in directory]))
     out.append(asm_bytes('img_span_hi', [e['span_addr'] >> 8 for e in directory]))
+    # What each image is, when it's a collectable or static object (KIND_*)
+    kinds = {}
+    for name in LEVELS:
+        for inst in data.rooms[name]['inst']:
+            k = data.kind(inst[0])
+            spr = data.sprite_of(inst[0])
+            if spr is None or k in (None, 'oPlatform', 'oLadder'):
+                continue
+            kv = {'oKey': 1, 'oGem': 2, 'oBulb': 4}.get(inst[0], 3 if k == 'oMeanie' else 0)
+            for f in range(data.sprites[spr]['n']):
+                if (spr, f) in image_id:
+                    kinds[image_id[(spr, f)]] = kv
+    out.append(asm_bytes('img_kind', [kinds.get(i, 0) for i in range(len(directory))]))
     open(os.path.join(gen, 'collide.asm'), 'w').write('\n'.join(out) + '\n')
-    image_id = {(e['name'], e['frame']): i for i, e in enumerate(directory)}
 
     # ---- tables
     dys, flags = fall_table()
@@ -620,135 +725,99 @@ def main():
     out.append('ALIGN &100')
     out.append(asm_bytes('identity', list(range(256))))
     open(os.path.join(gen, 'tables.asm'), 'w').write('\n'.join(out) + '\n')
-    fall = ['\\ Jump/fall table (in the level bank) - GENERATED by tools/convert.py, do not edit', '']
+    fall = ['\\ Jump/fall table (in bank 6) - GENERATED by tools/convert.py, do not edit', '']
     fall.append('\\ y change per tick (positive = down)')
     fall.append(asm_bytes('fall_dy', dys))
     fall.append('\\ bit 0 = may grab a ladder, bit 1 = landing kills Trogg')
     fall.append(asm_bytes('fall_flags', flags))
     open(os.path.join(gen, 'fall.asm'), 'w').write('\n'.join(fall) + '\n')
 
-    # ---- level
-    lev = build_level(data, room_name)
-    out = ['\\ Level %s - GENERATED by tools/convert.py, do not edit' % room_name, '']
-    out.append('LEVEL_W = %d' % lev['w'])
-    out.append('LEVEL_H = %d' % lev['h'])
-    out.append('LEVEL_BG = %d' % lev['bg'])
-    out.append('TROGG_START_X = %d' % lev['trogg'][0])
-    out.append('TROGG_START_Y = %d' % lev['trogg'][1])
-    out.append('NUM_PLATS = %d' % len(lev['plats']))
-    out.append('NUM_LADDERS = %d' % len(lev['ladders']))
-    out.append('')
-    p = lev['plats']
-    out.append(asm_bytes('plat_xl', [v[0] & 0xFF for v in p]))
-    out.append(asm_bytes('plat_xh', [v[0] >> 8 for v in p]))
-    out.append(asm_bytes('plat_yl', [v[1] & 0xFF for v in p]))
-    out.append(asm_bytes('plat_yh', [v[1] >> 8 for v in p]))
-    out.append(asm_bytes('plat_w', [v[2] for v in p]))
-    # Starting positions (moving platforms change plat_xl.. as they go) and moving flags
-    out.append(asm_bytes('plat_x0l', [v[0] & 0xFF for v in p]))
-    out.append(asm_bytes('plat_x0h', [v[0] >> 8 for v in p]))
-    out.append(asm_bytes('plat_y0l', [v[1] & 0xFF for v in p]))
-    out.append(asm_bytes('plat_y0h', [v[1] >> 8 for v in p]))
-    out.append(asm_bytes('plat_moving', lev['plat_moving']))
-    # Slow sprites: moving platforms and meanies
-    sl = lev['slow']
-    out.append('NUM_SLOW = %d' % len(sl))
-    out.append('SL_SCRUBBLY = %d' % SL_SCRUBBLY)
-    out.append('SL_POGLET = %d' % SL_POGLET)
-    out.append('SL_HOOTER = %d' % SL_HOOTER)
-    out.append('SL_PLATFORM = %d' % SL_PLATFORM)
-    out.append('MOVING_ENABLED = %d' % (1 if lev['moving_enabled'] else 0))
-    w16 = lambda name, key: (out.append(asm_bytes(name + 'l', [v[key] & 0xFF for v in sl])),
-                             out.append(asm_bytes(name + 'h', [(v[key] >> 8) & 0xFF for v in sl])))
-    out.append(asm_bytes('sl_kind', [v['kind'] for v in sl]))
-    out.append(asm_bytes('sl_img', [image_id[(v['spr'], 0)] for v in sl]))
-    w16('sl_x0', 'x')
-    w16('sl_y0', 'y')
-    w16('sl_amin', 'amin')
-    w16('sl_amax', 'amax')
-    w16('sl_bmin', 'bmin')
-    w16('sl_bmax', 'bmax')
-    out.append(asm_bytes('sl_vf', [v['v'] & 0xFF for v in sl]))
-    out.append(asm_bytes('sl_vi', [(v['v'] >> 8) & 0xFF for v in sl]))
-    out.append(asm_bytes('sl_vy', [v['vy'] & 0xFF for v in sl]))
-    out.append(asm_bytes('sl_plat', [v['plat'] for v in sl]))
-    out.append(asm_bytes('sl_wait', [v['wait'] for v in sl]))
-    lad = lev['ladders']
-    out.append(asm_bytes('lad_xl', [v[0] & 0xFF for v in lad]))
-    out.append(asm_bytes('lad_xh', [v[0] >> 8 for v in lad]))
-    out.append(asm_bytes('lad_yl', [v[1] & 0xFF for v in lad]))
-    out.append(asm_bytes('lad_yh', [(v[1] >> 8) & 0xFF for v in lad]))
-    out.append(asm_bytes('lad_hl', [v[2] & 0xFF for v in lad]))
-    out.append(asm_bytes('lad_hh', [v[2] >> 8 for v in lad]))
-    out.append(asm_bytes('lad_ext', [v[3] for v in lad]))
-    frames_cache = {}
+    # ---- levels: all of them, packed, for HAZEL and ANDY
+    params, packed, expect, maxima = [], [], {}, {}
+    for name in LEVELS:
+        lev = build_level(data, name)
+        for (_, _, spr, x, _, _) in lev['draw']:
+            if spr in bg_only:
+                continue
+            shift = (x - data.sprites[spr]['xo']) % 4
+            if shift not in directory[image_id[(spr, 0)]]['shift']:
+                raise SystemExit('%s: %s at x=%d needs shift %d, which was not generated' % (name, spr, x, shift))
+        blob, simple = pack_level(data, lev, image_id, params)
+        packed.append(blob)
+        t = level_tables(data, lev, image_id, simple)
+        if lev['h'] == 256:
+            cache, _ = render_background(data, lev, lambda spr: sprite_pixels(data, spr))
+            t['cache'] = cache.hex()
+        expect[name] = t
+        for k, n in (('plats', len(lev['plats'])), ('ladders', len(lev['ladders'])), ('slow', len(lev['slow'])),
+                     ('draw', len(t['draw_img'])), ('bg', len(lev['plats']) + len(lev['ladders']))):
+            maxima[k] = max(maxima.get(k, 0), n)
+    segs = [bytearray() for _ in PACK_SEGMENTS]
+    where = []
+    seg = 0
+    for name, blob in zip(LEVELS, packed):
+        while seg < len(segs) and len(segs[seg]) + len(blob) > PACK_SEGMENTS[seg][1]:
+            seg += 1
+        if seg == len(segs):
+            raise SystemExit('Levels too big for HAZEL and ANDY (at %s)' % name)
+        where.append(PACK_SEGMENTS[seg][0] + len(segs[seg]))
+        segs[seg] += blob
+    # The PACK file is loaded at &3000 and copied by copy_pack: 8KB to HAZEL, then 4KB to ANDY
+    pack = bytearray()
+    for (addr, size), blob in zip(PACK_SEGMENTS, segs):
+        base = 0 if addr == 0xC000 else 0x2000 + addr - 0x8000
+        pack += bytes(base - len(pack)) + blob
+    pack_used = sum(len(b) for b in segs)
+    open(os.path.join(build, 'PACK'), 'wb').write(bytes(pack))
+    json.dump(expect, open(os.path.join(build, 'levels.json'), 'w'))
+    out = ['\\ Levels - GENERATED by tools/convert.py, do not edit', '']
+    out.append(asm_bytes('level_addr_lo', [a & 0xFF for a in where]))
+    out.append(asm_bytes('level_addr_hi', [a >> 8 for a in where]))
+    # Settings shared by the moving meanies: kind, speed (8.8), sleep ticks, flags (bit 0 =
+    # follows its platform up and down, bit 1 = Poglet range set by yoff), yoff min, yoff max
+    while len(params) < 1:
+        params.append((0, 0, 0, 0, 0, 0))
+    out.append(asm_bytes('slp_kind', [v[0] for v in params]))
+    out.append(asm_bytes('slp_vf', [v[1] & 0xFF for v in params]))
+    out.append(asm_bytes('slp_vi', [(v[1] >> 8) & 0xFF for v in params]))
+    out.append(asm_bytes('slp_wait', [v[2] for v in params]))
+    out.append(asm_bytes('slp_flags', [v[3] for v in params]))
+    out.append(asm_bytes('slp_ymin', [v[4] & 0xFF for v in params]))
+    out.append(asm_bytes('slp_ymax', [v[5] & 0xFF for v in params]))
+    open(os.path.join(gen, 'levels.asm'), 'w').write('\n'.join(out) + '\n')
 
-    def frames_of(spr):
-        if spr not in frames_cache:
-            frames_cache[spr] = sprite_pixels(data, spr)
-        return frames_cache[spr]
-
-    cache, _ = render_background(data, lev, frames_of)
-    open(os.path.join(build, 'CACHE'), 'wb').write(cache)
-    out.append('CACHE_BANK = %d' % CACHE_BANK)
-    # Save areas for the backgrounds under moving platforms and meanies, one per screen
-    # buffer: the free space at the top of the emptiest sprite bank, and above the cache
     spare = min(range(len(banks)), key=lambda i: len(banks[i]))
-    areas = [(BANKS[spare], 0x8000 + len(banks[spare])), (CACHE_BANK, 0x8000 + len(cache))]
-    for i, (bank, start) in enumerate(areas):
-        out.append('SLOWSAVE%d_BANK = %d' % (i, bank))
-        out.append('SLOWSAVE%d_START = &%04X' % (i, start))
-        if 0xC000 - start < 1024:
-            print('Warning: only %d bytes for saving moving sprites in bank %d' % (0xC000 - start, bank))
-    # Run-time draw list: only the things that aren't in the pre-rendered background
-    d = [item for item in lev['draw'] if item[0] not in CACHE_BG_DEPTHS]
-    out.append('NUM_DRAW = %d' % len(d))
-    simple = slow_simple_flags(data, lev, d)
-    out.append(asm_bytes('sl_simple', simple))
-    print('moving sprites redrawn in one pass: %d of %d' % (sum(simple), len(simple)))
-    ids = [image_id[(spr, 0)] for (_, _, spr, _, _, _) in d]
-    for (_, _, spr, x, _, _) in d:
-        shift = (x - data.sprites[spr]['xo']) % 4
-        if shift not in directory[image_id[(spr, 0)]]['shift']:
-            raise SystemExit('%s at x=%d needs shift %d, which was not generated' % (spr, x, shift))
-    out.append(asm_bytes('draw_img', ids))
-    out.append(asm_bytes('draw_xl', [v[3] & 0xFF for v in d]))
-    out.append(asm_bytes('draw_xh', [v[3] >> 8 for v in d]))
-    out.append(asm_bytes('draw_yl', [v[4] & 0xFF for v in d]))
-    out.append(asm_bytes('draw_yh', [v[4] >> 8 for v in d]))
-    # byte columns each item covers, for redrawing one column after a scroll
-    c0 = [(v[3] - data.sprites[v[2]]['xo']) >> 2 for v in d]
-    c1 = [((v[3] - data.sprites[v[2]]['xo']) + data.sprites[v[2]]['w'] + 3) >> 2 for v in d]
-    out.append(asm_bytes('draw_c0', [max(0, c) for c in c0]))
-    out.append(asm_bytes('draw_c1', [min(255, c) for c in c1]))
-    # What each object is, and its top-left corner (for collisions)
-    kinds = {'oKey': 1, 'oGem': 2, 'oBulb': 4}
-    kind = [kinds.get(v[5], 3 if data.kind(v[5]) == 'oMeanie' else 0) for v in d]
-    out.append('KIND_KEY = 1')
-    out.append('KIND_GEM = 2')
-    out.append('KIND_MEANIE = 3')
-    out.append('KIND_BULB = 4')
-    out.append('NUM_KEYS = %d' % kind.count(1))
-    out.append('NUM_GEMS = %d' % kind.count(2))
-    out.append(asm_bytes('draw_kind', kind))
-    lefts = [v[3] - data.sprites[v[2]]['xo'] for v in d]
-    tops = [v[4] - data.sprites[v[2]]['yo'] for v in d]
-    out.append(asm_bytes('draw_ll', [v & 0xFF for v in lefts]))
-    out.append(asm_bytes('draw_lh', [(v >> 8) & 0xFF for v in lefts]))
-    out.append(asm_bytes('draw_tl', [v & 0xFF for v in tops]))
-    out.append(asm_bytes('draw_th', [(v >> 8) & 0xFF for v in tops]))
-    # Constants go in their own file, included at the top of frak.asm (BeebAsm's IF needs
-    # them defined before use); the tables stay in level.asm (assembled into bank 6)
-    consts = [l for l in out if re.match(r'^[A-Z_][A-Z0-9_]* = ', l)]
-    tables = [l for l in out if l not in consts]
-    open(os.path.join(gen, 'level_consts.asm'), 'w').write(
-        '\\ Level constants - GENERATED by tools/convert.py, do not edit\n' + '\n'.join(consts) + '\n')
-    open(os.path.join(gen, 'level.asm'), 'w').write('\n'.join(tables) + '\n')
+    consts = ['\\ Constants - GENERATED by tools/convert.py, do not edit',
+              'NUM_LEVELS = %d' % len(LEVELS),
+              'START_LEVEL = %d' % LEVELS.index(start_room),
+              'MAX_PLATS = %d' % maxima['plats'], 'MAX_LADDERS = %d' % maxima['ladders'],
+              'MAX_SLOW = %d' % maxima['slow'], 'MAX_DRAW = %d' % maxima['draw'], 'MAX_BG = %d' % maxima['bg'],
+              'MAX_PAL = %d' % MAX_PAL,
+              'SL_SCRUBBLY = %d' % SL_SCRUBBLY, 'SL_POGLET = %d' % SL_POGLET,
+              'SL_HOOTER = %d' % SL_HOOTER, 'SL_PLATFORM = %d' % SL_PLATFORM,
+              'KIND_KEY = 1', 'KIND_GEM = 2', 'KIND_MEANIE = 3', 'KIND_BULB = 4',
+              'LADDER_EXTRA_LENGTH = %d' % LADDER_EXTRA_LENGTH,
+              'CACHE_BANK = %d' % CACHE_BANK, 'CACHE_TOP = &%04X' % SLOWSAVE1[1],
+              'SLOWSAVE0_BANK = %d' % BANKS[spare], 'SLOWSAVE0_START = &%04X' % (0x8000 + len(banks[spare])),
+              'SLOWSAVE1_BANK = %d' % SLOWSAVE1[0], 'SLOWSAVE1_START = &%04X' % SLOWSAVE1[1],
+              'SPANS_SIZE = %d' % len(spans_blob)]
+    open(os.path.join(gen, 'consts.asm'), 'w').write('\n'.join(consts) + '\n')
 
-    used = [len(b) for b in banks if b]
-    print('images: %d, sprite banks used: %s bytes, level %s: %d platforms, %d ladders, %d objects, '
-          '%d moving, background cache %d bytes' % (len(directory), used, room_name, len(p), len(lad), len(d),
-                                                   len(lev['slow']), len(cache)))
+    # Disc contents and !BOOT
+    boot = ['*SRLOAD GFX%d 8000 %d Q' % (b, b) for b in BANKS]
+    boot += ['*SRLOAD BANK6 8000 6 Q', '*LOAD PACK 3000', '*RUN FRAK']
+    open(os.path.join(gen, 'boot.txt'), 'w').write('\n'.join(boot) + '\n')
+    disc = ['\\ Disc contents - GENERATED by tools/convert.py, do not edit',
+            'PUTTEXT "src/gen/boot.txt", "!BOOT", 0']
+    disc += ['PUTFILE "build/GFX%d", "GFX%d", &8000' % (b, b) for b in BANKS]
+    disc += ['PUTFILE "build/PACK", "PACK", &3000']
+    open(os.path.join(gen, 'disc.asm'), 'w').write('\n'.join(disc) + '\n')
+
+    print('%d images, sprite banks %s bytes (%d free), spans %d bytes, %d levels packed in %d bytes '
+          '(of %d), %d meanie settings' % (len(directory), [len(b) for b in banks],
+                                           2 * BANK_SIZE - sum(len(b) for b in banks), len(spans_blob),
+                                           len(LEVELS), pack_used, sum(v for _, v in PACK_SEGMENTS), len(params)))
+    print('largest level: %s' % ', '.join('%s %d' % kv for kv in maxima.items()))
 
 
 if __name__ == '__main__':

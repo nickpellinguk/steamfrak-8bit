@@ -2,5 +2,4 @@
 PUTTEXT "src/gen/boot.txt", "!BOOT", 0
 PUTFILE "build/GFX4", "GFX4", &8000
 PUTFILE "build/GFX5", "GFX5", &8000
-PUTFILE "build/SPANS", "SPANS", &8000
-PUTFILE "build/CACHE", "CACHE", &8000
+PUTFILE "build/PACK", "PACK", &3000

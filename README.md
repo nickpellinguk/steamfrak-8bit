@@ -4,8 +4,8 @@ A back-port of the Steam/HTML5 version of **Frak!** to the BBC Master 128, writt
 assembly for [BeebAsm](https://github.com/stardot/beebasm). It works from the data and logic of
 the web version (the `steamfrak` repository).
 
-**Status: milestone 5.** One level (Read&Weep) is playable from start to finish, and the
-moving meanies and platforms of other levels work too:
+**Status: milestone 6.** All 55 levels are on the disc and in memory at once. The 36 that
+scroll horizontally can be played, one after another:
 
 * Trogg walks, jumps, falls (dying from long falls) and climbs.
 * The screen scrolls smoothly at a steady 25 frames a second, with the game logic at 50 ticks a second.
@@ -24,11 +24,11 @@ moving meanies and platforms of other levels work too:
   settings. The yoyo knocks them flying.
 * Moving platforms go back and forth (or up and down) and pause at each end. Trogg rides them.
   Standing on a moving platform doesn't set a checkpoint.
-* Collecting every key completes the level. For now the background just flashes and the level
-  restarts; there is no text drawing yet.
+* Collecting every key completes the level: the background flashes and the next level starts
+  (there is no text drawing yet).
 
-Not done yet: Trogg-movable platforms, springs, a difficulty menu, timer and medals, sound, menus,
-the other 54 levels, and vertically scrolling levels.
+Not done yet: the 19 vertically scrolling levels, Trogg-movable platforms, springs, a
+difficulty menu, timer and medals, sound and menus.
 
 ## Building
 
@@ -36,8 +36,8 @@ You need BeebAsm and Python 3 with Pillow, and the `steamfrak` repository alongs
 
 ```sh
 pip install pillow
-BEEBASM=/path/to/beebasm ./build.sh                # STEAMFRAK=../steamfrak, LEVEL=room_A_1
-LEVEL=room_B_1 BEEBASM=/path/to/beebasm ./build.sh # Scrubblies (B_2 Poglets, B_3 Hooters, D_1 lifts)
+BEEBASM=/path/to/beebasm ./build.sh                # STEAMFRAK=../steamfrak
+LEVEL=room_B_1 BEEBASM=/path/to/beebasm ./build.sh # start at another level (default room_A_1)
 DIFFICULTY=6 BEEBASM=/path/to/beebasm ./build.sh   # 0 none, 1 Easy (default), 2 Hard, 4 Harder, 6 Insane
 ```
 
@@ -59,11 +59,17 @@ node run.mjs "wait:1500 shot:start down:KeyX wait:100 up:KeyX shot:walked" scree
 
 `INVINCIBLE=1 ./build.sh` builds a version where Trogg can't die, for testing.
 
+`node check_levels.mjs` (in `tools/emu`, after `./build.sh`) checks the level loader: it visits
+every playable level and compares what the 6502 built (the platform, ladder, object and moving
+sprite tables, and every byte of the unrolled background) with what the converter expects.
+
 ## How it works
 
 | Part | Where |
 |---|---|
-| Data converter: sprites, levels, jump table, background cache | `tools/convert.py` |
+| Data converter: sprites, the level pack, jump table | `tools/convert.py` |
+| Level loader: unpacking a level, ladders' extensions, moving platforms' ranges | `fetch_level`, `load_level`, `meanie_settings`, `moving_platform`, `scan_left` etc. |
+| Unrolling the background into bank 7 | `bg_items`, `unroll_bg`, `unroll_item` |
 | Main loop, double buffering, scrolling | `src/frak.asm` (top) |
 | Sprite plotter (masked, with save/restore) | `plot`, `col_plot` / `col_save` / `col_restore` |
 | Draw log (erasing moving things), lines, moving objects | `log_sprite`, `log_line`, `restore_log`, `hline`, `update_movers` |
@@ -75,22 +81,47 @@ node run.mjs "wait:1500 shot:start down:KeyX wait:100 up:KeyX shot:walked" scree
 | Collisions, pickups, checkpoints | `check_collisions`, `hit_test`, `collide`, `check_checkpoint` |
 | Platform and ladder queries | `platform_find`, `ladder_find` (ports of `PlatformFind` / `LadderFind`) |
 | Trogg movement | `trogg_standing`, `trogg_falling`, `trogg_climbing` (ports of `TroggStanding` etc.) |
-| Generated data | `src/gen/*`, `build/GFX4-5`, `build/SPANS`, `build/CACHE` (the assembler also writes `LEVEL` and `LOGIC` for bank 6) |
+| Generated data | `src/gen/*`, `build/GFX4-5`, `build/SPANS`, `build/PACK` (the assembler also writes `BANK6`) |
 
 ### Memory map (Master 128)
 
 | Address | Contents |
 |---|---|
 | `&0000-&008F` | zero page: pointers and the plotter's variables |
-| `&0400-&07FF` | save area for main-RAM screen buffer (BASIC's workspace, unused) |
-| `&0900-&0CFF` | save area for shadow screen buffer (RS423/cassette buffers, soft keys, UDGs) |
+| `&0400-&07FF` | save area for the main-RAM screen buffer (BASIC's workspace, unused); while a level loads, the packed level |
+| `&0900-&0CFF` | save area for the shadow screen buffer (RS423/cassette buffers, soft keys, UDGs); while a level loads, a column of the background and the list of things in it |
 | `&0E00-&10FF` | other variables: object states, checkpoint, draw logs, moving objects |
-| `&1100-&2FFF` | drawing code and its tables (about 2.9KB free) |
+| `&1100-&2FFF` | drawing code, the background unroller and their tables (214 bytes free) |
 | `&3000-&7FFF` | MODE 1 screen, **double buffered**: main RAM and shadow RAM |
-| SWRAM banks 4-5 | sprites, pre-shifted (27KB) |
-| SWRAM bank 6 | collision spans (`&8000`), level data, jump table and collision tables (`&9000`), and the **game logic** (`&A000`): Trogg's movement, platforms and ladders, collisions, the yoyo, balloons, daggers, moving meanies and platforms. Stays paged in while playing |
-| SWRAM bank 7 | the level's platforms and ladders, pre-rendered (8KB for level 1), then save space for moving sprites |
-| top of SWRAM bank 4 or 5 | more save space for moving sprites (whichever bank the sprites leave emptiest) |
+| SWRAM banks 4-5 | sprites, pre-shifted, including unshifted copies of the platforms and ladders to unroll backgrounds from (31.6KB); the last 1.1KB is a save area for meanies flying off |
+| SWRAM bank 6 | collision spans and tables (from `&8000`), the **game logic** and level loader (to `&B26B`), then the current level's tables (379 bytes free). Stays paged in while playing |
+| SWRAM bank 7 | the current level's background, unrolled when it starts (up to 11.5KB), and a save area for meanies flying off at `&BA00` |
+| HAZEL (`&C000-&DFFF`) and ANDY (`&8000-&8FFF`) | **all 55 levels**, packed: 11.8KB, about 215 bytes each. `&8800-&88FF` of ANDY is left to the MOS |
+
+All 55 levels stay in memory, so nothing is loaded from disc after the start. At boot, `!BOOT`
+loads the level pack at `&3000` and `copy_pack` copies it into HAZEL and ANDY with interrupts
+off. HAZEL is normally the filing system's workspace, so the game closes the `!BOOT` file first
+and never uses the disc again. When a level starts, `fetch_level` copies it out (again with
+interrupts off) and `load_level` unpacks it.
+
+### Levels
+
+A packed level is a 14-byte header, a palette of the (up to 16) sprites it uses, then 3 bytes
+for each platform, ladder, object and moving meanie: its x and y in 10 bits each, and which
+palette entry it is. Moving meanies then have a byte of settings each (an index into a table of
+speeds, sleeps and ranges shared by all levels), and moving platforms two bytes: which platform,
+and which way it scans and starts moving.
+
+Everything else is worked out when the level starts, as GameMaker did when a room started:
+
+* each ladder's hidden extension up to a platform just above it (`LadderAdd`);
+* each moving platform's range, from the nearest platforms to each side (`oPlatform`'s scan,
+  done here by one pass over the platforms for each direction, not pixel by pixel);
+* the platform each Scrubbly walks and the ladder each Poglet climbs;
+* the background: the static platforms and then the ladders are drawn, shifted to their pixel
+  positions, one byte column at a time into a buffer, and each column is stored in bank 7 (8
+  bytes for each non-empty character cell, plus a 32-bit mask). Loading Read&Weep takes 1.3
+  seconds.
 
 ### Sprites
 
@@ -101,8 +132,8 @@ converter only stores the copies the game can use:
 * everything that moves (Trogg, meanies, balloons, daggers, the yoyo, moving or movable
   platforms, springs) gets all four;
 * static keys, gems and meanies get only the pixel positions that some level places them at;
-* static platforms and ladders get none, because they are drawn from the pre-rendered
-  background.
+* static platforms and ladders get just the unshifted copy, which the background is unrolled
+  from.
 
 The build stops with an error if a level places something at a position with no stored copy.
 
@@ -117,7 +148,7 @@ The build stops with an error if a level places something at a position with no 
 * The game draws into whichever of main and shadow RAM is not on display, then flips them at
   vertical sync, so there is no flicker or tearing. Each buffer remembers its own scroll
   position and the background saved under Trogg.
-* Repainting a column copies it from the pre-rendered background in bank 7. That holds 8 bytes
+* Repainting a column copies it from the unrolled background in bank 7. That holds 8 bytes
   for each non-empty character cell plus a 32-bit mask per column. Keys, gems and meanies are
   then plotted on top.
 
@@ -145,7 +176,7 @@ Moving meanies and platforms ("slow sprites") are not in the draw log. They stay
 screen buffer, which remembers where it drew each one, and are only redrawn when they've moved
 since that buffer last drew them, or something painted over them:
 
-* The converter leaves them out of the pre-rendered background in bank 7, so erasing one just
+* The converter leaves them out of the unrolled background in bank 7, so erasing one just
   repaints its character cells from there (`repaint_rect`), then re-plots any keys, gems and
   static meanies in them.
 * Everything repainted in a frame (newly scrolled-in columns, the columns of a collected
