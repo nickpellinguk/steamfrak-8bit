@@ -357,6 +357,7 @@ GUARD SCREEN
 
 .start
 {
+    jsr bring_overlay
     jsr copy_pack                   \ (before MODE 1 clears the screen it was loaded into)
     \ Disable Escape, set up MODE 1 with no cursor
     lda #229 : ldx #1 : ldy #0 : jsr OSBYTE
@@ -832,6 +833,7 @@ savebuf1 = &0900
 .vdu_init
     EQUB 22, 1                              \ MODE 1
     EQUB 23, 1, 0, 0, 0, 0, 0, 0, 0, 0      \ cursor off
+.vdu_colours
     EQUB 19, 1, 0, 0, 0, 0                  \ colour 1 = black
     EQUB 19, 2, 5, 0, 0, 0                  \ colour 2 = magenta
     EQUB 19, 3, 3, 0, 0, 0                  \ colour 3 = yellow
@@ -1485,6 +1487,9 @@ ENDMACRO
 \ ------------------------------------------------------------------------------
 
 .set_palette
+    ldx #0
+.colours
+    lda vdu_colours,x : jsr OSWRCH : inx : cpx #vdu_init_end - vdu_colours : bne colours
     lda level_bg
 \ Set logical colour 0 (the background) to physical colour A
 .set_bg
@@ -1559,167 +1564,30 @@ WIN_FRAMES = 150                    \ (game ticks)
 \ Keyboard
 \ ------------------------------------------------------------------------------
 
-\ ------------------------------------------------------------------------------
-\ Unrolling a level's background into bank 7 (see store_column for the format),
-\ from the unshifted images of its platforms and ladders, shifting them as it
-\ goes. This runs only when a level starts, so it needn't be quick. It's in main
-\ RAM because it pages the sprite banks and bank 7 in.
-\ ------------------------------------------------------------------------------
-
-COLBUF = &0900                      \ one column of the level, 4 pixels by 256 (save area 1, free while loading)
-BG_IMG = &0A00                      \ the background items (from bg_items)
-BG_XL = &0A50 : BG_XH = &0AA0       \ left edge
-BG_YL = &0AF0 : BG_YH = &0B40       \ top edge
-BG_WB = &0B90                       \ byte columns covered
-BG_C0L = &0BE0 : BG_C0H = &0C30     \ first byte column (signed)
-ASSERT MAX_BG <= &50
-
-.unroll_bg
+\ Copy the level loader from bank 7 to OVERLAY_RUN (in main RAM's screen
+\ memory), blanking the screen first so it doesn't show
+.bring_overlay
 {
-    \ (columns past the level's right-hand edge have no address)
-    \ (and the dictionary's hash table starts empty)
+    ldx #0
+.blank
+    lda blank_vdu,x : jsr OSWRCH : inx : cpx #blank_end - blank_vdu : bne blank
+    lda ROMSEL_COPY : pha
     lda #CACHE_BANK : sta ROMSEL_COPY : sta ROMSEL
-    lda #0 : tax
-.clear_tables
-    sta CACHE_LO,x : sta CACHE_HI,x : sta HASH_LO,x : sta HASH_HI,x : inx : bne clear_tables
-    lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL
-    lda #LO(BG_COLUMNS) : sta po : lda #HI(BG_COLUMNS) : sta po+1    \ the next column goes here
-    lda #0 : sta u_col : sta u_cntl : sta u_cnth
-.col_loop
-    lda #0 : tax
-.clr
-    sta COLBUF,x : inx : bne clr
-    \ every item covering this column, in order
-    lda #0 : sta u_i
-.item_loop
-    ldx u_i : cpx num_bg : beq items_done
-    lda u_col : sec : sbc BG_C0L,x : sta u_j : lda #0 : sbc BG_C0H,x : bne next_item
-    lda u_j : cmp BG_WB,x : bcs next_item
-    jsr unroll_item
-.next_item
-    inc u_i : jmp item_loop
-.items_done
-    \ Write it out (code in bank 7)
-    lda #CACHE_BANK : sta ROMSEL_COPY : sta ROMSEL
-    jsr store_column
-    lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL
-    inc u_col : lda u_col : cmp level_cols : beq all_done
-    jmp col_loop
-.all_done
-    rts
-}
-
-\ Pixels kept from this byte, and those carried in from the byte to its left,
-\ when shifting an image right by 0-3 pixels
-.keep_tab   EQUB &FF, &77, &33, &11
-.carry_tab  EQUB &00, &88, &CC, &EE
-
-\ Plot byte column u_j of background item X into COLBUF
-.unroll_item
-{
-    ldy BG_IMG,x
-    lda BG_XL,x : and #3 : sta u_s
-    lda #4 : sec : sbc u_s : sta u_s4
-    lda img_h,y : sta u_h
-    \ cur = the image's column u_j (if it has one), prev = the one before
-    lda img_w,y : clc : adc #3 : lsr a : lsr a        \ its byte columns
-    ldx #0 : cmp u_j : beq no_cur : bcc no_cur : inx : .no_cur
-    stx u_cur
-    ldx #0 : lda u_s : beq no_prev : lda u_j : beq no_prev : inx : .no_prev
-    stx u_prev
-    lda img_lo0,y : sta dp : lda img_hi0,y : sta dp+1
-    lda img_bank0,y : sta u_bank
-    ldx u_j : beq at_col
-.mul
-    lda dp : clc : adc u_h : sta dp : bcc mnc : inc dp+1 : .mnc
-    dex : bne mul
-.at_col
-    lda dp : sec : sbc u_h : sta sp : lda dp+1 : sbc #0 : sta sp+1
-    \ rows [r0, r1) that are on the level; pt = COLBUF + top
-    ldx u_i
-    lda BG_YH,x : bmi above
-    beq on_level
-    rts                                     \ starts below the level
-.on_level
-    lda #0 : sta u_r0
-    lda BG_YL,x : clc : adc u_h : bcs clip_bottom
-    lda u_h : sta u_r1 : jmp rows_ok
-.clip_bottom
-    lda #0 : sec : sbc BG_YL,x : sta u_r1   \ 256 - top
-    jmp rows_ok
-.above
-    lda #0 : sec : sbc BG_YL,x : sta u_r0   \ -top
-    lda BG_YH,x : cmp #&FF : bne off
-    lda u_r0 : cmp u_h : bcc partly
-.off
-    rts
-.partly
-    lda u_h : sta u_r1
-.rows_ok
-    lda BG_YL,x : clc : adc #LO(COLBUF) : sta pt
-    lda BG_YH,x : adc #HI(COLBUF) : sta pt+1
-    lda u_bank : sta ROMSEL_COPY : sta ROMSEL
-    ldy u_r0
-.row
-    lda #0 : sta u_b
-    lda u_cur : beq no_c
-    lda (dp),y
-    ldx u_s : beq c_ok
-.c_shift
-    lsr a : dex : bne c_shift
-    ldx u_s : and keep_tab,x
-.c_ok
-    sta u_b
-.no_c
-    lda u_prev : beq no_p
-    lda (sp),y
-    ldx u_s4
-.p_shift
-    asl a : dex : bne p_shift
-    ldx u_s : and carry_tab,x
-    ora u_b : sta u_b
-.no_p
-    lda u_b : beq skip
-    tax
-    lda (pt),y : and masktab,x : ora identity,x : sta (pt),y
-.skip
-    iny : cpy u_r1 : bne row
-    lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL
-.done
-    rts
-}
-
-\ At boot: the level pack (loaded at &3000) goes into HAZEL (8KB) and ANDY
-\ (4KB less the page the MOS uses), with interrupts off while they're paged
-\ in. Nothing uses the disc after this.
-.copy_pack
-{
-    lda #&77 : jsr OSBYTE                   \ close the !BOOT file
-    sei
-    lda ACCCON : ora #ACCCON_Y : sta ACCCON
-    lda #&30 : ldx #&C0 : ldy #&20 : jsr copy_pages
-    lda ACCCON : and #&FF - ACCCON_Y : sta ACCCON
-    lda ROMSEL_COPY : ora #ROMSEL_ANDY : sta ROMSEL
-    lda #&50 : ldx #&80 : ldy #&08 : jsr copy_pages
-    lda #&59 : ldx #&89 : ldy #&07 : jsr copy_pages    \ (not &8800-&88FF, which the MOS uses)
-    lda ROMSEL_COPY : sta ROMSEL
-    cli
-    rts
-}
-
-\ Copy Y pages from page A to page X
-.copy_pages
-{
-    sta src+1 : stx dp+1
-    lda #0 : sta src : sta dp
-    tya : tax
+    lda ACCCON : and #&FB : sta ACCCON      \ (the CPU uses main RAM there)
+    lda #LO(OVERLAY_STORE) : sta src : lda #HI(OVERLAY_STORE) : sta src+1
+    lda #LO(OVERLAY_RUN) : sta dp : lda #HI(OVERLAY_RUN) : sta dp+1
+    ldx #HI(overlay_end - overlay_start + 255)
     ldy #0
-.loop
-    lda (src),y : sta (dp),y : iny : bne loop
+.copy
+    lda (src),y : sta (dp),y : iny : bne copy
     inc src+1 : inc dp+1
-    dex : bne loop
+    dex : bne copy
+    pla : sta ROMSEL_COPY : sta ROMSEL
     rts
 }
+.blank_vdu
+    EQUB 19, 0, 0, 0, 0, 0, 19, 1, 0, 0, 0, 0, 19, 2, 0, 0, 0, 0, 19, 3, 0, 0, 0, 0
+.blank_end
 
 \ ------------------------------------------------------------------------------
 \ Data
@@ -3687,6 +3555,188 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
 .left_pixels  EQUB &FF, &77, &33, &11
 .right_pixels EQUB &88, &CC, &EE, &FF
 
+\ Choose the next level: A, or the first after it that can be played
+.load_playable
+{
+    pha : jsr bring_overlay : pla
+.try
+    cmp #NUM_LEVELS : bcc in_range : lda #0 : .in_range
+    jsr load_level : bcc done
+    lda cur_level : clc : adc #1
+    jmp try
+.done
+    rts
+}
+
+.logic_end
+
+\ ------------------------------------------------------------------------------
+\ The current level, filled in by load_level (not saved: these follow logic_end)
+\ ------------------------------------------------------------------------------
+
+.plat_xl    SKIP MAX_PLATS      \ platforms: where they are now
+.plat_xh    SKIP MAX_PLATS
+.plat_yl    SKIP MAX_PLATS
+.plat_yh    SKIP MAX_PLATS
+.plat_w     SKIP MAX_PLATS
+.plat_x0l   SKIP MAX_PLATS      \ ... and where they start
+.plat_x0h   SKIP MAX_PLATS
+.plat_y0l   SKIP MAX_PLATS
+.plat_y0h   SKIP MAX_PLATS
+.plat_moving SKIP MAX_PLATS
+.plat_img   SKIP MAX_PLATS
+.lad_xl     SKIP MAX_LADDERS    \ ladders, including their hidden extensions
+.lad_xh     SKIP MAX_LADDERS
+.lad_yl     SKIP MAX_LADDERS
+.lad_yh     SKIP MAX_LADDERS
+.lad_hl     SKIP MAX_LADDERS
+.lad_hh     SKIP MAX_LADDERS
+.lad_ext    SKIP MAX_LADDERS
+.lad_img    SKIP MAX_LADDERS
+.draw_img   SKIP MAX_DRAW       \ keys, gems, bulbs and static meanies, in drawing order
+.draw_xl    SKIP MAX_DRAW
+.draw_xh    SKIP MAX_DRAW
+.draw_yl    SKIP MAX_DRAW
+.draw_yh    SKIP MAX_DRAW
+.draw_c0    SKIP MAX_DRAW       \ byte columns covered [c0, c1)
+.draw_c1    SKIP MAX_DRAW
+.draw_kind  SKIP MAX_DRAW
+.draw_ll    SKIP MAX_DRAW       \ top-left corner
+.draw_lh    SKIP MAX_DRAW
+.draw_tl    SKIP MAX_DRAW
+.draw_th    SKIP MAX_DRAW
+.sl_kind    SKIP MAX_SLOW       \ moving platforms and meanies: how they move
+.sl_img     SKIP MAX_SLOW
+.sl_x0l     SKIP MAX_SLOW
+.sl_x0h     SKIP MAX_SLOW
+.sl_y0l     SKIP MAX_SLOW
+.sl_y0h     SKIP MAX_SLOW
+.sl_aminl   SKIP MAX_SLOW
+.sl_aminh   SKIP MAX_SLOW
+.sl_amaxl   SKIP MAX_SLOW
+.sl_amaxh   SKIP MAX_SLOW
+.sl_bminl   SKIP MAX_SLOW
+.sl_bminh   SKIP MAX_SLOW
+.sl_bmaxl   SKIP MAX_SLOW
+.sl_bmaxh   SKIP MAX_SLOW
+.sl_vf      SKIP MAX_SLOW
+.sl_vi      SKIP MAX_SLOW
+.sl_vy      SKIP MAX_SLOW
+.sl_plat    SKIP MAX_SLOW
+.sl_wait    SKIP MAX_SLOW
+.sl_simple  SKIP MAX_SLOW
+\ Moving platforms and meanies: current state, and copies for checkpoints
+SLOW_N = MAX_SLOW
+.s_alive    SKIP SLOW_N
+.s_xf       SKIP SLOW_N
+.s_xl       SKIP SLOW_N
+.s_xh       SKIP SLOW_N
+.s_yf       SKIP SLOW_N
+.s_yl       SKIP SLOW_N
+.s_yh       SKIP SLOW_N
+.s_vf       SKIP SLOW_N
+.s_vi       SKIP SLOW_N
+.s_vy       SKIP SLOW_N
+.s_wait     SKIP SLOW_N
+.cps_alive  SKIP SLOW_N
+.cps_xf     SKIP SLOW_N
+.cps_xl     SKIP SLOW_N
+.cps_xh     SKIP SLOW_N
+.cps_yf     SKIP SLOW_N
+.cps_yl     SKIP SLOW_N
+.cps_yh     SKIP SLOW_N
+.cps_vf     SKIP SLOW_N
+.cps_vi     SKIP SLOW_N
+.cps_vy     SKIP SLOW_N
+.cps_wait   SKIP SLOW_N
+.d_xl       SKIP SLOW_N             \ where they are shown (and collided with)
+.d_xh       SKIP SLOW_N
+.d_yl       SKIP SLOW_N
+.d_yh       SKIP SLOW_N
+.n_vis      SKIP SLOW_N             \ draw_slow workspace
+.n_chg      SKIP SLOW_N
+.dr_on      SKIP 2 * SLOW_N         \ where each buffer last drew them
+.dr_xl      SKIP 2 * SLOW_N
+.dr_xh      SKIP 2 * SLOW_N
+.dr_yl      SKIP 2 * SLOW_N
+.dr_yh      SKIP 2 * SLOW_N
+.dr_c0      SKIP 2 * SLOW_N         \ ... and what that covered (byte columns, rows)
+.dr_c1      SKIP 2 * SLOW_N
+.dr_y0      SKIP 2 * SLOW_N
+.dr_y1      SKIP 2 * SLOW_N
+.dmg_n      SKIP 1                  \ damage: areas repainted in this frame
+.dmg_all    SKIP 1
+.dmg_c0     SKIP MAX_DMG
+.dmg_c1     SKIP MAX_DMG
+.dmg_y0     SKIP MAX_DMG
+.dmg_y1     SKIP MAX_DMG
+.cpp_xl     SKIP MAX_PLATS
+.cpp_xh     SKIP MAX_PLATS
+.cpp_yl     SKIP MAX_PLATS
+.cpp_yh     SKIP MAX_PLATS
+.bank6_end
+SAVE "BANK6", bank6_start, logic_end
+PRINT "Bank 6: spans and tables to", ~logic_start, ", logic to", ~logic_end, ", level tables to", ~bank6_end, "(", &C000 - bank6_end, "bytes free )"
+
+
+\ ------------------------------------------------------------------------------
+\ Sideways RAM bank 7: the current level's background, unrolled when it starts,
+\ and the code that only needs bank 7 and main RAM
+\
+\   &8000/&8100  the address of each byte column of the background
+\   &8200-&91FF  the cell dictionary: each distinct non-empty character cell of
+\                the level, numbered 0-511 in order of first use. Line L of
+\                cell N is at BG_DICT + L * &100 + N (cells 256-511: + &800)
+\   &9200-&9FFF  the columns: a 4-byte mask of non-empty cells (bit 7 of the
+\                first byte = the top row), a 4-byte mask of those whose number
+\                is 256 or more, then each non-empty cell's number (low byte)
+\   &A000        this code
+\   &BA00-&BFFF  a save area for meanies flying off; while unrolling, the
+\                dictionary's hash table
+\ ------------------------------------------------------------------------------
+
+HASH_LO = &BA00                     \ per hash value: the first cell with it (its number + 1)
+HASH_HI = &BB00
+LINK_LO = &BC00                     \ per cell: the next with the same hash (its number + 1)
+LINK_HI = &BE00
+
+CLEAR &8000, &C000
+ORG BG_TOP
+GUARD CACHE_TOP
+.bank7_start
+
+\ Copy cell A (plus 256 if carry set) to the screen at (ptr). X, Y changed.
+.copy_cell
+{
+    tax : bcs high
+    ldy #0
+    FOR l, 0, 7
+    lda BG_DICT + l * &100,x : sta (ptr),y : IF l < 7 : iny : ENDIF
+    NEXT
+    rts
+.high
+    ldy #0
+    FOR l, 0, 7
+    lda BG_DICT + &800 + l * &100,x : sta (ptr),y : IF l < 7 : iny : ENDIF
+    NEXT
+    rts
+}
+
+.bank7_end
+SAVE "BANK7", bank7_start, bank7_end
+PRINT "Bank 7: background to", ~BG_TOP, ", code to", ~bank7_end, "(", CACHE_TOP - bank7_end, "bytes free )"
+
+
+\ ------------------------------------------------------------------------------
+\ The level loader: code that only runs while a level is loading (or at boot).
+\ It's kept in bank 7 and copied to the screen memory at &6000 to run (with
+\ the screen blanked), so it takes no room in main RAM or bank 6.
+\ ------------------------------------------------------------------------------
+
+CLEAR &6000, &8000
+ORG OVERLAY_RUN
+GUARD &8000
+.overlay_start
 \ ------------------------------------------------------------------------------
 \ Levels. All of them are kept packed in HAZEL and ANDY (see pack_level in the
 \ converter for the format). load_level unpacks one into the tables at the end
@@ -3704,7 +3754,6 @@ ACCCON_Y = 8                        \ ACCCON bit 3: HAZEL at &C000-&DFFF
 ROMSEL_ANDY = &80                   \ ROMSEL bit 7: ANDY at &8000-&8FFF
 
 \ Copy level A (1KB, more than any level needs) from HAZEL or ANDY to STAGE.
-\ This must not be in &8000-&8FFF, which ANDY replaces.
 .fetch_level
 {
     tax
@@ -3727,7 +3776,6 @@ ROMSEL_ANDY = &80                   \ ROMSEL bit 7: ANDY at &8000-&8FFF
     cli
     rts
 }
-ASSERT fetch_level >= &9000
 
 \ Load level A. Carry set if it can't be played yet (it scrolls vertically).
 .load_level
@@ -4239,169 +4287,165 @@ ENDMACRO
     rts
 }
 
-\ Choose the next level: A, or the first after it that can be played
-.load_playable
+\ ------------------------------------------------------------------------------
+\ Unrolling a level's background into bank 7 (see store_column for the format),
+\ from the unshifted images of its platforms and ladders, shifting them as it
+\ goes. This runs only when a level starts, so it needn't be quick. It's in main
+\ RAM because it pages the sprite banks and bank 7 in.
+\ ------------------------------------------------------------------------------
+
+COLBUF = &0900                      \ one column of the level, 4 pixels by 256 (save area 1, free while loading)
+BG_IMG = &0A00                      \ the background items (from bg_items)
+BG_XL = &0A50 : BG_XH = &0AA0       \ left edge
+BG_YL = &0AF0 : BG_YH = &0B40       \ top edge
+BG_WB = &0B90                       \ byte columns covered
+BG_C0L = &0BE0 : BG_C0H = &0C30     \ first byte column (signed)
+ASSERT MAX_BG <= &50
+
+.unroll_bg
 {
-.try
-    cmp #NUM_LEVELS : bcc in_range : lda #0 : .in_range
-    jsr load_level : bcc done
-    lda cur_level : clc : adc #1
-    jmp try
+    \ (columns past the level's right-hand edge have no address)
+    \ (and the dictionary's hash table starts empty)
+    lda #CACHE_BANK : sta ROMSEL_COPY : sta ROMSEL
+    lda #0 : tax
+.clear_tables
+    sta CACHE_LO,x : sta CACHE_HI,x : sta HASH_LO,x : sta HASH_HI,x : inx : bne clear_tables
+    lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL
+    lda #LO(BG_COLUMNS) : sta po : lda #HI(BG_COLUMNS) : sta po+1    \ the next column goes here
+    lda #0 : sta u_col : sta u_cntl : sta u_cnth
+.col_loop
+    lda #0 : tax
+.clr
+    sta COLBUF,x : inx : bne clr
+    \ every item covering this column, in order
+    lda #0 : sta u_i
+.item_loop
+    ldx u_i : cpx num_bg : beq items_done
+    lda u_col : sec : sbc BG_C0L,x : sta u_j : lda #0 : sbc BG_C0H,x : bne next_item
+    lda u_j : cmp BG_WB,x : bcs next_item
+    jsr unroll_item
+.next_item
+    inc u_i : jmp item_loop
+.items_done
+    \ Write it out (code in bank 7)
+    lda #CACHE_BANK : sta ROMSEL_COPY : sta ROMSEL
+    jsr store_column
+    lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL
+    inc u_col : lda u_col : cmp level_cols : beq all_done
+    jmp col_loop
+.all_done
+    rts
+}
+
+\ Pixels kept from this byte, and those carried in from the byte to its left,
+\ when shifting an image right by 0-3 pixels
+.keep_tab   EQUB &FF, &77, &33, &11
+.carry_tab  EQUB &00, &88, &CC, &EE
+
+\ Plot byte column u_j of background item X into COLBUF
+.unroll_item
+{
+    ldy BG_IMG,x
+    lda BG_XL,x : and #3 : sta u_s
+    lda #4 : sec : sbc u_s : sta u_s4
+    lda img_h,y : sta u_h
+    \ cur = the image's column u_j (if it has one), prev = the one before
+    lda img_w,y : clc : adc #3 : lsr a : lsr a        \ its byte columns
+    ldx #0 : cmp u_j : beq no_cur : bcc no_cur : inx : .no_cur
+    stx u_cur
+    ldx #0 : lda u_s : beq no_prev : lda u_j : beq no_prev : inx : .no_prev
+    stx u_prev
+    lda img_lo0,y : sta dp : lda img_hi0,y : sta dp+1
+    lda img_bank0,y : sta u_bank
+    ldx u_j : beq at_col
+.mul
+    lda dp : clc : adc u_h : sta dp : bcc mnc : inc dp+1 : .mnc
+    dex : bne mul
+.at_col
+    lda dp : sec : sbc u_h : sta sp : lda dp+1 : sbc #0 : sta sp+1
+    \ rows [r0, r1) that are on the level; pt = COLBUF + top
+    ldx u_i
+    lda BG_YH,x : bmi above
+    beq on_level
+    rts                                     \ starts below the level
+.on_level
+    lda #0 : sta u_r0
+    lda BG_YL,x : clc : adc u_h : bcs clip_bottom
+    lda u_h : sta u_r1 : jmp rows_ok
+.clip_bottom
+    lda #0 : sec : sbc BG_YL,x : sta u_r1   \ 256 - top
+    jmp rows_ok
+.above
+    lda #0 : sec : sbc BG_YL,x : sta u_r0   \ -top
+    lda BG_YH,x : cmp #&FF : bne off
+    lda u_r0 : cmp u_h : bcc partly
+.off
+    rts
+.partly
+    lda u_h : sta u_r1
+.rows_ok
+    lda BG_YL,x : clc : adc #LO(COLBUF) : sta pt
+    lda BG_YH,x : adc #HI(COLBUF) : sta pt+1
+    lda u_bank : sta ROMSEL_COPY : sta ROMSEL
+    ldy u_r0
+.row
+    lda #0 : sta u_b
+    lda u_cur : beq no_c
+    lda (dp),y
+    ldx u_s : beq c_ok
+.c_shift
+    lsr a : dex : bne c_shift
+    ldx u_s : and keep_tab,x
+.c_ok
+    sta u_b
+.no_c
+    lda u_prev : beq no_p
+    lda (sp),y
+    ldx u_s4
+.p_shift
+    asl a : dex : bne p_shift
+    ldx u_s : and carry_tab,x
+    ora u_b : sta u_b
+.no_p
+    lda u_b : beq skip
+    tax
+    lda (pt),y : and masktab,x : ora identity,x : sta (pt),y
+.skip
+    iny : cpy u_r1 : bne row
+    lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL
 .done
     rts
 }
 
-.logic_end
-
-\ ------------------------------------------------------------------------------
-\ The current level, filled in by load_level (not saved: these follow logic_end)
-\ ------------------------------------------------------------------------------
-
-.plat_xl    SKIP MAX_PLATS      \ platforms: where they are now
-.plat_xh    SKIP MAX_PLATS
-.plat_yl    SKIP MAX_PLATS
-.plat_yh    SKIP MAX_PLATS
-.plat_w     SKIP MAX_PLATS
-.plat_x0l   SKIP MAX_PLATS      \ ... and where they start
-.plat_x0h   SKIP MAX_PLATS
-.plat_y0l   SKIP MAX_PLATS
-.plat_y0h   SKIP MAX_PLATS
-.plat_moving SKIP MAX_PLATS
-.plat_img   SKIP MAX_PLATS
-.lad_xl     SKIP MAX_LADDERS    \ ladders, including their hidden extensions
-.lad_xh     SKIP MAX_LADDERS
-.lad_yl     SKIP MAX_LADDERS
-.lad_yh     SKIP MAX_LADDERS
-.lad_hl     SKIP MAX_LADDERS
-.lad_hh     SKIP MAX_LADDERS
-.lad_ext    SKIP MAX_LADDERS
-.lad_img    SKIP MAX_LADDERS
-.draw_img   SKIP MAX_DRAW       \ keys, gems, bulbs and static meanies, in drawing order
-.draw_xl    SKIP MAX_DRAW
-.draw_xh    SKIP MAX_DRAW
-.draw_yl    SKIP MAX_DRAW
-.draw_yh    SKIP MAX_DRAW
-.draw_c0    SKIP MAX_DRAW       \ byte columns covered [c0, c1)
-.draw_c1    SKIP MAX_DRAW
-.draw_kind  SKIP MAX_DRAW
-.draw_ll    SKIP MAX_DRAW       \ top-left corner
-.draw_lh    SKIP MAX_DRAW
-.draw_tl    SKIP MAX_DRAW
-.draw_th    SKIP MAX_DRAW
-.sl_kind    SKIP MAX_SLOW       \ moving platforms and meanies: how they move
-.sl_img     SKIP MAX_SLOW
-.sl_x0l     SKIP MAX_SLOW
-.sl_x0h     SKIP MAX_SLOW
-.sl_y0l     SKIP MAX_SLOW
-.sl_y0h     SKIP MAX_SLOW
-.sl_aminl   SKIP MAX_SLOW
-.sl_aminh   SKIP MAX_SLOW
-.sl_amaxl   SKIP MAX_SLOW
-.sl_amaxh   SKIP MAX_SLOW
-.sl_bminl   SKIP MAX_SLOW
-.sl_bminh   SKIP MAX_SLOW
-.sl_bmaxl   SKIP MAX_SLOW
-.sl_bmaxh   SKIP MAX_SLOW
-.sl_vf      SKIP MAX_SLOW
-.sl_vi      SKIP MAX_SLOW
-.sl_vy      SKIP MAX_SLOW
-.sl_plat    SKIP MAX_SLOW
-.sl_wait    SKIP MAX_SLOW
-.sl_simple  SKIP MAX_SLOW
-\ Moving platforms and meanies: current state, and copies for checkpoints
-SLOW_N = MAX_SLOW
-.s_alive    SKIP SLOW_N
-.s_xf       SKIP SLOW_N
-.s_xl       SKIP SLOW_N
-.s_xh       SKIP SLOW_N
-.s_yf       SKIP SLOW_N
-.s_yl       SKIP SLOW_N
-.s_yh       SKIP SLOW_N
-.s_vf       SKIP SLOW_N
-.s_vi       SKIP SLOW_N
-.s_vy       SKIP SLOW_N
-.s_wait     SKIP SLOW_N
-.cps_alive  SKIP SLOW_N
-.cps_xf     SKIP SLOW_N
-.cps_xl     SKIP SLOW_N
-.cps_xh     SKIP SLOW_N
-.cps_yf     SKIP SLOW_N
-.cps_yl     SKIP SLOW_N
-.cps_yh     SKIP SLOW_N
-.cps_vf     SKIP SLOW_N
-.cps_vi     SKIP SLOW_N
-.cps_vy     SKIP SLOW_N
-.cps_wait   SKIP SLOW_N
-.d_xl       SKIP SLOW_N             \ where they are shown (and collided with)
-.d_xh       SKIP SLOW_N
-.d_yl       SKIP SLOW_N
-.d_yh       SKIP SLOW_N
-.n_vis      SKIP SLOW_N             \ draw_slow workspace
-.n_chg      SKIP SLOW_N
-.dr_on      SKIP 2 * SLOW_N         \ where each buffer last drew them
-.dr_xl      SKIP 2 * SLOW_N
-.dr_xh      SKIP 2 * SLOW_N
-.dr_yl      SKIP 2 * SLOW_N
-.dr_yh      SKIP 2 * SLOW_N
-.dr_c0      SKIP 2 * SLOW_N         \ ... and what that covered (byte columns, rows)
-.dr_c1      SKIP 2 * SLOW_N
-.dr_y0      SKIP 2 * SLOW_N
-.dr_y1      SKIP 2 * SLOW_N
-.dmg_n      SKIP 1                  \ damage: areas repainted in this frame
-.dmg_all    SKIP 1
-.dmg_c0     SKIP MAX_DMG
-.dmg_c1     SKIP MAX_DMG
-.dmg_y0     SKIP MAX_DMG
-.dmg_y1     SKIP MAX_DMG
-.cpp_xl     SKIP MAX_PLATS
-.cpp_xh     SKIP MAX_PLATS
-.cpp_yl     SKIP MAX_PLATS
-.cpp_yh     SKIP MAX_PLATS
-.bank6_end
-SAVE "BANK6", bank6_start, logic_end
-PRINT "Bank 6: spans and tables to", ~logic_start, ", logic to", ~logic_end, ", level tables to", ~bank6_end, "(", &C000 - bank6_end, "bytes free )"
-
-
-\ ------------------------------------------------------------------------------
-\ Sideways RAM bank 7: the current level's background, unrolled when it starts,
-\ and the code that only needs bank 7 and main RAM
-\
-\   &8000/&8100  the address of each byte column of the background
-\   &8200-&91FF  the cell dictionary: each distinct non-empty character cell of
-\                the level, numbered 0-511 in order of first use. Line L of
-\                cell N is at BG_DICT + L * &100 + N (cells 256-511: + &800)
-\   &9200-&9FFF  the columns: a 4-byte mask of non-empty cells (bit 7 of the
-\                first byte = the top row), a 4-byte mask of those whose number
-\                is 256 or more, then each non-empty cell's number (low byte)
-\   &A000        this code
-\   &BA00-&BFFF  a save area for meanies flying off; while unrolling, the
-\                dictionary's hash table
-\ ------------------------------------------------------------------------------
-
-HASH_LO = &BA00                     \ per hash value: the first cell with it (its number + 1)
-HASH_HI = &BB00
-LINK_LO = &BC00                     \ per cell: the next with the same hash (its number + 1)
-LINK_HI = &BE00
-
-CLEAR &8000, &C000
-ORG BG_TOP
-GUARD CACHE_TOP
-.bank7_start
-
-\ Copy cell A (plus 256 if carry set) to the screen at (ptr). X, Y changed.
-.copy_cell
+\ At boot: the level pack (loaded at &3000) goes into HAZEL (8KB) and ANDY
+\ (4KB less the page the MOS uses), with interrupts off while they're paged
+\ in. Nothing uses the disc after this.
+.copy_pack
 {
-    tax : bcs high
-    ldy #0
-    FOR l, 0, 7
-    lda BG_DICT + l * &100,x : sta (ptr),y : IF l < 7 : iny : ENDIF
-    NEXT
+    lda #&77 : jsr OSBYTE                   \ close the !BOOT file
+    sei
+    lda ACCCON : ora #ACCCON_Y : sta ACCCON
+    lda #&30 : ldx #&C0 : ldy #&20 : jsr copy_pages
+    lda ACCCON : and #&FF - ACCCON_Y : sta ACCCON
+    lda ROMSEL_COPY : ora #ROMSEL_ANDY : sta ROMSEL
+    lda #&50 : ldx #&80 : ldy #&08 : jsr copy_pages
+    lda #&59 : ldx #&89 : ldy #&07 : jsr copy_pages    \ (not &8800-&88FF, which the MOS uses)
+    lda ROMSEL_COPY : sta ROMSEL
+    cli
     rts
-.high
+}
+
+\ Copy Y pages from page A to page X
+.copy_pages
+{
+    sta src+1 : stx dp+1
+    lda #0 : sta src : sta dp
+    tya : tax
     ldy #0
-    FOR l, 0, 7
-    lda BG_DICT + &800 + l * &100,x : sta (ptr),y : IF l < 7 : iny : ENDIF
-    NEXT
+.loop
+    lda (src),y : sta (dp),y : iny : bne loop
+    inc src+1 : inc dp+1
+    dex : bne loop
     rts
 }
 
@@ -4505,9 +4549,12 @@ GUARD CACHE_TOP
     lda u_nl : sta sp : lda u_nh : clc : adc #HI(LINK_LO) : sta sp+1
     rts
 
-.bank7_end
-SAVE "BANK7", bank7_start, bank7_end
-PRINT "Bank 7: background to", ~BG_TOP, ", code to", ~bank7_end, "(", CACHE_TOP - bank7_end, "bytes free )"
+
+.overlay_end
+SAVE "OVERLAY", overlay_start, overlay_end
+ASSERT OVERLAY_STORE + (overlay_end - overlay_start) <= CACHE_TOP
+ASSERT bank7_end <= OVERLAY_STORE
+PRINT "Loader overlay:", overlay_end - overlay_start, "bytes, kept in bank 7 at", ~OVERLAY_STORE, "(", CACHE_TOP - OVERLAY_STORE - (overlay_end - overlay_start), "bytes free )"
 
 INCLUDE "src/gen/disc.asm"
 
