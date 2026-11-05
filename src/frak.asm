@@ -25,6 +25,11 @@ SCREEN      = &3000
 SCREEN_COLS = 80            \ byte columns visible across the screen (320 pixels)
 WINDOW_W    = 320           \ visible width in level pixels
 
+\ Frame rate: the screen is redrawn at 25 frames a second, with two ticks of game
+\ logic per frame, so the game runs at 50 ticks a second.
+FRAMES_PER_DRAW = 2             \ vertical syncs (1/50 s) per drawn frame
+TICKS_PER_FRAME = 2             \ game logic ticks per drawn frame
+
 \ Trogg states
 ST_STAND    = 0
 ST_WALK     = 1
@@ -119,6 +124,9 @@ GUARD &90
 .pt         SKIP 2
 .po         SKIP 2
 .loops      SKIP 1          \ main loop counter (for timing checks)
+.vsyncs     SKIP 1          \ incremented by the vertical sync event
+.last_flip  SKIP 1          \ vsyncs at the last buffer flip
+.ticks_left SKIP 1
 .firsty     SKIP 2
 .bank       SKIP 1
 .oldbank    SKIP 1
@@ -177,6 +185,7 @@ GUARD SCREEN
     \ The level data lives in sideways RAM bank 6 and stays paged in while the
     \ game runs (routines that page in other banks put it back afterwards)
     lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL
+    jsr install_vsync_counter
 }
 
 \ Double buffering: the screen is drawn in whichever of main RAM (buffer 0) and
@@ -296,39 +305,83 @@ GUARD SCREEN
     jsr trogg_sbase
 
 .^show
-    \ Show it at the next vertical sync
+    \ Show it once FRAMES_PER_DRAW vertical syncs have passed since the last flip
     inc loops
 .^t_vsync
-    lda #19 : jsr OSBYTE
+.wait
+    lda vsyncs : sec : sbc last_flip
+    cmp #FRAMES_PER_DRAW : bcc wait
 .^t_after_vsync
     jsr set_crtc_start
     jsr show_back
     lda back : sta front
+    lda vsyncs : sta last_flip
 
-    lda dead : beq alive
-    dec dead : beq restart
-    jmp main_loop
-.restart
-    lda have_cp : beq from_scratch
+    \ Run the game logic for this frame
+    lda #TICKS_PER_FRAME : sta ticks_left
+.tick
+.^t_logic
+    jsr game_tick
+.^t_logic_done
+    beq next_tick
+    cmp #TICK_WON : beq from_scratch
+    lda have_cp : beq from_scratch          \ TICK_DIED: restart
     jmp restore_checkpoint
 .from_scratch
     jmp level_start
+.next_tick
+    dec ticks_left : bne tick
+    jmp main_loop
+}
+
+\ One tick of game logic. Returns A (and Z) = TICK_OK, TICK_DIED or TICK_WON.
+TICK_OK = 0
+TICK_DIED = 1
+TICK_WON = 2
+.game_tick
+{
+    lda dead : beq alive
+    dec dead : beq died
+    lda #TICK_OK : rts
+.died
+    lda #TICK_DIED : rts
 .alive
     lda won : beq playing
-    jsr win_tick : bcc still_winning
-    jmp level_start
-.still_winning
-    jmp main_loop
+    jsr win_tick : bcs finished
+    lda #TICK_OK : rts
+.finished
+    lda #TICK_WON : rts
 .playing
-.^t_logic
     jsr read_keys
     jsr trogg_update
-    lda dead : bne logic_done
+    lda dead : bne done
     jsr check_collisions
     jsr check_checkpoint
-.logic_done
-.^t_logic_done
-    jmp main_loop
+.done
+    lda #TICK_OK : rts
+}
+
+\ Count vertical syncs (MOS event 4) so the main loop can pace itself
+EVNTV = &0220
+.vsync_event
+{
+    php
+    cmp #4 : bne chain
+    inc vsyncs
+.chain
+    plp
+.^old_evntv
+    jmp &FFFF                       \ (operand set to the previous EVNTV)
+}
+
+.install_vsync_counter
+{
+    sei
+    lda EVNTV : sta old_evntv+1 : lda EVNTV+1 : sta old_evntv+2
+    lda #LO(vsync_event) : sta EVNTV : lda #HI(vsync_event) : sta EVNTV+1
+    cli
+    lda #14 : ldx #4 : jsr OSBYTE   \ enable the vertical sync event
+    rts
 }
 
 \ p_x/p_y = where Trogg was drawn in the back buffer; save area = start of savebuf
@@ -1025,7 +1078,7 @@ ENDMACRO
 }
 
 \ Level complete: flash the background, then start again. Carry set when done.
-WIN_FRAMES = 150
+WIN_FRAMES = 150                    \ (game ticks)
 .win_tick
 {
     dec won : beq finished
@@ -1403,7 +1456,7 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
 
 .trogg_dies
 {
-    lda #50 : sta dead              \ restart in a second
+    lda #50 : sta dead              \ restart in a second (50 game ticks)
     rts
 }
 
@@ -1629,4 +1682,4 @@ INCLUDE "src/gen/disc.asm"
 PRINT "Code from", ~start, "to", ~end, "(", end - start, "bytes ), free:", SCREEN - ram_top
 \ Addresses used by test scripts (profiling and poking variables)
 PRINT "TIMING", ~main_loop, ~t_restore, ~t_scroll, ~t_draw, ~t_vsync, ~t_after_vsync, ~t_logic, ~t_logic_done
-PRINT "SYMBOLS loops", ~loops, "keys_found", ~keys_found, "gems_found", ~gems_found, "won", ~won, "have_cp", ~have_cp, "restarts", ~restarts, "alive", ~alive, "newcol", ~newcol, "dead", ~dead, "tx", ~tx, "ty", ~ty, "tstate", ~tstate, "fallt", ~fallt, "dead", ~dead, "anim", ~anim, "p_img", ~p_img, "bank", ~bank, "oldbank", ~oldbank, "dptr", ~dptr, "scrollcol", ~scrollcol
+PRINT "SYMBOLS loops", ~loops, "vsyncs", ~vsyncs, "keys_found", ~keys_found, "gems_found", ~gems_found, "won", ~won, "have_cp", ~have_cp, "restarts", ~restarts, "alive", ~alive, "newcol", ~newcol, "dead", ~dead, "tx", ~tx, "ty", ~ty, "tstate", ~tstate, "fallt", ~fallt, "dead", ~dead, "anim", ~anim, "p_img", ~p_img, "bank", ~bank, "oldbank", ~oldbank, "dptr", ~dptr, "scrollcol", ~scrollcol
