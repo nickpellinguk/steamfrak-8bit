@@ -4,7 +4,7 @@ A back-port of the Steam/HTML5 version of **Frak!** to the BBC Master 128, writt
 assembly for [BeebAsm](https://github.com/stardot/beebasm). It works from the data and logic of
 the web version (the `steamfrak` repository).
 
-**Status: milestone 3.** One level (Read&Weep) is playable from start to finish:
+**Status: milestone 4.** One level (Read&Weep) is playable from start to finish:
 
 * Trogg walks, jumps, falls (dying from long falls) and climbs.
 * The screen scrolls smoothly at a steady 25 frames a second, with the game logic at 50 ticks a second.
@@ -13,12 +13,15 @@ the web version (the `steamfrak` repository).
 * The yoyo (Space or P): it goes out up to 80 pixels while the key is held, on a string drawn
   as a line of black pixels, and knocks meanies flying off the screen. A flying meanie can
   still kill Trogg, as in the Steam version.
+* Balloons float up from the bottom and daggers fly down from the top, aimed ahead of Trogg,
+  using the Steam version's timings, speeds and spreads for the chosen difficulty. Both are
+  deadly; the yoyo pops balloons and knocks daggers away.
 * Collecting a key sets a checkpoint, as in the Steam version: dying returns Trogg there, and
   gems collected since come back.
 * Collecting every key completes the level. For now the background just flashes and the level
   restarts; there is no text drawing yet.
 
-Not done yet: moving meanies, balloons and daggers, Trogg-movable platforms, timer and medals, sound, menus,
+Not done yet: moving meanies and platforms, Trogg-movable platforms, a difficulty menu, timer and medals, sound, menus,
 the other 54 levels, and vertically scrolling levels.
 
 ## Building
@@ -28,6 +31,7 @@ You need BeebAsm and Python 3 with Pillow, and the `steamfrak` repository alongs
 ```sh
 pip install pillow
 BEEBASM=/path/to/beebasm ./build.sh                # STEAMFRAK=../steamfrak, LEVEL=room_A_1
+DIFFICULTY=6 BEEBASM=/path/to/beebasm ./build.sh   # 0 none, 1 Easy (default), 2 Hard, 4 Harder, 6 Insane
 ```
 
 This writes `build/frak.ssd`, a bootable disc image. In an emulator (jsbeeb, b2, BeebEm)
@@ -46,6 +50,8 @@ cd tools/emu && npm install
 node run.mjs "wait:1500 shot:start down:KeyX wait:100 up:KeyX shot:walked" screenshots
 ```
 
+`INVINCIBLE=1 ./build.sh` builds a version where Trogg can't die, for testing.
+
 ## How it works
 
 | Part | Where |
@@ -55,10 +61,11 @@ node run.mjs "wait:1500 shot:start down:KeyX wait:100 up:KeyX shot:walked" scree
 | Sprite plotter (masked, with save/restore) | `plot`, `col_plot` / `col_save` / `col_restore` |
 | Draw log (erasing moving things), lines, moving objects | `log_sprite`, `log_line`, `restore_log`, `hline`, `update_movers` |
 | Yoyo | `start_yoyo`, `yoyo_out`, `yoyo_back`, `yoyo_collide` |
+| Balloons and daggers | `spawn_hazards`, `spawn_balloon`, `spawn_dagger`, `update_movers` |
 | Collisions, pickups, checkpoints | `check_collisions`, `hit_test`, `collide`, `check_checkpoint` |
 | Platform and ladder queries | `platform_find`, `ladder_find` (ports of `PlatformFind` / `LadderFind`) |
 | Trogg movement | `trogg_standing`, `trogg_falling`, `trogg_climbing` (ports of `TroggStanding` etc.) |
-| Generated data | `src/gen/*`, `build/GFX4-5`, `build/SPANS`, `build/CACHE` |
+| Generated data | `src/gen/*`, `build/GFX4-5`, `build/SPANS`, `build/CACHE` (the assembler also writes `LEVEL` and `LOGIC` for bank 6) |
 
 ### Memory map (Master 128)
 
@@ -68,10 +75,10 @@ node run.mjs "wait:1500 shot:start down:KeyX wait:100 up:KeyX shot:walked" scree
 | `&0400-&07FF` | save area for main-RAM screen buffer (BASIC's workspace, unused) |
 | `&0900-&0CFF` | save area for shadow screen buffer (RS423/cassette buffers, soft keys, UDGs) |
 | `&0E00-&10FF` | other variables: object states, checkpoint, draw logs, moving objects |
-| `&1100-&2FFF` | code, tables, Trogg's save buffers (about 500 bytes free) |
+| `&1100-&2FFF` | drawing code and its tables (about 2.9KB free) |
 | `&3000-&7FFF` | MODE 1 screen, **double buffered**: main RAM and shadow RAM |
 | SWRAM banks 4-5 | sprites, pre-shifted (27KB) |
-| SWRAM bank 6 | collision spans (`&8000`); level data, jump table and collision tables (`&A000`). Stays paged in while playing |
+| SWRAM bank 6 | collision spans (`&8000`), level data, jump table and collision tables (`&9000`), and the **game logic** (`&A000`): Trogg's movement, platforms and ladders, collisions, the yoyo, balloons and daggers. Stays paged in while playing |
 | SWRAM bank 7 | the level's platforms and ladders, pre-rendered (8KB for level 1) |
 
 ### Sprites
@@ -110,7 +117,16 @@ and recorded in that buffer's **draw log**. This covers meanies flying off, the 
 string, Trogg, and the FRAK! bubble. The background under each is saved in the buffer's 1KB
 save area. Next time the buffer is drawn, the log is played back in reverse to erase them.
 Sprites and lines (the yoyo string is a run of black pixels, colour 1) share the same
-mechanism, so balloons, daggers and moving meanies just add more entries.
+mechanism.
+
+Each sprite's save record is self-describing: a header with the row layout, then each byte
+column's screen address and saved bytes. That way erasing just replays it, without redoing the
+sprite's geometry. Part of the save area is kept for Trogg, the yoyo and the FRAK! bubble, so
+he is always drawn even when the screen is busy.
+
+Moving objects (balloons, daggers, meanies flying off) have 16.8 fixed-point positions and
+8.8 velocities, so they move at the Steam version's fractional speeds. Spawn positions use a
+16-bit xorshift random number generator.
 
 ### Collisions
 
@@ -136,11 +152,14 @@ generated by the converter. Index 0 is the start of a jump, 25 is walking off a 
 is dropping off the bottom of a ladder. `fall_flags` marks where Trogg can still grab a ladder
 and where landing would kill him, using the same thresholds as the Steam code.
 
-The game logic runs at 50 ticks a second (5/6 of the Steam version's 60). The screen is
-redrawn at a steady 25 frames a second, with two ticks per frame (`FRAMES_PER_DRAW`,
-`TICKS_PER_FRAME`). A vertical-sync event handler counts frames, so the buffers flip on every
-second sync even if drawing a frame takes more than one sync's worth of time. Timers such as
-the death pause count game ticks, not drawn frames.
+The game logic runs at 50 ticks a second (5/6 of the Steam version's 60): one tick per
+vertical sync. The screen is redrawn at 25 frames a second (`FRAMES_PER_DRAW`), so normally
+two ticks run per drawn frame. A vertical-sync event handler counts syncs. If drawing a busy
+frame overruns, that frame simply runs three ticks, so the game speed never changes. Timers
+such as the death pause count game ticks, not drawn frames.
+
+Measured frame rates: Easy holds 25fps. Hard dips to 24 and Harder to 21 at their busiest,
+with 7 balloons and daggers on screen. Insane, with 8-9 on screen, runs at 21-22fps.
 
 ### Timing
 

@@ -25,13 +25,27 @@ SCREEN      = &3000
 SCREEN_COLS = 80            \ byte columns visible across the screen (320 pixels)
 WINDOW_W    = 320           \ visible width in level pixels
 
-\ Frame rate: the screen is redrawn at 25 frames a second, with two ticks of game
-\ logic per frame, so the game runs at 50 ticks a second.
+\ Frame rate: the screen is redrawn at 25 frames a second, and the game logic
+\ runs one tick per vertical sync (50 a second): normally two per drawn frame.
 FRAMES_PER_DRAW = 2             \ vertical syncs (1/50 s) per drawn frame
-TICKS_PER_FRAME = 2             \ game logic ticks per drawn frame
+MAX_TICKS_PER_FRAME = 4         \ game logic runs one tick per vertical sync, up to this many per frame
 
-MAX_LOG = 8                     \ draw-log entries per screen buffer
-MAX_MOVERS = 4                  \ moving objects (meanies flying off, etc.)
+MAX_LOG = 16                    \ draw-log entries per screen buffer
+MAX_MOVERS = 12                 \ moving objects: balloons, daggers, meanies flying off
+
+\ Save areas: 1KB per screen buffer for the backgrounds under moving things,
+\ Part is kept for Trogg (8 columns of 34 rows), the yoyo (3 x 6) and its
+\ string, plus the FRAK! bubble (14 x 19) when he's dead; the rest is for
+\ balloons, daggers and meanies. Each sprite's save record has a 6-byte header
+\ and a 2-byte screen address per column.
+SAVE_SIZE = 1024
+SAVE_RESERVE_ALIVE = 6 + 8 * 36 + 6 + 3 * 8 + 24
+SAVE_RESERVE_DEAD = SAVE_RESERVE_ALIVE + 6 + 14 * 21
+
+\ DIFFICULTY is set by build.sh (DIFFICULTY=n ./build.sh), as in the Steam version:
+\ 0 = no balloons or daggers, 1 = Easy, 2 = Hard, 4 = Harder, 6 = Insane
+\ (3 and 5 are the upside-down versions of 2 and 4, not done yet)
+ASSERT DIFFICULTY >= 0 AND DIFFICULTY <= 6
 
 \ Trogg states
 ST_STAND    = 0
@@ -135,6 +149,17 @@ ORG &0E00
 .sfree      SKIP 2          \ next free byte in the back buffer's save area
 .send       SKIP 2          \ end of that save area
 .mv_i       SKIP 1
+.bal_timer  SKIP 1          \ ticks until the next balloon
+.dag_timer  SKIP 1          \ ticks until the next dagger
+.rng        SKIP 2          \ random number generator state
+.sp_slot    SKIP 1          \ spawning workspace
+.sp_mid     SKIP 2
+.sp_x       SKIP 2
+.mul_a      SKIP 1
+.mul_b      SKIP 1
+.mul_lo     SKIP 1
+.mvc_i      SKIP 1          \ mover collision loop
+.view_l     SKIP 2          \ left edge of the window - 64, in level pixels
 .hl_p0      SKIP 1          \ hline workspace
 .hl_p1      SKIP 1
 .hl_c0      SKIP 1
@@ -205,6 +230,7 @@ ORG &0E00
 
 MAX_OBJECTS = 64
 ASSERT NUM_DRAW <= MAX_OBJECTS
+ASSERT MAX_LOG = 16                 \ (log_slot and restore_log multiply by 16)
 .alive      SKIP MAX_OBJECTS        \ 1 = object not yet collected
 .cp_alive   SKIP MAX_OBJECTS        \ checkpoint copy
 .cp_tx      SKIP 2
@@ -212,6 +238,8 @@ ASSERT NUM_DRAW <= MAX_OBJECTS
 .cp_face    SKIP 1
 .cp_keys    SKIP 1
 .cp_gems    SKIP 1
+.cp_bal     SKIP 1
+.cp_dag     SKIP 1
 .log_n      SKIP 2                  \ draw log entries per buffer
 .log_kind   SKIP 2 * MAX_LOG
 .log_img    SKIP 2 * MAX_LOG
@@ -223,13 +251,19 @@ ASSERT NUM_DRAW <= MAX_OBJECTS
 .log_x1h    SKIP 2 * MAX_LOG
 .log_sbl    SKIP 2 * MAX_LOG
 .log_sbh    SKIP 2 * MAX_LOG
-.mv_active  SKIP MAX_MOVERS         \ moving objects
+.mv_active  SKIP MAX_MOVERS         \ moving objects: kind, or 0 if the slot is free
 .mv_img     SKIP MAX_MOVERS
+.mv_xf      SKIP MAX_MOVERS         \ position, 16.8 fixed point (fraction, low, high)
 .mv_xl      SKIP MAX_MOVERS
 .mv_xh      SKIP MAX_MOVERS
+.mv_yf      SKIP MAX_MOVERS
 .mv_yl      SKIP MAX_MOVERS
 .mv_yh      SKIP MAX_MOVERS
-.mv_vx      SKIP MAX_MOVERS
+.mv_vxf     SKIP MAX_MOVERS         \ velocity, 8.8 fixed point (fraction, signed whole part)
+.mv_vxi     SKIP MAX_MOVERS
+.mv_vyf     SKIP MAX_MOVERS
+.mv_vyi     SKIP MAX_MOVERS
+.mv_pause   SKIP MAX_MOVERS         \ ticks to wait before moving
 
 ASSERT P% <= &1100
 
@@ -263,6 +297,8 @@ GUARD SCREEN
 .objs
     sta alive,x : dex : bpl objs
     lda #0 : sta keys_found : sta gems_found : sta have_cp : sta save_cp : sta restarts
+    sta bal_timer : sta dag_timer
+    lda vsyncs : ora #1 : sta rng : lda #&5A : sta rng+1
     lda #LO(TROGG_START_X) : sta tx : lda #HI(TROGG_START_X) : sta tx+1
     lda #LO(TROGG_START_Y) : sta ty : lda #HI(TROGG_START_Y) : sta ty+1
     lda #0 : sta tface
@@ -281,6 +317,7 @@ GUARD SCREEN
     lda cp_tx : sta tx : lda cp_tx+1 : sta tx+1
     lda cp_ty : sta ty : lda cp_ty+1 : sta ty+1
     lda cp_face : sta tface
+    lda cp_bal : sta bal_timer : lda cp_dag : sta dag_timer
     lda #0 : sta save_cp
 }
     \ fall through
@@ -352,17 +389,41 @@ GUARD SCREEN
     lda savebuf_lo,x : sta sfree : lda savebuf_hi,x : sta sfree+1
     lda savebuf_end_lo,x : sta send : lda savebuf_end_hi,x : sta send+1
 
-    \ Moving objects (drawn behind Trogg, as meanies were in GameMaker)
+    \ view_l = left edge of the window - 64, for skipping off-screen movers
+    lda scrollcol : sta view_l : lda #0 : sta view_l+1
+    asl view_l : rol view_l+1 : asl view_l : rol view_l+1
+    lda view_l : sec : sbc #64 : sta view_l : lda view_l+1 : sbc #0 : sta view_l+1
+    \ Moving objects (drawn behind Trogg, as meanies were in GameMaker). Keep
+    \ enough of the save area for Trogg, the yoyo and the FRAK! bubble.
+    lda dead : bne reserve_dead
+    lda send : sec : sbc #LO(SAVE_RESERVE_ALIVE) : sta send
+    lda send+1 : sbc #HI(SAVE_RESERVE_ALIVE) : sta send+1
+    jmp reserved
+.reserve_dead
+    lda send : sec : sbc #LO(SAVE_RESERVE_DEAD) : sta send
+    lda send+1 : sbc #HI(SAVE_RESERVE_DEAD) : sta send+1
+.reserved
     lda #0 : sta mv_i
 .movers
     ldx mv_i
     lda mv_active,x : beq next_mover
+    \ skip it if it's well outside the window (x < view left - 64 or x >= view right + 64)
+    lda mv_xl,x : sec : sbc view_l : sta tmp
+    lda mv_xh,x : sbc view_l+1 : bmi next_mover     \ left of the window
+    beq on_screen
+    cmp #HI(WINDOW_W + 128) : bne next_mover
+    lda tmp : cmp #LO(WINDOW_W + 128) : bcs next_mover
+.on_screen
     lda mv_img,x : sta p_img
     lda mv_xl,x : sta p_x : lda mv_xh,x : sta p_x+1
     lda mv_yl,x : sta p_y : lda mv_yh,x : sta p_y+1
     jsr log_sprite
 .next_mover
-    inc mv_i : lda mv_i : cmp #MAX_MOVERS : bne movers
+    inc mv_i : lda mv_i : cmp #MAX_MOVERS : beq movers_done
+    jmp movers
+.movers_done
+    ldx back
+    lda savebuf_end_lo,x : sta send : lda savebuf_end_hi,x : sta send+1
 
     \ The yoyo and its string
     lda tstate : cmp #ST_YOYO_OUT : bcc no_yoyo
@@ -399,10 +460,16 @@ GUARD SCREEN
     jsr set_crtc_start
     jsr show_back
     lda back : sta front
-    lda vsyncs : sta last_flip
 
-    \ Run the game logic for this frame
-    lda #TICKS_PER_FRAME : sta ticks_left
+    \ Run one tick of game logic per vertical sync since the last flip: normally
+    \ two, but more if drawing overran, so the game speed stays at 50 ticks a
+    \ second (capped, so a long pause such as a full redraw doesn't jump ahead)
+    lda vsyncs : sec : sbc last_flip
+    cmp #MAX_TICKS_PER_FRAME + 1 : bcc ticks_ok
+    lda #MAX_TICKS_PER_FRAME
+.ticks_ok
+    sta ticks_left
+    lda vsyncs : sta last_flip
 .tick
 .^t_logic
     jsr game_tick
@@ -438,6 +505,7 @@ TICK_WON = 2
 .playing
     jsr read_keys
     jsr trogg_update
+    jsr spawn_hazards
     jsr update_movers
     lda dead : bne done
     jsr check_collisions
@@ -483,7 +551,7 @@ LOG_LINE = 1
 \ Log index for entry log_n[back] of the back buffer -> X
 .log_slot
 {
-    lda back : asl a : asl a : asl a
+    lda back : asl a : asl a : asl a : asl a
     ldx back : clc : adc log_n,x
     tax
     rts
@@ -543,7 +611,7 @@ LINE_SAVE = 24                      \ bytes: the longest line is about 82 pixels
     lda log_n,x : beq done
 .loop
     ldx back : dec log_n,x
-    lda back : asl a : asl a : asl a : clc : adc log_n,x : tax
+    lda back : asl a : asl a : asl a : asl a : clc : adc log_n,x : tax
     lda log_img,x : sta p_img
     lda log_xl,x : sta p_x : lda log_xh,x : sta p_x+1
     lda log_yl,x : sta p_y : lda log_yh,x : sta p_y+1
@@ -551,7 +619,7 @@ LINE_SAVE = 24                      \ bytes: the longest line is about 82 pixels
     lda log_sbl,x : sta sbase : lda log_sbh,x : sta sbase+1
     lda #PM_RESTORE : sta p_mode
     lda log_kind,x : bne line
-    jsr plot
+    jsr restore_saved
     jmp next
 .line
     jsr hline
@@ -642,60 +710,6 @@ LINE_SAVE = 24                      \ bytes: the longest line is about 82 pixels
 .left_pixels  EQUB &FF, &77, &33, &11
 .right_pixels EQUB &88, &CC, &EE, &FF
 
-\ ------------------------------------------------------------------------------
-\ Moving objects. For now these are meanies flying off after being yoyoed;
-\ balloons, daggers and moving meanies will join them.
-\ ------------------------------------------------------------------------------
-
-MOVER_RANGE = 400                   \ removed this far from Trogg (as in GameMaker)
-
-\ Start a meanie flying off: X = draw-list index, A = x velocity (signed)
-.launch_meanie
-{
-    sta tmp
-    ldy #MAX_MOVERS - 1
-.find
-    lda mv_active,y : beq free
-    dey : bpl find
-    rts                             \ no free slot: it just vanishes
-.free
-    lda #1 : sta mv_active,y
-    lda tmp : sta mv_vx,y
-    lda draw_img,x : sta mv_img,y
-    lda draw_xl,x : sta mv_xl,y : lda draw_xh,x : sta mv_xh,y
-    lda draw_yl,x : sta mv_yl,y : lda draw_yh,x : sta mv_yh,y
-    rts
-}
-
-.update_movers
-{
-    ldx #MAX_MOVERS - 1
-.loop
-    lda mv_active,x : beq next
-    \ x += vx
-    lda mv_vx,x : bmi neg
-    clc : adc mv_xl,x : sta mv_xl,x : lda mv_xh,x : adc #0 : sta mv_xh,x
-    jmp moved
-.neg
-    clc : adc mv_xl,x : sta mv_xl,x : lda mv_xh,x : adc #&FF : sta mv_xh,x
-.moved
-    \ gone once it's MOVER_RANGE from Trogg (or off the left of the level)
-    bmi gone
-    lda mv_xl,x : sec : sbc tx : sta tmp : lda mv_xh,x : sbc tx+1
-    bpl pos
-    \ negative distance: negate
-    eor #&FF : sta tmp+1 : lda tmp : eor #&FF : clc : adc #1 : sta tmp
-    lda tmp+1 : adc #0
-.pos
-    sta tmp+1
-    lda tmp : cmp #LO(MOVER_RANGE) : lda tmp+1 : sbc #HI(MOVER_RANGE) : bcc next
-.gone
-    lda #0 : sta mv_active,x
-.next
-    dex : bpl loop
-    rts
-}
-
 ACCCON = &FE34                      \ Master: bit 0 = display shadow, bit 2 = CPU uses shadow
 
 \ Make &3000-&7FFF refer to the back buffer
@@ -735,7 +749,6 @@ ACCCON = &FE34                      \ Master: bit 0 = display shadow, bit 2 = CP
 \ buffer 0's in BASIC's workspace (unused, since the game never returns to
 \ BASIC), buffer 1's in pages &09-&0C (RS423/cassette buffers, soft keys and
 \ user-defined characters, none of which the game uses)
-SAVE_SIZE = 1024
 savebuf0 = &0400
 savebuf1 = &0900
 .savebuf_lo     EQUB LO(savebuf0), LO(savebuf1)
@@ -906,6 +919,12 @@ CACHE_HI = &8100
     \ The save pointer starts at sbase even if nothing turns out to be visible
     \ (the draw log uses where it ends up as the next free save position)
     lda sbase : sta sptr : lda sbase+1 : sta sptr+1
+    \ When saving, the save area starts with a record header (see restore_saved):
+    \ column count (0 until we know better), y0, cells, first_end, last_end, rows
+    lda p_mode : cmp #PM_SAVE : bne no_header
+    ldy #0 : tya : sta (sptr),y
+    lda sptr : clc : adc #SAVE_HEADER : sta sptr : bcc no_header : inc sptr+1
+.no_header
     ldx p_img
     \ left = x - xo, top = y - yo (signed 16-bit)
     sec : lda p_x : sbc img_xo,x : sta left : lda p_x+1 : sbc #0 : sta left+1
@@ -1006,6 +1025,16 @@ CACHE_HI = &8100
     lda cells : cmp #1 : bne multi
     lda tmp : sta first_end
 .multi
+    \ Record the layout and column count in the save header
+    lda p_mode : cmp #PM_SAVE : bne no_layout
+    ldy #1
+    lda y0 : sta (sbase),y : iny
+    lda cells : sta (sbase),y : iny
+    lda first_end : sta (sbase),y : iny
+    lda last_end : sta (sbase),y : iny
+    lda rows : sta (sbase),y
+    lda cend : sec : sbc cidx : ldy #0 : sta (sbase),y
+.no_layout
     \ Pick the column routine for this mode
     ldx p_mode
     lda col_routines_lo,x : sta do_col+1
@@ -1025,6 +1054,10 @@ CACHE_HI = &8100
 .addr_ok
     sta ptr+1
     lda dcol : sta dptr : lda dcol+1 : sta dptr+1
+    \ when saving, record this column's screen address
+    lda p_mode : cmp #PM_SAVE : bne do_col
+    ldy #0 : lda ptr : sta (sptr),y : iny : lda ptr+1 : sta (sptr),y
+    lda sptr : clc : adc #2 : sta sptr : bcc do_col : inc sptr+1
 .do_col
     jsr &FFFF                       \ (column routine set above)
     \ the save buffer moves on by one column's worth of rows
@@ -1046,6 +1079,31 @@ CACHE_HI = &8100
                 EQUB HI(img_hi0), HI(img_hi1), HI(img_hi2), HI(img_hi3)
 .shift_bank_tab EQUB LO(img_bank0), LO(img_bank1), LO(img_bank2), LO(img_bank3)
                 EQUB HI(img_bank0), HI(img_bank1), HI(img_bank2), HI(img_bank3)
+
+\ Put back the background saved when a sprite was drawn with PM_SAVE, straight
+\ from its save record at sbase (no need to redo the sprite's geometry):
+\   header: column count, y0, cells, first_end, last_end, rows
+\   then for each column: screen address (2 bytes) and the saved bytes
+SAVE_HEADER = 6
+.restore_saved
+{
+    ldy #0 : lda (sbase),y : beq done : sta cidx
+    iny : lda (sbase),y : sta y0
+    iny : lda (sbase),y : sta cells
+    iny : lda (sbase),y : sta first_end
+    iny : lda (sbase),y : sta last_end
+    iny : lda (sbase),y : sta rows
+    lda sbase : clc : adc #SAVE_HEADER : sta sptr
+    lda sbase+1 : adc #0 : sta sptr+1
+.column
+    ldy #0 : lda (sptr),y : sta ptr : iny : lda (sptr),y : sta ptr+1
+    lda sptr : clc : adc #2 : sta sptr : bcc nc : inc sptr+1 : .nc
+    jsr col_restore
+    lda sptr : clc : adc rows : sta sptr : bcc nc2 : inc sptr+1 : .nc2
+    dec cidx : bne column
+.done
+    rts
+}
 
 .col_routines_lo EQUB LO(col_plot), LO(col_save), LO(col_restore)
 .col_routines_hi EQUB HI(col_plot), HI(col_save), HI(col_restore)
@@ -1181,6 +1239,435 @@ ENDMACRO
     rts
 }
 
+\ Level complete: flash the background, then start again. Carry set when done.
+WIN_FRAMES = 150                    \ (game ticks)
+.win_tick
+{
+    dec won : beq finished
+    lda won : and #7 : bne not_yet
+    lda won : and #8 : beq bg
+    lda #7 : jsr set_bg                 \ white
+    clc : rts
+.bg
+    jsr set_palette
+.not_yet
+    clc : rts
+.finished
+    jsr set_palette
+    sec : rts
+}
+
+\ ------------------------------------------------------------------------------
+\ Keyboard
+\ ------------------------------------------------------------------------------
+
+\ A = negative INKEY code; returns A = 1 if pressed, else 0.
+\ Reads the keyboard matrix directly through the system VIA, which is much
+\ quicker than OSBYTE &81.
+SYSVIA_ORB  = &FE40
+SYSVIA_DDRA = &FE43
+SYSVIA_ORA  = &FE4F                 \ port A without handshake
+.key_pressed
+{
+    eor #&FF                        \ INKEY -n is internal key number n-1
+    sei
+    ldx #3 : stx SYSVIA_ORB         \ stop the keyboard auto-scan
+    ldx #&7F : stx SYSVIA_DDRA      \ bits 0-6 select the key, bit 7 reads it
+    sta SYSVIA_ORA
+    lda SYSVIA_ORA                  \ bit 7 set if the key is down
+    ldx #&0B : stx SYSVIA_ORB       \ restart the auto-scan
+    cli
+    asl a : lda #0 : rol a
+    rts
+}
+
+.read_keys
+{
+    lda #KEY_Z : jsr key_pressed : sta k_left
+    lda #KEY_LEFT : jsr key_pressed : ora k_left : sta k_left
+    lda #KEY_X : jsr key_pressed : sta k_right
+    lda #KEY_RIGHT : jsr key_pressed : ora k_right : sta k_right
+    lda #KEY_O : jsr key_pressed : sta k_up
+    lda #KEY_UP : jsr key_pressed : ora k_up : sta k_up
+    lda #KEY_K : jsr key_pressed : sta k_down
+    lda #KEY_DOWN : jsr key_pressed : ora k_down : sta k_down
+    lda #KEY_P : jsr key_pressed : sta k_yoyo
+    lda #KEY_SPACE : jsr key_pressed : ora k_yoyo : sta k_yoyo
+
+    \ doyoyo, with debounce: after the yoyo comes back, the key must be released
+    lda yo_db : beq yo_live
+    lda #0 : sta doyoyo
+    lda k_yoyo : bne yo_done
+    sta yo_db
+    beq yo_done
+.yo_live
+    lda k_yoyo : sta doyoyo
+.yo_done
+
+    \ ymove (+1 = up), with debounce after landing/climbing
+    lda ud_db : beq ud_live
+    lda #0 : sta ymove
+    lda k_up : ora k_down : bne ud_done
+    sta ud_db
+    beq ud_done
+.ud_live
+    lda k_up : sec : sbc k_down : sta ymove
+.ud_done
+    lda lr_db : beq lr_live
+    lda #0 : sta xmove
+    lda k_left : ora k_right : bne lr_done
+    sta lr_db
+    beq lr_done
+.lr_live
+    lda k_right : sec : sbc k_left : sta xmove
+.lr_done
+    rts
+}
+
+\ The string runs from Trogg's hand (tx + 12 * direction) to the yoyo, on the
+\ row just above the yoyo's base
+.yoyo_string_params
+{
+    lda yo_x : sta q_x : lda yo_x+1 : sta q_x+1
+    lda tface : bne left
+    lda tx : clc : adc #12 : sta p_x : lda tx+1 : adc #0 : sta p_x+1
+    jmp have_x
+.left
+    lda tx : sec : sbc #12 : sta p_x : lda tx+1 : sbc #0 : sta p_x+1
+.have_x
+    lda yo_y : sec : sbc #1 : sta p_y : lda yo_y+1 : sbc #0 : sta p_y+1
+    rts
+}
+
+\ Yoyo frame: ((length * direction) >> 3) AND 3, as in GameMaker
+.yoyo_image
+{
+    lda yo_len+1
+    ldx tface : beq right
+    eor #&FF : clc : adc #1                 \ negate
+    cmp #&80 : ror a : cmp #&80 : ror a : cmp #&80 : ror a
+    jmp frame
+.right
+    lsr a : lsr a : lsr a
+.frame
+    and #3 : clc : adc #IMG_Yoyo_0
+    rts
+}
+
+\ Which image to draw for Trogg
+.trogg_image
+{
+    lda tstate
+    cmp #ST_WALK : beq walk
+    cmp #ST_CLIMB : beq climb
+    cmp #ST_YOYO_OUT : bcc stand
+    lda tface : bne yl
+    lda #IMG_Trogg_yr : rts
+.yl
+    lda #IMG_Trogg_yl : rts
+.stand
+    lda tface : bne sl
+    lda #IMG_Trogg_sr : rts
+.sl
+    lda #IMG_Trogg_sl : rts
+.walk
+    lda anim : lsr a : lsr a : lsr a : lsr a : lsr a : lsr a   \ top two bits = frame 0..3
+    ldx tface : beq wr
+    clc : adc #IMG_Trogg_wl_0 : rts
+.wr
+    clc : adc #IMG_Trogg_wr_0 : rts
+.climb
+    lda tclimb : beq cn
+    lda anim : asl a : lda #0 : rol a              \ top bit = frame 0..1
+    ldx tclimb : cpx #1 : beq cu
+    clc : adc #IMG_Trogg_cd_0 : rts
+.cu
+    clc : adc #IMG_Trogg_cu_0 : rts
+.cn
+    lda #IMG_Trogg_cn : rts
+}
+
+\ ------------------------------------------------------------------------------
+\ Data
+\ ------------------------------------------------------------------------------
+
+INCLUDE "src/gen/tables.asm"
+INCLUDE "src/gen/sprites.asm"
+
+\ Screen address of each character row (level row R lives at char index R*80 MOD 2560)
+.rowaddr_lo
+FOR r, 0, 127
+    EQUB LO(SCREEN + ((r * 80) MOD 2560) * 8)
+NEXT
+.rowaddr_hi
+FOR r, 0, 127
+    EQUB HI(SCREEN + ((r * 80) MOD 2560) * 8)
+NEXT
+
+.end
+
+\ Per-buffer state (not saved to disc)
+.bscroll    SKIP 2
+.bfrak      SKIP 2          \ FRAK! bubble drawn in this buffer
+.pend_lo    SKIP 2          \ columns waiting to be repainted, per buffer
+.pend_hi    SKIP 2
+.ram_top
+
+SAVE "FRAK", start, end, start
+
+\ ------------------------------------------------------------------------------
+\ Game logic, in sideways RAM bank 6 (&A000-&BFFF)
+\
+\ Bank 6 is paged in whenever the game logic runs, so the logic can live there,
+\ leaving main RAM for the drawing code (which pages the sprite banks in).
+\ ------------------------------------------------------------------------------
+
+LOGIC_CODE = &A000
+CLEAR &8000, &C000
+ORG LOGIC_CODE
+GUARD &C000
+.logic_start
+
+\ ------------------------------------------------------------------------------
+\ Moving objects. For now these are meanies flying off after being yoyoed;
+\ balloons, daggers and moving meanies will join them.
+\ ------------------------------------------------------------------------------
+
+MOVER_RANGE = 400                   \ removed this far from Trogg (as in GameMaker)
+
+MV_FLYING = 1                       \ a meanie knocked flying by the yoyo
+MV_BALLOON = 2
+MV_DAGGER = 3
+
+\ Find a free mover slot -> Y, carry clear; carry set if there isn't one
+.find_mover
+{
+    ldy #MAX_MOVERS - 1
+.find
+    lda mv_active,y : beq free
+    dey : bpl find
+    sec : rts
+.free
+    lda #0
+    sta mv_xf,y : sta mv_yf,y : sta mv_vxf,y : sta mv_vxi,y : sta mv_vyf,y : sta mv_vyi,y : sta mv_pause,y
+    clc : rts
+}
+
+\ Start a meanie flying off: X = draw-list index, A = whole-pixel x velocity (signed)
+.launch_meanie
+{
+    sta tmp
+    jsr find_mover : bcs none       \ no free slot: it just vanishes
+    lda #MV_FLYING : sta mv_active,y
+    lda tmp : sta mv_vxi,y
+    lda draw_img,x : sta mv_img,y
+    lda draw_xl,x : sta mv_xl,y : lda draw_xh,x : sta mv_xh,y
+    lda draw_yl,x : sta mv_yl,y : lda draw_yh,x : sta mv_yh,y
+.none
+    rts
+}
+
+\ Move everything one tick, removing what has gone
+.update_movers
+{
+    ldx #MAX_MOVERS - 1
+.loop
+    lda mv_active,x : bne active
+    jmp next
+.active
+    lda mv_pause,x : beq move
+    dec mv_pause,x
+    jmp next
+.move
+    \ x += vx, y += vy (16.8 + signed 8.8)
+    ldy #0 : lda mv_vxi,x : bpl xs : dey : .xs : sty tmp
+    clc
+    lda mv_xf,x : adc mv_vxf,x : sta mv_xf,x
+    lda mv_xl,x : adc mv_vxi,x : sta mv_xl,x
+    lda mv_xh,x : adc tmp : sta mv_xh,x
+    ldy #0 : lda mv_vyi,x : bpl ys : dey : .ys : sty tmp
+    clc
+    lda mv_yf,x : adc mv_vyf,x : sta mv_yf,x
+    lda mv_yl,x : adc mv_vyi,x : sta mv_yl,x
+    lda mv_yh,x : adc tmp : sta mv_yh,x
+
+    lda mv_active,x
+    cmp #MV_BALLOON : beq balloon
+    cmp #MV_DAGGER : beq dagger
+
+    \ Flying meanie: gone once it's MOVER_RANGE from Trogg (or off the left of the level)
+    lda mv_xh,x : bmi gone
+    lda mv_xl,x : sec : sbc tx : sta tmp : lda mv_xh,x : sbc tx+1
+    bpl pos
+    eor #&FF : sta tmp+1 : lda tmp : eor #&FF : clc : adc #1 : sta tmp
+    lda tmp+1 : adc #0
+.pos
+    sta tmp+1
+    lda tmp : cmp #LO(MOVER_RANGE) : lda tmp+1 : sbc #HI(MOVER_RANGE) : bcc next
+    bcs gone
+
+.balloon
+    \ gone when it floats off the top (y < 0)
+    lda mv_yh,x : bmi gone
+    bpl next
+
+.dagger
+    \ gone at the bottom of the level, or once x <= -11
+    lda mv_yl,x : cmp #LO(LEVEL_H) : lda mv_yh,x : sbc #HI(LEVEL_H)
+    bvc nv : eor #&80 : .nv
+    bpl gone
+    lda mv_xl,x : cmp #LO(-10) : lda mv_xh,x : sbc #HI(-10)
+    bvc nv2 : eor #&80 : .nv2
+    bmi gone
+    jmp next
+
+.gone
+    lda #0 : sta mv_active,x
+.next
+    dex : bmi done
+    jmp loop
+.done
+    rts
+}
+
+\ ------------------------------------------------------------------------------
+\ Balloons and daggers (port of the oRoom Step event, oBalloon and oDagger)
+\ ------------------------------------------------------------------------------
+
+\ Per-difficulty settings (from the Steam version's oRoom Create), in game ticks
+\ and 8.8 fixed-point pixels a tick
+MACRO DIFF_TABLE b0, b1, b2, b3, b4, b5, b6
+    EQUB b0, b1, b2, b3, b4, b5, b6
+ENDMACRO
+.diff_balloon_time  DIFF_TABLE 0, 180, 120, 120, 90, 90, 60
+.diff_dagger_time   DIFF_TABLE 0, 220, 132, 132, 110, 110, 75
+.diff_pause         DIFF_TABLE 0, 60, 55, 55, 50, 50, 45
+.diff_balloon_vf    DIFF_TABLE 0, LO(307), LO(333), LO(333), LO(358), LO(358), LO(384)     \ 1.2 .. 1.5
+.diff_balloon_vi    DIFF_TABLE 0, HI(307), HI(333), HI(333), HI(358), HI(358), HI(384)
+.diff_dagger_xf     DIFF_TABLE 0, LO(205), LO(225), LO(225), LO(246), LO(246), LO(266)     \ 0.8 * (1.0 .. 1.3)
+.diff_dagger_xi     DIFF_TABLE 0, HI(205), HI(225), HI(225), HI(246), HI(246), HI(266)
+.diff_dagger_yf     DIFF_TABLE 0, LO(154), LO(169), LO(169), LO(184), LO(184), LO(200)     \ 0.6 * (1.0 .. 1.3)
+.diff_dagger_yi     DIFF_TABLE 0, HI(154), HI(169), HI(169), HI(184), HI(184), HI(200)
+.diff_spread_l      DIFF_TABLE 0, LO(270), LO(280), LO(280), LO(290), LO(290), LO(300)
+.diff_spread_h      DIFF_TABLE 0, HI(270), HI(280), HI(280), HI(290), HI(290), HI(300)
+
+\ Called once per tick while Trogg is alive
+.spawn_hazards
+{
+    ldx #DIFFICULTY
+    lda diff_balloon_time,x : beq no_balloons
+    lda bal_timer : beq spawn_b
+    dec bal_timer : bne no_balloons
+.spawn_b
+    jsr spawn_balloon
+    ldx #DIFFICULTY
+    lda diff_balloon_time,x : sta bal_timer
+.no_balloons
+    ldx #DIFFICULTY
+    lda diff_dagger_time,x : beq no_daggers
+    lda dag_timer : beq spawn_d
+    dec dag_timer : bne no_daggers
+.spawn_d
+    jsr spawn_dagger
+    ldx #DIFFICULTY
+    lda diff_dagger_time,x : sta dag_timer
+.no_daggers
+    rts
+}
+
+\ A balloon at the bottom of the level, at a random x within spread/2 of Trogg
+.spawn_balloon
+{
+    jsr find_mover : bcc have_slot
+    rts
+.have_slot
+    sty sp_slot
+    lda tx : sta sp_mid : lda tx+1 : sta sp_mid+1
+    jsr random_x
+    ldy sp_slot : ldx #DIFFICULTY
+    lda #MV_BALLOON : sta mv_active,y
+    lda #IMG_Balloon : sta mv_img,y
+    lda sp_x : sta mv_xl,y : lda sp_x+1 : sta mv_xh,y
+    lda #LO(LEVEL_H - 4) : sta mv_yl,y : lda #HI(LEVEL_H - 4) : sta mv_yh,y
+    \ vy = -balloon speed
+    lda #0 : sec : sbc diff_balloon_vf,x : sta mv_vyf,y
+    lda #0 : sbc diff_balloon_vi,x : sta mv_vyi,y
+    lda diff_pause,x : sta mv_pause,y
+.none
+    rts
+}
+
+\ A dagger at the top, aimed ahead of Trogg: the middle of its range is
+\ x + h * 4/3, where h = max(0, y - 4), so that it arrives about where he is
+.spawn_dagger
+{
+    jsr find_mover : bcc have_slot
+    rts
+.have_slot
+    sty sp_slot
+    lda ty : sec : sbc #4 : sta tmp : lda ty+1 : sbc #0 : bpl h_ok
+    lda #0 : sta tmp
+.h_ok
+    \ (horizontally scrolling levels are 256 high, so h fits in a byte)
+    \ mid = tx + h + h * 85 / 256  (h * 1.332)
+    lda tmp : sta mul_a : lda #85 : jsr mul8      \ A = high byte of h * 85
+    clc : adc tmp : sta sp_mid : lda #0 : adc #0 : sta sp_mid+1
+    lda sp_mid : clc : adc tx : sta sp_mid : lda sp_mid+1 : adc tx+1 : sta sp_mid+1
+    jsr random_x
+    ldy sp_slot : ldx #DIFFICULTY
+    lda #MV_DAGGER : sta mv_active,y
+    lda #IMG_DaggerLR : sta mv_img,y
+    lda sp_x : sta mv_xl,y : lda sp_x+1 : sta mv_xh,y
+    lda #4 : sta mv_yl,y : lda #0 : sta mv_yh,y
+    \ down and to the left
+    lda #0 : sec : sbc diff_dagger_xf,x : sta mv_vxf,y
+    lda #0 : sbc diff_dagger_xi,x : sta mv_vxi,y
+    lda diff_dagger_yf,x : sta mv_vyf,y
+    lda diff_dagger_yi,x : sta mv_vyi,y
+    lda diff_pause,x : sta mv_pause,y
+.none
+    rts
+}
+
+\ sp_x = sp_mid - spread/2 + random(0 .. spread)
+.random_x
+{
+    ldx #DIFFICULTY
+.retry
+    jsr random
+    lda rng+1 : and #1 : sta tmp+1 : lda rng : sta tmp       \ 0 .. 511
+    lda diff_spread_l,x : cmp tmp : lda diff_spread_h,x : sbc tmp+1 : bcc retry
+    \ sp_x = sp_mid + tmp - spread / 2
+    lda diff_spread_h,x : lsr a : sta sp_x+1 : lda diff_spread_l,x : ror a : sta sp_x
+    lda sp_mid : clc : adc tmp : sta tmp : lda sp_mid+1 : adc tmp+1 : sta tmp+1
+    lda tmp : sec : sbc sp_x : sta sp_x : lda tmp+1 : sbc sp_x+1 : sta sp_x+1
+    rts
+}
+
+\ 16-bit xorshift random numbers (John Metcalf's 7/9/8 version)
+.random
+{
+    lda rng+1 : lsr a
+    lda rng : ror a : eor rng+1 : sta rng+1
+    ror a : eor rng : sta rng
+    eor rng+1 : sta rng+1
+    rts
+}
+
+\ A = high byte of mul_a * A
+.mul8
+{
+    sta mul_b
+    lda #0 : ldx #8
+.loop
+    lsr mul_b : bcc no_add
+    clc : adc mul_a
+.no_add
+    ror a : ror mul_lo
+    dex : bne loop
+    rts
+}
+
 \ ------------------------------------------------------------------------------
 \ Collisions between Trogg and keys, gems and meanies
 \
@@ -1221,12 +1708,36 @@ ENDMACRO
     lda draw_th,x : sbc ct_t+1
     sta tmp+1 : lda c_dx+1 : sta c_dy : lda tmp+1
     jsr in_range_64_dy : bcc next
+    ldx co_i : lda draw_img,x : sta c_oimg
     jsr hit_test : bcc next
     ldx co_i
     jsr collide
 .next
     inc co_i
     lda co_i : cmp #NUM_DRAW : bne loop
+
+    \ Moving objects (balloons, daggers, meanies flying off) are all deadly
+    lda #MAX_MOVERS - 1 : sta mvc_i
+.mloop
+    ldx mvc_i
+    lda mv_active,x : bne m_on
+    jmp mnext
+.m_on
+    ldy mv_img,x : sty c_oimg
+    \ c_dx = (x - xo) - Trogg left, c_dy = (y - yo) - Trogg top
+    lda mv_xl,x : sec : sbc img_xo,y : sta tmp : lda mv_xh,x : sbc #0 : sta tmp+1
+    lda tmp : sec : sbc ct_l : sta c_dx : lda tmp+1 : sbc ct_l+1
+    jsr in_range_64 : bcc mnext
+    ldx mvc_i : ldy c_oimg
+    lda mv_yl,x : sec : sbc img_yo,y : sta tmp : lda mv_yh,x : sbc #0 : sta tmp+1
+    lda tmp : sec : sbc ct_t : sta c_dy : lda tmp+1 : sbc ct_t+1
+    jsr in_range_64_dy : bcc mnext
+    jsr hit_test : bcc mnext
+    jsr trogg_dies
+.mnext
+    dec mvc_i : bmi m_done
+    jmp mloop
+.m_done
     pla : sta ROMSEL_COPY : sta ROMSEL
     rts
 }
@@ -1259,8 +1770,6 @@ ENDMACRO
 \ Carry set if so. The spans bank must be paged in.
 .hit_test
 {
-    ldx co_i
-    lda draw_img,x : sta c_oimg
     \ Offsets biased by 128 so that everything is an unsigned compare
     lda c_dx : eor #&80 : sta c_dxb
     lda c_dy : eor #&80 : sta c_dyb
@@ -1364,92 +1873,8 @@ ENDMACRO
     lda tx : sta cp_tx : lda tx+1 : sta cp_tx+1
     lda ty : sta cp_ty : lda ty+1 : sta cp_ty+1
     lda tface : sta cp_face
+    lda bal_timer : sta cp_bal : lda dag_timer : sta cp_dag
 .done
-    rts
-}
-
-\ Level complete: flash the background, then start again. Carry set when done.
-WIN_FRAMES = 150                    \ (game ticks)
-.win_tick
-{
-    dec won : beq finished
-    lda won : and #7 : bne not_yet
-    lda won : and #8 : beq bg
-    lda #7 : jsr set_bg                 \ white
-    clc : rts
-.bg
-    jsr set_palette
-.not_yet
-    clc : rts
-.finished
-    jsr set_palette
-    sec : rts
-}
-
-\ ------------------------------------------------------------------------------
-\ Keyboard
-\ ------------------------------------------------------------------------------
-
-\ A = negative INKEY code; returns A = 1 if pressed, else 0.
-\ Reads the keyboard matrix directly through the system VIA, which is much
-\ quicker than OSBYTE &81.
-SYSVIA_ORB  = &FE40
-SYSVIA_DDRA = &FE43
-SYSVIA_ORA  = &FE4F                 \ port A without handshake
-.key_pressed
-{
-    eor #&FF                        \ INKEY -n is internal key number n-1
-    sei
-    ldx #3 : stx SYSVIA_ORB         \ stop the keyboard auto-scan
-    ldx #&7F : stx SYSVIA_DDRA      \ bits 0-6 select the key, bit 7 reads it
-    sta SYSVIA_ORA
-    lda SYSVIA_ORA                  \ bit 7 set if the key is down
-    ldx #&0B : stx SYSVIA_ORB       \ restart the auto-scan
-    cli
-    asl a : lda #0 : rol a
-    rts
-}
-
-.read_keys
-{
-    lda #KEY_Z : jsr key_pressed : sta k_left
-    lda #KEY_LEFT : jsr key_pressed : ora k_left : sta k_left
-    lda #KEY_X : jsr key_pressed : sta k_right
-    lda #KEY_RIGHT : jsr key_pressed : ora k_right : sta k_right
-    lda #KEY_O : jsr key_pressed : sta k_up
-    lda #KEY_UP : jsr key_pressed : ora k_up : sta k_up
-    lda #KEY_K : jsr key_pressed : sta k_down
-    lda #KEY_DOWN : jsr key_pressed : ora k_down : sta k_down
-    lda #KEY_P : jsr key_pressed : sta k_yoyo
-    lda #KEY_SPACE : jsr key_pressed : ora k_yoyo : sta k_yoyo
-
-    \ doyoyo, with debounce: after the yoyo comes back, the key must be released
-    lda yo_db : beq yo_live
-    lda #0 : sta doyoyo
-    lda k_yoyo : bne yo_done
-    sta yo_db
-    beq yo_done
-.yo_live
-    lda k_yoyo : sta doyoyo
-.yo_done
-
-    \ ymove (+1 = up), with debounce after landing/climbing
-    lda ud_db : beq ud_live
-    lda #0 : sta ymove
-    lda k_up : ora k_down : bne ud_done
-    sta ud_db
-    beq ud_done
-.ud_live
-    lda k_up : sec : sbc k_down : sta ymove
-.ud_done
-    lda lr_db : beq lr_live
-    lda #0 : sta xmove
-    lda k_left : ora k_right : bne lr_done
-    sta lr_db
-    beq lr_done
-.lr_live
-    lda k_right : sec : sbc k_left : sta xmove
-.lr_done
     rts
 }
 
@@ -1766,6 +2191,9 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
 
 .trogg_dies
 {
+IF INVINCIBLE
+    rts                             \ (test builds: INVINCIBLE=1 ./build.sh)
+ENDIF
     lda #50 : sta dead              \ restart in a second (50 game ticks)
     rts
 }
@@ -1972,36 +2400,6 @@ YOYO_HIT_SPEED = 8                  \ pixels a tick that a yoyoed meanie flies o
     rts
 }
 
-\ The string runs from Trogg's hand (tx + 12 * direction) to the yoyo, on the
-\ row just above the yoyo's base
-.yoyo_string_params
-{
-    lda yo_x : sta q_x : lda yo_x+1 : sta q_x+1
-    lda tface : bne left
-    lda tx : clc : adc #12 : sta p_x : lda tx+1 : adc #0 : sta p_x+1
-    jmp have_x
-.left
-    lda tx : sec : sbc #12 : sta p_x : lda tx+1 : sbc #0 : sta p_x+1
-.have_x
-    lda yo_y : sec : sbc #1 : sta p_y : lda yo_y+1 : sbc #0 : sta p_y+1
-    rts
-}
-
-\ Yoyo frame: ((length * direction) >> 3) AND 3, as in GameMaker
-.yoyo_image
-{
-    lda yo_len+1
-    ldx tface : beq right
-    eor #&FF : clc : adc #1                 \ negate
-    cmp #&80 : ror a : cmp #&80 : ror a : cmp #&80 : ror a
-    jmp frame
-.right
-    lsr a : lsr a : lsr a
-.frame
-    and #3 : clc : adc #IMG_Yoyo_0
-    rts
-}
-
 \ Did the yoyo hit a meanie? GameMaker tested a circle of radius 3.5 at
 \ (yo_x, yo_y - 3.5) against the meanies' rectangles; this uses the circle's
 \ bounding square, x in [yo_x - 3, yo_x + 3] and y in [yo_y - 7, yo_y].
@@ -2044,80 +2442,49 @@ YOYO_HIT_SPEED = 8                  \ pixels a tick that a yoyoed meanie flies o
     dex : bmi finished
     jmp loop
 .finished
+    \ Balloons and daggers are destroyed; a meanie already flying just bounces it back
+    lda #MAX_MOVERS - 1 : sta mvc_i
+.mloop
+    ldx mvc_i
+    lda mv_active,x : bne m_on
+    jmp mnext
+.m_on
+    ldy mv_img,x
+    \ tmp = left = x - xo; right = left + w - 1
+    lda mv_xl,x : sec : sbc img_xo,y : sta tmp : lda mv_xh,x : sbc #0 : sta tmp+1
+    lda yb_r : cmp tmp : lda yb_r+1 : sbc tmp+1 : bvc v1 : eor #&80 : .v1 : bmi mnext     \ yoyo right < left
+    lda tmp : clc : adc img_w,y : sta tmp : lda tmp+1 : adc #0 : sta tmp+1
+    lda yb_l : cmp tmp : lda yb_l+1 : sbc tmp+1 : bvc v2 : eor #&80 : .v2 : bpl mnext     \ yoyo left > right
+    \ tmp = top = y - yo; bottom = top + h - 1
+    lda mv_yl,x : sec : sbc img_yo,y : sta tmp : lda mv_yh,x : sbc #0 : sta tmp+1
+    lda yo_y : cmp tmp : lda yo_y+1 : sbc tmp+1 : bvc v3 : eor #&80 : .v3 : bmi mnext     \ yoyo bottom < top
+    lda tmp : clc : adc img_h,y : sta tmp : lda tmp+1 : adc #0 : sta tmp+1
+    lda yb_t : cmp tmp : lda yb_t+1 : sbc tmp+1 : bvc v4 : eor #&80 : .v4 : bpl mnext     \ yoyo top > bottom
+    lda #1 : sta yo_hit
+    lda mv_active,x : cmp #MV_FLYING : beq mnext
+    lda #0 : sta mv_active,x
+.mnext
+    dec mvc_i : bmi m_done
+    jmp mloop
+.m_done
     lda yo_hit : cmp #1             \ carry set if hit
     rts
 }
 
-\ Which image to draw for Trogg
-.trogg_image
-{
-    lda tstate
-    cmp #ST_WALK : beq walk
-    cmp #ST_CLIMB : beq climb
-    cmp #ST_YOYO_OUT : bcc stand
-    lda tface : bne yl
-    lda #IMG_Trogg_yr : rts
-.yl
-    lda #IMG_Trogg_yl : rts
-.stand
-    lda tface : bne sl
-    lda #IMG_Trogg_sr : rts
-.sl
-    lda #IMG_Trogg_sl : rts
-.walk
-    lda anim : lsr a : lsr a : lsr a : lsr a : lsr a : lsr a   \ top two bits = frame 0..3
-    ldx tface : beq wr
-    clc : adc #IMG_Trogg_wl_0 : rts
-.wr
-    clc : adc #IMG_Trogg_wr_0 : rts
-.climb
-    lda tclimb : beq cn
-    lda anim : asl a : lda #0 : rol a              \ top bit = frame 0..1
-    ldx tclimb : cpx #1 : beq cu
-    clc : adc #IMG_Trogg_cd_0 : rts
-.cu
-    clc : adc #IMG_Trogg_cu_0 : rts
-.cn
-    lda #IMG_Trogg_cn : rts
-}
+.logic_end
+SAVE "LOGIC", logic_start, logic_end
+PRINT "Game logic:", logic_end - logic_start, "bytes in bank", LEVEL_BANK, "at", ~LOGIC_CODE
 
 \ ------------------------------------------------------------------------------
-\ Data
-\ ------------------------------------------------------------------------------
-
-INCLUDE "src/gen/tables.asm"
-INCLUDE "src/gen/sprites.asm"
-
-\ Screen address of each character row (level row R lives at char index R*80 MOD 2560)
-.rowaddr_lo
-FOR r, 0, 127
-    EQUB LO(SCREEN + ((r * 80) MOD 2560) * 8)
-NEXT
-.rowaddr_hi
-FOR r, 0, 127
-    EQUB HI(SCREEN + ((r * 80) MOD 2560) * 8)
-NEXT
-
-.end
-
-\ Per-buffer state (not saved to disc)
-.bscroll    SKIP 2
-.bfrak      SKIP 2          \ FRAK! bubble drawn in this buffer
-.pend_lo    SKIP 2          \ columns waiting to be repainted, per buffer
-.pend_hi    SKIP 2
-.ram_top
-
-SAVE "FRAK", start, end, start
-
-\ ------------------------------------------------------------------------------
-\ Level data, in sideways RAM bank 6 above the collision spans
+\ Level data, in sideways RAM bank 6 (&9000-&9FFF), between the collision spans
+\ and the game logic
 \ ------------------------------------------------------------------------------
 
 LEVEL_BANK = 6                      \ (the same bank as the collision spans)
-LEVEL_DATA = &A000
+LEVEL_DATA = &9000
 CLEAR &8000, &C000
 ORG LEVEL_DATA
-GUARD &C000
+GUARD LOGIC_CODE
 .level_data
 INCLUDE "src/gen/level.asm"
 INCLUDE "src/gen/fall.asm"
@@ -2131,4 +2498,4 @@ INCLUDE "src/gen/disc.asm"
 PRINT "Code from", ~start, "to", ~end, "(", end - start, "bytes ), free:", SCREEN - ram_top
 \ Addresses used by test scripts (profiling and poking variables)
 PRINT "TIMING", ~main_loop, ~t_restore, ~t_scroll, ~t_draw, ~t_vsync, ~t_after_vsync, ~t_logic, ~t_logic_done
-PRINT "SYMBOLS loops", ~loops, "bscroll", ~bscroll, "front", ~front, "vsyncs", ~vsyncs, "yo_len", ~yo_len, "mv_active", ~mv_active, "mv_xl", ~mv_xl, "mv_xh", ~mv_xh, "tface", ~tface, "keys_found", ~keys_found, "gems_found", ~gems_found, "won", ~won, "have_cp", ~have_cp, "restarts", ~restarts, "alive", ~alive, "newcol", ~newcol, "dead", ~dead, "tx", ~tx, "ty", ~ty, "tstate", ~tstate, "fallt", ~fallt, "dead", ~dead, "anim", ~anim, "p_img", ~p_img, "bank", ~bank, "oldbank", ~oldbank, "dptr", ~dptr, "scrollcol", ~scrollcol
+PRINT "SYMBOLS loops", ~loops, "mv_img", ~mv_img, "mv_vxi", ~mv_vxi, "mv_vyi", ~mv_vyi, "mv_vyf", ~mv_vyf, "mv_yl", ~mv_yl, "mv_yh", ~mv_yh, "mv_pause", ~mv_pause, "bal_timer", ~bal_timer, "dag_timer", ~dag_timer, "bscroll", ~bscroll, "front", ~front, "vsyncs", ~vsyncs, "yo_len", ~yo_len, "mv_active", ~mv_active, "mv_xl", ~mv_xl, "mv_xh", ~mv_xh, "tface", ~tface, "keys_found", ~keys_found, "gems_found", ~gems_found, "won", ~won, "have_cp", ~have_cp, "restarts", ~restarts, "alive", ~alive, "newcol", ~newcol, "dead", ~dead, "tx", ~tx, "ty", ~ty, "tstate", ~tstate, "fallt", ~fallt, "dead", ~dead, "anim", ~anim, "p_img", ~p_img, "bank", ~bank, "oldbank", ~oldbank, "dptr", ~dptr, "scrollcol", ~scrollcol
