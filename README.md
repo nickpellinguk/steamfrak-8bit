@@ -4,18 +4,21 @@ A back-port of the Steam/HTML5 version of **Frak!** to the BBC Master 128, writt
 assembly for [BeebAsm](https://github.com/stardot/beebasm). It works from the data and logic of
 the web version (the `steamfrak` repository).
 
-**Status: milestone 2.** One level (Read&Weep) is playable from start to finish:
+**Status: milestone 3.** One level (Read&Weep) is playable from start to finish:
 
 * Trogg walks, jumps, falls (dying from long falls) and climbs.
 * The screen scrolls smoothly at a steady 25 frames a second, with the game logic at 50 ticks a second.
 * Gems and keys can be collected.
 * Touching a meanie kills Trogg, with the "FRAK!" speech bubble.
+* The yoyo (Space or P): it goes out up to 80 pixels while the key is held, on a string drawn
+  as a line of black pixels, and knocks meanies flying off the screen. A flying meanie can
+  still kill Trogg, as in the Steam version.
 * Collecting a key sets a checkpoint, as in the Steam version: dying returns Trogg there, and
   gems collected since come back.
 * Collecting every key completes the level. For now the background just flashes and the level
   restarts; there is no text drawing yet.
 
-Not done yet: moving meanies, the yoyo, balloons and daggers, timer and medals, sound, menus,
+Not done yet: moving meanies, balloons and daggers, Trogg-movable platforms, timer and medals, sound, menus,
 the other 54 levels, and vertically scrolling levels.
 
 ## Building
@@ -30,7 +33,8 @@ BEEBASM=/path/to/beebasm ./build.sh                # STEAMFRAK=../steamfrak, LEV
 This writes `build/frak.ssd`, a bootable disc image. In an emulator (jsbeeb, b2, BeebEm)
 choose a **Master 128**, load the disc and press Shift+Break.
 
-Keys: **Z** / **X** (or ← / →) walk, **O** / **K** (or ↑ / ↓) climb and jump.
+Keys: **Z** / **X** (or ← / →) walk, **O** / **K** (or ↑ / ↓) climb and jump, **Space** or
+**P** yoyo.
 
 ### Testing headlessly
 
@@ -49,6 +53,8 @@ node run.mjs "wait:1500 shot:start down:KeyX wait:100 up:KeyX shot:walked" scree
 | Data converter: sprites, levels, jump table, background cache | `tools/convert.py` |
 | Main loop, double buffering, scrolling | `src/frak.asm` (top) |
 | Sprite plotter (masked, with save/restore) | `plot`, `col_plot` / `col_save` / `col_restore` |
+| Draw log (erasing moving things), lines, moving objects | `log_sprite`, `log_line`, `restore_log`, `hline`, `update_movers` |
+| Yoyo | `start_yoyo`, `yoyo_out`, `yoyo_back`, `yoyo_collide` |
 | Collisions, pickups, checkpoints | `check_collisions`, `hit_test`, `collide`, `check_checkpoint` |
 | Platform and ladder queries | `platform_find`, `ladder_find` (ports of `PlatformFind` / `LadderFind`) |
 | Trogg movement | `trogg_standing`, `trogg_falling`, `trogg_climbing` (ports of `TroggStanding` etc.) |
@@ -58,11 +64,14 @@ node run.mjs "wait:1500 shot:start down:KeyX wait:100 up:KeyX shot:walked" scree
 
 | Address | Contents |
 |---|---|
-| `&0000-&008F` | zero page variables |
+| `&0000-&008F` | zero page: pointers and the plotter's variables |
+| `&0400-&07FF` | save area for main-RAM screen buffer (BASIC's workspace, unused) |
+| `&0900-&0CFF` | save area for shadow screen buffer (RS423/cassette buffers, soft keys, UDGs) |
+| `&0E00-&10FF` | other variables: object states, checkpoint, draw logs, moving objects |
 | `&1100-&2FFF` | code, tables, Trogg's save buffers (about 500 bytes free) |
 | `&3000-&7FFF` | MODE 1 screen, **double buffered**: main RAM and shadow RAM |
 | SWRAM banks 4-5 | sprites, pre-shifted (27KB) |
-| SWRAM bank 6 | collision spans (`&8000`), level data (`&A000`); stays paged in while playing |
+| SWRAM bank 6 | collision spans (`&8000`); level data, jump table and collision tables (`&A000`). Stays paged in while playing |
 | SWRAM bank 7 | the level's platforms and ladders, pre-rendered (8KB for level 1) |
 
 ### Sprites
@@ -93,6 +102,15 @@ The build stops with an error if a level places something at a position with no 
 * Repainting a column copies it from the pre-rendered background in bank 7. That holds 8 bytes
   for each non-empty character cell plus a 32-bit mask per column. Keys, gems and meanies are
   then plotted on top.
+
+### Drawing moving things
+
+Everything that moves is drawn after the scenery, in the screen buffer that is not on display,
+and recorded in that buffer's **draw log**. This covers meanies flying off, the yoyo and its
+string, Trogg, and the FRAK! bubble. The background under each is saved in the buffer's 1KB
+save area. Next time the buffer is drawn, the log is played back in reverse to erase them.
+Sprites and lines (the yoyo string is a run of black pixels, colour 1) share the same
+mechanism, so balloons, daggers and moving meanies just add more entries.
 
 ### Collisions
 
