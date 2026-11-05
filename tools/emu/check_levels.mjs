@@ -28,7 +28,7 @@ let bad = 0, checked = 0;
 const only = process.env.ONLY ? process.env.ONLY.split(',') : null;
 for (let li = 0; li < names.length; li++) {
   const e = expect[names[li]];
-  if (!e.cache) continue;
+  if (!e.bg_cols) continue;
   if (only && !only.includes(names[li])) continue;
   if (r(sym.cur_level) !== li) {
     cpu.writemem(sym.cur_level, (li + 54) % 55);     // the one before, then finish it
@@ -58,13 +58,15 @@ for (let li = 0; li < names.length; li++) {
   for (const k of ['kind', 'img', 'vy', 'plat', 'wait', 'simple']) cmp('sl_' + k, rng(ns).map(i => r(sym['sl_' + k] + i)), e['sl_' + k]);
   for (const k of ['x0', 'y0', 'amin', 'amax', 'bmin', 'bmax']) cmp('sl_' + k, rng(ns).map(i => s16(w16(`sl_${k}l`, `sl_${k}h`, i))), e['sl_' + k]);
   cmp('sl_v', rng(ns).map(i => r(sym.sl_vf + i) + 256 * r(sym.sl_vi + i)), e.sl_v);
-  // the unrolled background: the column tables, then each column
-  const want = Buffer.from(e.cache, 'hex');
-  let cdiff = -1;
-  for (let a = 0; a < want.length; a++) if (bank(7, 0x8000 + a) !== want[a]) { cdiff = a; break; }
-  if (cdiff >= 0) errs.push(`cache differs at &${(0x8000 + cdiff).toString(16)} (of ${want.length} bytes): got ${bank(7, 0x8000 + cdiff)} want ${want[cdiff]}`);
+  // the unrolled background: the column tables, the cell dictionary, the columns
+  const tables = Buffer.from(e.bg_tables, 'hex'), cells = Buffer.from(e.bg_cells, 'hex'), cols = Buffer.from(e.bg_cols, 'hex');
+  const firstDiff = (what, n, got, want) => { for (let i = 0; i < n; i++) if (got(i) !== want(i)) { errs.push(`${what} differs at ${i} of ${n}: got ${got(i)} want ${want(i)}`); return; } };
+  firstDiff('column tables', 512, i => bank(7, 0x8000 + i), i => tables[i]);
+  firstDiff('dictionary', cells.length, i => { const n = i >> 3, l = i & 7; return bank(7, 0x8200 + (n >= 256 ? 0x800 : 0) + l * 256 + (n & 255)); }, i => cells[i]);
+  firstDiff('columns', cols.length, i => bank(7, 0x9200 + i), i => cols[i]);
+  const want = { length: 512 + cells.length + cols.length };
   checked++;
   if (errs.length) { bad++; console.log(names[li], 'FAIL'); for (const x of errs) console.log('   ', x.slice(0, 300)); }
-  else console.log(names[li], 'ok', `(${np} platforms, ${nl} ladders, ${nd} objects, ${ns} moving, background ${want.length} bytes)`);
+  else console.log(names[li], 'ok', `(${np} platforms, ${nl} ladders, ${nd} objects, ${ns} moving, background ${want.length} bytes, ${cells.length / 8} distinct cells)`);
 }
 console.log(`${checked} levels checked, ${bad} failed`);

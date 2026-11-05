@@ -383,9 +383,15 @@ CACHE_BG_DEPTHS = (DEPTH['oPlatform'], DEPTH['oLadder'])     # things that never
 def render_background(data, lev, frames_cache):
     """
     Composite the platforms and ladders into a level-sized image of logical colours, then pack
-    it for fast column repainting: for each byte column, a 4-byte mask (bit 7 of the first byte
-    = character row 0) of which character cells are non-empty, then 8 bytes per non-empty cell.
-    Returns the bank image: column address tables at &8000 (low) / &8100 (high), data from &8200.
+    it into bank 7 the way unroll_bg does (this is the reference the tests compare it with):
+      &8000/&8100  the address of each byte column (low, high bytes; 0 past the level's end)
+      &8200        the cell dictionary: each distinct non-empty character cell (8 bytes), numbered
+                   in order of first use, column by column from the top; stored as 8 tables of
+                   256 bytes, one per line of a cell (cells 256-511 from &8A00 likewise)
+      &9200        the columns: a 4-byte mask of the non-empty cells (bit 7 of the first byte =
+                   character row 0), a 4-byte mask of those whose number is 256 or more, then
+                   each non-empty cell's number (low byte)
+    Returns (column tables, the dictionary as a list of cells, the columns), and the image.
     """
     w, h = lev['w'], lev['h']
     cols = (w + 3) // 4
@@ -403,11 +409,12 @@ def render_background(data, lev, frames_cache):
                     img[py][px] = c
     blob = bytearray()
     offsets = []
+    dictionary, number = [], {}
     for col in range(cols):
-        offsets.append(0x8200 + len(blob))
+        offsets.append(BG_COLUMNS + len(blob))
         cells = (h + 7) // 8
-        mask = 0
-        body = bytearray()
+        mask = high = 0
+        nums = bytearray()
         for cell in range(cells):
             data_bytes = bytearray()
             for line in range(8):
@@ -415,16 +422,24 @@ def render_background(data, lev, frames_cache):
                 px = [img[y][col * 4 + p] if y < h else 0 for p in range(4)]
                 data_bytes.append(mode1_byte(px))
             if any(data_bytes):
+                key = bytes(data_bytes)
+                if key not in number:
+                    number[key] = len(dictionary)
+                    dictionary.append(key)
+                n = number[key]
                 mask |= 1 << (31 - cell)
-                body += data_bytes
-        blob += mask.to_bytes(4, 'big') + body
-    if cols > 256 or 0x200 + len(blob) > BANK_SIZE:
-        raise SystemExit('Background cache too big: %d bytes' % len(blob))
-    image = bytearray(0x200)
+                if n >= 256:
+                    high |= 1 << (31 - cell)
+                nums.append(n & 0xFF)
+        blob += mask.to_bytes(4, 'big') + high.to_bytes(4, 'big') + nums
+    if cols > 256 or len(dictionary) > 512 or BG_COLUMNS + len(blob) > BG_TOP:
+        raise SystemExit('Background too big: %d columns, %d distinct cells, %d bytes of columns'
+                         % (cols, len(dictionary), len(blob)))
+    tables = bytearray(0x200)
     for col, off in enumerate(offsets):
-        image[col] = off & 0xFF
-        image[0x100 + col] = off >> 8
-    return bytes(image + blob), img
+        tables[col] = off & 0xFF
+        tables[0x100 + col] = off >> 8
+    return (bytes(tables), dictionary, bytes(blob)), img
 
 
 def slow_swept(data, v):
@@ -527,7 +542,9 @@ LEVELS = ['room_0'] + ['room_%s_%d' % (c, n) for c in 'ABCDEF' for n in range(1,
 # Where the level pack goes: HAZEL (&C000-&DFFF) and ANDY (&8000-&8FFF), except &8800-&88FF of
 # ANDY, which the MOS uses. No level straddles two of these.
 PACK_SEGMENTS = [(0xC000, 0x2000), (0x8000, 0x800), (0x8900, 0x700)]
-SLOWSAVE1 = (7, 0xBA00)         # bank 7, above the unrolled background (which must end below it)
+SLOWSAVE1 = (7, 0xBA00)         # bank 7, above the background and the code kept there
+BG_COLUMNS = 0x9200             # the unrolled background's columns, in bank 7 (see render_background)
+BG_TOP = 0xA000                 # ... which must end here
 MAX_PAL = 16
 
 
@@ -746,8 +763,10 @@ def main():
         packed.append(blob)
         t = level_tables(data, lev, image_id, simple)
         if lev['h'] == 256:
-            cache, _ = render_background(data, lev, lambda spr: sprite_pixels(data, spr))
-            t['cache'] = cache.hex()
+            (tables, cells, cols), _ = render_background(data, lev, lambda spr: sprite_pixels(data, spr))
+            t['bg_tables'], t['bg_cells'], t['bg_cols'] = tables.hex(), b''.join(cells).hex(), cols.hex()
+            maxima['bg_cells'] = max(maxima.get('bg_cells', 0), len(cells))
+            maxima['bg_bytes'] = max(maxima.get('bg_bytes', 0), len(cols))
         expect[name] = t
         for k, n in (('plats', len(lev['plats'])), ('ladders', len(lev['ladders'])), ('slow', len(lev['slow'])),
                      ('draw', len(t['draw_img'])), ('bg', len(lev['plats']) + len(lev['ladders']))):
@@ -798,6 +817,7 @@ def main():
               'KIND_KEY = 1', 'KIND_GEM = 2', 'KIND_MEANIE = 3', 'KIND_BULB = 4',
               'LADDER_EXTRA_LENGTH = %d' % LADDER_EXTRA_LENGTH,
               'CACHE_BANK = %d' % CACHE_BANK, 'CACHE_TOP = &%04X' % SLOWSAVE1[1],
+              'BG_DICT = &8200', 'BG_COLUMNS = &%04X' % BG_COLUMNS, 'BG_TOP = &%04X' % BG_TOP,
               'SLOWSAVE0_BANK = %d' % BANKS[spare], 'SLOWSAVE0_START = &%04X' % (0x8000 + len(banks[spare])),
               'SLOWSAVE1_BANK = %d' % SLOWSAVE1[0], 'SLOWSAVE1_START = &%04X' % SLOWSAVE1[1],
               'SPANS_SIZE = %d' % len(spans_blob)]
@@ -805,7 +825,7 @@ def main():
 
     # Disc contents and !BOOT
     boot = ['*SRLOAD GFX%d 8000 %d Q' % (b, b) for b in BANKS]
-    boot += ['*SRLOAD BANK6 8000 6 Q', '*LOAD PACK 3000', '*RUN FRAK']
+    boot += ['*SRLOAD BANK6 8000 6 Q', '*SRLOAD BANK7 A000 7 Q', '*LOAD PACK 3000', '*RUN FRAK']
     open(os.path.join(gen, 'boot.txt'), 'w').write('\n'.join(boot) + '\n')
     disc = ['\\ Disc contents - GENERATED by tools/convert.py, do not edit',
             'PUTTEXT "src/gen/boot.txt", "!BOOT", 0']

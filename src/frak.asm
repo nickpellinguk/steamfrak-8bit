@@ -125,7 +125,7 @@ GUARD &90
 .front      SKIP 1          \ buffer on screen (0 = main, 1 = shadow)
 .back       SKIP 1          \ buffer being drawn
 .src        SKIP 2          \ background cache pointer
-.mask       SKIP 4          \ non-empty cells of a cached column
+.mask       SKIP 8          \ a background column: its non-empty cells, then which have numbers >= 256
 .pt         SKIP 2
 .po         SKIP 2
 .vsyncs     SKIP 1          \ incremented by the vertical sync event
@@ -271,7 +271,15 @@ ORG &0E00
 .pl         SKIP 2
 .pb         SKIP 2
 .best       SKIP 2
-.found      SKIP 1          \ the level being played (0 = Training)
+.found      SKIP 1
+.u_cntl     SKIP 1          \ cells in the background's dictionary so far
+.u_cnth     SKIP 1
+.u_cl       SKIP 1          \ dictionary search: a candidate (its number + 1)
+.u_ch       SKIP 1
+.u_nl       SKIP 1          \ ... a cell's number
+.u_nh       SKIP 1
+.u_h8       SKIP 1          \ ... and its hash
+.u_x        SKIP 1          \ the cell's offset in COLBUF          \ the level being played (0 = Training)
 .num_plats  SKIP 1          \ the level's size and contents (set by load_level)
 .num_ladders SKIP 1
 .num_draw   SKIP 1
@@ -914,29 +922,29 @@ CACHE_HI = &8100
     lda #CACHE_BANK : sta ROMSEL_COPY : sta ROMSEL
     ldx colw
     lda CACHE_LO,x : sta src : lda CACHE_HI,x : sta src+1
-    \ 32-bit mask of non-empty character cells, top cell first
-    ldy #0 : lda (src),y : sta mask
-    iny : lda (src),y : sta mask+1
-    iny : lda (src),y : sta mask+2
-    iny : lda (src),y : sta mask+3
-    lda src : clc : adc #4 : sta src : bcc nc : inc src+1 : .nc
-    ldx #32
+    \ the masks (non-empty cells, top cell first; then their numbers' 9th bits)
+    ldy #7
+.getmask
+    lda (src),y : sta mask,y : dey : bpl getmask
+    lda src : clc : adc #8 : sta src : bcc nc : inc src+1 : .nc
+    lda #32 : sta cellk
 .cell
     asl mask+3 : rol mask+2 : rol mask+1 : rol mask
     bcc empty
-    ldy #7
-.copy
-    lda (src),y : sta (ptr),y : dey : bpl copy
-    lda src : clc : adc #8 : sta src : bcc next : inc src+1
+    asl mask+7 : rol mask+6 : rol mask+5 : rol mask+4     \ carry = the 9th bit
+    ldy #0 : lda (src),y                                  \ the cell's number
+    inc src : bne nc2 : inc src+1 : .nc2
+    jsr copy_cell
     jmp next
 .empty
+    asl mask+7 : rol mask+6 : rol mask+5 : rol mask+4
     lda #0 : ldy #7
 .clear
     sta (ptr),y : dey : bpl clear
 .next
     lda ptr : clc : adc #LO(640) : sta ptr
     lda ptr+1 : adc #HI(640) : cmp #&80 : bcc nw : sbc #&50 : .nw : sta ptr+1
-    dex : bne cell
+    dec cellk : bne cell
     pla : sta ROMSEL_COPY : sta ROMSEL
     \ moving sprites in this column will need drawing again
     lda colw : sta dm_c0 : sta dm_c1
@@ -969,16 +977,12 @@ CACHE_HI = &8100
     lda rr_k1 : sec : sbc rr_k0 : sta cellk         \ cells left - 1
 .cell
     lda mask,x : and curbit : beq empty
-    ldy #0
-    lda (src),y : sta (ptr),y : iny
-    lda (src),y : sta (ptr),y : iny
-    lda (src),y : sta (ptr),y : iny
-    lda (src),y : sta (ptr),y : iny
-    lda (src),y : sta (ptr),y : iny
-    lda (src),y : sta (ptr),y : iny
-    lda (src),y : sta (ptr),y : iny
-    lda (src),y : sta (ptr),y
-    lda src : clc : adc #8 : sta src : bcc next : inc src+1
+    stx tmp+1
+    lda mask+4,x : and curbit : cmp #1                  \ carry = the 9th bit
+    ldy #0 : lda (src),y                                \ the cell's number
+    inc src : bne nc : inc src+1 : .nc
+    jsr copy_cell
+    ldx tmp+1
     jmp next
 .empty
     lda rr_raw : beq clear
@@ -1053,16 +1057,16 @@ CACHE_HI = &8100
 \ tmp += number of bits set in A
 
 \ With the cache bank paged in: find byte column colw's cells from rr_k0 down.
-\ Loads its mask; src = the data of the first non-empty cell at or below rr_k0;
-\ X = the mask byte and curbit the bit for cell rr_k0.
+\ Loads its masks; src = the number of the first non-empty cell at or below
+\ rr_k0; X = the mask byte and curbit the bit for cell rr_k0.
 .cache_seek
 {
     ldx colw
     lda CACHE_LO,x : sta src : lda CACHE_HI,x : sta src+1
-    ldy #3
+    ldy #7
 .getmask
     lda (src),y : sta mask,y : dey : bpl getmask
-    \ skip the data of the non-empty cells above k0 (count the mask's first k0 bits)
+    \ skip the numbers of the non-empty cells above k0 (count the mask's first k0 bits)
     lda #0 : sta tmp
     ldx #0
     lda rr_k0
@@ -1072,11 +1076,8 @@ CACHE_HI = &8100
     inx : sec : sbc #8 : jmp whole
 .part
     tay : lda mask,x : and topbits,y : jsr popcount_add
-    \ src += 4 + 8 * count
-    lda #0 : sta tmp+1
-    lda tmp : asl a : rol tmp+1 : asl a : rol tmp+1 : asl a : rol tmp+1
-    clc : adc #4 : bcc nc0 : inc tmp+1 : clc : .nc0
-    adc src : sta src : lda tmp+1 : adc src+1 : sta src+1
+    \ src += 8 + count
+    lda tmp : clc : adc #8 : adc src : sta src : bcc nc0 : inc src+1 : .nc0
     \ walk the mask from cell k0: X = mask byte, curbit = bit within it
     lda rr_k0 : lsr a : lsr a : lsr a : tax
     lda rr_k0 : and #7 : tay : lda bitpos,y : sta curbit
@@ -1559,7 +1560,7 @@ WIN_FRAMES = 150                    \ (game ticks)
 \ ------------------------------------------------------------------------------
 
 \ ------------------------------------------------------------------------------
-\ Unrolling a level's background into bank 7 (see repaint_column for the format),
+\ Unrolling a level's background into bank 7 (see store_column for the format),
 \ from the unshifted images of its platforms and ladders, shifting them as it
 \ goes. This runs only when a level starts, so it needn't be quick. It's in main
 \ RAM because it pages the sprite banks and bank 7 in.
@@ -1576,13 +1577,14 @@ ASSERT MAX_BG <= &50
 .unroll_bg
 {
     \ (columns past the level's right-hand edge have no address)
+    \ (and the dictionary's hash table starts empty)
     lda #CACHE_BANK : sta ROMSEL_COPY : sta ROMSEL
     lda #0 : tax
 .clear_tables
-    sta CACHE_LO,x : sta CACHE_HI,x : inx : bne clear_tables
+    sta CACHE_LO,x : sta CACHE_HI,x : sta HASH_LO,x : sta HASH_HI,x : inx : bne clear_tables
     lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL
-    lda #LO(&8200) : sta po : lda #HI(&8200) : sta po+1    \ next free byte in bank 7
-    lda #0 : sta u_col
+    lda #LO(BG_COLUMNS) : sta po : lda #HI(BG_COLUMNS) : sta po+1    \ the next column goes here
+    lda #0 : sta u_col : sta u_cntl : sta u_cnth
 .col_loop
     lda #0 : tax
 .clr
@@ -1597,32 +1599,9 @@ ASSERT MAX_BG <= &50
 .next_item
     inc u_i : jmp item_loop
 .items_done
-    \ Write it out: the address in the column tables, a mask of the non-empty
-    \ cells (bit 7 of the first byte = the top cell), then those cells' bytes
+    \ Write it out (code in bank 7)
     lda #CACHE_BANK : sta ROMSEL_COPY : sta ROMSEL
-    ldx u_col : lda po : sta CACHE_LO,x : lda po+1 : sta CACHE_HI,x
-    lda po : clc : adc #4 : sta dp : lda po+1 : adc #0 : sta dp+1
-    ldx #0
-.cell
-    lda COLBUF,x : ora COLBUF+1,x : ora COLBUF+2,x : ora COLBUF+3,x
-    ora COLBUF+4,x : ora COLBUF+5,x : ora COLBUF+6,x : ora COLBUF+7,x
-    cmp #1                                  \ carry set if not empty
-    php
-    rol mask+3 : rol mask+2 : rol mask+1 : rol mask
-    plp : bcc empty
-    ldy #0
-.copy
-    lda COLBUF,x : sta (dp),y : inx : iny : cpy #8 : bne copy
-    lda dp : clc : adc #8 : sta dp : bcc next : inc dp+1
-    bne next
-.empty
-    txa : clc : adc #8 : tax
-.next
-    cpx #0 : bne cell                       \ (X wraps after 32 cells)
-    ldy #3
-.mask_out
-    lda mask,y : sta (po),y : dey : bpl mask_out
-    lda dp : sta po : lda dp+1 : sta po+1
+    jsr store_column
     lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL
     inc u_col : lda u_col : cmp level_cols : beq all_done
     jmp col_loop
@@ -4381,6 +4360,154 @@ SLOW_N = MAX_SLOW
 .bank6_end
 SAVE "BANK6", bank6_start, logic_end
 PRINT "Bank 6: spans and tables to", ~logic_start, ", logic to", ~logic_end, ", level tables to", ~bank6_end, "(", &C000 - bank6_end, "bytes free )"
+
+
+\ ------------------------------------------------------------------------------
+\ Sideways RAM bank 7: the current level's background, unrolled when it starts,
+\ and the code that only needs bank 7 and main RAM
+\
+\   &8000/&8100  the address of each byte column of the background
+\   &8200-&91FF  the cell dictionary: each distinct non-empty character cell of
+\                the level, numbered 0-511 in order of first use. Line L of
+\                cell N is at BG_DICT + L * &100 + N (cells 256-511: + &800)
+\   &9200-&9FFF  the columns: a 4-byte mask of non-empty cells (bit 7 of the
+\                first byte = the top row), a 4-byte mask of those whose number
+\                is 256 or more, then each non-empty cell's number (low byte)
+\   &A000        this code
+\   &BA00-&BFFF  a save area for meanies flying off; while unrolling, the
+\                dictionary's hash table
+\ ------------------------------------------------------------------------------
+
+HASH_LO = &BA00                     \ per hash value: the first cell with it (its number + 1)
+HASH_HI = &BB00
+LINK_LO = &BC00                     \ per cell: the next with the same hash (its number + 1)
+LINK_HI = &BE00
+
+CLEAR &8000, &C000
+ORG BG_TOP
+GUARD CACHE_TOP
+.bank7_start
+
+\ Copy cell A (plus 256 if carry set) to the screen at (ptr). X, Y changed.
+.copy_cell
+{
+    tax : bcs high
+    ldy #0
+    FOR l, 0, 7
+    lda BG_DICT + l * &100,x : sta (ptr),y : IF l < 7 : iny : ENDIF
+    NEXT
+    rts
+.high
+    ldy #0
+    FOR l, 0, 7
+    lda BG_DICT + &800 + l * &100,x : sta (ptr),y : IF l < 7 : iny : ENDIF
+    NEXT
+    rts
+}
+
+\ Store column u_col of the background from COLBUF, at po (which moves on)
+.store_column
+{
+    ldx u_col : lda po : sta CACHE_LO,x : lda po+1 : sta CACHE_HI,x
+    lda po : clc : adc #8 : sta dp : lda po+1 : adc #0 : sta dp+1     \ the numbers go here
+    lda #0 : sta u_x
+.cell
+    ldx u_x
+    lda COLBUF,x : ora COLBUF+1,x : ora COLBUF+2,x : ora COLBUF+3,x
+    ora COLBUF+4,x : ora COLBUF+5,x : ora COLBUF+6,x : ora COLBUF+7,x
+    cmp #1                                  \ carry set if not empty
+    rol mask+3 : rol mask+2 : rol mask+1 : rol mask
+    lda mask+3 : lsr a : bcc empty
+    jsr dict_find
+    ldy #0 : lda u_nl : sta (dp),y
+    inc dp : bne nc : inc dp+1 : .nc
+    lda u_nh : lsr a                        \ carry = the 9th bit
+    jmp high
+.empty
+    clc
+.high
+    rol mask+7 : rol mask+6 : rol mask+5 : rol mask+4
+    lda u_x : clc : adc #8 : sta u_x : bne cell      \ (32 cells)
+    ldy #7
+.out
+    lda mask,y : sta (po),y : dey : bpl out
+    lda dp : sta po : lda dp+1 : sta po+1
+    rts
+}
+
+\ The number (u_nl, u_nh) of the cell at COLBUF + u_x in the dictionary,
+\ adding it if it's new
+.dict_find
+{
+    lda #LO(COLBUF) : clc : adc u_x : sta pt : lda #HI(COLBUF) : adc #0 : sta pt+1
+    \ hash: the sum of its bytes
+    ldy #7 : lda #0
+.sum
+    clc : adc (pt),y : dey : bpl sum
+    sta u_h8
+    tay : lda HASH_LO,y : sta u_cl : lda HASH_HI,y : sta u_ch
+.chain
+    lda u_cl : ora u_ch : beq new
+    lda u_cl : sec : sbc #1 : sta u_nl : lda u_ch : sbc #0 : sta u_nh
+    jsr cell_matches : bcc next
+    rts                                     \ found it
+.next
+    jsr link_ptr
+    ldy #0 : lda (sp),y : sta u_cl
+    inc sp+1 : inc sp+1 : lda (sp),y : sta u_ch
+    jmp chain
+.new
+    \ a new cell: the next number
+    lda u_cntl : sta u_nl : lda u_cnth : sta u_nh
+    inc u_cntl : bne nc : inc u_cnth : .nc
+    ldx u_nl : lda u_nh : bne store_high
+    ldy #0
+    FOR l, 0, 7
+    lda (pt),y : sta BG_DICT + l * &100,x : IF l < 7 : iny : ENDIF
+    NEXT
+    jmp stored
+.store_high
+    ldy #0
+    FOR l, 0, 7
+    lda (pt),y : sta BG_DICT + &800 + l * &100,x : IF l < 7 : iny : ENDIF
+    NEXT
+.stored
+    \ it goes at the front of its hash's chain
+    jsr link_ptr
+    ldx u_h8 : ldy #0
+    lda HASH_LO,x : sta (sp),y
+    inc sp+1 : inc sp+1 : lda HASH_HI,x : sta (sp),y
+    lda u_nl : clc : adc #1 : sta HASH_LO,x : lda u_nh : adc #0 : sta HASH_HI,x
+    rts
+}
+
+\ Carry set if dictionary cell (u_nl, u_nh) is the same as the one at (pt)
+.cell_matches
+{
+    ldx u_nl : lda u_nh : bne high
+    ldy #0
+    FOR l, 0, 7
+    lda BG_DICT + l * &100,x : cmp (pt),y : bne no : IF l < 7 : iny : ENDIF
+    NEXT
+    sec : rts
+.high
+    ldy #0
+    FOR l, 0, 7
+    lda BG_DICT + &800 + l * &100,x : cmp (pt),y : bne no : IF l < 7 : iny : ENDIF
+    NEXT
+    sec : rts
+.no
+    clc : rts
+}
+
+\ sp = LINK_LO + the cell's number (LINK_HI is 2 pages on)
+.link_ptr
+    lda u_nl : sta sp : lda u_nh : clc : adc #HI(LINK_LO) : sta sp+1
+    rts
+
+.bank7_end
+SAVE "BANK7", bank7_start, bank7_end
+PRINT "Bank 7: background to", ~BG_TOP, ", code to", ~bank7_end, "(", CACHE_TOP - bank7_end, "bytes free )"
 
 INCLUDE "src/gen/disc.asm"
 

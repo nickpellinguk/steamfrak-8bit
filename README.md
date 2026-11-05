@@ -69,7 +69,8 @@ sprite tables, and every byte of the unrolled background) with what the converte
 |---|---|
 | Data converter: sprites, the level pack, jump table | `tools/convert.py` |
 | Level loader: unpacking a level, ladders' extensions, moving platforms' ranges | `fetch_level`, `load_level`, `meanie_settings`, `moving_platform`, `scan_left` etc. |
-| Unrolling the background into bank 7 | `bg_items`, `unroll_bg`, `unroll_item` |
+| Unrolling the background into bank 7 | `bg_items`, `unroll_bg`, `unroll_item`, `store_column`, `dict_find` |
+| Copying it back to the screen | `repaint_column`, `repaint_rect`, `cache_seek`, `copy_cell` |
 | Main loop, double buffering, scrolling | `src/frak.asm` (top) |
 | Sprite plotter (masked, with save/restore) | `plot`, `col_plot` / `col_save` / `col_restore` |
 | Draw log (erasing moving things), lines, moving objects | `log_sprite`, `log_line`, `restore_log`, `hline`, `update_movers` |
@@ -95,7 +96,7 @@ sprite tables, and every byte of the unrolled background) with what the converte
 | `&3000-&7FFF` | MODE 1 screen, **double buffered**: main RAM and shadow RAM |
 | SWRAM banks 4-5 | sprites, pre-shifted, including unshifted copies of the platforms and ladders to unroll backgrounds from (31.6KB); the last 1.1KB is a save area for meanies flying off |
 | SWRAM bank 6 | collision spans and tables (from `&8000`), the **game logic** and level loader (to `&B26B`), then the current level's tables (379 bytes free). Stays paged in while playing |
-| SWRAM bank 7 | the current level's background, unrolled when it starts (up to 11.5KB), and a save area for meanies flying off at `&BA00` |
+| SWRAM bank 7 | the current level's background, unrolled when it starts: column addresses (`&8000`), the cell dictionary (`&8200`) and the columns (`&9200`, up to 3.2KB); code that needs only bank 7 (`&A000`, 6KB free above it); a save area for meanies flying off (`&BA00`) |
 | HAZEL (`&C000-&DFFF`) and ANDY (`&8000-&8FFF`) | **all 55 levels**, packed: 11.8KB, about 215 bytes each. `&8800-&88FF` of ANDY is left to the MOS |
 
 All 55 levels stay in memory, so nothing is loaded from disc after the start. At boot, `!BOOT`
@@ -119,9 +120,30 @@ Everything else is worked out when the level starts, as GameMaker did when a roo
   done here by one pass over the platforms for each direction, not pixel by pixel);
 * the platform each Scrubbly walks and the ladder each Poglet climbs;
 * the background: the static platforms and then the ladders are drawn, shifted to their pixel
-  positions, one byte column at a time into a buffer, and each column is stored in bank 7 (8
-  bytes for each non-empty character cell, plus a 32-bit mask). Loading Read&Weep takes 1.3
-  seconds.
+  positions, one byte column at a time into a buffer, and each column is stored in bank 7 (see
+  below). Loading Read&Weep takes 1.5 seconds.
+
+### The background
+
+Each level's background is held in bank 7 as a **dictionary of character cells** and a list of
+cell numbers for each column:
+
+* The dictionary holds each distinct non-empty character cell (8 bytes) once, numbered 0-511 in
+  order of first use. It is stored as 8 tables of 256 bytes, one for each line of a cell (and 8
+  more for cells 256-511), so copying a cell to the screen is just 8 indexed loads.
+* Each byte column has a 4-byte mask of which of its 32 cells aren't empty (bit 7 of the first
+  byte is the top one), a 4-byte mask of which of those have numbers of 256 or more, then one
+  byte for each non-empty cell: the low 8 bits of its number.
+* `&8000` and `&8100` hold each column's address.
+
+The levels have 156-409 distinct cells each, a lot more than the handful of platform tiles,
+because a tile lands in its cells at whatever vertical offset its platform has, at any of four
+pixel shifts, and overlapping ladders add more. Even so this is about 40% smaller than storing
+each column's cells in full: 3.8-6.5KB per level instead of 4.7-11.5KB. And the layout is the
+same on every level, so the top quarter of bank 7 is always free.
+
+While unrolling, `store_column` (in bank 7) looks each new cell up in the dictionary using a hash
+table (the sum of its 8 bytes) with chains, kept in `&BA00-&BFFF` until the level starts.
 
 ### Sprites
 
@@ -148,9 +170,8 @@ The build stops with an error if a level places something at a position with no 
 * The game draws into whichever of main and shadow RAM is not on display, then flips them at
   vertical sync, so there is no flicker or tearing. Each buffer remembers its own scroll
   position and the background saved under Trogg.
-* Repainting a column copies it from the unrolled background in bank 7. That holds 8 bytes
-  for each non-empty character cell plus a 32-bit mask per column. Keys, gems and meanies are
-  then plotted on top.
+* Repainting a column copies its cells from the unrolled background in bank 7 (see "The
+  background" above). Keys, gems and meanies are then plotted on top.
 
 ### Drawing moving things
 
