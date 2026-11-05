@@ -1,0 +1,9 @@
+{
+  "name": "frak-8bit-emu",
+  "private": true,
+  "description": "Headless BBC Master test runner for Frak!, using jsbeeb",
+  "type": "module",
+  "dependencies": {
+    "jsbeeb": "2.18.0"
+  }
+}
