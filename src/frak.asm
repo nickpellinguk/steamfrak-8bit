@@ -23,7 +23,6 @@ CRTC_DATA   = &FE01
 
 SCREEN      = &3000
 LEVEL_BANK  = 6             \ sideways RAM bank 6: game logic and level tables
-LEVEL_H     = 256           \ (levels that scroll vertically aren't done yet)
 SCREEN_COLS = 80            \ byte columns visible across the screen (320 pixels)
 WINDOW_W    = 320           \ visible width in level pixels
 
@@ -165,6 +164,7 @@ ORG &0E00
 .sp_slot    SKIP 1          \ spawning workspace
 .sp_mid     SKIP 2
 .sp_x       SKIP 2
+.sp_spread  SKIP 2
 .mul_a      SKIP 1
 .mul_b      SKIP 1
 .mul_lo     SKIP 1
@@ -243,7 +243,6 @@ ORG &0E00
 .fflags     SKIP 1
 .cur_level  SKIP 1
 .num_bg     SKIP 1          \ loading: background items, and workspace
-.u_col      SKIP 1
 .u_i        SKIP 1
 .u_j        SKIP 1
 .u_s        SKIP 1
@@ -279,7 +278,14 @@ ORG &0E00
 .u_nl       SKIP 1          \ ... a cell's number
 .u_nh       SKIP 1
 .u_h8       SKIP 1          \ ... and its hash
-.u_x        SKIP 1          \ the cell's offset in COLBUF          \ the level being played (0 = Training)
+.u_x        SKIP 1          \ the cell's index in its line
+.u_line     SKIP 1          \ unrolling: the line (column or row)
+.u_cells    SKIP 1          \ ... its cells
+.u_src      SKIP 2          \ ... and where they are
+.u_bl       SKIP 2          \ unroll_item: the band of level rows [u_bl, u_bh)
+.u_bh       SKIP 2
+.u_tb       SKIP 2          \ ... and where level row 0 of this column would be
+.dp_save    SKIP 2          \ the level being played (0 = Training)
 .num_plats  SKIP 1          \ the level's size and contents (set by load_level)
 .num_ladders SKIP 1
 .num_draw   SKIP 1
@@ -301,9 +307,21 @@ ORG &0E00
 .rr_k1      SKIP 1
 .cellk      SKIP 1
 .curbit     SKIP 1
-.scn_y0     SKIP 1          \ draw_scenery: only items overlapping these rows
-.scn_y1     SKIP 1
-.scn_dmg    SKIP 1          \ ... and record what they cover as damage
+.clip_t     SKIP 2          \ drawing is clipped to rows clip_t .. clip_t + clip_h - 1
+.clip_h     SKIP 1          \ (0 = 256)
+.scrollrow  SKIP 1          \ character row at the top of the window (vertically scrolling levels)
+.newrow     SKIP 1
+.is_vert    SKIP 1          \ the level scrolls vertically
+.level_rows SKIP 1          \ its height, in character rows
+.level_h    SKIP 2          \ ... and pixels
+.row_max    SKIP 1          \ level_rows - 32
+.mb         SKIP 1          \ bytes in each of a background line's masks (4 or 10)
+.pl_line    SKIP 1          \ paint_line: the line (column or row)
+.pl_i0      SKIP 1          \ ... and its cells to paint
+.pl_i1      SKIP 1
+.cpage      SKIP 1
+.u_sx       SKIP 1
+.cmask      SKIP 30         \ a background line's masks
 .ds_base    SKIP 1          \ draw_slow: index of this buffer's drawn records
 .rr_i       SKIP 1          \ the next Scrubbly in turn to move
 .cm_left    SKIP 1
@@ -433,13 +451,25 @@ GUARD SCREEN
     stx back
     jsr select_back
     lda newcol : sta scrollcol
+    lda newrow : sta scrollrow
+    jsr set_window_clip
+    lda is_vert : bne init_rows
     lda #SCREEN_COLS - 1 : sta initcol
 .init_col
     lda scrollcol : clc : adc initcol
     jsr repaint_column
     dec initcol : bpl init_col
+    jmp init_done
+.init_rows
+    lda #31 : sta initcol
+.init_row
+    lda scrollrow : clc : adc initcol
+    jsr repaint_row
+    dec initcol : bpl init_row
+.init_done
     ldx back
     lda newcol : sta bscroll,x
+    lda newrow : sta brow,x
     lda #0 : sta log_n,x : sta bfrak,x : sta pend_hi,x
     lda #&FF : sta pend_lo,x
     dex : bpl init_buffer
@@ -459,6 +489,7 @@ GUARD SCREEN
     jsr select_back
     ldx back
     lda bscroll,x : sta scrollcol
+    lda brow,x : sta scrollrow
     jsr set_window_clip
 
     \ Once Trogg is dead and this buffer already shows the FRAK! bubble, nothing
@@ -475,6 +506,7 @@ GUARD SCREEN
     jsr do_scroll
     ldx back
     lda scrollcol : sta bscroll,x
+    lda scrollrow : sta brow,x
     jsr do_pending
 
 .^t_draw
@@ -486,7 +518,7 @@ GUARD SCREEN
     ldx back
     lda slowsave_bank,x : sta p_sbank
     lda slowsave_lo,x : sta sfree7 : lda slowsave_hi,x : sta sfree7+1
-    lda #LO(&C000) : sta send7 : lda #HI(&C000) : sta send7+1
+    lda slowsave_end_lo,x : sta send7 : lda slowsave_end_hi,x : sta send7+1
     \ Moving platforms and meanies ("slow sprites") stay drawn in each buffer;
     \ only the ones that moved (or were painted over) are redrawn
 .^t_slow
@@ -651,9 +683,11 @@ EVNTV = &0220
 }
 
 \ Slow save areas (in sideways RAM) for meanies flying off
-.slowsave_bank  EQUB SLOWSAVE0_BANK, SLOWSAVE1_BANK
-.slowsave_lo    EQUB LO(SLOWSAVE0_START), LO(SLOWSAVE1_START)
-.slowsave_hi    EQUB HI(SLOWSAVE0_START), HI(SLOWSAVE1_START)
+.slowsave_bank  EQUB SLOWSAVE0_BANK, LEVEL_BANK
+.slowsave_lo    EQUB LO(SLOWSAVE0_START), LO(slowsave1)
+.slowsave_hi    EQUB HI(SLOWSAVE0_START), HI(slowsave1)
+.slowsave_end_lo EQUB LO(&C000), LO(slowsave1 + SLOWSAVE1_SIZE)
+.slowsave_end_hi EQUB HI(&C000), HI(slowsave1 + SLOWSAVE1_SIZE)
 
 
 \ ------------------------------------------------------------------------------
@@ -846,6 +880,7 @@ savebuf1 = &0900
 \ newcol = clamp(tx - WINDOW_W/2, 0, LEVEL_W - WINDOW_W) / 4
 .calc_scroll
 {
+    lda is_vert : bne vertical
     sec
     lda tx : sbc #LO(WINDOW_W/2) : sta tmp
     lda tx+1 : sbc #HI(WINDOW_W/2) : sta tmp+1
@@ -861,37 +896,77 @@ savebuf1 = &0900
     lsr tmp+1 : ror tmp
     lsr tmp+1 : ror tmp
     lda tmp : sta newcol
+    lda #0 : sta newrow
+    rts
+.vertical
+    \ newrow = clamp(ty - 128, 0, level_h - 256) / 8
+    lda #0 : sta newcol
+    sec
+    lda ty : sbc #128 : sta tmp
+    lda ty+1 : sbc #0 : sta tmp+1
+    bpl v_pos
+    lda #0 : sta tmp : sta tmp+1
+.v_pos
+    lsr tmp+1 : ror tmp : lsr tmp+1 : ror tmp : lsr tmp+1 : ror tmp
+    lda tmp : cmp row_max : bcc v_ok : lda row_max
+.v_ok
+    sta newrow
     rts
 }
 
 .do_scroll
 {
     jsr calc_scroll
+    lda is_vert : bne vertical
 .loop
     lda scrollcol : cmp newcol
     beq done
     bcs go_left
     \ Scroll right: expose the column at the right-hand edge
     inc scrollcol
+    jsr set_window_clip
     lda scrollcol : clc : adc #SCREEN_COLS - 1
     jsr repaint_column
     jmp loop
 .go_left
     dec scrollcol
+    jsr set_window_clip
     lda scrollcol
     jsr repaint_column
     jmp loop
 .done
     rts
+.vertical
+    lda scrollrow : cmp newrow
+    beq done
+    bcs go_up
+    \ Scroll down: expose the row at the bottom
+    inc scrollrow
+    jsr set_window_clip
+    lda scrollrow : clc : adc #31
+    jsr repaint_row
+    jmp vertical
+.go_up
+    dec scrollrow
+    jsr set_window_clip
+    lda scrollrow
+    jsr repaint_row
+    jmp vertical
 }
 
 .set_crtc_start
 {
-    \ start = (&3000 / 8) + scrollcol
+    \ start = (&3000 / 8) + (scrollrow MOD 32) * 80 + scrollcol
+    lda scrollrow : and #31 : sta tmp : lda #0 : sta tmp+1
+    asl tmp : asl tmp : asl tmp : asl tmp : rol tmp+1        \ * 16
+    lda tmp : sta left : lda tmp+1 : sta left+1
+    asl tmp : rol tmp+1 : asl tmp : rol tmp+1                \ * 64
+    lda tmp : clc : adc left : sta tmp : lda tmp+1 : adc left+1 : sta tmp+1
     lda #13 : sta CRTC_REG
-    lda scrollcol : clc : adc #LO(SCREEN DIV 8) : sta CRTC_DATA
+    lda tmp : clc : adc scrollcol : sta tmp : lda tmp+1 : adc #0 : sta tmp+1
+    lda tmp : clc : adc #LO(SCREEN DIV 8) : sta CRTC_DATA
     lda #12 : sta CRTC_REG
-    lda #HI(SCREEN DIV 8) : adc #0 : sta CRTC_DATA
+    lda tmp+1 : adc #HI(SCREEN DIV 8) : sta CRTC_DATA
     rts
 }
 
@@ -899,18 +974,18 @@ savebuf1 = &0900
 {
     lda scrollcol : sta clip_l
     clc : adc #SCREEN_COLS : sta clip_r
+    lda #0 : sta clip_t+1 : sta clip_h
+    lda scrollrow : asl a : rol clip_t+1 : asl a : rol clip_t+1 : asl a : rol clip_t+1 : sta clip_t
     rts
 }
 
 \ Repaint one byte column (A = level byte column): copy the pre-rendered
 \ platforms and ladders from the background cache in sideways RAM bank 7,
 \ then draw any keys, gems and meanies that overlap it.
-CACHE_LO = &8000                    \ column address tables in the cache bank
-CACHE_HI = &8100
 
 .repaint_column
 {
-    sta colw
+    sta colw : sta pl_line
     sta clip_l
     clc : adc #1 : sta clip_r
     \ ptr = address of the column at row 0
@@ -920,41 +995,43 @@ CACHE_HI = &8100
     lda tmp+1 : adc #HI(SCREEN) : sta ptr+1
     cmp #&80 : bcc ok : sbc #&50 : sta ptr+1
 .ok
-    lda ROMSEL_COPY : pha
-    lda #CACHE_BANK : sta ROMSEL_COPY : sta ROMSEL
-    ldx colw
-    lda CACHE_LO,x : sta src : lda CACHE_HI,x : sta src+1
-    \ the masks (non-empty cells, top cell first; then their numbers' 9th bits)
-    ldy #7
-.getmask
-    lda (src),y : sta mask,y : dey : bpl getmask
-    lda src : clc : adc #8 : sta src : bcc nc : inc src+1 : .nc
-    lda #32 : sta cellk
-.cell
-    asl mask+3 : rol mask+2 : rol mask+1 : rol mask
-    bcc empty
-    asl mask+7 : rol mask+6 : rol mask+5 : rol mask+4     \ carry = the 9th bit
-    ldy #0 : lda (src),y                                  \ the cell's number
-    inc src : bne nc2 : inc src+1 : .nc2
-    jsr copy_cell
-    jmp next
-.empty
-    asl mask+7 : rol mask+6 : rol mask+5 : rol mask+4
-    lda #0 : ldy #7
-.clear
-    sta (ptr),y : dey : bpl clear
-.next
-    lda ptr : clc : adc #LO(640) : sta ptr
-    lda ptr+1 : adc #HI(640) : cmp #&80 : bcc nw : sbc #&50 : .nw : sta ptr+1
-    dec cellk : bne cell
-    pla : sta ROMSEL_COPY : sta ROMSEL
+    lda #0 : sta pl_i0 : lda #31 : sta pl_i1
+    jsr paint_in_bank7
     \ moving sprites in this column will need drawing again
     lda colw : sta dm_c0 : sta dm_c1
-    lda #0 : sta dm_y0 : sta scn_y0 : sta scn_dmg
-    lda #255 : sta dm_y1 : sta scn_y1
+    lda #0 : sta dm_y0 : lda #255 : sta dm_y1
     jsr add_damage
     jsr draw_scenery
     jmp set_window_clip
+}
+
+\ Repaint character row A of a vertically scrolling level (all 80 columns),
+\ then the scenery in it (clipped to the row)
+.repaint_row
+{
+    sta pl_line
+    tax : lda rowaddr_lo,x : sta ptr : lda rowaddr_hi,x : sta ptr+1
+    lda #0 : sta pl_i0 : lda #79 : sta pl_i1
+    jsr paint_in_bank7
+    lda #0 : sta dm_c0 : lda #79 : sta dm_c1
+    lda pl_line : asl a : sta dm_y0 : ora #1 : sta dm_y1
+    jsr add_damage
+    \ the scenery, clipped to this row
+    lda #0 : sta clip_t+1
+    lda pl_line : asl a : rol clip_t+1 : asl a : rol clip_t+1 : asl a : rol clip_t+1 : sta clip_t
+    lda #8 : sta clip_h
+    jsr draw_scenery
+    jmp set_window_clip
+}
+
+\ paint_line with bank 7 paged in
+.paint_in_bank7
+{
+    lda ROMSEL_COPY : pha
+    lda #CACHE_BANK : sta ROMSEL_COPY : sta ROMSEL
+    jsr paint_line
+    pla : sta ROMSEL_COPY : sta ROMSEL
+    rts
 }
 
 \ Repaint character cells [rr_k0, rr_k1] of byte columns [rr_c0, rr_c1] (all
@@ -964,8 +1041,12 @@ CACHE_HI = &8100
 {
     lda ROMSEL_COPY : pha
     lda #CACHE_BANK : sta ROMSEL_COPY : sta ROMSEL
+    lda is_vert : bne by_rows
+    \ columns rr_c0..rr_c1, cells rr_k0..rr_k1 of each
+    lda rr_k0 : sta pl_i0 : lda rr_k1 : sta pl_i1
     lda rr_c0 : sta colw
 .col
+    lda colw : sta pl_line
     \ ptr = rowaddr[k0] + colw * 8, wrapped
     lda #0 : sta tmp+1
     lda colw : asl a : rol tmp+1 : asl a : rol tmp+1 : asl a : rol tmp+1
@@ -975,53 +1056,33 @@ CACHE_HI = &8100
     cmp #&80 : bcc ok : sbc #&50
 .ok
     sta ptr+1
-    jsr cache_seek
-    lda rr_k1 : sec : sbc rr_k0 : sta cellk         \ cells left - 1
-.cell
-    lda mask,x : and curbit : beq empty
-    stx tmp+1
-    lda mask+4,x : and curbit : cmp #1                  \ carry = the 9th bit
-    ldy #0 : lda (src),y                                \ the cell's number
-    inc src : bne nc : inc src+1 : .nc
-    jsr copy_cell
-    ldx tmp+1
-    jmp next
-.empty
-    lda rr_raw : beq clear
-    \ will the sprite cover this cell completely? (then leave it)
-    lda colw : sec : sbc m_ncol : bcc clear
-    cmp m_wb : bcs clear
-    cmp #MAX_RAW_COLS : bcs clear
-    tay
-    lda rr_k1 : sec : sbc cellk                \ this cell
-    cmp m_kf0 : bcc clear
-    cmp m_kf1 : bcs clear
-    sec : sbc m_nk0 : stx tmp : tax
-    lda bitpos_lo,x : ora rawbits,y : sta rawbits,y
-    ldx tmp
-    jmp next
-.clear
-    lda #0 : ldy #7
-    sta (ptr),y : dey : sta (ptr),y : dey : sta (ptr),y : dey : sta (ptr),y : dey
-    sta (ptr),y : dey : sta (ptr),y : dey : sta (ptr),y : dey : sta (ptr),y
-.next
-    lsr curbit : bcc same : ror curbit : inx : .same     \ (ror puts &80 back)
-    dec cellk : bmi col_done
-    lda ptr : clc : adc #LO(640) : sta ptr
-    lda ptr+1 : adc #HI(640) : cmp #&80 : bcc cell_hi : sbc #&50 : .cell_hi : sta ptr+1
-    jmp cell
-.col_done
+    jsr paint_line
     lda colw : cmp rr_c1 : beq done
     inc colw : jmp col
+.by_rows
+    \ rows rr_k0..rr_k1, columns rr_c0..rr_c1 of each (rows don't wrap)
+    lda rr_c0 : sta pl_i0 : lda rr_c1 : sta pl_i1
+    lda rr_k0 : sta pl_line
+.row
+    lda #0 : sta tmp+1
+    lda rr_c0 : asl a : rol tmp+1 : asl a : rol tmp+1 : asl a : rol tmp+1
+    ldx pl_line
+    clc : adc rowaddr_lo,x : sta ptr
+    lda tmp+1 : adc rowaddr_hi,x : sta ptr+1
+    jsr paint_line
+    lda pl_line : cmp rr_k1 : beq done
+    inc pl_line : jmp row
 .done
     pla : sta ROMSEL_COPY : sta ROMSEL
-    \ the damage, then the scenery over it (which records its own damage)
+    \ the damage, then the scenery over it, clipped to it
     lda rr_c0 : sta dm_c0 : sta clip_l
     lda rr_c1 : sta dm_c1 : clc : adc #1 : sta clip_r
-    lda rr_k0 : asl a : asl a : asl a : sta dm_y0 : sta scn_y0
-    lda rr_k1 : asl a : asl a : asl a : ora #7 : sta dm_y1 : sta scn_y1
+    lda rr_k0 : asl a : sta dm_y0
+    lda rr_k1 : asl a : ora #1 : sta dm_y1
     jsr add_damage
-    lda #1 : sta scn_dmg
+    lda #0 : sta clip_t+1
+    lda rr_k0 : asl a : rol clip_t+1 : asl a : rol clip_t+1 : asl a : rol clip_t+1 : sta clip_t
+    lda rr_k1 : sec : sbc rr_k0 : clc : adc #1 : asl a : asl a : asl a : sta clip_h     \ (256 = 0)
     jsr draw_scenery
     lda #0 : sta rr_raw
     jmp set_window_clip
@@ -1056,46 +1117,7 @@ CACHE_HI = &8100
     rts
 }
 
-\ tmp += number of bits set in A
 
-\ With the cache bank paged in: find byte column colw's cells from rr_k0 down.
-\ Loads its masks; src = the number of the first non-empty cell at or below
-\ rr_k0; X = the mask byte and curbit the bit for cell rr_k0.
-.cache_seek
-{
-    ldx colw
-    lda CACHE_LO,x : sta src : lda CACHE_HI,x : sta src+1
-    ldy #7
-.getmask
-    lda (src),y : sta mask,y : dey : bpl getmask
-    \ skip the numbers of the non-empty cells above k0 (count the mask's first k0 bits)
-    lda #0 : sta tmp
-    ldx #0
-    lda rr_k0
-.whole
-    cmp #8 : bcc part
-    pha : lda mask,x : jsr popcount_add : pla
-    inx : sec : sbc #8 : jmp whole
-.part
-    tay : lda mask,x : and topbits,y : jsr popcount_add
-    \ src += 8 + count
-    lda tmp : clc : adc #8 : adc src : sta src : bcc nc0 : inc src+1 : .nc0
-    \ walk the mask from cell k0: X = mask byte, curbit = bit within it
-    lda rr_k0 : lsr a : lsr a : lsr a : tax
-    lda rr_k0 : and #7 : tay : lda bitpos,y : sta curbit
-    rts
-}
-
-.popcount_add
-{
-    pha : and #15 : tay : lda pc16,y : clc : adc tmp : sta tmp
-    pla : lsr a : lsr a : lsr a : lsr a : tay : lda pc16,y : clc : adc tmp : sta tmp
-    rts
-}
-.pc16    EQUB 0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4
-.topbits EQUB &00, &80, &C0, &E0, &F0, &F8, &FC, &FE
-.bitpos  EQUB &80, &40, &20, &10, &08, &04, &02, &01
-.bitpos_lo EQUB &01, &02, &04, &08, &10, &20, &40, &80
 
 \ Draw every scenery item that overlaps [clip_l, clip_r)
 .draw_scenery
@@ -1106,43 +1128,17 @@ CACHE_HI = &8100
     lda alive,x : beq skip                               \ already collected
     lda draw_c1,x : cmp clip_l : beq skip : bcc skip     \ ends at or before clip_l
     lda draw_c0,x : cmp clip_r : bcs skip                \ starts at or after clip_r
-    \ rows: skip it if it's entirely above scn_y0 or below scn_y1
-    lda draw_th,x : bne rows_ok
-    lda draw_tl,x : cmp scn_y1 : beq t_ok : bcs skip
-.t_ok
-    ldy draw_img,x : clc : adc img_h,y : bcs rows_ok     \ A = bottom + 1
-    cmp scn_y0 : beq skip : bcc skip
-.rows_ok
     lda draw_img,x : sta p_img
     lda draw_xl,x : sta p_x : lda draw_xh,x : sta p_x+1
     lda draw_yl,x : sta p_y : lda draw_yh,x : sta p_y+1
     txa : pha
     jsr plot
     pla : tax
-    lda scn_dmg : beq skip
-    jsr scenery_damage
 .skip
     inx : cpx num_draw : bcc loop
     rts
 }
 
-\ Record scenery item X (drawn in columns [clip_l, clip_r)) as damage
-.scenery_damage
-{
-    lda draw_c0,x : cmp clip_l : bcs c0_ok : lda clip_l
-.c0_ok
-    sta dm_c0
-    lda draw_c1,x : cmp clip_r : bcc c1_ok : lda clip_r
-.c1_ok
-    sec : sbc #1 : sta dm_c1
-    lda #0 : sta dm_y0 : lda #255 : sta dm_y1
-    lda draw_th,x : bne rows
-    lda draw_tl,x : sta dm_y0
-    ldy draw_img,x : clc : adc img_h,y : bcs rows
-    sbc #0 : sta dm_y1                  \ (carry clear: subtracts 1)
-.rows
-    jmp add_damage                      \ (preserves X)
-}
 
 \ ptr += 640 (next character row), wrapping within screen memory; Y = 0
 .next_cell
@@ -1193,25 +1189,37 @@ CACHE_HI = &8100
     lda img_w,x : clc : adc shift : adc #3 : lsr a : lsr a : sta wb
     lda img_h,x : sta hgt
 
-    \ Rows: clip to 0..255 (the level is 256 high)
+    \ Rows: clip to clip_t .. clip_t + clip_h - 1 (clip_h = 0 means 256)
     lda #0 : sta r0
     lda hgt : sta rows
-    lda top+1 : beq top_ok
-    bpl nothing                     \ top >= 256: off the bottom
-    \ top < 0: skip -top rows
+    lda top : sec : sbc clip_t : sta top : lda top+1 : sbc clip_t+1 : sta top+1
+    beq top_ok
+    cmp #&FF : bne nothing          \ far above or below
+    lda top : beq nothing
+    \ above the window: skip -top rows
     lda #0 : sec : sbc top : sta r0
     lda hgt : sec : sbc r0 : bcc nothing : beq nothing : sta rows
-    lda #0 : sta firsty : sta firsty+1
+    lda clip_h : beq above_ok       \ (and no more than clip_h)
+    cmp rows : bcs above_ok : sta rows
+.above_ok
+    lda clip_t : sta firsty : lda clip_t+1 : sta firsty+1
     jmp rows_done
 .nothing
     jmp exit
 .top_ok
-    lda top : sta firsty : lda #0 : sta firsty+1
-    \ rows = min(hgt, 256 - top)
-    lda #0 : sec : sbc top          \ 256 - top (as a byte; top = 0 gives 0 = 256)
-    beq rows_done
-    cmp rows : bcs rows_done
+    \ rows = min(hgt, clip_h - top)
+    lda clip_h : sec : sbc top      \ (clip_h = 0 gives 256 - top)
+    beq rows_cut : bcs rows_avail
+    lda clip_h : bne nothing        \ top >= clip_h
+    lda #0 : sec : sbc top          \ 256 - top
+.rows_avail
+    cmp rows : bcs rows_cut
     sta rows
+.rows_cut
+    lda clip_h : beq top_in
+    lda top : cmp clip_h : bcs nothing
+.top_in
+    lda top : clc : adc clip_t : sta firsty : lda clip_t+1 : adc #0 : sta firsty+1
 .rows_done
 
     \ Only visit the byte columns inside [clip_l, clip_r):
@@ -1533,6 +1541,12 @@ ENDMACRO
 .hi_ok
     lda #&FF : sta pend_lo,x
     lda #0 : sta pend_hi,x
+    lda is_vert : beq loop
+    \ (a vertically scrolling level: just the window's rows of those columns)
+    lda pc_col : sta rr_c0
+    lda pc_end : sec : sbc #1 : sta rr_c1
+    lda scrollrow : sta rr_k0 : clc : adc #31 : sta rr_k1
+    jmp repaint_rect
 .loop
     lda pc_col : cmp pc_end : bcs none
     jsr repaint_column
@@ -1624,6 +1638,7 @@ NEXT
 
 \ Per-buffer state (not saved to disc)
 .bscroll    SKIP 2
+.brow       SKIP 2          \ scrollrow, per buffer
 .bfrak      SKIP 2          \ FRAK! bubble drawn in this buffer
 .pend_lo    SKIP 2          \ columns waiting to be repainted, per buffer
 .pend_hi    SKIP 2
@@ -1734,7 +1749,7 @@ MV_DAGGER = 3
 
 .dagger
     \ gone at the bottom of the level, or once x <= -11
-    lda mv_yl,x : cmp #LO(LEVEL_H) : lda mv_yh,x : sbc #HI(LEVEL_H)
+    lda mv_yl,x : cmp level_h : lda mv_yh,x : sbc level_h+1
     bvc nv : eor #&80 : .nv
     bpl gone
     lda mv_xl,x : cmp #LO(-10) : lda mv_xh,x : sbc #HI(-10)
@@ -1770,6 +1785,11 @@ ENDMACRO
 .diff_dagger_yf     DIFF_TABLE 0, LO(154), LO(169), LO(169), LO(184), LO(184), LO(200)     \ 0.6 * (1.0 .. 1.3)
 .diff_dagger_yi     DIFF_TABLE 0, HI(154), HI(169), HI(169), HI(184), HI(184), HI(200)
 .diff_spread_l      DIFF_TABLE 0, LO(270), LO(280), LO(280), LO(290), LO(290), LO(300)
+\ (vertically scrolling levels: balloons spread 1.25 times as wide, daggers 1.15)
+.vdiff_bspread_l    DIFF_TABLE 0, LO(337), LO(350), LO(350), LO(362), LO(362), LO(375)
+.vdiff_bspread_h    DIFF_TABLE 0, HI(337), HI(350), HI(350), HI(362), HI(362), HI(375)
+.vdiff_dspread_l    DIFF_TABLE 0, LO(310), LO(322), LO(322), LO(333), LO(333), LO(345)
+.vdiff_dspread_h    DIFF_TABLE 0, HI(310), HI(322), HI(322), HI(333), HI(333), HI(345)
 .diff_spread_h      DIFF_TABLE 0, HI(270), HI(280), HI(280), HI(290), HI(290), HI(300)
 
 \ Called once per tick while Trogg is alive
@@ -1804,12 +1824,19 @@ ENDMACRO
 .have_slot
     sty sp_slot
     lda tx : sta sp_mid : lda tx+1 : sta sp_mid+1
+    ldx #DIFFICULTY
+    lda is_vert : beq b_spread
+    lda vdiff_bspread_l,x : sta sp_spread : lda vdiff_bspread_h,x : sta sp_spread+1
+    jmp b_spread_ok
+.b_spread
+    lda diff_spread_l,x : sta sp_spread : lda diff_spread_h,x : sta sp_spread+1
+.b_spread_ok
     jsr random_x
     ldy sp_slot : ldx #DIFFICULTY
     lda #MV_BALLOON : sta mv_active,y
     lda #IMG_Balloon : sta mv_img,y
     lda sp_x : sta mv_xl,y : lda sp_x+1 : sta mv_xh,y
-    lda #LO(LEVEL_H - 4) : sta mv_yl,y : lda #HI(LEVEL_H - 4) : sta mv_yh,y
+    lda level_h : sec : sbc #4 : sta mv_yl,y : lda level_h+1 : sbc #0 : sta mv_yh,y
     \ vy = -balloon speed
     lda #0 : sec : sbc diff_balloon_vf,x : sta mv_vyf,y
     lda #0 : sbc diff_balloon_vi,x : sta mv_vyi,y
@@ -1826,26 +1853,45 @@ ENDMACRO
     rts
 .have_slot
     sty sp_slot
-    lda ty : sec : sbc #4 : sta tmp : lda ty+1 : sbc #0 : bpl h_ok
-    lda #0 : sta tmp
+    lda ty : sec : sbc #4 : sta tmp : lda ty+1 : sbc #0 : sta tmp+1 : bpl h_ok
+    lda #0 : sta tmp : sta tmp+1
 .h_ok
+    ldx #DIFFICULTY
+    lda is_vert : bne v_aim
     \ (horizontally scrolling levels are 256 high, so h fits in a byte)
     \ mid = tx + h + h * 85 / 256  (h * 1.332)
     lda tmp : sta mul_a : lda #85 : jsr mul8      \ A = high byte of h * 85
     clc : adc tmp : sta sp_mid : lda #0 : adc #0 : sta sp_mid+1
+    lda diff_spread_l,x : sta sp_spread : lda diff_spread_h,x : sta sp_spread+1
+    jmp aimed
+.v_aim
+    \ a vertically scrolling level: mid = tx + h * 0.75 (h - h / 4)
+    lda tmp+1 : lsr a : sta sp_mid+1 : lda tmp : ror a : lsr sp_mid+1 : ror a : sta sp_mid
+    lda tmp : sec : sbc sp_mid : sta sp_mid : lda tmp+1 : sbc sp_mid+1 : sta sp_mid+1
+    lda vdiff_dspread_l,x : sta sp_spread : lda vdiff_dspread_h,x : sta sp_spread+1
+.aimed
     lda sp_mid : clc : adc tx : sta sp_mid : lda sp_mid+1 : adc tx+1 : sta sp_mid+1
     jsr random_x
     ldy sp_slot : ldx #DIFFICULTY
     lda #MV_DAGGER : sta mv_active,y
-    lda #IMG_DaggerLR : sta mv_img,y
     lda sp_x : sta mv_xl,y : lda sp_x+1 : sta mv_xh,y
     lda #4 : sta mv_yl,y : lda #0 : sta mv_yh,y
-    \ down and to the left
+    lda diff_pause,x : sta mv_pause,y
+    lda is_vert : bne v_dagger
+    lda #IMG_DaggerLR : sta mv_img,y
+    \ down and to the left (x speed 0.8, y 0.6 of its speed)
     lda #0 : sec : sbc diff_dagger_xf,x : sta mv_vxf,y
     lda #0 : sbc diff_dagger_xi,x : sta mv_vxi,y
     lda diff_dagger_yf,x : sta mv_vyf,y
     lda diff_dagger_yi,x : sta mv_vyi,y
-    lda diff_pause,x : sta mv_pause,y
+    rts
+.v_dagger
+    lda #IMG_DaggerUD : sta mv_img,y
+    \ (x speed 0.6, y 0.8)
+    lda #0 : sec : sbc diff_dagger_yf,x : sta mv_vxf,y
+    lda #0 : sbc diff_dagger_yi,x : sta mv_vxi,y
+    lda diff_dagger_xf,x : sta mv_vyf,y
+    lda diff_dagger_xi,x : sta mv_vyi,y
 .none
     rts
 }
@@ -1853,13 +1899,12 @@ ENDMACRO
 \ sp_x = sp_mid - spread/2 + random(0 .. spread)
 .random_x
 {
-    ldx #DIFFICULTY
 .retry
     jsr random
     lda rng+1 : and #1 : sta tmp+1 : lda rng : sta tmp       \ 0 .. 511
-    lda diff_spread_l,x : cmp tmp : lda diff_spread_h,x : sbc tmp+1 : bcc retry
+    lda sp_spread : cmp tmp : lda sp_spread+1 : sbc tmp+1 : bcc retry
     \ sp_x = sp_mid + tmp - spread / 2
-    lda diff_spread_h,x : lsr a : sta sp_x+1 : lda diff_spread_l,x : ror a : sta sp_x
+    lda sp_spread+1 : lsr a : sta sp_x+1 : lda sp_spread : ror a : sta sp_x
     lda sp_mid : clc : adc tmp : sta tmp : lda sp_mid+1 : adc tmp+1 : sta tmp+1
     lda tmp : sec : sbc sp_x : sta sp_x : lda tmp+1 : sbc sp_x+1 : sta sp_x+1
     rts
@@ -2422,8 +2467,8 @@ ENDMACRO
 .keep_falling
     lda q_y2 : sta ty : lda q_y2+1 : sta ty+1
     \ off the bottom of the level?
-    lda ty : cmp #LO(LEVEL_H) : lda ty+1 : sbc #HI(LEVEL_H) : bcc done
-    lda #LO(LEVEL_H - 1) : sta ty : lda #HI(LEVEL_H - 1) : sta ty+1
+    lda ty : cmp level_h : lda ty+1 : sbc level_h+1 : bcc done
+    lda level_h : sec : sbc #1 : sta ty : lda level_h+1 : sbc #0 : sta ty+1
     jmp trogg_dies
 .rising
     clc : adc ty : sta ty : lda ty+1 : adc #&FF : sta ty+1
@@ -3188,11 +3233,11 @@ TURN_MOVES = 1 + 2 + 3
     lda tmp+1 : cmp #&80 : ror tmp+1 : ror tmp
     lda tmp+1 : cmp #&80 : ror tmp+1 : ror tmp
     \ visible if right >= clip_l and left < clip_r
-    lda tmp+1 : bmi out : bne r_ok
-    lda tmp : cmp clip_l : bcc out
+    lda tmp+1 : bmi out1 : bne r_ok
+    lda tmp : cmp clip_l : bcc out1
 .r_ok
-    lda left+1 : bmi l_neg : bne out
-    lda left : cmp clip_r : bcs out
+    lda left+1 : bmi l_neg : bne out1
+    lda left : cmp clip_r : bcs out1
     sta nr_c0 : jmp have_l
 .l_neg
     lda #0 : sta nr_c0
@@ -3201,16 +3246,21 @@ TURN_MOVES = 1 + 2 + 3
     lda #255 : sta tmp
 .r_byte
     lda tmp : sta nr_c1
-    \ top = y - yo, bottom = top + h - 1
+    jmp rows_part
+.out1
+    clc : rts
+.rows_part
+    \ top = y - yo, bottom = top + h - 1; visible if bottom >= clip_t and top < clip_t + 256
     lda d_yl,x : sec : sbc img_yo,y : sta top : lda d_yh,x : sbc #0 : sta top+1
     lda top : clc : adc img_h,y : sta tmp : lda top+1 : adc #0 : sta tmp+1
     lda tmp : bne b1 : dec tmp+1 : .b1 : dec tmp
-    lda tmp+1 : bmi out                    \ bottom < 0
-    beq b_byte : lda #255 : sta tmp
-.b_byte
-    lda tmp : sta nr_y1
-    lda top+1 : bmi t_neg : bne out        \ top >= 256
-    lda top : sta nr_y0
+    lda tmp : cmp clip_t : lda tmp+1 : sbc clip_t+1 : bvc v1 : eor #&80 : .v1 : bmi out
+    lda clip_t : clc : adc #0 : lda clip_t+1 : adc #1 : sta left+1      \ (clip_t + 256) high byte
+    lda top : cmp clip_t : lda top+1 : sbc left+1 : bvc v2 : eor #&80 : .v2 : bpl out
+    \ rows, in units of 4 pixels (0-1023)
+    lda tmp+1 : lsr a : sta left : lda tmp : ror a : lsr left : ror a : sta nr_y1
+    lda top+1 : bmi t_neg
+    lsr a : sta left : lda top : ror a : lsr left : ror a : sta nr_y0
     sec : rts
 .t_neg
     lda #0 : sta nr_y0
@@ -3321,8 +3371,14 @@ TURN_MOVES = 1 + 2 + 3
 .c1
     sta rr_c1
     cmp rr_c0 : bcc none
-    lda dr_y0,y : lsr a : lsr a : lsr a : sta rr_k0
-    lda dr_y1,y : lsr a : lsr a : lsr a : sta rr_k1
+    \ its character rows, within the window's (scrollrow .. scrollrow + 31)
+    lda dr_y0,y : lsr a : cmp scrollrow : bcs k0 : lda scrollrow
+.k0
+    sta rr_k0
+    lda scrollrow : clc : adc #31 : sta rr_k1
+    lda dr_y1,y : lsr a : cmp rr_k1 : bcs k1 : sta rr_k1
+.k1
+    lda rr_k1 : cmp rr_k0 : bcc none
     jmp repaint_rect
 .none
     rts
@@ -3483,8 +3539,8 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
 .hline
 {
     lda sbase : sta sptr : lda sbase+1 : sta sptr+1
-    \ Only rows 0-255
-    lda p_y+1 : beq row_ok
+    \ Only rows in the window: 0 <= p_y - clip_t < 256
+    lda p_y : sec : sbc clip_t : lda p_y+1 : sbc clip_t+1 : beq row_ok
     rts
 .row_ok
     \ order the ends: left in left, right in tmp
@@ -3508,7 +3564,7 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
 .c1_ok
     \ screen address of the first column on this row
     lda p_y : and #7 : sta hl_line
-    lda p_y : lsr a : lsr a : lsr a : sta hl_row
+    lda p_y+1 : lsr a : sta hl_row : lda p_y : ror a : lsr hl_row : ror a : lsr hl_row : ror a : sta hl_row
     lda hl_c0 : sta colw
 .col
     lda colw : cmp clip_l : bcc next_col
@@ -3625,6 +3681,7 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
 .sl_plat    SKIP MAX_SLOW
 .sl_wait    SKIP MAX_SLOW
 .sl_simple  SKIP MAX_SLOW
+.slowsave1  SKIP SLOWSAVE1_SIZE     \ the second buffer's save area for meanies flying off
 \ Moving platforms and meanies: current state, and copies for checkpoints
 SLOW_N = MAX_SLOW
 .s_alive    SKIP SLOW_N
@@ -3683,48 +3740,155 @@ PRINT "Bank 6: spans and tables to", ~logic_start, ", logic to", ~logic_end, ", 
 \ Sideways RAM bank 7: the current level's background, unrolled when it starts,
 \ and the code that only needs bank 7 and main RAM
 \
-\   &8000/&8100  the address of each byte column of the background
-\   &8200-&91FF  the cell dictionary: each distinct non-empty character cell of
-\                the level, numbered 0-511 in order of first use. Line L of
-\                cell N is at BG_DICT + L * &100 + N (cells 256-511: + &800)
-\   &9200-&9FFF  the columns: a 4-byte mask of non-empty cells (bit 7 of the
-\                first byte = the top row), a 4-byte mask of those whose number
-\                is 256 or more, then each non-empty cell's number (low byte)
-\   &A000        this code
-\   &BA00-&BFFF  a save area for meanies flying off; while unrolling, the
-\                dictionary's hash table
+\ A horizontally scrolling level's background is stored as columns of character
+\ cells, a vertically scrolling one's as rows ("lines" of cells, either way):
+\   &8000/&8100  the address of each line
+\   &8200        the cell dictionary: each distinct non-empty character cell of
+\                the level, numbered 0-1023 in order of first use, in pages of
+\                256. Line L of cell N is at BG_DICT + (N DIV 256) * &800 +
+\                L * &100 + (N MOD 256). As many pages as the level needs.
+\   then         the lines: three masks (4 bytes each for a column, 10 for a
+\                row) of the non-empty cells (bit 7 of the first byte = the top
+\                cell, or the leftmost), bit 8 of their numbers and bit 9, then
+\                each non-empty cell's number (low byte)
+\   BG_TOP       this code
+\   OVERLAY_STORE  the level loader (copied to OVERLAY_RUN when a level loads)
 \ ------------------------------------------------------------------------------
 
-HASH_LO = &BA00                     \ per hash value: the first cell with it (its number + 1)
-HASH_HI = &BB00
-LINK_LO = &BC00                     \ per cell: the next with the same hash (its number + 1)
-LINK_HI = &BE00
+BG_LO = &8000
+BG_HI = &8100
 
 CLEAR &8000, &C000
 ORG BG_TOP
-GUARD CACHE_TOP
+GUARD OVERLAY_STORE
 .bank7_start
 
-\ Copy cell A (plus 256 if carry set) to the screen at (ptr). X, Y changed.
+\ Copy cell A of dictionary page X to the screen at (ptr). X, Y changed.
 .copy_cell
 {
-    tax : bcs high
-    ldy #0
+    cpx #2 : bcs p23
+    cpx #1 : beq p1
+    tax : ldy #0
     FOR l, 0, 7
     lda BG_DICT + l * &100,x : sta (ptr),y : IF l < 7 : iny : ENDIF
     NEXT
     rts
-.high
-    ldy #0
+.p1
+    tax : ldy #0
     FOR l, 0, 7
     lda BG_DICT + &800 + l * &100,x : sta (ptr),y : IF l < 7 : iny : ENDIF
     NEXT
     rts
+.p23
+    bne p3
+    tax : ldy #0
+    FOR l, 0, 7
+    lda BG_DICT + &1000 + l * &100,x : sta (ptr),y : IF l < 7 : iny : ENDIF
+    NEXT
+    rts
+.p3
+    tax : ldy #0
+    FOR l, 0, 7
+    lda BG_DICT + &1800 + l * &100,x : sta (ptr),y : IF l < 7 : iny : ENDIF
+    NEXT
+    rts
 }
+
+\ Find line pl_line's cells from pl_i0 on: load its masks into cmask; src = the
+\ number of the first non-empty cell at or after pl_i0; X = the mask byte and
+\ curbit the bit for cell pl_i0
+.seek_line
+{
+    ldx pl_line
+    lda BG_LO,x : sta src : lda BG_HI,x : sta src+1
+    lda mb : asl a : adc mb : sta tmp+1 : tay : dey       \ 3 masks
+.getmask
+    lda (src),y : sta cmask,y : dey : bpl getmask
+    \ skip the numbers of the non-empty cells before pl_i0 (count its mask bits)
+    lda #0 : sta tmp
+    ldx #0
+    lda pl_i0
+.whole
+    cmp #8 : bcc part
+    pha : lda cmask,x : jsr popcount_add : pla
+    inx : sec : sbc #8 : jmp whole
+.part
+    tay : lda cmask,x : and topbits,y : jsr popcount_add
+    lda tmp : clc : adc tmp+1 : adc src : sta src : bcc nc : inc src+1 : .nc
+    lda pl_i0 : lsr a : lsr a : lsr a : tax
+    lda pl_i0 : and #7 : tay : lda bitpos,y : sta curbit
+    rts
+}
+
+\ Paint cells pl_i0..pl_i1 of line pl_line on the screen, from (ptr) (stepping
+\ down a column, or along a row). With rr_raw set (columns only), cells that a
+\ moving sprite will be copied into are left alone (see raw_setup).
+.paint_line
+{
+    jsr seek_line
+    lda pl_i1 : sec : sbc pl_i0 : sta cellk         \ cells left - 1
+.cell
+    lda cmask,x : and curbit : beq empty
+    \ its dictionary page, from the second and third masks
+    stx u_sx
+    lda #0 : sta cpage
+    txa : clc : adc mb : tay
+    lda cmask,y : and curbit : beq b8 : inc cpage : .b8
+    tya : clc : adc mb : tay
+    lda cmask,y : and curbit : beq b9 : inc cpage : inc cpage : .b9
+    ldy #0 : lda (src),y                            \ the cell's number
+    inc src : bne nc : inc src+1 : .nc
+    ldx cpage : jsr copy_cell
+    ldx u_sx
+    jmp next
+.empty
+    lda rr_raw : beq clear
+    \ will the sprite cover this cell completely? (then leave it)
+    lda pl_line : sec : sbc m_ncol : bcc clear
+    cmp m_wb : bcs clear
+    cmp #MAX_RAW_COLS : bcs clear
+    tay
+    lda pl_i1 : sec : sbc cellk                     \ this cell
+    cmp m_kf0 : bcc clear
+    cmp m_kf1 : bcs clear
+    sec : sbc m_nk0 : stx tmp : tax
+    lda bitpos_lo,x : ora rawbits,y : sta rawbits,y
+    ldx tmp
+    jmp next
+.clear
+    lda #0 : ldy #7
+    sta (ptr),y : dey : sta (ptr),y : dey : sta (ptr),y : dey : sta (ptr),y : dey
+    sta (ptr),y : dey : sta (ptr),y : dey : sta (ptr),y : dey : sta (ptr),y
+.next
+    lsr curbit : bcc same : ror curbit : inx : .same     \ (ror puts &80 back)
+    dec cellk : bmi done
+    lda is_vert : bne along
+    lda ptr : clc : adc #LO(640) : sta ptr
+    lda ptr+1 : adc #HI(640) : cmp #&80 : bcc nw : sbc #&50 : .nw : sta ptr+1
+    jmp cell
+.along
+    lda ptr : clc : adc #8 : sta ptr : bcc cell_j : inc ptr+1
+.cell_j
+    jmp cell
+.done
+    rts
+}
+
+\ tmp += number of bits set in A
+.popcount_add
+{
+    pha : and #15 : tay : lda pc16,y : clc : adc tmp : sta tmp
+    pla : lsr a : lsr a : lsr a : lsr a : tay : lda pc16,y : clc : adc tmp : sta tmp
+    rts
+}
+.pc16    EQUB 0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4
+.topbits EQUB &00, &80, &C0, &E0, &F0, &F8, &FC, &FE
+.bitpos  EQUB &80, &40, &20, &10, &08, &04, &02, &01
+.bitpos_lo EQUB &01, &02, &04, &08, &10, &20, &40, &80
 
 .bank7_end
 SAVE "BANK7", bank7_start, bank7_end
-PRINT "Bank 7: background to", ~BG_TOP, ", code to", ~bank7_end, "(", CACHE_TOP - bank7_end, "bytes free )"
+PRINT "Bank 7: background to", ~BG_TOP, ", code to", ~bank7_end, "(", OVERLAY_STORE - bank7_end, "bytes free )"
 
 
 \ ------------------------------------------------------------------------------
@@ -3782,10 +3946,15 @@ ROMSEL_ANDY = &80                   \ ROMSEL bit 7: ANDY at &8000-&8FFF
 {
     sta cur_level
     jsr fetch_level
-    lda STAGE + H_CELLS : cmp #32 : beq ok
-    sec : rts
-.ok
-    \ the level's size, colour and Trogg's start
+    \ the level's size (and which way it scrolls), colour and Trogg's start
+    lda STAGE + H_CELLS : sta level_rows
+    lda #0 : sta level_h+1
+    lda level_rows : asl a : rol level_h+1 : asl a : rol level_h+1 : asl a : rol level_h+1 : sta level_h
+    ldx #0 : ldy #4                                 \ (columns have 4-byte masks)
+    lda level_rows : sec : sbc #32 : beq horizontal
+    ldx #1 : ldy #10                                \ (rows have 10-byte masks)
+.horizontal
+    sta row_max : stx is_vert : sty mb
     lda STAGE + H_COLS : sta level_cols
     lda #0 : sta tmp+1
     lda level_cols : asl a : rol tmp+1 : asl a : rol tmp+1 : sta tmp       \ width
@@ -4295,6 +4464,12 @@ ENDMACRO
 \ ------------------------------------------------------------------------------
 
 COLBUF = &0900                      \ one column of the level, 4 pixels by 256 (save area 1, free while loading)
+\ (in the screen memory, which is free while loading)
+HASH_LO = &3000 : HASH_HI = &3100   \ the dictionary's hash table: per hash, the first cell with it (number + 1)
+LINK_LO = &3200 : LINK_HI = &3600   \ per cell, the next with the same hash (number + 1)
+ROWBUF = &3A00                      \ one character row of a vertically scrolling level (640 bytes)
+OFF_LO = &3D00 : OFF_HI = &3E00     \ where each line is, from DSTAGE
+DSTAGE = &4000                      \ the lines, until the dictionary is complete
 BG_IMG = &0A00                      \ the background items (from bg_items)
 BG_XL = &0A50 : BG_XH = &0AA0       \ left edge
 BG_YL = &0AF0 : BG_YH = &0B40       \ top edge
@@ -4304,36 +4479,109 @@ ASSERT MAX_BG <= &50
 
 .unroll_bg
 {
-    \ (columns past the level's right-hand edge have no address)
-    \ (and the dictionary's hash table starts empty)
-    lda #CACHE_BANK : sta ROMSEL_COPY : sta ROMSEL
+    \ the dictionary's hash table starts empty
     lda #0 : tax
-.clear_tables
-    sta CACHE_LO,x : sta CACHE_HI,x : sta HASH_LO,x : sta HASH_HI,x : inx : bne clear_tables
-    lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL
-    lda #LO(BG_COLUMNS) : sta po : lda #HI(BG_COLUMNS) : sta po+1    \ the next column goes here
-    lda #0 : sta u_col : sta u_cntl : sta u_cnth
+.clear_hash
+    sta HASH_LO,x : sta HASH_HI,x : inx : bne clear_hash
+    lda #LO(DSTAGE) : sta po : lda #HI(DSTAGE) : sta po+1    \ the lines are built here first
+    lda #0 : sta u_line : sta u_cntl : sta u_cnth
+    lda is_vert : beq col_loop
+    jmp row_loop
+
+    \ A horizontally scrolling level: each byte column, from the top to row 255
 .col_loop
     lda #0 : tax
 .clr
     sta COLBUF,x : inx : bne clr
-    \ every item covering this column, in order
+    lda #0 : sta u_bl : sta u_bl+1 : sta u_bh : lda #1 : sta u_bh+1
     lda #0 : sta u_i
 .item_loop
     ldx u_i : cpx num_bg : beq items_done
-    lda u_col : sec : sbc BG_C0L,x : sta u_j : lda #0 : sbc BG_C0H,x : bne next_item
+    lda u_line : sec : sbc BG_C0L,x : sta u_j : lda #0 : sbc BG_C0H,x : bne next_item
     lda u_j : cmp BG_WB,x : bcs next_item
+    lda #LO(COLBUF) : sta u_tb : lda #HI(COLBUF) : sta u_tb+1
     jsr unroll_item
 .next_item
     inc u_i : jmp item_loop
 .items_done
-    \ Write it out (code in bank 7)
+    lda #LO(COLBUF) : sta u_src : lda #HI(COLBUF) : sta u_src+1
+    lda #32 : sta u_cells
+    jsr store_line
+    inc u_line : lda u_line : cmp level_cols : bne col_loop
+    jmp finish
+
+    \ A vertically scrolling level: each character row, all 80 byte columns
+.row_loop
+    ldx #0 : txa
+.rclr
+    sta ROWBUF,x : sta ROWBUF + &100,x : sta ROWBUF + &180,x : inx : bne rclr
+    \ the band of level rows [8R, 8R + 8)
+    lda #0 : sta u_bl+1
+    lda u_line : asl a : rol u_bl+1 : asl a : rol u_bl+1 : asl a : rol u_bl+1 : sta u_bl
+    clc : adc #8 : sta u_bh : lda u_bl+1 : adc #0 : sta u_bh+1
+    lda #0 : sta u_i
+.ritem_loop
+    ldx u_i : cpx num_bg : bne ritem
+    jmp ritems_done
+.ritem
+    \ does it reach the band? top < bh and top + h > bl
+    lda BG_YL,x : cmp u_bh : lda BG_YH,x : sbc u_bh+1 : bvc v1 : eor #&80 : .v1 : bpl rskip
+    ldy BG_IMG,x
+    lda BG_YL,x : clc : adc img_h,y : sta tmp : lda BG_YH,x : adc #0 : sta tmp+1
+    lda u_bl : cmp tmp : lda u_bl+1 : sbc tmp+1 : bvc v2 : eor #&80 : .v2 : bmi reaches
+.rskip
+    jmp rnext
+.reaches
+    \ each of its byte columns that's on the level
+    lda #0 : sta u_j
+.rcol
+    lda BG_C0L,x : clc : adc u_j : sta tmp : lda BG_C0H,x : adc #0 : bne rcol_next
+    lda tmp : cmp #80 : bcs rcol_next
+    \ tb = ROWBUF + column * 8 - 8R (where level row 0 would be)
+    lda #0 : sta u_tb+1
+    lda tmp : asl a : rol u_tb+1 : asl a : rol u_tb+1 : asl a : rol u_tb+1
+    clc : adc #LO(ROWBUF) : sta u_tb : lda u_tb+1 : adc #HI(ROWBUF) : sta u_tb+1
+    lda u_tb : sec : sbc u_bl : sta u_tb : lda u_tb+1 : sbc u_bl+1 : sta u_tb+1
+    jsr unroll_item
+    ldx u_i
+.rcol_next
+    inc u_j : lda u_j : cmp BG_WB,x : bne rcol
+.rnext
+    inc u_i : jmp ritem_loop
+.ritems_done
+    lda #LO(ROWBUF) : sta u_src : lda #HI(ROWBUF) : sta u_src+1
+    lda #80 : sta u_cells
+    jsr store_line
+    inc u_line : lda u_line : cmp level_rows : beq finish
+    jmp row_loop
+
+    \ Now the dictionary is complete, put the lines straight after it in bank 7
+.finish
     lda #CACHE_BANK : sta ROMSEL_COPY : sta ROMSEL
-    jsr store_column
+    \ start = BG_DICT + pages * &800 (at least one page)
+    lda u_cnth : ldx u_cntl : beq whole : clc : adc #1 : .whole
+    cmp #0 : bne paged : lda #1
+.paged
+    asl a : asl a : asl a : clc : adc #HI(BG_DICT) : sta dp+1 : lda #LO(BG_DICT) : sta dp
+    \ each line's address: start + its offset; none for lines past the end
+    ldx #0
+.addr
+    lda #0 : sta BG_LO,x : sta BG_HI,x
+    cpx u_line : bcs no_line
+    lda OFF_LO,x : clc : adc dp : sta BG_LO,x
+    lda OFF_HI,x : adc dp+1 : sta BG_HI,x
+.no_line
+    inx : bne addr
+    \ copy them up
+    lda #LO(DSTAGE) : sta src : lda #HI(DSTAGE) : sta src+1
+.copy
+    lda src : cmp po : lda src+1 : sbc po+1 : bcs copied
+    ldy #0 : lda (src),y : sta (dp),y
+    inc src : bne c1 : inc src+1 : .c1
+    inc dp : bne copy : inc dp+1
+    jmp copy
+.copied
     lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL
-    inc u_col : lda u_col : cmp level_cols : beq all_done
-    jmp col_loop
-.all_done
     rts
 }
 
@@ -4363,29 +4611,28 @@ ASSERT MAX_BG <= &50
     dex : bne mul
 .at_col
     lda dp : sec : sbc u_h : sta sp : lda dp+1 : sbc #0 : sta sp+1
-    \ rows [r0, r1) that are on the level; pt = COLBUF + top
+    \ its rows [r0, r1) that are in the band [u_bl, u_bh)
     ldx u_i
-    lda BG_YH,x : bmi above
-    beq on_level
-    rts                                     \ starts below the level
-.on_level
-    lda #0 : sta u_r0
-    lda BG_YL,x : clc : adc u_h : bcs clip_bottom
-    lda u_h : sta u_r1 : jmp rows_ok
-.clip_bottom
-    lda #0 : sec : sbc BG_YL,x : sta u_r1   \ 256 - top
-    jmp rows_ok
-.above
-    lda #0 : sec : sbc BG_YL,x : sta u_r0   \ -top
-    lda BG_YH,x : cmp #&FF : bne off
-    lda u_r0 : cmp u_h : bcc partly
+    lda u_bl : sec : sbc BG_YL,x : sta tmp : lda u_bl+1 : sbc BG_YH,x : bpl r0_pos
+    lda #0 : beq r0_ok
+.r0_pos
+    bne off                                 \ (the band starts 256 or more rows down it)
+    lda tmp
+.r0_ok
+    sta u_r0 : cmp u_h : bcs off
+    lda u_bh : sec : sbc BG_YL,x : sta tmp : lda u_bh+1 : sbc BG_YH,x : bmi off
+    bne r1_h
+    lda tmp : beq off : cmp u_h : bcc r1_ok
+.r1_h
+    lda u_h
+.r1_ok
+    sta u_r1 : cmp u_r0 : beq off : bcs rows_ok
 .off
     rts
-.partly
-    lda u_h : sta u_r1
 .rows_ok
-    lda BG_YL,x : clc : adc #LO(COLBUF) : sta pt
-    lda BG_YH,x : adc #HI(COLBUF) : sta pt+1
+    \ pt = tb + top, so (pt),Y is level row top + Y in the target
+    lda BG_YL,x : clc : adc u_tb : sta pt
+    lda BG_YH,x : adc u_tb+1 : sta pt+1
     lda u_bank : sta ROMSEL_COPY : sta ROMSEL
     ldy u_r0
 .row
@@ -4413,7 +4660,6 @@ ASSERT MAX_BG <= &50
 .skip
     iny : cpy u_r1 : bne row
     lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL
-.done
     rts
 }
 
@@ -4449,41 +4695,54 @@ ASSERT MAX_BG <= &50
     rts
 }
 
-\ Store column u_col of the background from COLBUF, at po (which moves on)
-.store_column
+\ Store line u_line of the background (u_cells cells at u_src, 8 bytes each) at
+\ po (which moves on): its 3 masks, then the low byte of each non-empty cell's
+\ number in the dictionary
+.store_line
 {
-    ldx u_col : lda po : sta CACHE_LO,x : lda po+1 : sta CACHE_HI,x
-    lda po : clc : adc #8 : sta dp : lda po+1 : adc #0 : sta dp+1     \ the numbers go here
+    ldx u_line : lda po : sec : sbc #LO(DSTAGE) : sta OFF_LO,x
+    lda po+1 : sbc #HI(DSTAGE) : sta OFF_HI,x
+    ldx #29 : lda #0
+.clear
+    sta cmask,x : dex : bpl clear
+    lda mb : asl a : adc mb : clc : adc po : sta dp : lda po+1 : adc #0 : sta dp+1     \ the numbers
     lda #0 : sta u_x
 .cell
-    ldx u_x
-    lda COLBUF,x : ora COLBUF+1,x : ora COLBUF+2,x : ora COLBUF+3,x
-    ora COLBUF+4,x : ora COLBUF+5,x : ora COLBUF+6,x : ora COLBUF+7,x
-    cmp #1                                  \ carry set if not empty
-    rol mask+3 : rol mask+2 : rol mask+1 : rol mask
-    lda mask+3 : lsr a : bcc empty
+    lda u_src : sta pt : lda u_src+1 : sta pt+1
+    ldy #7 : lda #0
+.any
+    ora (pt),y : dey : bpl any
+    cmp #0 : beq empty
     jsr dict_find
     ldy #0 : lda u_nl : sta (dp),y
     inc dp : bne nc : inc dp+1 : .nc
-    lda u_nh : lsr a                        \ carry = the 9th bit
-    jmp high
+    \ set its bits: non-empty, and bits 8 and 9 of its number
+    lda u_x : lsr a : lsr a : lsr a : tax
+    lda u_x : and #7 : tay : lda bit_of,y : sta tmp
+    ora cmask,x : sta cmask,x
+    txa : clc : adc mb : tax
+    lda u_nh : and #1 : beq b8 : lda tmp : ora cmask,x : sta cmask,x : .b8
+    txa : clc : adc mb : tax
+    lda u_nh : and #2 : beq empty : lda tmp : ora cmask,x : sta cmask,x
 .empty
-    clc
-.high
-    rol mask+7 : rol mask+6 : rol mask+5 : rol mask+4
-    lda u_x : clc : adc #8 : sta u_x : bne cell      \ (32 cells)
-    ldy #7
+    lda u_src : clc : adc #8 : sta u_src : bcc nc2 : inc u_src+1 : .nc2
+    inc u_x : lda u_x : cmp u_cells : beq all
+    jmp cell
+.all
+    lda mb : asl a : adc mb : tay : dey
 .out
-    lda mask,y : sta (po),y : dey : bpl out
+    lda cmask,y : sta (po),y : dey : bpl out
     lda dp : sta po : lda dp+1 : sta po+1
     rts
 }
 
-\ The number (u_nl, u_nh) of the cell at COLBUF + u_x in the dictionary,
-\ adding it if it's new
+.bit_of EQUB &80, &40, &20, &10, &08, &04, &02, &01
+
+\ The number (u_nl, u_nh) of the cell at (pt) in the dictionary, adding it if
+\ it's new (the dictionary is in bank 7)
 .dict_find
 {
-    lda #LO(COLBUF) : clc : adc u_x : sta pt : lda #HI(COLBUF) : adc #0 : sta pt+1
+    lda #CACHE_BANK : sta ROMSEL_COPY : sta ROMSEL
     \ hash: the sum of its bytes
     ldy #7 : lda #0
 .sum
@@ -4494,67 +4753,69 @@ ASSERT MAX_BG <= &50
     lda u_cl : ora u_ch : beq new
     lda u_cl : sec : sbc #1 : sta u_nl : lda u_ch : sbc #0 : sta u_nh
     jsr cell_matches : bcc next
-    rts                                     \ found it
+    jmp done                                \ found it
 .next
     jsr link_ptr
     ldy #0 : lda (sp),y : sta u_cl
-    inc sp+1 : inc sp+1 : lda (sp),y : sta u_ch
+    lda sp+1 : clc : adc #4 : sta sp+1 : lda (sp),y : sta u_ch
     jmp chain
 .new
     \ a new cell: the next number
     lda u_cntl : sta u_nl : lda u_cnth : sta u_nh
     inc u_cntl : bne nc : inc u_cnth : .nc
-    ldx u_nl : lda u_nh : bne store_high
-    ldy #0
-    FOR l, 0, 7
-    lda (pt),y : sta BG_DICT + l * &100,x : IF l < 7 : iny : ENDIF
-    NEXT
-    jmp stored
-.store_high
-    ldy #0
-    FOR l, 0, 7
-    lda (pt),y : sta BG_DICT + &800 + l * &100,x : IF l < 7 : iny : ENDIF
-    NEXT
-.stored
+    jsr cell_ptr
+    ldy #0 : ldx #8
+.store
+    lda (pt),y : sta (tblptr),y
+    inc pt : bne s1 : inc pt+1 : .s1
+    inc tblptr+1
+    dex : bne store
+    lda pt : sec : sbc #8 : sta pt : bcs s2 : dec pt+1 : .s2
     \ it goes at the front of its hash's chain
     jsr link_ptr
     ldx u_h8 : ldy #0
     lda HASH_LO,x : sta (sp),y
-    inc sp+1 : inc sp+1 : lda HASH_HI,x : sta (sp),y
+    lda sp+1 : clc : adc #4 : sta sp+1 : lda HASH_HI,x : sta (sp),y
     lda u_nl : clc : adc #1 : sta HASH_LO,x : lda u_nh : adc #0 : sta HASH_HI,x
+.done
+    lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL
     rts
 }
+
+\ tblptr = line 0 of dictionary cell (u_nl, u_nh); line L is L pages on
+.cell_ptr
+    lda u_nl : sta tblptr
+    lda u_nh : asl a : asl a : asl a : clc : adc #HI(BG_DICT) : sta tblptr+1
+    rts
 
 \ Carry set if dictionary cell (u_nl, u_nh) is the same as the one at (pt)
 .cell_matches
 {
-    ldx u_nl : lda u_nh : bne high
-    ldy #0
-    FOR l, 0, 7
-    lda BG_DICT + l * &100,x : cmp (pt),y : bne no : IF l < 7 : iny : ENDIF
-    NEXT
-    sec : rts
-.high
-    ldy #0
-    FOR l, 0, 7
-    lda BG_DICT + &800 + l * &100,x : cmp (pt),y : bne no : IF l < 7 : iny : ENDIF
-    NEXT
+    jsr cell_ptr
+    lda pt : sta dp_save : lda pt+1 : sta dp_save+1
+    ldy #0 : ldx #8
+.loop
+    lda (tblptr),y : cmp (pt),y : bne no
+    inc pt : bne c1 : inc pt+1 : .c1
+    inc tblptr+1
+    dex : bne loop
+    lda dp_save : sta pt : lda dp_save+1 : sta pt+1
     sec : rts
 .no
+    lda dp_save : sta pt : lda dp_save+1 : sta pt+1
     clc : rts
 }
 
-\ sp = LINK_LO + the cell's number (LINK_HI is 2 pages on)
+\ sp = LINK_LO + the cell's number (LINK_HI is 4 pages on)
 .link_ptr
     lda u_nl : sta sp : lda u_nh : clc : adc #HI(LINK_LO) : sta sp+1
     rts
 
-
 .overlay_end
 SAVE "OVERLAY", overlay_start, overlay_end
-ASSERT OVERLAY_STORE + (overlay_end - overlay_start) <= CACHE_TOP
+ASSERT OVERLAY_STORE + (overlay_end - overlay_start) <= &C000
 ASSERT bank7_end <= OVERLAY_STORE
-PRINT "Loader overlay:", overlay_end - overlay_start, "bytes, kept in bank 7 at", ~OVERLAY_STORE, "(", CACHE_TOP - OVERLAY_STORE - (overlay_end - overlay_start), "bytes free )"
+PRINT "Loader overlay:", overlay_end - overlay_start, "bytes, kept in bank 7 at", ~OVERLAY_STORE, "(", &C000 - OVERLAY_STORE - (overlay_end - overlay_start), "bytes free )"
 
 INCLUDE "src/gen/disc.asm"
 

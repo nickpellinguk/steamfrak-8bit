@@ -383,63 +383,71 @@ CACHE_BG_DEPTHS = (DEPTH['oPlatform'], DEPTH['oLadder'])     # things that never
 def render_background(data, lev, frames_cache):
     """
     Composite the platforms and ladders into a level-sized image of logical colours, then pack
-    it into bank 7 the way unroll_bg does (this is the reference the tests compare it with):
-      &8000/&8100  the address of each byte column (low, high bytes; 0 past the level's end)
+    it into bank 7 the way the level loader does (this is the reference the tests compare it with).
+    A horizontally scrolling level is stored as columns of character cells, a vertically
+    scrolling one (320 pixels wide) as rows:
+      &8000/&8100  the address of each column (or row): low, high bytes; 0 past the level's end
       &8200        the cell dictionary: each distinct non-empty character cell (8 bytes), numbered
-                   in order of first use, column by column from the top; stored as 8 tables of
-                   256 bytes, one per line of a cell (cells 256-511 from &8A00 likewise)
-      &9200        the columns: a 4-byte mask of the non-empty cells (bit 7 of the first byte =
-                   character row 0), a 4-byte mask of those whose number is 256 or more, then
-                   each non-empty cell's number (low byte)
-    Returns (column tables, the dictionary as a list of cells, the columns), and the image.
+                   in order of first use, in pages of 256 cells (2KB each, as many as needed).
+                   Line L of cell N is at &8200 + (N DIV 256) * &800 + L * &100 + (N MOD 256)
+      then         the columns (or rows), straight after the dictionary: three masks, of the
+                   non-empty cells (bit 7 of the first byte = the top cell, or the leftmost),
+                   then bit 8 and bit 9 of their numbers, then each non-empty cell's number's
+                   low byte. The masks are 4 bytes each for a column, 10 for a row.
+    Returns (tables, dictionary as a list of cells, the column or row data, where it starts).
     """
     w, h = lev['w'], lev['h']
     cols = (w + 3) // 4
-    img = [[0] * (cols * 4) for _ in range(h)]
+    cells_down = (h + 7) // 8
+    rows = h > 256
+    img = [[0] * (cols * 4) for _ in range(cells_down * 8)]
     for depth, _, spr, x, y, _ in lev['draw']:
         if depth not in CACHE_BG_DEPTHS:
             continue
         info = data.sprites[spr]
-        rows = frames_cache(spr)[0]
+        frows = frames_cache(spr)[0]
         left, top = x - info['xo'], y - info['yo']
-        for sy, row in enumerate(rows):
+        for sy, row in enumerate(frows):
             for sx, c in enumerate(row):
                 px, py = left + sx, top + sy
                 if c and 0 <= px < cols * 4 and 0 <= py < h:
                     img[py][px] = c
+    def cell(col, crow):
+        return bytes(mode1_byte([img[crow * 8 + line][col * 4 + p] for p in range(4)]) for line in range(8))
+    lines = [[cell(c, r) for r in range(cells_down)] for c in range(cols)] if not rows else \
+            [[cell(c, r) for c in range(cols)] for r in range(cells_down)]
+    dictionary, number = [], {}
+    for line in lines:
+        for key in line:
+            if any(key) and key not in number:
+                number[key] = len(dictionary)
+                dictionary.append(key)
+    pages = max(1, (len(dictionary) + 255) // 256)
+    start = BG_DICT + pages * 0x800
     blob = bytearray()
     offsets = []
-    dictionary, number = [], {}
-    for col in range(cols):
-        offsets.append(BG_COLUMNS + len(blob))
-        cells = (h + 7) // 8
-        mask = high = 0
+    mbytes = (len(lines[0]) + 7) // 8
+    for line in lines:
+        offsets.append(start + len(blob))
+        mask = b8 = b9 = 0
         nums = bytearray()
-        for cell in range(cells):
-            data_bytes = bytearray()
-            for line in range(8):
-                y = cell * 8 + line
-                px = [img[y][col * 4 + p] if y < h else 0 for p in range(4)]
-                data_bytes.append(mode1_byte(px))
-            if any(data_bytes):
-                key = bytes(data_bytes)
-                if key not in number:
-                    number[key] = len(dictionary)
-                    dictionary.append(key)
+        for i, key in enumerate(line):
+            if any(key):
                 n = number[key]
-                mask |= 1 << (31 - cell)
-                if n >= 256:
-                    high |= 1 << (31 - cell)
+                bit = 1 << (mbytes * 8 - 1 - i)
+                mask |= bit
+                b8 |= bit if n & 256 else 0
+                b9 |= bit if n & 512 else 0
                 nums.append(n & 0xFF)
-        blob += mask.to_bytes(4, 'big') + high.to_bytes(4, 'big') + nums
-    if cols > 256 or len(dictionary) > 512 or BG_COLUMNS + len(blob) > BG_TOP:
-        raise SystemExit('Background too big: %d columns, %d distinct cells, %d bytes of columns'
-                         % (cols, len(dictionary), len(blob)))
+        blob += mask.to_bytes(mbytes, 'big') + b8.to_bytes(mbytes, 'big') + b9.to_bytes(mbytes, 'big') + nums
+    if len(lines) > 256 or len(dictionary) > 1024 or start + len(blob) > BG_TOP:
+        raise SystemExit('Background too big: %d lines, %d distinct cells, data to &%04X'
+                         % (len(lines), len(dictionary), start + len(blob)))
     tables = bytearray(0x200)
-    for col, off in enumerate(offsets):
-        tables[col] = off & 0xFF
-        tables[0x100 + col] = off >> 8
-    return (bytes(tables), dictionary, bytes(blob)), img
+    for i, off in enumerate(offsets):
+        tables[i] = off & 0xFF
+        tables[0x100 + i] = off >> 8
+    return (bytes(tables), dictionary, bytes(blob), start), img
 
 
 def slow_swept(data, v):
@@ -485,6 +493,7 @@ def slow_simple_flags(data, lev, draw):
     for i, (v, r) in enumerate(zip(sl, rects)):
         raw = slow_swept(data, v)
         ok = (v['plat'] == 255 or v['kind'] == SL_PLATFORM) and raw[0] >= 0 and raw[1] >= 0 and raw[3] <= 254
+        ok = ok and lev['h'] == 256         # (only for horizontally scrolling levels)
         ok = ok and not any(overlap(r, rects[j]) for j in range(len(sl)) if j != i)
         ok = ok and not any(overlap(r, it) for it in items)
         flags.append(1 if ok else 0)
@@ -542,10 +551,10 @@ LEVELS = ['room_0'] + ['room_%s_%d' % (c, n) for c in 'ABCDEF' for n in range(1,
 # Where the level pack goes: HAZEL (&C000-&DFFF) and ANDY (&8000-&8FFF), except &8800-&88FF of
 # ANDY, which the MOS uses. No level straddles two of these.
 PACK_SEGMENTS = [(0xC000, 0x2000), (0x8000, 0x800), (0x8900, 0x700)]
-SLOWSAVE1 = (7, 0xBA00)         # bank 7, above the background and the code kept there
-BG_COLUMNS = 0x9200             # the unrolled background's columns, in bank 7 (see render_background)
-BG_TOP = 0xA000                 # ... which must end here
-OVERLAY_STORE = 0xA100          # the level loader, kept in bank 7 (copied to &6000 to run)
+SLOWSAVE1_SIZE = 0x400          # the second save area for meanies flying off is in bank 6
+BG_DICT = 0x8200                # the unrolled background, in bank 7 (see render_background)
+BG_TOP = 0xAC00                 # ... which must end here
+OVERLAY_STORE = 0xB000          # the level loader, kept in bank 7 (copied to &6000 to run)
 MAX_PAL = 16
 
 
@@ -763,11 +772,10 @@ def main():
         blob, simple = pack_level(data, lev, image_id, params)
         packed.append(blob)
         t = level_tables(data, lev, image_id, simple)
-        if lev['h'] == 256:
-            (tables, cells, cols), _ = render_background(data, lev, lambda spr: sprite_pixels(data, spr))
-            t['bg_tables'], t['bg_cells'], t['bg_cols'] = tables.hex(), b''.join(cells).hex(), cols.hex()
-            maxima['bg_cells'] = max(maxima.get('bg_cells', 0), len(cells))
-            maxima['bg_bytes'] = max(maxima.get('bg_bytes', 0), len(cols))
+        (tables, cells, bgdata, start), _ = render_background(data, lev, lambda spr: sprite_pixels(data, spr))
+        t['bg_tables'], t['bg_cells'], t['bg_data'], t['bg_start'] = tables.hex(), b''.join(cells).hex(), bgdata.hex(), start
+        maxima['bg_cells'] = max(maxima.get('bg_cells', 0), len(cells))
+        maxima['bg_end'] = max(maxima.get('bg_end', 0), start + len(bgdata))
         expect[name] = t
         for k, n in (('plats', len(lev['plats'])), ('ladders', len(lev['ladders'])), ('slow', len(lev['slow'])),
                      ('draw', len(t['draw_img'])), ('bg', len(lev['plats']) + len(lev['ladders']))):
@@ -817,11 +825,11 @@ def main():
               'SL_HOOTER = %d' % SL_HOOTER, 'SL_PLATFORM = %d' % SL_PLATFORM,
               'KIND_KEY = 1', 'KIND_GEM = 2', 'KIND_MEANIE = 3', 'KIND_BULB = 4',
               'LADDER_EXTRA_LENGTH = %d' % LADDER_EXTRA_LENGTH,
-              'CACHE_BANK = %d' % CACHE_BANK, 'CACHE_TOP = &%04X' % SLOWSAVE1[1],
-              'BG_DICT = &8200', 'BG_COLUMNS = &%04X' % BG_COLUMNS, 'BG_TOP = &%04X' % BG_TOP,
+              'CACHE_BANK = %d' % CACHE_BANK,
+              'BG_DICT = &%04X' % BG_DICT, 'BG_TOP = &%04X' % BG_TOP,
               'OVERLAY_STORE = &%04X' % OVERLAY_STORE, 'OVERLAY_RUN = &6000',
               'SLOWSAVE0_BANK = %d' % BANKS[spare], 'SLOWSAVE0_START = &%04X' % (0x8000 + len(banks[spare])),
-              'SLOWSAVE1_BANK = %d' % SLOWSAVE1[0], 'SLOWSAVE1_START = &%04X' % SLOWSAVE1[1],
+              'SLOWSAVE1_SIZE = &%04X' % SLOWSAVE1_SIZE,
               'SPANS_SIZE = %d' % len(spans_blob)]
     open(os.path.join(gen, 'consts.asm'), 'w').write('\n'.join(consts) + '\n')
 
