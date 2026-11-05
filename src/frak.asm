@@ -43,7 +43,7 @@ MAX_MOVERS = 12                 \ moving objects: balloons, daggers, meanies fly
 \ balloons, daggers and meanies. Each sprite's save record has a 6-byte header
 \ and a 2-byte screen address per column.
 SAVE_SIZE = 1024
-SAVE_RESERVE_ALIVE = 6 + 8 * 36 + 6 + 3 * 8 + 24
+SAVE_RESERVE_ALIVE = 6 + 8 * 36 + 6 + 8 * 2 + 6 + 3 * 8 + 24    \ (Trogg is two records: body and legs)
 SAVE_RESERVE_DEAD = SAVE_RESERVE_ALIVE + 6 + 14 * 21
 
 \ DIFFICULTY is set by build.sh (DIFFICULTY=n ./build.sh), as in the Steam version:
@@ -320,6 +320,7 @@ ORG &0E00
 .pl_i0      SKIP 1          \ ... and its cells to paint
 .pl_i1      SKIP 1
 .cpage      SKIP 1
+.t_part_b   SKIP 1          \ Trogg's second image (legs), 255 if none
 .pages1     SKIP 1          \ non-zero if the background's dictionary has more than one page
 .u_sx       SKIP 1
 .cmask      SKIP 30         \ a background line's masks
@@ -373,6 +374,9 @@ ASSERT P% <= &1100
 
 ORG &1100
 GUARD SCREEN
+.code_start
+\ (the page-aligned tables first, so they need no padding)
+INCLUDE "src/gen/tables.asm"
 
 .start
 {
@@ -577,11 +581,17 @@ GUARD SCREEN
     jsr log_sprite
 .no_yoyo
 
-    \ Trogg
-    jsr trogg_image : sta p_img
+    \ Trogg (standing or walking, he's two images: his body and his legs)
+    jsr trogg_image : tax
+    lda img_part_b,x : sta t_part_b
+    lda img_part_a,x : sta p_img
     lda tx : sta p_x : lda tx+1 : sta p_x+1
     lda ty : sta p_y : lda ty+1 : sta p_y+1
     jsr log_sprite
+    lda t_part_b : cmp #255 : beq one_part
+    sta p_img
+    jsr log_sprite
+.one_part
 
     \ ... and "FRAK!" at (x + 12, y - 26) if he's dead
     ldx back
@@ -1617,7 +1627,6 @@ WIN_FRAMES = 150                    \ (game ticks)
 \ Data
 \ ------------------------------------------------------------------------------
 
-INCLUDE "src/gen/tables.asm"
 INCLUDE "src/gen/sprites.asm"
 
 \ Screen address of each character row (level row R lives at char index R*80 MOD 2560)
@@ -1654,7 +1663,7 @@ NEXT
 .pend_hi    SKIP 2
 .ram_top
 
-SAVE "FRAK", start, end, start
+SAVE "FRAK", code_start, end, start
 
 \ ------------------------------------------------------------------------------
 \ Sideways RAM bank 6: the collision spans and tables, the game logic and the
@@ -4832,7 +4841,7 @@ PRINT "Loader overlay:", overlay_end - overlay_start, "bytes, kept in bank 7 at"
 
 INCLUDE "src/gen/disc.asm"
 
-PRINT "Code from", ~start, "to", ~end, "(", end - start, "bytes ), free:", SCREEN - ram_top
+PRINT "Code from", ~code_start, "to", ~end, "(", end - code_start, "bytes ), free:", SCREEN - ram_top
 \ Addresses used by test scripts (profiling and poking variables)
 PRINT "TIMING", ~main_loop, ~t_restore, ~t_scroll, ~t_draw, ~t_vsync, ~t_after_vsync, ~t_logic, ~t_logic_done, ~t_slow, ~t_slow_done
 PRINT "SYMBOLS loops", ~loops, "cur_level", ~cur_level, "num_plats", ~num_plats, "num_ladders", ~num_ladders, "num_draw", ~num_draw, "num_slow", ~num_slow, "plat_w", ~plat_w, "plat_x0l", ~plat_x0l, "plat_x0h", ~plat_x0h, "plat_y0l", ~plat_y0l, "plat_y0h", ~plat_y0h, "plat_moving", ~plat_moving, "lad_xl", ~lad_xl, "lad_xh", ~lad_xh, "lad_yl", ~lad_yl, "lad_yh", ~lad_yh, "lad_hl", ~lad_hl, "lad_hh", ~lad_hh, "lad_ext", ~lad_ext, "draw_img", ~draw_img, "draw_xl", ~draw_xl, "draw_xh", ~draw_xh, "draw_yl", ~draw_yl, "draw_yh", ~draw_yh, "sl_kind", ~sl_kind, "sl_img", ~sl_img, "sl_x0l", ~sl_x0l, "sl_x0h", ~sl_x0h, "sl_y0l", ~sl_y0l, "sl_y0h", ~sl_y0h, "sl_aminl", ~sl_aminl, "sl_aminh", ~sl_aminh, "sl_amaxl", ~sl_amaxl, "sl_amaxh", ~sl_amaxh, "sl_bminl", ~sl_bminl, "sl_bminh", ~sl_bminh, "sl_bmaxl", ~sl_bmaxl, "sl_bmaxh", ~sl_bmaxh, "sl_vf", ~sl_vf, "sl_vi", ~sl_vi, "sl_vy", ~sl_vy, "sl_plat", ~sl_plat, "sl_wait", ~sl_wait, "sl_simple", ~sl_simple, "plat_yh", ~plat_yh, "level_bg", ~level_bg, "trogg_x0", ~trogg_x0, "trogg_y0", ~trogg_y0, "dmg_n", ~dmg_n, "s_alive", ~s_alive, "s_xl", ~s_xl, "s_xh", ~s_xh, "s_yl", ~s_yl, "s_yh", ~s_yh, "cur_plat", ~cur_plat, "plat_xl", ~plat_xl, "plat_xh", ~plat_xh, "plat_yl", ~plat_yl, "mv_img", ~mv_img, "mv_vxi", ~mv_vxi, "mv_vyi", ~mv_vyi, "mv_vyf", ~mv_vyf, "mv_yl", ~mv_yl, "mv_yh", ~mv_yh, "mv_pause", ~mv_pause, "bal_timer", ~bal_timer, "dag_timer", ~dag_timer, "bscroll", ~bscroll, "front", ~front, "vsyncs", ~vsyncs, "yo_len", ~yo_len, "mv_active", ~mv_active, "mv_xl", ~mv_xl, "mv_xh", ~mv_xh, "tface", ~tface, "keys_found", ~keys_found, "gems_found", ~gems_found, "won", ~won, "have_cp", ~have_cp, "restarts", ~restarts, "alive", ~alive, "newcol", ~newcol, "dead", ~dead, "tx", ~tx, "ty", ~ty, "tstate", ~tstate, "fallt", ~fallt, "dead", ~dead, "anim", ~anim, "p_img", ~p_img, "bank", ~bank, "oldbank", ~oldbank, "dptr", ~dptr, "scrollcol", ~scrollcol

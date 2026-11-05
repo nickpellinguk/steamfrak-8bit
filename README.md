@@ -92,10 +92,10 @@ sprite tables, and every byte of the unrolled background) with what the converte
 | `&0400-&07FF` | save area for the main-RAM screen buffer (BASIC's workspace, unused); while a level loads, the packed level |
 | `&0900-&0CFF` | save area for the shadow screen buffer (RS423/cassette buffers, soft keys, UDGs); while a level loads, a column of the background and the list of things in it |
 | `&0E00-&10FF` | other variables: object states, checkpoint, draw logs, moving objects |
-| `&1100-&2FFF` | drawing code and its tables (724 bytes free) |
+| `&1100-&2FFF` | drawing code and its tables (546 bytes free) |
 | `&3000-&7FFF` | MODE 1 screen, **double buffered**: main RAM and shadow RAM. While a level loads (with the screen blanked) it holds the loader's workspace (`&3000-&4FFF`: the dictionary's hash table, a row of the background, the lines being built) and the loader itself (`&6000`) |
-| SWRAM banks 4-5 | sprites, pre-shifted, including unshifted copies of the platforms and ladders to unroll backgrounds from (31.6KB); the last 1.1KB is a save area for meanies flying off |
-| SWRAM bank 6 | collision spans and tables (from `&8000`), the **game logic** (to `&A9CE`), then the current level's tables and the second save area for meanies flying off (1.5KB free). Stays paged in while playing |
+| SWRAM banks 4-5 | sprites, pre-shifted, including unshifted copies of the platforms and ladders to unroll backgrounds from (23.1KB); **8.6KB free**; the top 1KB of bank 5 is a save area for meanies flying off |
+| SWRAM bank 6 | collision spans and tables (from `&8000`), the **game logic** (to `&A9CE`), then the current level's tables and the second save area for meanies flying off (1.3KB free). Stays paged in while playing |
 | SWRAM bank 7 | the current level's background, unrolled when it starts (`&8000-&ABFF`, see below); the code that paints it (`&AC00`); the level loader (`&B000`, 3.9KB, copied to `&6000` when a level loads) |
 | HAZEL (`&C000-&DFFF`) and ANDY (`&8000-&8FFF`) | **all 55 levels**, packed: 11.8KB, about 215 bytes each. `&8800-&88FF` of ANDY is left to the MOS |
 
@@ -164,6 +164,13 @@ converter only stores the copies the game can use:
   from.
 
 The build stops with an error if a level places something at a position with no stored copy.
+
+Identical images share their data: Trogg's five climbing frames are only two different pictures.
+And Trogg's standing and walking frames are drawn in two parts: his **body** (the top 24 rows,
+the same in all of them) and one of four sets of **legs** (the bottom 10 rows); standing is just
+the first walking frame. The full frames are kept only as collision outlines (their spans). That
+halves Trogg's sprites, from 15.6KB to 7.1KB, for about 700 cycles a frame (two plots instead of
+one).
 
 ### Screen and scrolling
 
