@@ -78,6 +78,7 @@ KEY_DOWN    = &D6           \ -42
 KEY_P       = &C8           \ -56
 KEY_SPACE   = &9D           \ -99
 KEY_RETURN  = &B6           \ -74
+KEY_ESCAPE  = &8F           \ -113
 KEY_Y       = &BB           \ -69
 
 \ ------------------------------------------------------------------------------
@@ -322,6 +323,20 @@ ORG &0E00
 .pl_i0      SKIP 1          \ ... and its cells to paint
 .pl_i1      SKIP 1
 .cpage      SKIP 1
+.difficulty SKIP 1          \ 1 Easy, 2 Hard, 4 Harder, 6 Insane (0: no balloons or daggers)
+.last_level SKIP 1          \ for "replay last level"
+.fe_sel     SKIP 1          \ front end: the selected button
+.fe_top_sel SKIP 1
+.fe_group   SKIP 1
+.fe_kind    SKIP 1          \ 0 top menu, 1 a level group
+.fe_bx      SKIP 1          \ the button being drawn: its byte column and top row
+.fe_y0      SKIP 1
+.fe_flash   SKIP 1
+.fe_i       SKIP 1
+.fe_i2      SKIP 1
+.fe_n       SKIP 1
+.fe_n2      SKIP 1
+.fe_pat     SKIP 1
 .txt_col    SKIP 1          \ text: where (byte column, pixel row) and colour
 .txt_y      SKIP 1
 .txt_colour SKIP 1
@@ -400,8 +415,11 @@ INCLUDE "src/gen/tables.asm"
     \ game runs (routines that page in other banks put it back afterwards)
     lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL
     jsr install_vsync_counter
-    jsr attract_screen
-    lda #START_LEVEL : jsr load_playable
+    lda #DIFFICULTY : sta difficulty
+    lda #START_LEVEL : sta last_level
+    lda #0 : sta fe_top_sel
+    lda #0 : jsr front_end          \ the attract screen and the menus
+    jsr load_playable
 }
 
 \ Double buffering: the screen is drawn in whichever of main RAM (buffer 0) and
@@ -637,12 +655,18 @@ INCLUDE "src/gen/tables.asm"
 .^t_logic_done
     beq next_tick
     cmp #TICK_WON : beq next_level
+    cmp #TICK_QUIT : beq to_menu
     lda have_cp : beq from_scratch          \ TICK_DIED: restart
     jmp restore_checkpoint
 .from_scratch
     jmp level_start
 .next_level
     lda cur_level : clc : adc #1 : jsr load_playable
+    jmp level_start
+.to_menu
+    lda cur_level : sta last_level
+    lda #1 : jsr front_end          \ (Escape: back to the menus)
+    jsr load_playable
     jmp level_start
 .next_tick
     dec ticks_left : bne tick
@@ -653,6 +677,7 @@ INCLUDE "src/gen/tables.asm"
 TICK_OK = 0
 TICK_DIED = 1
 TICK_WON = 2
+TICK_QUIT = 3
 .game_tick
 {
     lda dead : beq alive
@@ -668,6 +693,9 @@ TICK_WON = 2
     lda #TICK_WON : rts
 .playing
     jsr read_keys
+    lda #KEY_ESCAPE : jsr key_pressed : beq stay
+    lda #TICK_QUIT : rts
+.stay
     jsr update_slow
     jsr trogg_update
     jsr spawn_hazards
@@ -1680,6 +1708,18 @@ FONT = &B900
     rts
 }
 
+\ The front end (in the emptier sprite bank): A = 0 for the attract screen and
+\ then the menus, 1 for just the menus. Returns A = the level to play.
+.front_end
+{
+    pha
+    lda #FRONT_BANK : sta ROMSEL_COPY : sta ROMSEL
+    pla : jsr fe_main
+    sta last_level
+    pha : lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL : pla
+    rts
+}
+
 \ Copy the level loader from bank 7 to OVERLAY_RUN (in main RAM's screen
 \ memory), blanking the screen first so it doesn't show
 .bring_overlay
@@ -1896,22 +1936,22 @@ ENDMACRO
 \ Called once per tick while Trogg is alive
 .spawn_hazards
 {
-    ldx #DIFFICULTY
+    ldx difficulty
     lda diff_balloon_time,x : beq no_balloons
     lda bal_timer : beq spawn_b
     dec bal_timer : bne no_balloons
 .spawn_b
     jsr spawn_balloon
-    ldx #DIFFICULTY
+    ldx difficulty
     lda diff_balloon_time,x : sta bal_timer
 .no_balloons
-    ldx #DIFFICULTY
+    ldx difficulty
     lda diff_dagger_time,x : beq no_daggers
     lda dag_timer : beq spawn_d
     dec dag_timer : bne no_daggers
 .spawn_d
     jsr spawn_dagger
-    ldx #DIFFICULTY
+    ldx difficulty
     lda diff_dagger_time,x : sta dag_timer
 .no_daggers
     rts
@@ -1925,7 +1965,7 @@ ENDMACRO
 .have_slot
     sty sp_slot
     lda tx : sta sp_mid : lda tx+1 : sta sp_mid+1
-    ldx #DIFFICULTY
+    ldx difficulty
     lda is_vert : beq b_spread
     lda vdiff_bspread_l,x : sta sp_spread : lda vdiff_bspread_h,x : sta sp_spread+1
     jmp b_spread_ok
@@ -1933,7 +1973,7 @@ ENDMACRO
     lda diff_spread_l,x : sta sp_spread : lda diff_spread_h,x : sta sp_spread+1
 .b_spread_ok
     jsr random_x
-    ldy sp_slot : ldx #DIFFICULTY
+    ldy sp_slot : ldx difficulty
     lda #MV_BALLOON : sta mv_active,y
     lda #IMG_Balloon : sta mv_img,y
     lda sp_x : sta mv_xl,y : lda sp_x+1 : sta mv_xh,y
@@ -1957,7 +1997,7 @@ ENDMACRO
     lda ty : sec : sbc #4 : sta tmp : lda ty+1 : sbc #0 : sta tmp+1 : bpl h_ok
     lda #0 : sta tmp : sta tmp+1
 .h_ok
-    ldx #DIFFICULTY
+    ldx difficulty
     lda is_vert : bne v_aim
     \ (horizontally scrolling levels are 256 high, so h fits in a byte)
     \ mid = tx + h + h * 85 / 256  (h * 1.332)
@@ -1973,7 +2013,7 @@ ENDMACRO
 .aimed
     lda sp_mid : clc : adc tx : sta sp_mid : lda sp_mid+1 : adc tx+1 : sta sp_mid+1
     jsr random_x
-    ldy sp_slot : ldx #DIFFICULTY
+    ldy sp_slot : ldx difficulty
     lda #MV_DAGGER : sta mv_active,y
     lda sp_x : sta mv_xl,y : lda sp_x+1 : sta mv_xh,y
     lda #4 : sta mv_yl,y : lda #0 : sta mv_yh,y
@@ -3712,75 +3752,6 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
 .left_pixels  EQUB &FF, &77, &33, &11
 .right_pixels EQUB &88, &CC, &EE, &FF
 
-\ ------------------------------------------------------------------------------
-\ The first attract screen ("The Cast", as in the Steam version's oDemoBubble).
-\ Its layout is the Steam version's 256-pixel-wide screen, centred (32 pixels in).
-\ ------------------------------------------------------------------------------
-
-MACRO CAST_SPRITE img, x, y
-    lda #img : sta p_img
-    lda #LO(x + 32) : sta p_x : lda #HI(x + 32) : sta p_x+1
-    lda #LO(y) : sta p_y : lda #HI(y) : sta p_y+1
-    jsr plot
-ENDMACRO
-\ text at Steam position (x, y): byte column (x + 32) / 4
-MACRO CAST_TEXT x, y, text
-    jsr print_inline
-    EQUB (x + 32) DIV 4, y
-    EQUS text, 0
-ENDMACRO
-\ centred, as the Steam version's centre(): x = 128 - length * 4
-MACRO CAST_CENTRE y, text
-    CAST_TEXT 128 - LEN(text) * 4, y, text
-ENDMACRO
-
-.attract_screen
-{
-    \ main RAM's screen, unscrolled, cleared, on show
-    lda #0 : sta back : sta scrollcol : sta scrollrow
-    jsr select_back : jsr show_back
-    jsr set_crtc_start : jsr set_window_clip
-    jsr clear_screen
-    ldx #0
-.colours
-    lda vdu_colours,x : jsr OSWRCH : inx : cpx #vdu_init_end - vdu_colours : bne colours
-    lda #2 : jsr set_bg                             \ green, as the Steam version's start room
-    lda #PM_PLOT : sta p_mode
-    lda #1 : sta txt_colour                         \ black
-    CAST_SPRITE IMG_Frak, 128 - 28, 8 * 3 + 6
-    CAST_CENTRE 10 + 8 * 3, "The Cast"
-    CAST_CENTRE 10 + 8 * 4, "--------"
-    CAST_SPRITE IMG_TroggBody_r, 64, 8 * 10 + 4
-    CAST_SPRITE IMG_TroggLegs_r_0, 64, 8 * 10 + 4
-    CAST_TEXT 192 - 20, 10 + 8 * 7, "Trogg"
-    CAST_CENTRE 10 + 8 * 10, "vs."
-    CAST_SPRITE IMG_Scrubbly, 64, 8 * 17
-    CAST_TEXT 192 - 32, 10 + 8 * 13, "Scrubbly"
-    CAST_SPRITE IMG_Hooter, 64, 8 * 21 - 4
-    CAST_TEXT 192 - 24, 10 + 8 * 17 + 4, "Hooter"
-    CAST_SPRITE IMG_Poglet, 64, 8 * 25
-    CAST_TEXT 192 - 24, 10 + 8 * 22, "Poglet"
-    CAST_CENTRE 256 - 10 - 8 * 3, "Collect all the keys to win!"
-    CAST_CENTRE 256 - 10 - 8 * 1, "(C) 1984-2026 Nick Pelling"
-    \ wait for Space, Return, P or Y (let go of any already down first)
-.release
-    jsr any_start_key : bne release
-.wait
-    jsr any_start_key : beq wait
-    rts
-}
-
-\ A non-zero if Space, Return, P or Y is pressed
-.any_start_key
-{
-    lda #KEY_SPACE : jsr key_pressed : bne yes
-    lda #KEY_RETURN : jsr key_pressed : bne yes
-    lda #KEY_P : jsr key_pressed : bne yes
-    lda #KEY_Y : jsr key_pressed
-.yes
-    rts
-}
-
 \ Choose the next level: A, or the first after it that can be played
 .load_playable
 {
@@ -4989,6 +4960,482 @@ SAVE "OVERLAY", overlay_start, overlay_end
 ASSERT OVERLAY_STORE + (overlay_end - overlay_start) <= &C000
 ASSERT bank7_end <= OVERLAY_STORE
 PRINT "Loader overlay:", overlay_end - overlay_start, "bytes, kept in bank 7 at", ~OVERLAY_STORE, "(", &C000 - OVERLAY_STORE - (overlay_end - overlay_start), "bytes free )"
+
+\ ------------------------------------------------------------------------------
+\ The front end: the attract screen and the menus (simplified from the Steam
+\ version's 3x3 button grids). It lives in the emptier sprite bank, which is
+\ paged in while it runs; it uses only main RAM routines (the plotter, text,
+\ the screen) apart from its own.
+\ ------------------------------------------------------------------------------
+
+CLEAR &8000, &C000
+ORG FRONT_ORG
+GUARD SLOWSAVE0_START
+.front_start
+
+\ A = 0: the attract screen, then the menus; 1: just the menus. Returns A = level.
+.fe_main
+{
+    cmp #0 : bne menus
+    jsr fe_attract
+.menus
+    jmp fe_menus
+}
+
+\ A non-zero if key A (negative INKEY code) is pressed (as key_pressed, in bank 6)
+.fe_key
+{
+    eor #&FF
+    sei
+    ldx #3 : stx SYSVIA_ORB
+    ldx #&7F : stx SYSVIA_DDRA
+    sta SYSVIA_ORA
+    lda SYSVIA_ORA
+    ldx #&0B : stx SYSVIA_ORB
+    cli
+    asl a : lda #0 : rol a
+    rts
+}
+
+\ Main RAM's screen, unscrolled and cleared, on show, with background colour A
+.fe_screen
+{
+    pha
+    lda #0 : sta back : sta scrollcol : sta scrollrow
+    jsr select_back : jsr show_back
+    jsr set_crtc_start : jsr set_window_clip
+    jsr clear_screen
+    ldx #0
+.colours
+    lda vdu_colours,x : jsr OSWRCH : inx : cpx #vdu_init_end - vdu_colours : bne colours
+    pla : jsr set_bg
+    lda #PM_PLOT : sta p_mode
+    lda #1 : sta txt_colour                         \ black text
+    rts
+}
+
+\ ---- The first attract screen ("The Cast", from the Steam version's oDemoBubble).
+\ Its layout is the Steam version's 256-pixel-wide screen, centred (32 pixels in).
+
+MACRO CAST_SPRITE img, x, y
+    lda #img : sta p_img
+    lda #LO(x + 32) : sta p_x : lda #HI(x + 32) : sta p_x+1
+    lda #LO(y) : sta p_y : lda #HI(y) : sta p_y+1
+    jsr plot
+ENDMACRO
+MACRO CAST_TEXT x, y, text
+    jsr print_inline
+    EQUB (x + 32) DIV 4, y
+    EQUS text, 0
+ENDMACRO
+MACRO CAST_CENTRE y, text
+    CAST_TEXT 128 - LEN(text) * 4, y, text
+ENDMACRO
+
+.fe_attract
+{
+    lda #2 : jsr fe_screen                          \ green, as the Steam start room
+    CAST_SPRITE IMG_Frak, 128 - 28, 8 * 3 + 6
+    CAST_CENTRE 10 + 8 * 3, "The Cast"
+    CAST_CENTRE 10 + 8 * 4, "--------"
+    CAST_SPRITE IMG_TroggBody_r, 64, 8 * 10 + 4
+    CAST_SPRITE IMG_TroggLegs_r_0, 64, 8 * 10 + 4
+    CAST_TEXT 192 - 20, 10 + 8 * 7, "Trogg"
+    CAST_CENTRE 10 + 8 * 10, "vs."
+    CAST_SPRITE IMG_Scrubbly, 64, 8 * 17
+    CAST_TEXT 192 - 32, 10 + 8 * 13, "Scrubbly"
+    CAST_SPRITE IMG_Hooter, 64, 8 * 21 - 4
+    CAST_TEXT 192 - 24, 10 + 8 * 17 + 4, "Hooter"
+    CAST_SPRITE IMG_Poglet, 64, 8 * 25
+    CAST_TEXT 192 - 24, 10 + 8 * 22, "Poglet"
+    CAST_CENTRE 256 - 10 - 8 * 3, "Collect all the keys to win!"
+    CAST_CENTRE 256 - 10 - 8 * 1, "(C) 1984-2026 Nick Pelling"
+    jsr fe_release
+.wait
+    jsr fe_select_key : beq wait
+    rts
+}
+
+\ ---- Keys
+
+\ A non-zero if Space, Return, P or Y is pressed
+.fe_select_key
+{
+    lda #KEY_SPACE : jsr fe_key : bne yes
+    lda #KEY_RETURN : jsr fe_key : bne yes
+    lda #KEY_P : jsr fe_key : bne yes
+    lda #KEY_Y : jsr fe_key
+.yes
+    rts
+}
+
+\ Wait until none of the menu keys is pressed
+.fe_release
+{
+.wait
+    ldx #fe_keys_end - fe_keys - 1
+.loop
+    stx fe_i
+    lda fe_keys,x : jsr fe_key : bne wait
+    ldx fe_i : dex : bpl loop
+    rts
+}
+.fe_keys
+    EQUB KEY_SPACE, KEY_RETURN, KEY_P, KEY_Y, KEY_ESCAPE
+    EQUB KEY_Z, KEY_LEFT, KEY_X, KEY_RIGHT, KEY_O, KEY_UP, KEY_K, KEY_DOWN
+.fe_keys_end
+
+\ ---- The menus
+
+.fe_menus
+{
+.top
+    lda #0 : sta fe_kind
+    lda fe_top_sel : sta fe_sel
+    jsr fe_grid
+    lda fe_sel : sta fe_top_sel
+    bcs top                                         \ (Escape: stay on the top menu)
+    cmp #0 : bne not_replay
+    lda last_level : rts                            \ replay the last level
+.not_replay
+    cmp #1 : bne not_difficulty
+    \ the next difficulty: Easy, Hard, Harder, Insane (the Steam version's 1, 2, 4, 6)
+    ldx difficulty : lda next_difficulty,x : sta difficulty
+    jmp top
+.not_difficulty
+    cmp #2 : bne a_group
+    lda #0 : rts                                    \ Training
+.a_group
+    sec : sbc #3 : sta fe_group
+    lda #1 : sta fe_kind
+    lda #0 : sta fe_sel
+    jsr fe_grid
+    bcs top                                         \ Escape: back to the top menu
+    \ level = 1 + group * 9 + button
+    lda fe_group : asl a : asl a : asl a : adc fe_group : adc fe_sel : adc #1
+    rts
+}
+.next_difficulty EQUB 1, 2, 4, 4, 6, 6, 1
+
+\ A 3x3 grid of buttons (fe_kind: the top menu or a level group), with button
+\ fe_sel selected. Moved around with Z X O K (or the cursor keys); returns with
+\ carry clear and A = fe_sel when one is chosen, carry set on Escape.
+.fe_grid
+{
+    lda #6 : jsr fe_screen                          \ cyan
+    lda #8 : sta fe_i
+.buttons
+    lda fe_i : jsr fe_button
+    lda #1 : ldx fe_i : jsr fe_frame
+    dec fe_i : bpl buttons
+    lda #255 : sta fe_flash
+    jsr fe_release
+.loop
+    \ the selected button's border flashes yellow and magenta
+    lda vsyncs : and #16 : beq yellow : lda #2 : bne colour : .yellow : lda #3 : .colour
+    cmp fe_flash : beq keys
+    sta fe_flash : ldx fe_sel : jsr fe_frame
+.keys
+    jsr fe_select_key : beq not_select
+    lda fe_sel : clc : rts
+.not_select
+    lda #KEY_ESCAPE : jsr fe_key : beq not_escape
+    sec : rts
+.not_escape
+    lda fe_sel : sta fe_i                           \ the new selection, if it moves
+    lda #KEY_Z : jsr fe_key : bne left
+    lda #KEY_LEFT : jsr fe_key : beq not_left
+.left
+    lda fe_i : jsr fe_col : beq loop2 : dec fe_i : jmp moved
+.not_left
+    lda #KEY_X : jsr fe_key : bne right
+    lda #KEY_RIGHT : jsr fe_key : beq not_right
+.right
+    lda fe_i : jsr fe_col : cmp #2 : beq loop2 : inc fe_i : jmp moved
+.not_right
+    lda #KEY_O : jsr fe_key : bne up
+    lda #KEY_UP : jsr fe_key : beq not_up
+.up
+    lda fe_i : cmp #3 : bcc loop2 : sbc #3 : sta fe_i : jmp moved
+.not_up
+    lda #KEY_K : jsr fe_key : bne down
+    lda #KEY_DOWN : jsr fe_key : beq loop2
+.down
+    lda fe_i : cmp #6 : bcs loop2 : adc #3 : sta fe_i
+.moved
+    lda #1 : ldx fe_sel : jsr fe_frame              \ (the old one back to black)
+    lda fe_i : sta fe_sel
+    lda #255 : sta fe_flash
+    jsr fe_release
+.loop2
+    jmp loop
+}
+
+\ A = A MOD 3 (0-8)
+.fe_col
+{
+    cmp #3 : bcc done : sbc #3 : cmp #3 : bcc done : sbc #3
+.done
+    cmp #0
+    rts
+}
+
+\ Set fe_bx, fe_y0 for button A (byte column and top row of its 80x82 box)
+.fe_where
+{
+    pha : jsr fe_col : tax
+    lda fe_bx_of,x : sta fe_bx
+    pla : ldx #0
+.row
+    cmp #3 : bcc have_row : sbc #3 : inx : bne row
+.have_row
+    lda fe_y0_of,x : sta fe_y0
+    rts
+}
+.fe_bx_of EQUB 8, 29, 50                            \ (32 + 84 * column) / 4
+.fe_y0_of EQUB 1, 86, 171
+
+\ The border of button X in colour A: 2 pixels wide
+.fe_frame
+{
+    tay : lda fe_pattern,y : sta fe_pat
+    txa : jsr fe_where
+    \ top and bottom: 2 rows each of 20 bytes
+    lda fe_y0 : jsr fe_hrow : lda fe_y0 : clc : adc #1 : jsr fe_hrow
+    lda fe_y0 : clc : adc #80 : jsr fe_hrow : lda fe_y0 : clc : adc #81 : jsr fe_hrow
+    \ sides: the left 2 pixels of the first byte, the right 2 of the last
+    lda #81 : sta fe_n
+.side
+    lda fe_y0 : clc : adc fe_n : tax
+    lda fe_bx : jsr fe_addr
+    ldy #0 : lda #&CC : jsr fe_pixels
+    ldy #19 * 8 : lda #&33 : jsr fe_pixels
+    dec fe_n : bpl side
+    rts
+}
+.fe_pattern EQUB &00, &0F, &F0, &FF                 \ a byte of colour 0-3
+
+\ A row of the current button's border: 20 bytes at row A
+.fe_hrow
+{
+    tax : lda fe_bx : jsr fe_addr
+    ldy #0
+.loop
+    lda #&FF : jsr fe_pixels
+    tya : clc : adc #8 : tay : cpy #20 * 8 : bne loop
+    rts
+}
+
+\ Set pixels A (a mask) of the screen byte at (ptr),Y to fe_pat's colour
+.fe_pixels
+{
+    sta tmp
+    eor #&FF : and (ptr),y : sta tmp+1
+    lda fe_pat : and tmp : ora tmp+1 : sta (ptr),y
+    rts
+}
+
+\ ptr = the screen address of byte column A, row X (unscrolled)
+.fe_addr
+{
+    sta tmp : lda #0 : sta tmp+1
+    asl tmp : rol tmp+1 : asl tmp : rol tmp+1 : asl tmp : rol tmp+1
+    txa : and #7 : clc : adc tmp : sta tmp : bcc nc : inc tmp+1 : .nc
+    txa : lsr a : lsr a : lsr a : tax
+    lda tmp : clc : adc rowaddr_lo,x : sta ptr
+    lda tmp+1 : adc rowaddr_hi,x : sta ptr+1
+    rts
+}
+
+\ Print the string after the JSR, centred in the current button, at its row + the
+\ first byte after the JSR
+.fe_title
+{
+    pla : sta src : pla : sta src+1
+    ldy #1 : lda (src),y : clc : adc fe_y0 : sta txt_y
+    \ its length
+    ldx #0
+.len
+    iny : lda (src),y : beq got_len : inx : bne len
+.got_len
+    stx tmp
+    lda fe_bx : clc : adc #10 : sec : sbc tmp : sta txt_col
+    ldy #1
+.loop
+    iny : lda (src),y : beq done
+    sty txt_i
+    jsr print_char
+    ldy txt_i
+    inc txt_col : inc txt_col
+    jmp loop
+.done
+    tya : clc : adc src : tax : lda src+1 : adc #0 : pha : txa : pha
+    rts
+}
+
+\ Print level A's name centred in the current button, A + 66 rows down... (row in Y)
+.fe_level_name
+{
+    sty txt_y
+    \ src = level_names + level * 10
+    sta tmp : lda #0 : sta tmp+1
+    asl tmp : rol tmp+1 : lda tmp : sta fe_n : lda tmp+1 : sta fe_n2   \ * 2
+    asl tmp : rol tmp+1 : asl tmp : rol tmp+1                        \ * 8
+    lda tmp : clc : adc fe_n : sta tmp : lda tmp+1 : adc fe_n2 : sta tmp+1
+    lda tmp : clc : adc #LO(level_names) : sta src : lda tmp+1 : adc #HI(level_names) : sta src+1
+    ldy #0
+.len
+    lda (src),y : beq got_len : iny : cpy #9 : bne len
+.got_len
+    sty tmp
+    lda fe_bx : clc : adc #10 : sec : sbc tmp : sta txt_col
+    ldy #0
+.loop
+    lda (src),y : beq done
+    sty txt_i
+    jsr print_char
+    ldy txt_i
+    inc txt_col : inc txt_col
+    iny : cpy #9 : bne loop
+.done
+    rts
+}
+
+\ Image A at (X, Y) in the current button
+.fe_sprite
+{
+    sta p_img : stx fe_n : sty fe_n2
+    lda fe_bx : sta p_x : lda #0 : sta p_x+1
+    asl p_x : rol p_x+1 : asl p_x : rol p_x+1
+    lda p_x : clc : adc fe_n : sta p_x : bcc nc : inc p_x+1 : .nc
+    lda fe_y0 : clc : adc fe_n2 : sta p_y : lda #0 : adc #0 : sta p_y+1
+    jmp plot
+}
+MACRO FE_SPRITE img, dx, dy
+    lda #img : ldx #dx : ldy #dy : jsr fe_sprite
+ENDMACRO
+
+\ Draw button A's contents
+.fe_button
+{
+    pha : jsr fe_where : pla
+    ldx fe_kind : beq top_menu
+    jmp fe_level_button
+.top_menu
+    asl a : tax
+    lda top_buttons + 1,x : pha : lda top_buttons,x : pha
+    rts                                             \ (to the button's routine)
+.top_buttons
+    EQUW b_replay - 1, b_difficulty - 1, b_training - 1, b_classic - 1, b_moving - 1
+    EQUW b_vertical - 1, b_sliding - 1, b_placing - 1, b_bouncing - 1
+
+.b_replay
+    jsr fe_title : EQUB 6 : EQUS "Replay", 0
+    lda fe_y0 : clc : adc #38 : tay : lda last_level
+    jmp fe_level_name
+.b_difficulty
+    jsr fe_title : EQUB 6 : EQUS "Difficulty", 0
+    \ a balloon for each level of difficulty, and its name
+    ldx difficulty : lda diff_balloons,x : sta fe_i2
+.balloons
+    lda fe_i2 : beq named
+    asl a : asl a : asl a : asl a : adc #2 : tax    \ x = 2 + 16 * n
+    lda #IMG_Balloon : ldy #44 : jsr fe_sprite
+    dec fe_i2 : jmp balloons
+.named
+    ldx difficulty : lda diff_name_lo,x : sta src : lda diff_name_hi,x : sta src+1
+    jmp fe_print_centred
+.b_training
+    jsr fe_title : EQUB 6 : EQUS "Training", 0
+    FE_SPRITE IMG_TroggBody_r, 40, 62
+    FE_SPRITE IMG_TroggLegs_r_0, 40, 62
+    rts
+.b_classic
+    jsr fe_title : EQUB 6 : EQUS "Classic", 0
+    FE_SPRITE IMG_TroggBody_l, 40, 62
+    FE_SPRITE IMG_TroggLegs_l_1, 40, 62
+    rts
+.b_moving
+    jsr fe_title : EQUB 6 : EQUS "Moving", 0
+    FE_SPRITE IMG_Scrubbly, 40, 66
+    rts
+.b_vertical
+    jsr fe_title : EQUB 6 : EQUS "Vertical", 0
+    FE_SPRITE IMG_Poglet, 40, 66
+    rts
+.b_sliding
+    jsr fe_title : EQUB 6 : EQUS "Sliding", 0
+    FE_SPRITE IMG_Log1, 8, 66
+    FE_SPRITE IMG_Hooter, 40, 66
+    rts
+.b_placing
+    jsr fe_title : EQUB 6 : EQUS "Placing", 0
+    FE_SPRITE IMG_Girder3, 22, 48
+    FE_SPRITE IMG_Girder3, 22, 66
+    rts
+.b_bouncing
+    jsr fe_title : EQUB 6 : EQUS "Bouncing", 0
+    FE_SPRITE IMG_Spring, 40, 66
+    rts
+}
+
+\ Print the string at (src) centred in the current button, 50 rows down
+.fe_print_centred
+{
+    ldy #0
+.len
+    lda (src),y : beq got_len : iny : bne len
+.got_len
+    sty tmp
+    lda fe_bx : clc : adc #10 : sec : sbc tmp : sta txt_col
+    lda fe_y0 : clc : adc #64 : sta txt_y
+    ldy #0
+.loop
+    lda (src),y : beq done
+    sty txt_i
+    jsr print_char
+    ldy txt_i
+    inc txt_col : inc txt_col
+    iny : bne loop
+.done
+    rts
+}
+.diff_balloons EQUB 0, 1, 2, 2, 3, 3, 4
+.diff_name_lo EQUB LO(n_none), LO(n_easy), LO(n_hard), LO(n_hard), LO(n_harder), LO(n_harder), LO(n_insane)
+.diff_name_hi EQUB HI(n_none), HI(n_easy), HI(n_hard), HI(n_hard), HI(n_harder), HI(n_harder), HI(n_insane)
+.n_none   EQUS "None", 0
+.n_easy   EQUS "Easy", 0
+.n_hard   EQUS "Hard", 0
+.n_harder EQUS "Harder", 0
+.n_insane EQUS "Insane", 0
+
+\ A level button: the column's meanie on its platform (as in the Steam version:
+\ Scrubbly, Poglet, Hooter), and the level's name
+.fe_level_button
+{
+    sta fe_i2
+    jsr fe_col : beq scrubbly : cmp #1 : beq poglet
+    FE_SPRITE IMG_Girder3, 7, 52
+    FE_SPRITE IMG_Hooter, 23, 52
+    jmp name
+.scrubbly
+    FE_SPRITE IMG_Ledge2, 7, 52
+    FE_SPRITE IMG_Scrubbly, 23, 52
+    jmp name
+.poglet
+    FE_SPRITE IMG_Log5, 7, 52
+    FE_SPRITE IMG_Poglet, 23, 52
+.name
+    \ level = 1 + group * 9 + button
+    lda fe_group : asl a : asl a : asl a : adc fe_group : adc fe_i2 : adc #1
+    pha : lda fe_y0 : clc : adc #70 : tay : pla
+    jmp fe_level_name
+}
+
+INCLUDE "src/gen/names.asm"
+.front_end_
+SAVE "FRONT", front_start, front_end_
+PRINT "Front end:", front_end_ - front_start, "bytes in bank", FRONT_BANK, "at", ~FRONT_ORG, "(", SLOWSAVE0_START - front_end_, "bytes free )"
 
 INCLUDE "src/gen/disc.asm"
 

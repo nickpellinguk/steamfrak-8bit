@@ -25,7 +25,12 @@ another, including the 19 that scroll vertically:
 * Moving platforms go back and forth (or up and down) and pause at each end. Trogg rides them.
   Standing on a moving platform doesn't set a checkpoint.
 * The first attract screen ("The Cast", as in the Steam version), in the Master's own font,
-  read straight from the MOS ROM (sideways ROM 15, `&B900`). Space, Return, P or Y starts.
+  read straight from the MOS ROM (sideways ROM 15, `&B900`). Space, Return, P or Y goes on to:
+* The menus, simplified from the Steam version's 3x3 button grids: Replay (the last level),
+  Difficulty (Easy, Hard, Harder, Insane), Training and the six groups of levels, each a 3x3
+  grid of levels with the column's meanie and the level's name. Z X O K (or the cursor keys)
+  move, Space, Return, P or Y choose, Escape goes back (and, while playing, back to the menus).
+  There are no times, ratings or medals yet.
 * Collecting every key completes the level: the background flashes and the next level starts
   (there is no text drawing yet).
 
@@ -39,8 +44,8 @@ You need BeebAsm and Python 3 with Pillow, and the `steamfrak` repository alongs
 ```sh
 pip install pillow
 BEEBASM=/path/to/beebasm ./build.sh                # STEAMFRAK=../steamfrak
-LEVEL=room_B_1 BEEBASM=/path/to/beebasm ./build.sh # start at another level (default room_A_1)
-DIFFICULTY=6 BEEBASM=/path/to/beebasm ./build.sh   # 0 none, 1 Easy (default), 2 Hard, 4 Harder, 6 Insane
+LEVEL=room_B_1 BEEBASM=/path/to/beebasm ./build.sh # the level Replay starts with (default room_A_1)
+DIFFICULTY=6 BEEBASM=/path/to/beebasm ./build.sh   # starting difficulty: 0 none, 1 Easy (default), 2 Hard, 4 Harder, 6 Insane
 ```
 
 This writes `build/frak.ssd`, a bootable disc image. In an emulator (jsbeeb, b2, BeebEm)
@@ -71,6 +76,7 @@ sprite tables, and every byte of the unrolled background) with what the converte
 |---|---|
 | Data converter: sprites, the level pack, jump table | `tools/convert.py` |
 | Level loader: unpacking a level, ladders' extensions, moving platforms' ranges | `fetch_level`, `load_level`, `meanie_settings`, `moving_platform`, `scan_left` etc. |
+| Attract screen and menus | `fe_main`, `fe_attract`, `fe_menus`, `fe_grid` (in bank 5); text: `print_inline`, `print_char` |
 | Unrolling the background into bank 7 | `bg_items`, `unroll_bg`, `unroll_item`, `store_column`, `dict_find` |
 | Copying it back to the screen | `repaint_column`, `repaint_rect`, `cache_seek`, `copy_cell` |
 | Main loop, double buffering, scrolling | `src/frak.asm` (top) |
@@ -94,10 +100,10 @@ sprite tables, and every byte of the unrolled background) with what the converte
 | `&0400-&07FF` | save area for the main-RAM screen buffer (BASIC's workspace, unused); while a level loads, the packed level |
 | `&0900-&0CFF` | save area for the shadow screen buffer (RS423/cassette buffers, soft keys, UDGs); while a level loads, a column of the background and the list of things in it |
 | `&0E00-&10FF` | other variables: object states, checkpoint, draw logs, moving objects |
-| `&1100-&2FFF` | drawing code and its tables (290 bytes free) |
+| `&1100-&2FFF` | drawing code and its tables (224 bytes free) |
 | `&3000-&7FFF` | MODE 1 screen, **double buffered**: main RAM and shadow RAM. While a level loads (with the screen blanked) it holds the loader's workspace (`&3000-&4FFF`: the dictionary's hash table, a row of the background, the lines being built) and the loader itself (`&6000`) |
-| SWRAM banks 4-5 | sprites, pre-shifted, including unshifted copies of the platforms and ladders to unroll backgrounds from (23.1KB); **8.6KB free**; the top 1KB of bank 5 is a save area for meanies flying off |
-| SWRAM bank 6 | collision spans and tables (from `&8000`), the **game logic** (to `&A9CE`), then the current level's tables and the second save area for meanies flying off (942 bytes free). Stays paged in while playing |
+| SWRAM banks 4-5 | sprites, pre-shifted, including unshifted copies of the platforms and ladders to unroll backgrounds from (23.1KB); the front end (attract screen, menus and level names, 2.3KB at `&A000` in bank 5); a save area for meanies flying off (the top 1KB of bank 5); **6.2KB free** |
+| SWRAM bank 6 | collision spans and tables (from `&8000`), the **game logic** (to `&A9CE`), then the current level's tables and the second save area for meanies flying off (1.3KB free). Stays paged in while playing |
 | SWRAM bank 7 | the current level's background, unrolled when it starts (`&8000-&ABFF`, see below); the code that paints it (`&AC00`); the level loader (`&B000`, 3.9KB, copied to `&6000` when a level loads) |
 | HAZEL (`&C000-&DFFF`) and ANDY (`&8000-&8FFF`) | **all 55 levels**, packed: 11.8KB, about 215 bytes each. `&8800-&88FF` of ANDY is left to the MOS |
 
