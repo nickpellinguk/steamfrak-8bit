@@ -1326,7 +1326,9 @@ savebuf1 = &0900
     jmp exit
 .some
 
-    \ Sprite data address and bank for this shift
+    \ Sprite data address and bank for this shift (the image addresses are in
+    \ DIR_BANK; ROMSEL_COPY too, in case an interrupt pages a ROM)
+    lda #DIR_BANK : sta ROMSEL_COPY : sta ROMSEL
     ldy shift
     lda shift_lo_tab,y : sta tblptr : lda shift_lo_tab+4,y : sta tblptr+1
     ldy p_img
@@ -1348,10 +1350,12 @@ savebuf1 = &0900
     dex : bne skip_cols
 .skip_done
 
-    \ Page in the sprite bank
-    lda p_mode : cmp #PM_SAVEONLY : beq bank_ok
-    lda bank : sta ROMSEL_COPY : sta ROMSEL
+    \ Page in the sprite bank (or, for PM_SAVEONLY, the save bank again)
+    lda bank
+    ldx p_mode : cpx #PM_SAVEONLY : bne bank_ok
+    lda p_sbank
 .bank_ok
+    sta ROMSEL_COPY : sta ROMSEL
 
     \ Character row and line of the first visible row
     lda firsty : and #7 : sta y0
@@ -5049,8 +5053,10 @@ ASSERT MAX_BG <= &50
     stx u_cur
     ldx #0 : lda u_s : beq no_prev : lda u_j : beq no_prev : inx : .no_prev
     stx u_prev
+    lda #DIR_BANK : sta ROMSEL_COPY : sta ROMSEL
     lda img_lo0,y : sta dp : lda img_hi0,y : sta dp+1
     lda img_bank0,y : sta u_bank
+    lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL
     ldx u_j : beq at_col
 .mul
     lda dp : clc : adc u_h : sta dp : bcc mnc : inc dp+1 : .mnc
@@ -5853,6 +5859,18 @@ ENDIF
 .fe_vars_end
 PRINT "Front end:", front_end_ - front_start, "bytes, unpacked to &8000 in bank", CACHE_BANK, "(", BG_TOP - fe_vars_end, "bytes to spare )"
 
+\ ---- Where each image's data is (bank and address, for each shift). Only
+\ plot and unroll_item read it, paging in DIR_BANK to do so. Just below the
+\ save area in the emptier sprite bank.
+CLEAR &8000, &C000
+ORG IMGDIR_ORG
+GUARD SLOWSAVE0_START
+.imgdir_start
+INCLUDE "src/gen/imgdir.asm"
+.imgdir_end
+SAVE "IMGDIR", imgdir_start, imgdir_end
+ASSERT imgdir_end = SLOWSAVE0_START
+
 \ ---- The packed front end, at the top of the emptier sprite bank (below the
 \ save area), and the routine that copies it to the screen for fe_unpack
 IF PASS = 2
@@ -5860,7 +5878,7 @@ INCLUDE "src/gen/packed.asm"
 ASSERT FRONT_SIZE = front_end_ - front_start    \ (the first pass assembled the same front end)
 CLEAR &8000, &C000
 ORG FRONTZ_ORG
-GUARD SLOWSAVE0_START
+GUARD IMGDIR_ORG
 .frontz_start
 .front_packed
     INCBIN "build/FRONT.lz"
