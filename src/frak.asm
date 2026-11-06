@@ -384,6 +384,7 @@ ORG &0E00
 .txt_glyph  SKIP 8
 .t_part_b   SKIP 1          \ Trogg's second image (legs), 255 if none
 .pages1     SKIP 1          \ non-zero if the background's dictionary has more than one page
+.bg_have    SKIP 1          \ the level whose background is unrolled in bank 7, plus 1 (0: none)
 .u_sx       SKIP 1
 .cmask      SKIP 30         \ a background line's masks
 .ds_base    SKIP 1          \ draw_slow: index of this buffer's drawn records
@@ -449,24 +450,15 @@ INCLUDE "src/gen/tables.asm"
     sta &0E00,x : sta &0F00,x : sta &1000,x
     inx : bne clear_vars
     jsr bring_overlay
-    jsr copy_pack                   \ (before MODE 1 clears the screen it was loaded into)
-    \ Disable Escape, set up MODE 1 with no cursor
-    lda #229 : ldx #1 : ldy #0 : jsr OSBYTE
+    jsr boot                        \ (in the overlay)
+    \ Set up MODE 1 with no cursor (which clears the overlay, so not from there)
     ldx #0
 .vdu_loop
     lda vdu_init,x : jsr OSWRCH
     inx : cpx #vdu_init_end - vdu_init : bne vdu_loop
-    \ The level data lives in sideways RAM bank 6 and stays paged in while the
-    \ game runs (routines that page in other banks put it back afterwards)
-    lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL
-    lda #&FF : sta snd_music_req : sta snd_sfx_req : sta snd_sfx_req2
-    lda #0 : sta snd_music_opt : sta snd_sfx_opt : sta snd_cur
-    jsr install_vsync_counter
-    lda #DIFFICULTY : sta difficulty
-    lda #START_LEVEL : sta last_level
-    lda #0 : sta fe_top_sel
     lda #0 : jsr front_end          \ the attract screen and the menus
     jsr load_playable
+    jmp redraw_all
 }
 
 \ Double buffering: the screen is drawn in whichever of main RAM (buffer 0) and
@@ -475,22 +467,6 @@ INCLUDE "src/gen/tables.asm"
 \ own copy of the background saved under Trogg.
 
 \ Start (or restart) the level from scratch
-.level_start
-{
-    ldx #MAX_OBJECTS - 1
-.objs
-    lda #0 : cpx num_draw : bcs gone : lda #1 : .gone
-    sta alive,x : dex : bpl objs
-    lda #0 : sta keys_found : sta gems_found : sta have_cp : sta save_cp : sta restarts
-    sta lvl_ticks : sta lvl_ticks+1 : sta win_ticks : sta win_ticks+1
-    sta bal_timer : sta dag_timer
-    lda vsyncs : ora #1 : sta rng : lda #&5A : sta rng+1
-    jsr slow_init
-    lda trogg_x0 : sta tx : lda trogg_x0+1 : sta tx+1
-    lda trogg_y0 : sta ty : lda trogg_y0+1 : sta ty+1
-    lda #0 : sta tface : sta tyf : sta tv
-    jmp redraw_all
-}
 
 \ Go back to the last checkpoint (the state saved after collecting a key)
 .restore_checkpoint
@@ -578,7 +554,9 @@ INCLUDE "src/gen/tables.asm"
     \ Once Trogg is dead and this buffer already shows the FRAK! bubble, nothing
     \ changes until the restart, so don't redraw
     lda won : beq not_won
-    lda bwon,x : beq redraw
+    lda bwon,x : bne no_redraw
+    jsr win_screen                  \ (the level-complete screen, once in each buffer)
+.no_redraw
     jmp show
 .not_won
     lda dead : beq redraw
@@ -718,16 +696,17 @@ INCLUDE "src/gen/tables.asm"
     lda have_cp : beq from_scratch          \ TICK_DIED: restart
     jmp restore_checkpoint
 .from_scratch
-    jmp level_start
+    lda cur_level : jsr load_playable       \ (no checkpoint: the level again, as GameMaker's room_restart)
+    jmp redraw_all
 .next_level
     jsr record_result
     lda cur_level : clc : adc #1 : jsr load_playable
-    jmp level_start
+    jmp redraw_all
 .to_menu
     lda cur_level : sta last_level
     lda #1 : jsr front_end          \ (Escape: back to the menus)
     jsr load_playable
-    jmp level_start
+    jmp redraw_all
 .next_tick
     dec ticks_left : bne tick
     jmp main_loop
@@ -870,15 +849,6 @@ EVNTV = &0220
     sec : rts
 }
 
-.install_vsync_counter
-{
-    sei
-    lda EVNTV : sta old_evntv+1 : lda EVNTV+1 : sta old_evntv+2
-    lda #LO(vsync_event) : sta EVNTV : lda #HI(vsync_event) : sta EVNTV+1
-    cli
-    lda #14 : ldx #4 : jsr OSBYTE   \ enable the vertical sync event
-    rts
-}
 
 \ Slow save areas (in sideways RAM) for meanies flying off
 .slowsave_bank  EQUB SLOWSAVE0_BANK, LEVEL_BANK
@@ -1856,9 +1826,32 @@ FONT = &B900
 \ The front end: A = 0 for the attract screen and then the menus, 1 for just the
 \ menus. Returns A = the level to play. It's kept packed in the emptier sprite
 \ bank and unpacked into bank 7 (where the level's background goes) each time.
+\ The level-complete screen, drawn once into each buffer: just Trogg (and his
+\ trophy) on the background colour, then the time, the gems and the medal. The
+\ text's code is in the front end, which is unpacked into bank 7 for it (the
+\ level's background isn't needed any more).
+.win_screen
+{
+    ldx back : lda #1 : sta bwon,x
+    lda bwon : and bwon+1 : bne unpacked        \ (the first buffer unpacks it)
+    lda #0 : sta bg_have
+    lda #FRONT_BANK : sta ROMSEL_COPY : sta ROMSEL
+    jsr fe_stage                    \ (the packed front end to this buffer's screen)
+    lda #CACHE_BANK : sta ROMSEL_COPY : sta ROMSEL
+    jsr fe_unpack
+    lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL
+.unpacked
+    jsr win_sprites
+    lda #CACHE_BANK : sta ROMSEL_COPY : sta ROMSEL
+    jsr fe_win
+    lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL
+    rts
+}
+
 .front_end
 {
     pha
+    lda #0 : sta bg_have            \ (the front end goes where the background was)
     lda #FRONT_BANK : sta ROMSEL_COPY : sta ROMSEL
     jsr fe_stage                    \ (the packed front end to the hidden screen)
     lda #CACHE_BANK : sta ROMSEL_COPY : sta ROMSEL
@@ -2808,19 +2801,6 @@ ENDMACRO
     rts
 }
 
-\ For the level loader's bg_items: if platform X is bouncy, background item Y
-\ (then Y + 1) is its spring. X kept.
-.spring_item
-{
-    lda plat_bouncy,x : beq done
-    jsr spring_pos
-    lda #IMG_Spring : sta BG_IMG,y
-    lda p_x : sta BG_XL,y : lda p_x+1 : sta BG_XH,y
-    lda p_y : sta BG_YL,y : lda p_y+1 : sta BG_YH,y
-    iny
-.done
-    rts
-}
 
 \ Draw (into the draw log) the springs of the bouncy platforms that move: they
 \ can't be in the background like the others. A platform Trogg can move has a
@@ -3364,32 +3344,6 @@ YOYO_HIT_SPEED = 8                  \ pixels a tick that a yoyoed meanie flies o
 SLOW_PAUSE = 30                     \ platforms pause this long at each end
 HOOTER_GRAVITY = 13                 \ 0.05 pixels/tick^2 in 8.8 fixed point
 
-\ Start of level: everything at its starting position
-.slow_init
-{
-    ldx #MAX_SLOW - 1
-.loop
-    lda #0 : cpx num_slow : bcs dead : lda #1 : .dead
-    sta s_alive,x
-    lda #0 : sta s_xf,x : sta s_yf,x
-    lda sl_x0l,x : sta s_xl,x : lda sl_x0h,x : sta s_xh,x
-    lda sl_y0l,x : sta s_yl,x : lda sl_y0h,x : sta s_yh,x
-    lda sl_vf,x : sta s_vf,x : lda sl_vi,x : sta s_vi,x
-    lda sl_kind,x : cmp #SL_HOOTER : bne vel_ok
-    lda #0 : sta s_vf,x : sta s_vi,x        \ Hooters start still, then jump
-.vel_ok
-    lda sl_vy,x : sta s_vy,x
-    lda sl_wait,x : sta s_wait,x
-    dex : bpl loop
-    ldx #MAX_PLATS - 1
-.plats
-    lda plat_x0l,x : sta plat_xl,x : lda plat_x0h,x : sta plat_xh,x
-    lda plat_y0l,x : sta plat_yl,x : lda plat_y0h,x : sta plat_yh,x
-    dex : bpl plats
-    lda #255 : sta cur_plat : sta carry
-    lda #0 : sta dropped
-    rts
-}
 
 \ Checkpoints: copy the moving state (and platform positions) to / from the copies
 MACRO COPY_SLOW from, to
@@ -4198,9 +4152,6 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
 
 .draw_hud
 {
-    lda won : beq playing
-    jmp win_panel
-.playing
     \ the seconds; a new timer image when they change
     lda lvl_ticks : sta tmp : lda lvl_ticks+1 : sta tmp+1
     lda #50 : jsr div16
@@ -4283,17 +4234,10 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
 .win_len_lo EQUB LO(7 * 50), LO(6 * 50), LO(5 * 50), LO(4 * 50)
 .win_len_hi EQUB HI(7 * 50), HI(6 * 50), HI(5 * 50), HI(4 * 50)
 
-\ The level-complete panel, drawn once into each buffer, cleared but for Trogg:
-\ the time, the gems, the medal and a trophy over Trogg (the Steam version's, less its animation)
-MACRO WIN_TEXT dy, text
-    jsr win_text
-    EQUB dy
-    EQUS text, 0
-ENDMACRO
-.win_panel
+\ The level-complete screen's sprites (for win_screen): the screen cleared, Trogg,
+\ and the trophy over him if there's a medal
+.win_sprites
 {
-    ldx back : lda #1 : sta bwon,x
-    \ just Trogg, on the background colour (no meanies, platforms or ladders)
     jsr clear_screen
     jsr trogg_image : tax
     lda img_part_b,x : sta t_part_b
@@ -4305,90 +4249,14 @@ ENDMACRO
     lda t_part_b : cmp #255 : beq one_part
     sta p_img : jsr plot
 .one_part
-    lda #1 : sta txt_colour
-    \ the top line: 40 rows up from the middle (60 with a medal)
-    lda #88 : ldx done_restarts : cpx #3 : bcs base : lda #68 : .base : sta hud_y
-    WIN_TEXT 0, "We've done it!"
-    \ the time, to a thousandth of a second
-    lda done_ticks : sta tmp : lda done_ticks+1 : sta tmp+1
-    lda #50 : jsr div16 : sta hud_r                 \ (the ticks over: 20 ms each)
-    jsr time_digits
-    \ milliseconds: r * 20, so the digits are r / 5, (r MOD 5) * 2 and 0
-    lda #'.' : sta time_text + 4
-    lda hud_r : ldx #'0' - 1
-.fifths
-    inx : sec : sbc #5 : bcs fifths
-    adc #5 : asl a : ora #'0' : sta time_text + 6
-    stx time_text + 5
-    lda #'0' : sta time_text + 7
-    lda #0 : sta time_text + 8
-    lda #16 : jsr win_line
-    lda #LO(time_text) : sta src : lda #HI(time_text) : sta src+1
-    jsr win_print
-    lda #32 : sta hud_dy
-    lda done_gems : beq no_gems
-    WIN_TEXT 32, "You collected all the gems!"
-    lda #48 : sta hud_dy
-.no_gems
-    \ the medal
     lda done_restarts : cmp #3 : bcs no_medal
-    lda hud_dy : clc : adc #32 : sta hud_dy
-    lda done_restarts : asl a : tax
-    lda medal_text,x : sta src : lda medal_text + 1,x : sta src+1
-    lda hud_dy : jsr win_line
-    jsr win_print
-    \ ... and the trophy over Trogg
-    lda done_restarts : clc : adc #IMG_Rating_1 : sta p_img
+    clc : adc #IMG_Rating_1 : sta p_img
     lda tx : clc : adc #21 : sta p_x : lda tx+1 : adc #0 : sta p_x+1
     lda ty : sec : sbc #23 : sta p_y : lda ty+1 : sbc #0 : sta p_y+1
-    lda #PM_PLOT : sta p_mode
     jsr plot
     lda #IMG_TrophyStand : sta p_img
     jsr plot
 .no_medal
-    rts
-}
-.medal_text EQUW t_gold, t_silver, t_bronze
-.t_gold   EQUS "!!! Gold Medal !!!", 0
-.t_silver EQUS "!!! Silver Medal !!!", 0
-.t_bronze EQUS "!!! Bronze Medal !!!", 0
-
-
-\ Print the string after the JSR (after a byte: its row below hud_y), centred
-.win_text
-{
-    pla : sta src : pla : sta src+1
-    ldy #1 : lda (src),y : jsr win_line
-    inc src : bne s1 : inc src+1 : .s1
-    inc src : bne s2 : inc src+1 : .s2
-    jsr win_print
-    tya : clc : adc src : tax : lda src+1 : adc #0 : pha : txa : pha
-    rts
-}
-\ txt_y = the window's top + hud_y + A
-.win_line
-{
-    clc : adc hud_y : adc clip_t : sta txt_y : lda clip_t+1 : adc #0 : sta txt_yh
-    rts
-}
-\ Print the string at (src), centred in the window, at txt_y; Y ends at its 0
-.win_print
-{
-    ldy #0
-.len
-    lda (src),y : beq got : iny : bne len
-.got
-    sty tmp
-    lda scrollcol : clc : adc #40 : sec : sbc tmp : sta txt_col
-    ldy #0
-.loop
-    lda (src),y : beq done
-    sty txt_i
-    jsr print_char
-    ldy txt_i
-    inc txt_col : inc txt_col
-    iny : bne loop
-.done
     rts
 }
 
@@ -4402,7 +4270,7 @@ ENDMACRO
     lda cur_level : clc : adc #1
     jmp try
 .done
-    rts
+    jmp level_init                  \ (in the overlay too)
 }
 
 .logic_end
@@ -4469,9 +4337,6 @@ ENDMACRO
 .hud_k      SKIP 1
 .hud_d      SKIP 1
 .hud_d2     SKIP 1
-.hud_r      SKIP 1
-.hud_y      SKIP 1
-.hud_dy     SKIP 1
 \ Moving platforms and meanies: current state, and copies for checkpoints
 SLOW_N = MAX_SLOW
 .s_alive    SKIP SLOW_N
@@ -4991,8 +4856,13 @@ ROMSEL_ANDY = &80                   \ ROMSEL bit 7: ANDY at &8000-&8FFF
     inx : bne unused
 .unused_done
 
+    \ (the background is still in bank 7 if it was this level's, as when it's
+    \ reloaded after Trogg dies with no checkpoint)
+    ldx cur_level : inx : cpx bg_have : beq bg_kept
     jsr bg_items
     jsr unroll_bg
+    ldx cur_level : inx : stx bg_have
+.bg_kept
     clc
     rts
 }
@@ -5725,6 +5595,93 @@ ASSERT MAX_BG <= &50
 \ Where each level is in the pack, and the moving meanies' settings (only the
 \ loader needs them, so they're packed with it)
 INCLUDE "src/gen/levels.asm"
+\ A level's start (when it's loaded, or reloaded after Trogg dies with no
+\ checkpoint): its objects, Trogg, the timer and the moving things. Then
+\ redraw_all.
+.level_init
+{
+    ldx #MAX_OBJECTS - 1
+.objs
+    lda #0 : cpx num_draw : bcs gone : lda #1 : .gone
+    sta alive,x : dex : bpl objs
+    lda #0 : sta keys_found : sta gems_found : sta have_cp : sta save_cp : sta restarts
+    sta lvl_ticks : sta lvl_ticks+1 : sta win_ticks : sta win_ticks+1
+    sta bal_timer : sta dag_timer
+    lda vsyncs : ora #1 : sta rng : lda #&5A : sta rng+1
+    jsr slow_init
+    lda trogg_x0 : sta tx : lda trogg_x0+1 : sta tx+1
+    lda trogg_y0 : sta ty : lda trogg_y0+1 : sta ty+1
+    lda #0 : sta tface : sta tyf : sta tv
+    rts
+}
+
+\ Start of level: everything at its starting position
+.slow_init
+{
+    ldx #MAX_SLOW - 1
+.loop
+    lda #0 : cpx num_slow : bcs dead : lda #1 : .dead
+    sta s_alive,x
+    lda #0 : sta s_xf,x : sta s_yf,x
+    lda sl_x0l,x : sta s_xl,x : lda sl_x0h,x : sta s_xh,x
+    lda sl_y0l,x : sta s_yl,x : lda sl_y0h,x : sta s_yh,x
+    lda sl_vf,x : sta s_vf,x : lda sl_vi,x : sta s_vi,x
+    lda sl_kind,x : cmp #SL_HOOTER : bne vel_ok
+    lda #0 : sta s_vf,x : sta s_vi,x        \ Hooters start still, then jump
+.vel_ok
+    lda sl_vy,x : sta s_vy,x
+    lda sl_wait,x : sta s_wait,x
+    dex : bpl loop
+    ldx #MAX_PLATS - 1
+.plats
+    lda plat_x0l,x : sta plat_xl,x : lda plat_x0h,x : sta plat_xh,x
+    lda plat_y0l,x : sta plat_yl,x : lda plat_y0h,x : sta plat_yh,x
+    dex : bpl plats
+    lda #255 : sta cur_plat : sta carry
+    lda #0 : sta dropped
+    rts
+}
+
+\ For the level loader's bg_items: if platform X is bouncy, background item Y
+\ (then Y + 1) is its spring. X kept.
+.spring_item
+{
+    lda plat_bouncy,x : beq done
+    jsr spring_pos
+    lda #IMG_Spring : sta BG_IMG,y
+    lda p_x : sta BG_XL,y : lda p_x+1 : sta BG_XH,y
+    lda p_y : sta BG_YL,y : lda p_y+1 : sta BG_YH,y
+    iny
+.done
+    rts
+}
+
+\ Once, at boot (from start, before MODE 1 clears the screen this runs in)
+.boot
+{
+    jsr copy_pack                   \ (before MODE 1 clears the screen it was loaded into)
+    lda #229 : ldx #1 : ldy #0 : jsr OSBYTE     \ (Escape disabled)
+    \ The level data lives in sideways RAM bank 6 and stays paged in while the
+    \ game runs (routines that page in other banks put it back afterwards)
+    lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL
+    lda #&FF : sta snd_music_req : sta snd_sfx_req : sta snd_sfx_req2
+    lda #0 : sta snd_music_opt : sta snd_sfx_opt : sta snd_cur
+    jsr install_vsync_counter
+    lda #DIFFICULTY : sta difficulty
+    lda #START_LEVEL : sta last_level
+    lda #0 : sta fe_top_sel
+    rts
+}
+.install_vsync_counter
+{
+    sei
+    lda EVNTV : sta old_evntv+1 : lda EVNTV+1 : sta old_evntv+2
+    lda #LO(vsync_event) : sta EVNTV : lda #HI(vsync_event) : sta EVNTV+1
+    cli
+    lda #14 : ldx #4 : jsr OSBYTE   \ enable the vertical sync event
+    rts
+}
+
 .overlay_end
 PRINT "Loader overlay:", overlay_end - overlay_start, "bytes"
 IF PASS = 1
@@ -6321,6 +6278,101 @@ ENDMACRO
     rts
 }
 
+\ The level-complete screen's text (see win_screen): centred, 40 rows up from the
+\ middle of the window (60 with a medal)
+MACRO FE_WIN_TEXT dy, text
+    jsr fe_win_text
+    EQUB dy
+    EQUS text, 0
+ENDMACRO
+.fe_win
+{
+    lda #1 : sta txt_colour
+    lda #88 : ldx done_restarts : cpx #3 : bcs base : lda #68 : .base : sta fe_wy
+    FE_WIN_TEXT 0, "We've done it!"
+    \ the time, to a thousandth of a second (m:ss.mmm)
+    lda done_ticks : sta tmp : lda done_ticks+1 : sta tmp+1
+    lda #50 : jsr fe_div16 : sta fe_r2              \ (the ticks over: 20 ms each)
+    lda tmp+1 : bne cap : lda tmp : cmp #LO(600) : lda tmp+1 : sbc #HI(600) : bcc ok
+.cap
+    lda #LO(599) : sta tmp : lda #HI(599) : sta tmp+1
+.ok
+    lda #60 : jsr fe_div16 : sta fe_r               \ tmp = minutes, A = seconds
+    lda tmp : ora #'0' : sta fe_text
+    lda #':' : sta fe_text + 1
+    lda fe_r : ldx #'0' - 1
+.tens
+    inx : sec : sbc #10 : bcs tens
+    adc #10 + '0' : sta fe_text + 3 : stx fe_text + 2
+    \ milliseconds: r * 20, so the digits are r / 5, (r MOD 5) * 2 and 0
+    lda #'.' : sta fe_text + 4
+    lda fe_r2 : ldx #'0' - 1
+.fifths
+    inx : sec : sbc #5 : bcs fifths
+    adc #5 : asl a : ora #'0' : sta fe_text + 6
+    stx fe_text + 5
+    lda #'0' : sta fe_text + 7
+    lda #0 : sta fe_text + 8
+    lda #16 : jsr fe_win_line
+    lda #LO(fe_text) : sta src : lda #HI(fe_text) : sta src+1
+    jsr fe_win_print
+    lda #32 : sta fe_wdy
+    lda done_gems : beq no_gems
+    FE_WIN_TEXT 32, "You collected all the gems!"
+    lda #48 : sta fe_wdy
+.no_gems
+    \ the medal
+    lda done_restarts : cmp #3 : bcs no_medal
+    lda fe_wdy : clc : adc #32 : sta fe_wdy
+    lda done_restarts : asl a : tax
+    lda fe_medal_text,x : sta src : lda fe_medal_text + 1,x : sta src+1
+    lda fe_wdy : jsr fe_win_line
+    jsr fe_win_print
+.no_medal
+    rts
+}
+.fe_medal_text EQUW fe_gold, fe_silver, fe_bronze
+.fe_gold   EQUS "!!! Gold Medal !!!", 0
+.fe_silver EQUS "!!! Silver Medal !!!", 0
+.fe_bronze EQUS "!!! Bronze Medal !!!", 0
+
+\ Print the string after the JSR (after a byte: its row below fe_wy), centred
+.fe_win_text
+{
+    pla : sta src : pla : sta src+1
+    ldy #1 : lda (src),y : jsr fe_win_line
+    inc src : bne s1 : inc src+1 : .s1
+    inc src : bne s2 : inc src+1 : .s2
+    jsr fe_win_print
+    tya : clc : adc src : tax : lda src+1 : adc #0 : pha : txa : pha
+    rts
+}
+\ txt_y = the window's top + fe_wy + A
+.fe_win_line
+{
+    clc : adc fe_wy : adc clip_t : sta txt_y : lda clip_t+1 : adc #0 : sta txt_yh
+    rts
+}
+\ Print the string at (src), centred in the window, at txt_y; Y ends at its 0
+.fe_win_print
+{
+    ldy #0
+.len
+    lda (src),y : beq got : iny : bne len
+.got
+    sty tmp
+    lda scrollcol : clc : adc #40 : sec : sbc tmp : sta txt_col
+    ldy #0
+.loop
+    lda (src),y : beq done
+    sty txt_i
+    jsr fe_char
+    ldy txt_i
+    iny : bne loop
+.done
+    rts
+}
+
 INCLUDE "src/gen/names.asm"
 .front_end_
 IF PASS = 1
@@ -6330,6 +6382,10 @@ ENDIF
 .fe_r       SKIP 1
 .fe_iw      SKIP 1
 .fe_ih      SKIP 1
+.fe_wy      SKIP 1              \ (fe_win)
+.fe_wdy     SKIP 1
+.fe_r2      SKIP 1
+.fe_text    SKIP 9
 .fe_vars_end
 PRINT "Front end:", front_end_ - front_start, "bytes, unpacked to &8000 in bank", CACHE_BANK, "(", BG_TOP - fe_vars_end, "bytes to spare )"
 
@@ -6393,4 +6449,4 @@ INCLUDE "src/gen/disc.asm"
 PRINT "Code from", ~code_start, "to", ~end, "(", end - code_start, "bytes ), free:", SCREEN - ram_top
 \ Addresses used by test scripts (profiling and poking variables)
 PRINT "TIMING", ~main_loop, ~t_restore, ~t_scroll, ~t_draw, ~t_vsync, ~t_after_vsync, ~t_logic, ~t_logic_done, ~t_slow, ~t_slow_done
-PRINT "SYMBOLS loops", ~loops, "snd_tick", ~snd_tick, "snd_sfx_req", ~snd_sfx_req, "MUSIC_BANK", ~MUSIC_BANK, "win_ticks", ~win_ticks, "bwon", ~bwon, "carry_on_yoyo", ~carry_on_yoyo, "tface", ~tface, "carry", ~carry, "dropped", ~dropped, "yo_x", ~yo_x, "trogg_standing", ~trogg_standing, "trogg_falling", ~trogg_falling, "trogg_climbing", ~trogg_climbing, "xmove", ~xmove, "ymove", ~ymove, "xvel", ~xvel, "tyf", ~tyf, "res_i", ~res_i, "res_found", ~res_found, "res_y", ~res_y, "res_yf", ~res_yf, "doyoyo", ~doyoyo, "tclimb", ~tclimb, "x_max", ~x_max, "level_h", ~level_h, "snd_tune", ~snd_tune, "snd_qb", ~snd_qb, "v_phase", ~v_phase, "v_left", ~v_left, "v_ord", ~v_ord, "v_on", ~v_on, "v_att", ~v_att, "snd_music_req", ~snd_music_req, "snd_cur", ~snd_cur, "snd_music_opt", ~snd_music_opt, "snd_sfx_opt", ~snd_sfx_opt, "snd_acc", ~snd_acc, "draw_kind", ~draw_kind, "num_keys", ~num_keys, "lvl_ticks", ~lvl_ticks, "done_valid", ~done_valid, "fe_sel", ~fe_sel, "cur_level", ~cur_level, "num_plats", ~num_plats, "num_ladders", ~num_ladders, "num_draw", ~num_draw, "num_slow", ~num_slow, "plat_w", ~plat_w, "plat_x0l", ~plat_x0l, "plat_x0h", ~plat_x0h, "plat_y0l", ~plat_y0l, "plat_y0h", ~plat_y0h, "plat_moving", ~plat_moving, "plat_bouncy", ~plat_bouncy, "lad_xl", ~lad_xl, "lad_xh", ~lad_xh, "lad_yl", ~lad_yl, "lad_yh", ~lad_yh, "lad_hl", ~lad_hl, "lad_hh", ~lad_hh, "lad_ext", ~lad_ext, "draw_img", ~draw_img, "draw_xl", ~draw_xl, "draw_xh", ~draw_xh, "draw_yl", ~draw_yl, "draw_yh", ~draw_yh, "sl_kind", ~sl_kind, "sl_img", ~sl_img, "sl_x0l", ~sl_x0l, "sl_x0h", ~sl_x0h, "sl_y0l", ~sl_y0l, "sl_y0h", ~sl_y0h, "sl_aminl", ~sl_aminl, "sl_aminh", ~sl_aminh, "sl_amaxl", ~sl_amaxl, "sl_amaxh", ~sl_amaxh, "sl_bminl", ~sl_bminl, "sl_bminh", ~sl_bminh, "sl_bmaxl", ~sl_bmaxl, "sl_bmaxh", ~sl_bmaxh, "sl_vf", ~sl_vf, "sl_vi", ~sl_vi, "sl_vy", ~sl_vy, "sl_plat", ~sl_plat, "sl_wait", ~sl_wait, "sl_simple", ~sl_simple, "plat_yh", ~plat_yh, "level_bg", ~level_bg, "trogg_x0", ~trogg_x0, "trogg_y0", ~trogg_y0, "dmg_n", ~dmg_n, "s_alive", ~s_alive, "s_xl", ~s_xl, "s_xh", ~s_xh, "s_yl", ~s_yl, "s_yh", ~s_yh, "cur_plat", ~cur_plat, "plat_xl", ~plat_xl, "plat_xh", ~plat_xh, "plat_yl", ~plat_yl, "mv_img", ~mv_img, "mv_vxi", ~mv_vxi, "mv_vyi", ~mv_vyi, "mv_vyf", ~mv_vyf, "mv_yl", ~mv_yl, "mv_yh", ~mv_yh, "mv_pause", ~mv_pause, "bal_timer", ~bal_timer, "dag_timer", ~dag_timer, "bscroll", ~bscroll, "front", ~front, "vsyncs", ~vsyncs, "yo_len", ~yo_len, "mv_active", ~mv_active, "mv_xl", ~mv_xl, "mv_xh", ~mv_xh, "tface", ~tface, "keys_found", ~keys_found, "gems_found", ~gems_found, "won", ~won, "have_cp", ~have_cp, "restarts", ~restarts, "alive", ~alive, "newcol", ~newcol, "dead", ~dead, "tx", ~tx, "ty", ~ty, "tstate", ~tstate, "tv", ~tv, "dead", ~dead, "anim", ~anim, "p_img", ~p_img, "bank", ~bank, "oldbank", ~oldbank, "dptr", ~dptr, "scrollcol", ~scrollcol
+PRINT "SYMBOLS loops", ~loops, "done_ticks", ~done_ticks, "done_restarts", ~done_restarts, "done_gems", ~done_gems, "snd_tick", ~snd_tick, "snd_sfx_req", ~snd_sfx_req, "MUSIC_BANK", ~MUSIC_BANK, "win_ticks", ~win_ticks, "bwon", ~bwon, "carry_on_yoyo", ~carry_on_yoyo, "tface", ~tface, "carry", ~carry, "dropped", ~dropped, "yo_x", ~yo_x, "trogg_standing", ~trogg_standing, "trogg_falling", ~trogg_falling, "trogg_climbing", ~trogg_climbing, "xmove", ~xmove, "ymove", ~ymove, "xvel", ~xvel, "tyf", ~tyf, "res_i", ~res_i, "res_found", ~res_found, "res_y", ~res_y, "res_yf", ~res_yf, "doyoyo", ~doyoyo, "tclimb", ~tclimb, "x_max", ~x_max, "level_h", ~level_h, "snd_tune", ~snd_tune, "snd_qb", ~snd_qb, "v_phase", ~v_phase, "v_left", ~v_left, "v_ord", ~v_ord, "v_on", ~v_on, "v_att", ~v_att, "snd_music_req", ~snd_music_req, "snd_cur", ~snd_cur, "snd_music_opt", ~snd_music_opt, "snd_sfx_opt", ~snd_sfx_opt, "snd_acc", ~snd_acc, "draw_kind", ~draw_kind, "num_keys", ~num_keys, "lvl_ticks", ~lvl_ticks, "done_valid", ~done_valid, "fe_sel", ~fe_sel, "cur_level", ~cur_level, "num_plats", ~num_plats, "num_ladders", ~num_ladders, "num_draw", ~num_draw, "num_slow", ~num_slow, "plat_w", ~plat_w, "plat_x0l", ~plat_x0l, "plat_x0h", ~plat_x0h, "plat_y0l", ~plat_y0l, "plat_y0h", ~plat_y0h, "plat_moving", ~plat_moving, "plat_bouncy", ~plat_bouncy, "lad_xl", ~lad_xl, "lad_xh", ~lad_xh, "lad_yl", ~lad_yl, "lad_yh", ~lad_yh, "lad_hl", ~lad_hl, "lad_hh", ~lad_hh, "lad_ext", ~lad_ext, "draw_img", ~draw_img, "draw_xl", ~draw_xl, "draw_xh", ~draw_xh, "draw_yl", ~draw_yl, "draw_yh", ~draw_yh, "sl_kind", ~sl_kind, "sl_img", ~sl_img, "sl_x0l", ~sl_x0l, "sl_x0h", ~sl_x0h, "sl_y0l", ~sl_y0l, "sl_y0h", ~sl_y0h, "sl_aminl", ~sl_aminl, "sl_aminh", ~sl_aminh, "sl_amaxl", ~sl_amaxl, "sl_amaxh", ~sl_amaxh, "sl_bminl", ~sl_bminl, "sl_bminh", ~sl_bminh, "sl_bmaxl", ~sl_bmaxl, "sl_bmaxh", ~sl_bmaxh, "sl_vf", ~sl_vf, "sl_vi", ~sl_vi, "sl_vy", ~sl_vy, "sl_plat", ~sl_plat, "sl_wait", ~sl_wait, "sl_simple", ~sl_simple, "plat_yh", ~plat_yh, "level_bg", ~level_bg, "trogg_x0", ~trogg_x0, "trogg_y0", ~trogg_y0, "dmg_n", ~dmg_n, "s_alive", ~s_alive, "s_xl", ~s_xl, "s_xh", ~s_xh, "s_yl", ~s_yl, "s_yh", ~s_yh, "cur_plat", ~cur_plat, "plat_xl", ~plat_xl, "plat_xh", ~plat_xh, "plat_yl", ~plat_yl, "mv_img", ~mv_img, "mv_vxi", ~mv_vxi, "mv_vyi", ~mv_vyi, "mv_vyf", ~mv_vyf, "mv_yl", ~mv_yl, "mv_yh", ~mv_yh, "mv_pause", ~mv_pause, "bal_timer", ~bal_timer, "dag_timer", ~dag_timer, "bscroll", ~bscroll, "front", ~front, "vsyncs", ~vsyncs, "yo_len", ~yo_len, "mv_active", ~mv_active, "mv_xl", ~mv_xl, "mv_xh", ~mv_xh, "tface", ~tface, "keys_found", ~keys_found, "gems_found", ~gems_found, "won", ~won, "have_cp", ~have_cp, "restarts", ~restarts, "alive", ~alive, "newcol", ~newcol, "dead", ~dead, "tx", ~tx, "ty", ~ty, "tstate", ~tstate, "tv", ~tv, "dead", ~dead, "anim", ~anim, "p_img", ~p_img, "bank", ~bank, "oldbank", ~oldbank, "dptr", ~dptr, "scrollcol", ~scrollcol

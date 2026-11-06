@@ -134,11 +134,11 @@ and is listed: Trogg can never get near it.)
 | `&0400-&07FF` | save area for the main-RAM screen buffer (BASIC's workspace, unused); while a level loads, the packed level |
 | `&0900-&0CFF` | save area for the shadow screen buffer (RS423/cassette buffers, soft keys, UDGs); while a level loads, a column of the background and the list of things in it |
 | `&0E00-&10FF` | other variables: object states, checkpoint, draw logs, moving objects |
-| `&1100-&2FFF` | drawing code and its tables, each image's size and origin, the sound player's variables, instruments and pitch and loudness tables (77 bytes free) |
+| `&1100-&2FFF` | drawing code and its tables, each image's size and origin, the sound player's variables, instruments and pitch and loudness tables (167 bytes free) |
 | `&3000-&7FFF` | MODE 1 screen, **double buffered**: main RAM and shadow RAM. While a level loads (with the screen blanked) it holds the loader's workspace (`&3000-&4FFF`: the dictionary's hash table, a row of the background, the lines being built) and the loader itself (`&6000`) |
-| SWRAM banks 4-5 | sprites, pre-shifted, including unshifted copies of the platforms and ladders to unroll backgrounds from (23.1KB); in bank 5 after the sprites, the music and sound effects player and the tunes (4.2KB at `&9F58`, see "Sound"), then the front end, packed (2.2KB, see below), then where shift 3 of each image is (`img_bank3`, `img_lo3`, `img_hi3`, 240 bytes at `&BB10`), then a save area for meanies flying off (the top 1KB); 503 bytes free |
-| SWRAM bank 6 | collision spans and tables (from `&8000`), the **game logic** (to `&AC9B`), then the current level's tables and the second save area for meanies flying off (722 bytes free). Stays paged in while playing |
-| SWRAM bank 7 | the current level's background, unrolled when it starts (`&8000-&A9FF`, see below), or, while the menus are up, the front end (unpacked to `&8000`); the front end's records and the unpacker (`&AA00`); the code that paints the background; where shifts 0-2 of each image are (`img_bank0-2`, `img_lo0-2`, `img_hi0-2`, 720 bytes: `plot` and the background unroller page bank 7 in to read them); the level loader and its tables, packed (2.9KB at the top, unpacked to `&6000` when a level loads); 448 bytes free |
+| SWRAM banks 4-5 | sprites, pre-shifted, including unshifted copies of the platforms and ladders to unroll backgrounds from (23.1KB); in bank 5 after the sprites, the music and sound effects player and the tunes (4.2KB at `&9F58`, see "Sound"), then the front end, packed (2.5KB, see below), then where shift 3 of each image is (`img_bank3`, `img_lo3`, `img_hi3`, 240 bytes at `&BB10`), then a save area for meanies flying off (the top 1KB); 164 bytes free |
+| SWRAM bank 6 | collision spans and tables (from `&8000`), the **game logic** (to `&AD25`), then the current level's tables and the second save area for meanies flying off (587 bytes free). Stays paged in while playing |
+| SWRAM bank 7 | the current level's background, unrolled when it starts (`&8000-&A9FF`, see below), or, while the menus or the level-complete screen are up, the front end (unpacked to `&8000`); the front end's records and the unpacker (`&AA00`); the code that paints the background; where shifts 0-2 of each image are (`img_bank0-2`, `img_lo0-2`, `img_hi0-2`, 720 bytes: `plot` and the background unroller page bank 7 in to read them); the level loader, the code that starts a level and the boot code, packed (3.2KB at the top, unpacked to `&6000` when a level loads); 153 bytes free |
 | HAZEL (`&C000-&DFFF`) and ANDY (`&8000-&8FFF`) | **all 55 levels**, packed: 11.8KB, about 215 bytes each. `&8800-&88FF` of ANDY is left to the MOS |
 
 ### The packed front end
@@ -150,6 +150,16 @@ packed in bank 5. Each time the menus come up, `fe_stage` (in bank 5) copies the
 the screen buffer that isn't being shown, and `fe_unpack` (in bank 7) unpacks it to `&8000`.
 The records (best times, gems and ratings) sit just above, at `&AA00`, with `fe_record`, so
 they stay put. The next level's background replaces the front end when a level starts.
+
+The level-complete screen's text (`fe_win`) is in the front end too: when a level is won,
+`win_screen` unpacks the front end into bank 7 (the level's background isn't needed any
+more), clears the screen and draws Trogg and his trophy (`win_sprites`, in bank 6), then the
+time, the gems and the medal.
+
+The code that's only needed when a level starts (`level_init`, `slow_init`, `spring_item`)
+and at boot (`boot`, `install_vsync_counter`) is in the packed loader. So when Trogg dies with
+no checkpoint, the level is loaded again (as GameMaker restarts the room); its background is
+still in bank 7 (`bg_have`), so that takes about a second.
 
 `build.sh` assembles twice: the first pass's `FRONT` (and the level loader, `OVERLAY`) is
 packed by `tools/pack.py`, and the second pass puts the packed data in place.
