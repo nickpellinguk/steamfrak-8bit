@@ -116,9 +116,9 @@ sprite tables, and every byte of the unrolled background) with what the converte
 | `&0E00-&10FF` | other variables: object states, checkpoint, draw logs, moving objects |
 | `&1100-&2FFF` | drawing code and its tables, each image's size and origin, the sound player's variables, instruments and pitch and loudness tables (89 bytes free) |
 | `&3000-&7FFF` | MODE 1 screen, **double buffered**: main RAM and shadow RAM. While a level loads (with the screen blanked) it holds the loader's workspace (`&3000-&4FFF`: the dictionary's hash table, a row of the background, the lines being built) and the loader itself (`&6000`) |
-| SWRAM banks 4-5 | sprites, pre-shifted, including unshifted copies of the platforms and ladders to unroll backgrounds from (23.1KB); in bank 5 after the sprites, the music and sound effects player and the tunes (4.2KB at `&9F58`, see "Sound"), then the front end, packed (2.6KB, see below), then where shift 3 of each image is (`img_bank3`, `img_lo3`, `img_hi3`, 240 bytes at `&BB10`), then a save area for meanies flying off (the top 1KB); 116 bytes free |
-| SWRAM bank 6 | collision spans and tables (from `&8000`), the **game logic** (to `&A9CE`), then the current level's tables and the second save area for meanies flying off (19 bytes free). Stays paged in while playing |
-| SWRAM bank 7 | the current level's background, unrolled when it starts (`&8000-&A9FF`, see below), or, while the menus are up, the front end (unpacked to `&8000`); the front end's records and the unpacker (`&AA00`); the code that paints the background; where shifts 0-2 of each image are (`img_bank0-2`, `img_lo0-2`, `img_hi0-2`, 720 bytes: `plot` and the background unroller page bank 7 in to read them); the level loader, packed (3.4KB at the top, unpacked to `&6000` when a level loads); 42 bytes free |
+| SWRAM banks 4-5 | sprites, pre-shifted, including unshifted copies of the platforms and ladders to unroll backgrounds from (23.1KB); in bank 5 after the sprites, the music and sound effects player and the tunes (4.2KB at `&9F58`, see "Sound"), then the front end, packed (2.2KB, see below), then where shift 3 of each image is (`img_bank3`, `img_lo3`, `img_hi3`, 240 bytes at `&BB10`), then a save area for meanies flying off (the top 1KB); 503 bytes free |
+| SWRAM bank 6 | collision spans and tables (from `&8000`), the **game logic** (to `&A9CE`), then the current level's tables and the second save area for meanies flying off (465 bytes free). Stays paged in while playing |
+| SWRAM bank 7 | the current level's background, unrolled when it starts (`&8000-&A9FF`, see below), or, while the menus are up, the front end (unpacked to `&8000`); the front end's records and the unpacker (`&AA00`); the code that paints the background; where shifts 0-2 of each image are (`img_bank0-2`, `img_lo0-2`, `img_hi0-2`, 720 bytes: `plot` and the background unroller page bank 7 in to read them); the level loader and its tables, packed (2.9KB at the top, unpacked to `&6000` when a level loads); 451 bytes free |
 | HAZEL (`&C000-&DFFF`) and ANDY (`&8000-&8FFF`) | **all 55 levels**, packed: 11.8KB, about 215 bytes each. `&8800-&88FF` of ANDY is left to the MOS |
 
 ### The packed front end
@@ -131,9 +131,17 @@ the screen buffer that isn't being shown, and `fe_unpack` (in bank 7) unpacks it
 The records (best times, gems and ratings) sit just above, at `&AA00`, with `fe_record`, so
 they stay put. The next level's background replaces the front end when a level starts.
 
-`build.sh` assembles twice: the first pass's `FRONT` is packed by `tools/pack.py` (a simple
-byte-aligned LZ77; 6502 code doesn't pack well, about 84%), and the second pass puts the packed
-data at the top of bank 5's free space, so the space below it stays in one piece. The unpacked
+`build.sh` assembles twice: the first pass's `FRONT` (and the level loader, `OVERLAY`) is
+packed by `tools/pack.py`, and the second pass puts the packed data in place.
+
+The packing is LZ77 with bit-level lengths, in the style of ZX0: blocks of literal bytes and
+copies from earlier in the output, the lengths and distances as Elias gamma codes read a bit
+at a time, and a copy straight after literals can reuse the last distance (code tends to use
+the same addresses over and over). The compressor picks the cheapest encoding by dynamic
+programming, and checks it by unpacking it the way the 6502 does. The unpacker (`unpack`, in
+bank 7) is about 120 bytes. The front end packs to 72% (3,124 bytes to 2,250) and the loader,
+with the tables only it needs (where each level is in the pack, and the moving meanies'
+settings), to 66% (4,470 to 2,968). The unpacked
 front end can grow to 10.75KB (`&8000-&A9FF`) without needing more of bank 5 than its packed size.
 
 All 55 levels stay in memory, so nothing is loaded from disc after the start. At boot, `!BOOT`

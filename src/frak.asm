@@ -1945,7 +1945,6 @@ GUARD &C000
 INCBIN "build/SPANS"
 INCLUDE "src/gen/collide.asm"
 INCLUDE "src/gen/fall.asm"
-INCLUDE "src/gen/levels.asm"
 .logic_start
 
 \ ------------------------------------------------------------------------------
@@ -4351,36 +4350,70 @@ GUARD OVERLAYZ_ORG
 .fe_unpack
     lda #0 : sta src : sta dp
     lda #HI(SCREEN) : sta src+1 : lda #&80 : sta dp+1
-\ Unpack from (src) to (dp)
+\ Unpack from (src) to (dp): see tools/pack.py for the format. Uses tmp (a
+\ length), UDIST (the distance - 1) and UBITS (the bits left of the last byte
+\ of them, with a 1 after them).
+UDIST = tblptr
+UBITS = p_x
 .unpack
 {
     ldy #0
-.next
-    jsr get : beq done : bmi copy
-    tax                                     \ X literal bytes
-.literal
-    jsr get : jsr put : dex : bne literal
-    beq next
+    lda #&80 : sta UBITS
+.literals
+    jsr gamma
+.lit_loop
+    jsr get : jsr put
+    jsr dec_len : bne lit_loop
+    jsr bit : bcs new_copy
+    jsr gamma                               \ a copy from the last distance
+    jsr copy
+.after_copy
+    jsr bit : bcc literals
+.new_copy
+    jsr gamma
+    lda tmp+1 : bne done                    \ (a distance of 256 * 256 or more: the end)
+    ldx tmp : dex : stx UDIST+1
+    jsr get : sta UDIST
+    jsr gamma
+    inc tmp : bne len_ok : inc tmp+1 : .len_ok   \ (the length - 1 was stored)
+    jsr copy
+    jmp after_copy
+.done
+    rts
+\ copy tmp bytes from dp - UDIST - 1
 .copy
-    and #&7F : clc : adc #2 : tax           \ X bytes from (dp - distance)
-    lda #0 : sta ptr+1
-    jsr get : bpl short
-    and #&7F : sta ptr+1 : jsr get
-.short
-    sta tmp
-    clc : lda dp : sbc tmp : sta ptr        \ (- 1 more: distance - 1 is stored)
-    lda dp+1 : sbc ptr+1 : sta ptr+1
+    clc : lda dp : sbc UDIST : sta ptr
+    lda dp+1 : sbc UDIST+1 : sta ptr+1
 .copy_loop
     lda (ptr),y : jsr put
     inc ptr : bne same : inc ptr+1 : .same
-    dex : bne copy_loop
-    beq next
-.done
+    jsr dec_len : bne copy_loop
+    rts
+\ tmp = tmp - 1, Z set if that's 0
+.dec_len
+    lda tmp : bne dec_lo : dec tmp+1 : .dec_lo
+    dec tmp
+    lda tmp : ora tmp+1
+    rts
+\ tmp = an interleaved Elias gamma number: 1, then (while the next bit is 0)
+\ doubled plus the bit after
+.gamma
+    lda #1 : sta tmp : lda #0 : sta tmp+1
+.gamma_loop
+    jsr bit : bcs gamma_done
+    jsr bit : rol tmp : rol tmp+1
+    jmp gamma_loop
+.gamma_done
+    rts
+\ C = the next bit (a new byte of them when those run out)
+.bit
+    asl UBITS : bne bit_done
+    jsr get : sec : rol a : sta UBITS
+.bit_done
     rts
 .get
     lda (src),y
     inc src : bne got : inc src+1 : .got
-    ora #0                                  \ (flags from the byte)
     rts
 .put
     sta (dp),y
@@ -5446,6 +5479,9 @@ ASSERT MAX_BG <= &50
     lda u_nl : sta sp : lda u_nh : clc : adc #HI(LINK_LO) : sta sp+1
     rts
 
+\ Where each level is in the pack, and the moving meanies' settings (only the
+\ loader needs them, so they're packed with it)
+INCLUDE "src/gen/levels.asm"
 .overlay_end
 PRINT "Loader overlay:", overlay_end - overlay_start, "bytes"
 IF PASS = 1
