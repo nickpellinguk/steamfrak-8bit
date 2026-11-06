@@ -33,6 +33,10 @@ SYSVIA_ORA_HS = &FE41               \ port A with handshake
 .last_nh    EQUB 0, 0, 0
 .last_att   EQUB 0, 0, 0, 0             \ (not 15, so the first tick silences everything)
 .last_noise EQUB 0
+.snd_owner  EQUB &FF, &FF, &FF          \ the voice each tone channel is playing (&FF: none)
+.snd_y      EQUB 0
+.snd_qa     EQUB 0
+.snd_qc     EQUB 0
 .v_on       SKIP NV                     \ per voice (the tracks, then the two sound effects)
 .v_base     SKIP NV
 .v_chan     SKIP NV

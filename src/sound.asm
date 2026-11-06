@@ -6,9 +6,9 @@
 \ track's notes start on quarter beats, and each note has an amplitude envelope
 \ (attack, decay, sustain, release, from the BBC Micro style ENVELOPEs) and a
 \ pitch envelope, stepped every tick. Tracks share the sound chip's three tone
-\ channels (tools/music.py gives each one; on a clash the first track wins) and
-\ the drums have the noise channel. Sound effects are notes on two more voices,
-\ which take over a tone channel (TONE_SFX_CHANNEL) or the noise channel.
+\ channels, given out each tick (see snd_output), and the drums have the noise
+\ channel. Sound effects are notes on two more voices: one takes a tone channel
+\ (the quietest, if none is free), the other the noise channel.
 \
 \ The game asks for things through main RAM (see play_music and play_sfx):
 \ snd_music_req (a tune, 0 to stop), snd_sfx_req (a sound effect, SFX_STOP to
@@ -348,26 +348,55 @@ INCLUDE "src/gen/music.asm"
     rts
 }
 
-\ Give the sound chip's channels to their voices, writing only what's changed
+\ Give the sound chip's channels to their voices, writing only what's changed.
+\ The three tone channels are shared out each tick: a voice that's sounding keeps
+\ its channel; one that starts takes a free channel, else the channel of a voice
+\ at least 8dB quieter (the tail of a note, say); the tone sound effect takes a
+\ free channel, else the quietest. (The drums have the noise channel.)
 .snd_output
 {
+    \ 1. the channels of voices that have stopped (or aren't wanted) are free
+    ldx #2
+.free
+    ldy snd_owner,x : bmi free_next
+    jsr snd_wanted : bcs free_next
+    lda #&FF : sta snd_owner,x
+.free_next
+    dex : bpl free
+    \ 2. each voice that's wanted but has no channel: the sound effect, then the tracks
+    ldy #SFX_TONE
+.place
+    jsr snd_wanted : bcc place_next
+    tya : ldx #2
+.has
+    cmp snd_owner,x : beq place_next
+    dex : bpl has
+    ldx #2
+.free_ch
+    lda snd_owner,x : bmi take
+    dex : bpl free_ch
+    \ none free: the quietest channel (the highest attenuation)
+    sty snd_y
+    lda #0 : sta snd_qa
+    ldx #2
+.quiet
+    ldy snd_owner,x : lda v_att,y : cmp snd_qa : bcc quiet_next
+    sta snd_qa : stx snd_qc
+.quiet_next
+    dex : bpl quiet
+    ldy snd_y : ldx snd_qc
+    cpy #SFX_TONE : beq take
+    lda v_att,y : clc : adc #4 : cmp snd_qa : beq take : bcs place_next
+.take
+    tya : sta snd_owner,x
+.place_next
+    cpy #SFX_TONE : bne next_track : ldy #&FF
+.next_track
+    iny : cpy #MAX_TRACKS : bne place
+    \ 3. each channel: its voice's pitch and attenuation
     ldx #0
 .channel
-    \ the tone sound effect, if it's sounding on this channel
-    cpx #TONE_SFX_CHANNEL : bne tracks
-    ldy #SFX_TONE : lda v_att,y : cmp #15 : bcc got
-.tracks
-    \ else the first track of this channel that's sounding
-    lda snd_music_opt : cmp #2 : beq none
-    ldy #0
-.find
-    lda v_on,y : beq find_next
-    txa : cmp v_chan,y : bne find_next
-    lda v_att,y : cmp #15 : bcc got
-.find_next
-    lda snd_music_opt : bne none            \ (just the first track)
-    iny : cpy #MAX_TRACKS : bne find
-.none
+    ldy snd_owner,x : bpl got
     lda #15 : bne set_att
 .got
     lda v_nl,y : cmp last_nl,x : bne new_n
@@ -386,9 +415,7 @@ INCLUDE "src/gen/music.asm"
     sta last_att,x
     ora chan_bits,x : ora #&90 : jsr sn_write               \ 1 cc 1 aaaa
 .same_att
-    inx : cpx #3 : beq noise
-    jmp channel
-.noise
+    inx : cpx #3 : bne channel
 
     \ the noise channel: the noise sound effect, else the drums (only with all the tracks)
     ldy #SFX_NOISE : lda v_att,y : cmp #15 : bcc n_got
@@ -417,6 +444,23 @@ INCLUDE "src/gen/music.asm"
 .n_done
     rts
 .chan_bits EQUB &00, &20, &40
+}
+
+\ Carry set if voice Y should be heard on a tone channel now: sounding, and the
+\ tone sound effect or a tone track that the music option lets play. X kept.
+.snd_wanted
+{
+    lda v_att,y : cmp #15 : bcs no
+    cpy #SFX_TONE : beq yes
+    lda v_on,y : beq no
+    lda v_chan,y : cmp #3 : beq no
+    lda snd_music_opt : beq yes
+    cmp #2 : beq no
+    cpy #0 : bne no                     \ (just the first track)
+.yes
+    sec : rts
+.no
+    clc : rts
 }
 
 \ Write A to the sound chip

@@ -190,21 +190,35 @@ writes them for the player, `src/sound.asm`:
   ramps, as straight lines at 50Hz) and pitch envelope (resampled from 60Hz) move on, and the
   pitch becomes the sound chip's 10-bit divider (a table for one octave of eighth-semitones,
   shifted for higher octaves).
-* The chip has three tone channels and a noise channel. The converter gives each track a tone
-  channel, picking the one it clashes with least; when two tracks on one channel sound at once,
-  the first (the bass, usually) wins. Drums are noise (the Steam version's drums are recordings
-  of the BBC's own white noise at its three rates, so they map straight back). Only changes are
-  written to the chip.
+* The chip's lowest note is about 122Hz (a divider of 1023). The bass lines of four tunes (A
+  Little Bag of Weed, The Man Who Once Was I, the victory tune and the select screen's) go
+  lower, so those tracks are played an octave up all through (rather than only their lowest
+  notes, which broke the tune up).
+* The chip has three tone channels and a noise channel, and the tunes have up to six tone
+  tracks, though rarely more than three sound at once. The channels are given out each tick
+  (`snd_output`): a voice that's sounding keeps its channel; one that starts takes a free
+  channel, else the channel of a voice at least 8dB quieter (the tail of a note, say); the tone
+  sound effect takes a free channel, else the quietest, so it no longer cuts out the tune.
+  Drums are noise (the Steam version's drums are recordings of the BBC's own white noise at its
+  three rates, so they map straight back). Only changes are written to the chip.
 * Loudness: the chip has 16 levels, 2dB apart. The Steam version's drums are about 20dB louder
   than its tunes (its noise samples are quiet, so it turned them up), which here would leave the
   tunes barely audible, so each instrument is set against the loudest of its kind instead.
-* Sound effects are notes on two more voices that take over a tone channel or the noise
-  channel while they sound: their pitches, pitch sweeps and loudness come from the Steam
+* Sound effects are notes on two more voices, one on a tone channel and one taking over the
+  noise channel while it sounds: their pitches, pitch sweeps and loudness come from the Steam
   version's samples (Ching rises from about 450 to 650Hz as it fades; Squeal goes up and down
   a minor third; Pop, the dagger hit and footsteps are bursts of noise).
 * The game asks for tunes and sound effects by setting a byte in main RAM (`play_music`,
   `play_sfx`); the player picks them up on its next tick. M and S are read by the player too,
   so they work everywhere.
+* `tools/emu/music8.mjs` checks the player against the Steam version: it runs the web
+  version's `js/audio.js` itself (its WebAudio calls caught) and the game's own player (on a
+  6502 interpreter, catching the sound chip writes, or with `--live` as jsbeeb hears it in a
+  level), and reports, for each track, the notes and drum hits that aren't on the chip, how much
+  of the time it sounds it's there, and how loud. With `--sfx`, sound effects interrupt.
+  Everything is there but a few clashing note tails (and the raised bass lines). One known
+  difference: when a tune loops, the original fast-forwards through its introduction with the
+  sound on, so a note left sounding at the end of it carries on; here it's cut off.
 
 ### Levels
 
