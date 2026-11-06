@@ -4129,12 +4129,13 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
     \ byte columns and the pixel within the first and last
     lda left : and #3 : sta hl_p0
     lda tmp : and #3 : sta hl_p1
-    lda left+1 : lsr a : lda left : ror a : lsr a : sta hl_c0
-    lda left+1 : lsr a : lsr a : beq on_level        \ off the level?
+    lda left+1 : cmp #4 : bcc on_level              \ off the level?
     rts
 .on_level
-    lda tmp+1 : lsr a : lda tmp : ror a : lsr a : sta hl_c1
-    lda tmp+1 : lsr a : lsr a : beq c1_ok : lda #255 : sta hl_c1
+    sta hl_c0 : lda left : lsr hl_c0 : ror a : lsr hl_c0 : ror a : sta hl_c0     \ (x / 4)
+    lda #255 : sta hl_c1
+    lda tmp+1 : cmp #4 : bcs c1_ok
+    sta hl_c1 : lda tmp : lsr hl_c1 : ror a : lsr hl_c1 : ror a : sta hl_c1
 .c1_ok
     \ screen address of the first column on this row
     lda p_y : and #7 : sta hl_line
