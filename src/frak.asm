@@ -77,6 +77,8 @@ KEY_UP      = &C6           \ -58
 KEY_DOWN    = &D6           \ -42
 KEY_P       = &C8           \ -56
 KEY_SPACE   = &9D           \ -99
+KEY_RETURN  = &B6           \ -74
+KEY_Y       = &BB           \ -69
 
 \ ------------------------------------------------------------------------------
 \ Zero page
@@ -320,6 +322,12 @@ ORG &0E00
 .pl_i0      SKIP 1          \ ... and its cells to paint
 .pl_i1      SKIP 1
 .cpage      SKIP 1
+.txt_col    SKIP 1          \ text: where (byte column, pixel row) and colour
+.txt_y      SKIP 1
+.txt_colour SKIP 1
+.txt_i      SKIP 1
+.txt_i2     SKIP 1
+.txt_glyph  SKIP 8
 .t_part_b   SKIP 1          \ Trogg's second image (legs), 255 if none
 .pages1     SKIP 1          \ non-zero if the background's dictionary has more than one page
 .u_sx       SKIP 1
@@ -392,6 +400,7 @@ INCLUDE "src/gen/tables.asm"
     \ game runs (routines that page in other banks put it back afterwards)
     lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL
     jsr install_vsync_counter
+    jsr attract_screen
     lda #START_LEVEL : jsr load_playable
 }
 
@@ -1597,6 +1606,79 @@ WIN_FRAMES = 150                    \ (game ticks)
 \ ------------------------------------------------------------------------------
 \ Keyboard
 \ ------------------------------------------------------------------------------
+
+\ ------------------------------------------------------------------------------
+\ Text, in the MOS's font (characters 32-127 are in sideways ROM 15 at &B900,
+\ 8 bytes each, top row first, leftmost pixel in bit 7). Each character is 8
+\ pixels wide, so 2 bytes of MODE 1, drawn masked in colour txt_colour.
+\ ------------------------------------------------------------------------------
+
+FONT_ROM = 15
+FONT = &B900
+
+\ Print the string after the JSR: its byte column (0-79), pixel row, then the
+\ characters, ending with 0. Returns to the code after it.
+.print_inline
+{
+    pla : sta src : pla : sta src+1                 \ (the address of the last byte of the JSR)
+    ldy #1 : lda (src),y : sta txt_col
+    iny : lda (src),y : sta txt_y
+.loop
+    iny : lda (src),y : beq done
+    sty txt_i
+    jsr print_char
+    ldy txt_i
+    inc txt_col : inc txt_col
+    jmp loop
+.done
+    tya : clc : adc src : tax : lda src+1 : adc #0 : pha : txa : pha
+    rts
+}
+
+\ Draw character A at byte column txt_col, pixel row txt_y
+.print_char
+{
+    \ its 8 rows, from the font in ROM 15
+    sec : sbc #32 : sta pt : lda #0 : sta pt+1
+    asl pt : rol pt+1 : asl pt : rol pt+1 : asl pt : rol pt+1
+    lda pt : clc : adc #LO(FONT) : sta pt : lda pt+1 : adc #HI(FONT) : sta pt+1
+    sei
+    lda #FONT_ROM : sta ROMSEL
+    ldy #7
+.fetch
+    lda (pt),y : sta txt_glyph,y : dey : bpl fetch
+    lda ROMSEL_COPY : sta ROMSEL
+    cli
+    \ each row: 2 screen bytes, from the left and right 4 pixels
+    lda #0 : sta txt_i2
+.row
+    lda txt_y : clc : adc txt_i2 : tax              \ the pixel row
+    and #7 : sta tmp+1
+    txa : lsr a : lsr a : lsr a : tax
+    lda #0 : sta tmp
+    lda txt_col : asl a : rol tmp : asl a : rol tmp : asl a : rol tmp
+    clc : adc tmp+1 : adc rowaddr_lo,x : sta ptr
+    lda tmp : adc rowaddr_hi,x : cmp #&80 : bcc ok : sbc #&50 : .ok : sta ptr+1
+    ldx txt_i2 : lda txt_glyph,x
+    pha : lsr a : lsr a : lsr a : lsr a : ldy #0 : jsr txt_nibble
+    pla : and #15 : ldy #8 : jsr txt_nibble
+    inc txt_i2 : lda txt_i2 : cmp #8 : bne row
+    rts
+}
+
+\ Draw 4 pixels (A = a nibble, leftmost in bit 3) at (ptr),Y in txt_colour
+.txt_nibble
+{
+    sta tmp
+    asl a : asl a : asl a : asl a : ora tmp : eor #&FF   \ mask: the 4 pixels' bits clear
+    and (ptr),y : sta tmp+1
+    lda txt_colour : lsr a : bcc no_lo : lda tmp : ora tmp+1 : sta tmp+1 : .no_lo
+    lda txt_colour : and #2 : beq no_hi
+    lda tmp : asl a : asl a : asl a : asl a : ora tmp+1 : sta tmp+1
+.no_hi
+    lda tmp+1 : sta (ptr),y
+    rts
+}
 
 \ Copy the level loader from bank 7 to OVERLAY_RUN (in main RAM's screen
 \ memory), blanking the screen first so it doesn't show
@@ -3629,6 +3711,75 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
 \ Pixel masks (both bits of each pixel) for "pixel p and to its right" / "up to pixel p"
 .left_pixels  EQUB &FF, &77, &33, &11
 .right_pixels EQUB &88, &CC, &EE, &FF
+
+\ ------------------------------------------------------------------------------
+\ The first attract screen ("The Cast", as in the Steam version's oDemoBubble).
+\ Its layout is the Steam version's 256-pixel-wide screen, centred (32 pixels in).
+\ ------------------------------------------------------------------------------
+
+MACRO CAST_SPRITE img, x, y
+    lda #img : sta p_img
+    lda #LO(x + 32) : sta p_x : lda #HI(x + 32) : sta p_x+1
+    lda #LO(y) : sta p_y : lda #HI(y) : sta p_y+1
+    jsr plot
+ENDMACRO
+\ text at Steam position (x, y): byte column (x + 32) / 4
+MACRO CAST_TEXT x, y, text
+    jsr print_inline
+    EQUB (x + 32) DIV 4, y
+    EQUS text, 0
+ENDMACRO
+\ centred, as the Steam version's centre(): x = 128 - length * 4
+MACRO CAST_CENTRE y, text
+    CAST_TEXT 128 - LEN(text) * 4, y, text
+ENDMACRO
+
+.attract_screen
+{
+    \ main RAM's screen, unscrolled, cleared, on show
+    lda #0 : sta back : sta scrollcol : sta scrollrow
+    jsr select_back : jsr show_back
+    jsr set_crtc_start : jsr set_window_clip
+    jsr clear_screen
+    ldx #0
+.colours
+    lda vdu_colours,x : jsr OSWRCH : inx : cpx #vdu_init_end - vdu_colours : bne colours
+    lda #2 : jsr set_bg                             \ green, as the Steam version's start room
+    lda #PM_PLOT : sta p_mode
+    lda #1 : sta txt_colour                         \ black
+    CAST_SPRITE IMG_Frak, 128 - 28, 8 * 3 + 6
+    CAST_CENTRE 10 + 8 * 3, "The Cast"
+    CAST_CENTRE 10 + 8 * 4, "--------"
+    CAST_SPRITE IMG_TroggBody_r, 64, 8 * 10 + 4
+    CAST_SPRITE IMG_TroggLegs_r_0, 64, 8 * 10 + 4
+    CAST_TEXT 192 - 20, 10 + 8 * 7, "Trogg"
+    CAST_CENTRE 10 + 8 * 10, "vs."
+    CAST_SPRITE IMG_Scrubbly, 64, 8 * 17
+    CAST_TEXT 192 - 32, 10 + 8 * 13, "Scrubbly"
+    CAST_SPRITE IMG_Hooter, 64, 8 * 21 - 4
+    CAST_TEXT 192 - 24, 10 + 8 * 17 + 4, "Hooter"
+    CAST_SPRITE IMG_Poglet, 64, 8 * 25
+    CAST_TEXT 192 - 24, 10 + 8 * 22, "Poglet"
+    CAST_CENTRE 256 - 10 - 8 * 3, "Collect all the keys to win!"
+    CAST_CENTRE 256 - 10 - 8 * 1, "(C) 1984-2026 Nick Pelling"
+    \ wait for Space, Return, P or Y (let go of any already down first)
+.release
+    jsr any_start_key : bne release
+.wait
+    jsr any_start_key : beq wait
+    rts
+}
+
+\ A non-zero if Space, Return, P or Y is pressed
+.any_start_key
+{
+    lda #KEY_SPACE : jsr key_pressed : bne yes
+    lda #KEY_RETURN : jsr key_pressed : bne yes
+    lda #KEY_P : jsr key_pressed : bne yes
+    lda #KEY_Y : jsr key_pressed
+.yes
+    rts
+}
 
 \ Choose the next level: A, or the first after it that can be played
 .load_playable
