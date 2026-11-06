@@ -384,6 +384,7 @@ ORG &0E00
 .txt_glyph  SKIP 8
 .t_part_b   SKIP 1          \ Trogg's second image (legs), 255 if none
 .pages1     SKIP 1          \ non-zero if the background's dictionary has more than one page
+.bg_have    SKIP 1          \ the level whose background is unrolled in bank 7, plus 1 (0: none)
 .u_sx       SKIP 1
 .cmask      SKIP 30         \ a background line's masks
 .ds_base    SKIP 1          \ draw_slow: index of this buffer's drawn records
@@ -449,24 +450,15 @@ INCLUDE "src/gen/tables.asm"
     sta &0E00,x : sta &0F00,x : sta &1000,x
     inx : bne clear_vars
     jsr bring_overlay
-    jsr copy_pack                   \ (before MODE 1 clears the screen it was loaded into)
-    \ Disable Escape, set up MODE 1 with no cursor
-    lda #229 : ldx #1 : ldy #0 : jsr OSBYTE
+    jsr boot                        \ (in the overlay)
+    \ Set up MODE 1 with no cursor (which clears the overlay, so not from there)
     ldx #0
 .vdu_loop
     lda vdu_init,x : jsr OSWRCH
     inx : cpx #vdu_init_end - vdu_init : bne vdu_loop
-    \ The level data lives in sideways RAM bank 6 and stays paged in while the
-    \ game runs (routines that page in other banks put it back afterwards)
-    lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL
-    lda #&FF : sta snd_music_req : sta snd_sfx_req : sta snd_sfx_req2
-    lda #0 : sta snd_music_opt : sta snd_sfx_opt : sta snd_cur
-    jsr install_vsync_counter
-    lda #DIFFICULTY : sta difficulty
-    lda #START_LEVEL : sta last_level
-    lda #0 : sta fe_top_sel
     lda #0 : jsr front_end          \ the attract screen and the menus
     jsr load_playable
+    jmp redraw_all
 }
 
 \ Double buffering: the screen is drawn in whichever of main RAM (buffer 0) and
@@ -475,22 +467,6 @@ INCLUDE "src/gen/tables.asm"
 \ own copy of the background saved under Trogg.
 
 \ Start (or restart) the level from scratch
-.level_start
-{
-    ldx #MAX_OBJECTS - 1
-.objs
-    lda #0 : cpx num_draw : bcs gone : lda #1 : .gone
-    sta alive,x : dex : bpl objs
-    lda #0 : sta keys_found : sta gems_found : sta have_cp : sta save_cp : sta restarts
-    sta lvl_ticks : sta lvl_ticks+1 : sta win_ticks : sta win_ticks+1
-    sta bal_timer : sta dag_timer
-    lda vsyncs : ora #1 : sta rng : lda #&5A : sta rng+1
-    jsr slow_init
-    lda trogg_x0 : sta tx : lda trogg_x0+1 : sta tx+1
-    lda trogg_y0 : sta ty : lda trogg_y0+1 : sta ty+1
-    lda #0 : sta tface : sta tyf : sta tv
-    jmp redraw_all
-}
 
 \ Go back to the last checkpoint (the state saved after collecting a key)
 .restore_checkpoint
@@ -718,16 +694,17 @@ INCLUDE "src/gen/tables.asm"
     lda have_cp : beq from_scratch          \ TICK_DIED: restart
     jmp restore_checkpoint
 .from_scratch
-    jmp level_start
+    lda cur_level : jsr load_playable       \ (no checkpoint: the level again, as GameMaker's room_restart)
+    jmp redraw_all
 .next_level
     jsr record_result
     lda cur_level : clc : adc #1 : jsr load_playable
-    jmp level_start
+    jmp redraw_all
 .to_menu
     lda cur_level : sta last_level
     lda #1 : jsr front_end          \ (Escape: back to the menus)
     jsr load_playable
-    jmp level_start
+    jmp redraw_all
 .next_tick
     dec ticks_left : bne tick
     jmp main_loop
@@ -870,15 +847,6 @@ EVNTV = &0220
     sec : rts
 }
 
-.install_vsync_counter
-{
-    sei
-    lda EVNTV : sta old_evntv+1 : lda EVNTV+1 : sta old_evntv+2
-    lda #LO(vsync_event) : sta EVNTV : lda #HI(vsync_event) : sta EVNTV+1
-    cli
-    lda #14 : ldx #4 : jsr OSBYTE   \ enable the vertical sync event
-    rts
-}
 
 \ Slow save areas (in sideways RAM) for meanies flying off
 .slowsave_bank  EQUB SLOWSAVE0_BANK, LEVEL_BANK
@@ -1859,6 +1827,7 @@ FONT = &B900
 .front_end
 {
     pha
+    lda #0 : sta bg_have            \ (the front end goes where the background was)
     lda #FRONT_BANK : sta ROMSEL_COPY : sta ROMSEL
     jsr fe_stage                    \ (the packed front end to the hidden screen)
     lda #CACHE_BANK : sta ROMSEL_COPY : sta ROMSEL
@@ -2808,19 +2777,6 @@ ENDMACRO
     rts
 }
 
-\ For the level loader's bg_items: if platform X is bouncy, background item Y
-\ (then Y + 1) is its spring. X kept.
-.spring_item
-{
-    lda plat_bouncy,x : beq done
-    jsr spring_pos
-    lda #IMG_Spring : sta BG_IMG,y
-    lda p_x : sta BG_XL,y : lda p_x+1 : sta BG_XH,y
-    lda p_y : sta BG_YL,y : lda p_y+1 : sta BG_YH,y
-    iny
-.done
-    rts
-}
 
 \ Draw (into the draw log) the springs of the bouncy platforms that move: they
 \ can't be in the background like the others. A platform Trogg can move has a
@@ -3364,32 +3320,6 @@ YOYO_HIT_SPEED = 8                  \ pixels a tick that a yoyoed meanie flies o
 SLOW_PAUSE = 30                     \ platforms pause this long at each end
 HOOTER_GRAVITY = 13                 \ 0.05 pixels/tick^2 in 8.8 fixed point
 
-\ Start of level: everything at its starting position
-.slow_init
-{
-    ldx #MAX_SLOW - 1
-.loop
-    lda #0 : cpx num_slow : bcs dead : lda #1 : .dead
-    sta s_alive,x
-    lda #0 : sta s_xf,x : sta s_yf,x
-    lda sl_x0l,x : sta s_xl,x : lda sl_x0h,x : sta s_xh,x
-    lda sl_y0l,x : sta s_yl,x : lda sl_y0h,x : sta s_yh,x
-    lda sl_vf,x : sta s_vf,x : lda sl_vi,x : sta s_vi,x
-    lda sl_kind,x : cmp #SL_HOOTER : bne vel_ok
-    lda #0 : sta s_vf,x : sta s_vi,x        \ Hooters start still, then jump
-.vel_ok
-    lda sl_vy,x : sta s_vy,x
-    lda sl_wait,x : sta s_wait,x
-    dex : bpl loop
-    ldx #MAX_PLATS - 1
-.plats
-    lda plat_x0l,x : sta plat_xl,x : lda plat_x0h,x : sta plat_xh,x
-    lda plat_y0l,x : sta plat_yl,x : lda plat_y0h,x : sta plat_yh,x
-    dex : bpl plats
-    lda #255 : sta cur_plat : sta carry
-    lda #0 : sta dropped
-    rts
-}
 
 \ Checkpoints: copy the moving state (and platform positions) to / from the copies
 MACRO COPY_SLOW from, to
@@ -4402,7 +4332,7 @@ ENDMACRO
     lda cur_level : clc : adc #1
     jmp try
 .done
-    rts
+    jmp level_init                  \ (in the overlay too)
 }
 
 .logic_end
@@ -4991,8 +4921,13 @@ ROMSEL_ANDY = &80                   \ ROMSEL bit 7: ANDY at &8000-&8FFF
     inx : bne unused
 .unused_done
 
+    \ (the background is still in bank 7 if it was this level's, as when it's
+    \ reloaded after Trogg dies with no checkpoint)
+    ldx cur_level : inx : cpx bg_have : beq bg_kept
     jsr bg_items
     jsr unroll_bg
+    ldx cur_level : inx : stx bg_have
+.bg_kept
     clc
     rts
 }
@@ -5725,6 +5660,93 @@ ASSERT MAX_BG <= &50
 \ Where each level is in the pack, and the moving meanies' settings (only the
 \ loader needs them, so they're packed with it)
 INCLUDE "src/gen/levels.asm"
+\ A level's start (when it's loaded, or reloaded after Trogg dies with no
+\ checkpoint): its objects, Trogg, the timer and the moving things. Then
+\ redraw_all.
+.level_init
+{
+    ldx #MAX_OBJECTS - 1
+.objs
+    lda #0 : cpx num_draw : bcs gone : lda #1 : .gone
+    sta alive,x : dex : bpl objs
+    lda #0 : sta keys_found : sta gems_found : sta have_cp : sta save_cp : sta restarts
+    sta lvl_ticks : sta lvl_ticks+1 : sta win_ticks : sta win_ticks+1
+    sta bal_timer : sta dag_timer
+    lda vsyncs : ora #1 : sta rng : lda #&5A : sta rng+1
+    jsr slow_init
+    lda trogg_x0 : sta tx : lda trogg_x0+1 : sta tx+1
+    lda trogg_y0 : sta ty : lda trogg_y0+1 : sta ty+1
+    lda #0 : sta tface : sta tyf : sta tv
+    rts
+}
+
+\ Start of level: everything at its starting position
+.slow_init
+{
+    ldx #MAX_SLOW - 1
+.loop
+    lda #0 : cpx num_slow : bcs dead : lda #1 : .dead
+    sta s_alive,x
+    lda #0 : sta s_xf,x : sta s_yf,x
+    lda sl_x0l,x : sta s_xl,x : lda sl_x0h,x : sta s_xh,x
+    lda sl_y0l,x : sta s_yl,x : lda sl_y0h,x : sta s_yh,x
+    lda sl_vf,x : sta s_vf,x : lda sl_vi,x : sta s_vi,x
+    lda sl_kind,x : cmp #SL_HOOTER : bne vel_ok
+    lda #0 : sta s_vf,x : sta s_vi,x        \ Hooters start still, then jump
+.vel_ok
+    lda sl_vy,x : sta s_vy,x
+    lda sl_wait,x : sta s_wait,x
+    dex : bpl loop
+    ldx #MAX_PLATS - 1
+.plats
+    lda plat_x0l,x : sta plat_xl,x : lda plat_x0h,x : sta plat_xh,x
+    lda plat_y0l,x : sta plat_yl,x : lda plat_y0h,x : sta plat_yh,x
+    dex : bpl plats
+    lda #255 : sta cur_plat : sta carry
+    lda #0 : sta dropped
+    rts
+}
+
+\ For the level loader's bg_items: if platform X is bouncy, background item Y
+\ (then Y + 1) is its spring. X kept.
+.spring_item
+{
+    lda plat_bouncy,x : beq done
+    jsr spring_pos
+    lda #IMG_Spring : sta BG_IMG,y
+    lda p_x : sta BG_XL,y : lda p_x+1 : sta BG_XH,y
+    lda p_y : sta BG_YL,y : lda p_y+1 : sta BG_YH,y
+    iny
+.done
+    rts
+}
+
+\ Once, at boot (from start, before MODE 1 clears the screen this runs in)
+.boot
+{
+    jsr copy_pack                   \ (before MODE 1 clears the screen it was loaded into)
+    lda #229 : ldx #1 : ldy #0 : jsr OSBYTE     \ (Escape disabled)
+    \ The level data lives in sideways RAM bank 6 and stays paged in while the
+    \ game runs (routines that page in other banks put it back afterwards)
+    lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL
+    lda #&FF : sta snd_music_req : sta snd_sfx_req : sta snd_sfx_req2
+    lda #0 : sta snd_music_opt : sta snd_sfx_opt : sta snd_cur
+    jsr install_vsync_counter
+    lda #DIFFICULTY : sta difficulty
+    lda #START_LEVEL : sta last_level
+    lda #0 : sta fe_top_sel
+    rts
+}
+.install_vsync_counter
+{
+    sei
+    lda EVNTV : sta old_evntv+1 : lda EVNTV+1 : sta old_evntv+2
+    lda #LO(vsync_event) : sta EVNTV : lda #HI(vsync_event) : sta EVNTV+1
+    cli
+    lda #14 : ldx #4 : jsr OSBYTE   \ enable the vertical sync event
+    rts
+}
+
 .overlay_end
 PRINT "Loader overlay:", overlay_end - overlay_start, "bytes"
 IF PASS = 1
