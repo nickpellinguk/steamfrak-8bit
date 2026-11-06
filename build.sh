@@ -13,6 +13,7 @@ LEVEL=${LEVEL:-room_A_1}
 DIFFICULTY=${DIFFICULTY:-1}
 INVINCIBLE=${INVINCIBLE:-0}
 python3 tools/convert.py "$STEAMFRAK" "$LEVEL"
+python3 tools/music.py "$STEAMFRAK" src/gen
 # Two passes: the first assembles the front end for tools/pack.py to compress,
 # the second builds the disc with the packed front end in it
 "$BEEBASM" -D PASS=1 -D DIFFICULTY="$DIFFICULTY" -D INVINCIBLE="$INVINCIBLE" -i src/frak.asm -do build/pass1.ssd \

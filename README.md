@@ -38,11 +38,15 @@ another, including the 19 that scroll vertically:
   each difficulty. The level buttons show the level's target time, the best time, and the three
   medals (rating, gems, stopwatch: beating the target time). There's nowhere to save them, so
   they last until the machine is switched off.
-* Collecting every key completes the level: the background flashes and the next level starts
-  (there is no text drawing yet).
+* Music and sound effects, from the Steam version's own (see "Sound" below): the Frak! theme,
+  "A Little Bag of Weed" (levels with Poglets) and "The Man Who Once Was I" (levels with
+  Hooters), the victory tune, the attract, menu and level-select tunes, and Ching, Squeal, Pop,
+  the dagger hit and Trogg's footsteps. M switches the music between all its tracks, just the
+  first (as the Steam version's "mono") and off; S switches the sound effects off and on.
+  Footsteps are heard only when the music isn't playing all its tracks, as in the Steam version.
 
-Not done yet: Trogg-movable platforms, springs, a difficulty menu, timer and medals, sound and
-menus.
+Not done yet: Trogg-movable platforms, springs, the Pugwash tune (an easter egg in a settings
+screen that isn't here).
 
 ## Building
 
@@ -83,6 +87,7 @@ sprite tables, and every byte of the unrolled background) with what the converte
 |---|---|
 | Data converter: sprites, the level pack, jump table | `tools/convert.py` |
 | Level loader: unpacking a level, ladders' extensions, moving platforms' ranges | `fetch_level`, `load_level`, `meanie_settings`, `moving_platform`, `scan_left` etc. |
+| Music and sound effects | `snd_tick`, `snd_quarter_beat`, `snd_voice`, `snd_output` (`src/sound.asm`, bank 5); `play_music`, `play_sfx`, `level_music`, `footsteps`; data: `tools/music.py` |
 | Attract screen and menus | `fe_main`, `fe_attract`, `fe_menus`, `fe_grid` (packed in bank 5, unpacked to bank 7 by `fe_stage` and `fe_unpack`); records: `fe_record`; text: `print_inline`, `print_char` |
 | Unrolling the background into bank 7 | `bg_items`, `unroll_bg`, `unroll_item`, `store_column`, `dict_find` |
 | Copying it back to the screen | `repaint_column`, `repaint_rect`, `cache_seek`, `copy_cell` |
@@ -97,7 +102,7 @@ sprite tables, and every byte of the unrolled background) with what the converte
 | Collisions, pickups, checkpoints | `check_collisions`, `hit_test`, `collide`, `check_checkpoint` |
 | Platform and ladder queries | `platform_find`, `ladder_find` (ports of `PlatformFind` / `LadderFind`) |
 | Trogg movement | `trogg_standing`, `trogg_falling`, `trogg_climbing` (ports of `TroggStanding` etc.) |
-| Generated data | `src/gen/*`, `build/GFX4-5`, `build/SPANS`, `build/PACK`, `build/FRONT.lz` (by `tools/pack.py`) |
+| Generated data | `src/gen/*`, `build/GFX4-5`, `build/SPANS`, `build/PACK`, `build/FRONT.lz` and `build/OVERLAY.lz` (by `tools/pack.py`) |
 
 ### Memory map (Master 128)
 
@@ -107,11 +112,11 @@ sprite tables, and every byte of the unrolled background) with what the converte
 | `&0400-&07FF` | save area for the main-RAM screen buffer (BASIC's workspace, unused); while a level loads, the packed level |
 | `&0900-&0CFF` | save area for the shadow screen buffer (RS423/cassette buffers, soft keys, UDGs); while a level loads, a column of the background and the list of things in it |
 | `&0E00-&10FF` | other variables: object states, checkpoint, draw logs, moving objects |
-| `&1100-&2FFF` | drawing code and its tables, and each image's size and origin (981 bytes free) |
+| `&1100-&2FFF` | drawing code and its tables, each image's size and origin, the sound player's variables, instruments and pitch and loudness tables (113 bytes free) |
 | `&3000-&7FFF` | MODE 1 screen, **double buffered**: main RAM and shadow RAM. While a level loads (with the screen blanked) it holds the loader's workspace (`&3000-&4FFF`: the dictionary's hash table, a row of the background, the lines being built) and the loader itself (`&6000`) |
-| SWRAM banks 4-5 | sprites, pre-shifted, including unshifted copies of the platforms and ladders to unroll backgrounds from (23.1KB); the front end, packed (2.6KB at `&ADC4` in bank 5, see below); where each image's data is, for each shift (`img_bank0-3`, `img_lo0-3`, `img_hi0-3`, 960 bytes at `&B840`: `plot` and the background unroller page bank 5 in to read them); a save area for meanies flying off (the top 1KB of bank 5); **3.6KB free**, in one piece (`&9F58-&ADC3`) |
-| SWRAM bank 6 | collision spans and tables (from `&8000`), the **game logic** (to `&A9CE`), then the current level's tables and the second save area for meanies flying off (398 bytes free). Stays paged in while playing |
-| SWRAM bank 7 | the current level's background, unrolled when it starts (`&8000-&A9FF`, see below), or, while the menus are up, the front end (unpacked to `&8000`); the front end's records and the unpacker (`&AA00`); the code that paints the background; the level loader (`&B000`, 3.9KB, copied to `&6000` when a level loads) |
+| SWRAM banks 4-5 | sprites, pre-shifted, including unshifted copies of the platforms and ladders to unroll backgrounds from (23.1KB); in bank 5 after the sprites, the music and sound effects player and the tunes (4.2KB at `&9F58`, see "Sound"), then the front end, packed (2.6KB, see below), then where shift 3 of each image is (`img_bank3`, `img_lo3`, `img_hi3`, 240 bytes at `&BB10`), then a save area for meanies flying off (the top 1KB); 116 bytes free |
+| SWRAM bank 6 | collision spans and tables (from `&8000`), the **game logic** (to `&A9CE`), then the current level's tables and the second save area for meanies flying off (325 bytes free). Stays paged in while playing |
+| SWRAM bank 7 | the current level's background, unrolled when it starts (`&8000-&A9FF`, see below), or, while the menus are up, the front end (unpacked to `&8000`); the front end's records and the unpacker (`&AA00`); the code that paints the background; where shifts 0-2 of each image are (`img_bank0-2`, `img_lo0-2`, `img_hi0-2`, 720 bytes: `plot` and the background unroller page bank 7 in to read them); the level loader, packed (3.4KB at the top, unpacked to `&6000` when a level loads); 55 bytes free |
 | HAZEL (`&C000-&DFFF`) and ANDY (`&8000-&8FFF`) | **all 55 levels**, packed: 11.8KB, about 215 bytes each. `&8800-&88FF` of ANDY is left to the MOS |
 
 ### The packed front end
@@ -132,9 +137,44 @@ front end can grow to 10.75KB (`&8000-&A9FF`) without needing more of bank 5 tha
 All 55 levels stay in memory, so nothing is loaded from disc after the start. At boot, `!BOOT`
 loads the level pack at `&3000` and `copy_pack` copies it into HAZEL and ANDY with interrupts
 off. HAZEL is normally the filing system's workspace, so the game closes the `!BOOT` file first
-and never uses the disc again. When a level starts, `bring_overlay` blanks the screen and copies the level
-loader into screen memory, `fetch_level` copies the level out (again with interrupts off) and
+and never uses the disc again. When a level starts, `bring_overlay` blanks the screen and unpacks the level
+loader into screen memory (it's packed like the front end, by `tools/pack.py`), `fetch_level` copies the level out (again with interrupts off) and
 `load_level` unpacks it.
+
+### Sound
+
+The Steam (and HTML5) version synthesises its music the way a BBC Micro would: each tune is a
+handful of tracks of note strings (`'c3 G3 A2 -2 e2? +4'`: pitch, length in quarter beats, an
+optional pitch envelope), each note played with an instrument whose loudness follows BBC
+Micro style ENVELOPE parameters (attack, decay, sustain, release). `tools/music.py` reads those
+straight from its `js/audio.js` (parsing the note strings as its `NotesToArray` does) and
+writes them for the player, `src/sound.asm`:
+
+* Each tune keeps the Steam version's structure: its patterns (sub-tracks), stored once, and for
+  each track the order they're played in. A note is usually one byte (pitch and a length of
+  1-3 quarter beats), else two (any length up to 32, and a pitch envelope). All seven tunes take
+  2.4KB.
+* The player runs 50 times a second, from the vertical sync event, with bank 5 paged in. On
+  each quarter beat (a 16-bit tempo accumulator keeps the Steam version's tempo exactly) each
+  track starts its next note; every tick each note's loudness envelope (the Steam version's
+  ramps, as straight lines at 50Hz) and pitch envelope (resampled from 60Hz) move on, and the
+  pitch becomes the sound chip's 10-bit divider (a table for one octave of eighth-semitones,
+  shifted for higher octaves).
+* The chip has three tone channels and a noise channel. The converter gives each track a tone
+  channel, picking the one it clashes with least; when two tracks on one channel sound at once,
+  the first (the bass, usually) wins. Drums are noise (the Steam version's drums are recordings
+  of the BBC's own white noise at its three rates, so they map straight back). Only changes are
+  written to the chip.
+* Loudness: the chip has 16 levels, 2dB apart. The Steam version's drums are about 20dB louder
+  than its tunes (its noise samples are quiet, so it turned them up), which here would leave the
+  tunes barely audible, so each instrument is set against the loudest of its kind instead.
+* Sound effects are notes on two more voices that take over a tone channel or the noise
+  channel while they sound: their pitches, pitch sweeps and loudness come from the Steam
+  version's samples (Ching rises from about 450 to 650Hz as it fades; Squeal goes up and down
+  a minor third; Pop, the dagger hit and footsteps are bursts of noise).
+* The game asks for tunes and sound effects by setting a byte in main RAM (`play_music`,
+  `play_sfx`); the player picks them up on its next tick. M and S are read by the player too,
+  so they work everywhere.
 
 ### Levels
 

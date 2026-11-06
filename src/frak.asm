@@ -27,6 +27,14 @@ SCREEN_COLS = 80            \ byte columns visible across the screen (320 pixels
 WINDOW_W    = 320           \ visible width in level pixels
 
 INCLUDE "src/gen/consts.asm"
+\ Where the packed front end and level loader go (tools/pack.py works these out
+\ from the first pass, which only has to get their sizes)
+IF PASS = 2
+INCLUDE "src/gen/packed.asm"
+ELSE
+FRONTZ_ORG = IMGDIR_ORG
+OVERLAYZ_ORG = &C000
+ENDIF
 
 \ Frame rate: the screen is redrawn at 25 frames a second, and the game logic
 \ runs one tick per vertical sync (50 a second): normally two per drawn frame.
@@ -325,6 +333,12 @@ ORG &0E00
 .pl_i1      SKIP 1
 .cpage      SKIP 1
 .difficulty SKIP 1          \ 1 Easy, 2 Hard, 4 Harder, 6 Insane (0: no balloons or daggers)
+.snd_music_req SKIP 1       \ sound (see src/sound.asm): a tune to start (&FF: none)
+.snd_sfx_req SKIP 1         \ ... sound effects to start (&FF: none)
+.snd_sfx_req2 SKIP 1
+.snd_music_opt SKIP 1       \ ... 0 all the tracks, 1 the first only, 2 no music (M)
+.snd_sfx_opt SKIP 1         \ ... 0 sound effects on, 1 off (S)
+.snd_cur    SKIP 1          \ ... the tune last asked for
 .last_level SKIP 1          \ for "replay last level"
 .fe_sel     SKIP 1          \ front end: the selected button
 .fe_top_sel SKIP 1
@@ -414,6 +428,11 @@ INCLUDE "src/gen/tables.asm"
 
 .start
 {
+    \ (the variables below the code aren't loaded, so start them all at 0)
+    lda #0 : tax
+.clear_vars
+    sta &0E00,x : sta &0F00,x : sta &1000,x
+    inx : bne clear_vars
     jsr bring_overlay
     jsr copy_pack                   \ (before MODE 1 clears the screen it was loaded into)
     \ Disable Escape, set up MODE 1 with no cursor
@@ -425,6 +444,8 @@ INCLUDE "src/gen/tables.asm"
     \ The level data lives in sideways RAM bank 6 and stays paged in while the
     \ game runs (routines that page in other banks put it back afterwards)
     lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL
+    lda #&FF : sta snd_music_req : sta snd_sfx_req : sta snd_sfx_req2
+    lda #0 : sta snd_music_opt : sta snd_sfx_opt : sta snd_cur
     jsr install_vsync_counter
     lda #DIFFICULTY : sta difficulty
     lda #START_LEVEL : sta last_level
@@ -446,7 +467,7 @@ INCLUDE "src/gen/tables.asm"
     lda #0 : cpx num_draw : bcs gone : lda #1 : .gone
     sta alive,x : dex : bpl objs
     lda #0 : sta keys_found : sta gems_found : sta have_cp : sta save_cp : sta restarts
-    sta lvl_ticks : sta lvl_ticks+1
+    sta lvl_ticks : sta lvl_ticks+1 : sta win_ticks : sta win_ticks+1
     sta bal_timer : sta dag_timer
     lda vsyncs : ora #1 : sta rng : lda #&5A : sta rng+1
     jsr slow_init
@@ -477,6 +498,7 @@ INCLUDE "src/gen/tables.asm"
 \ Reset Trogg's movement state and redraw both screen buffers from scratch
 .redraw_all
 {
+    jsr level_music
     lda #ST_STAND : sta tstate
     lda #0 : sta tclimb : sta xvel : sta anim : sta dead : sta won
     sta ud_db : sta lr_db : sta yo_db : sta yo_len : sta yo_len+1
@@ -722,6 +744,7 @@ TICK_QUIT = 3
 .stay
     jsr update_slow
     jsr trogg_update
+    jsr footsteps
     jsr spawn_hazards
     jsr update_movers
     lda dead : bne done
@@ -731,6 +754,23 @@ TICK_QUIT = 3
     lda #TICK_OK : rts
 }
 
+\ Trogg's footsteps (as the Steam version, not while all the music's tracks play)
+.footsteps
+{
+    lda snd_music_opt : beq done
+    lda lvl_ticks
+    ldx tstate : cpx #ST_WALK : bne not_walking
+    and #7 : bne done : beq thud        \ (walking: every 8 ticks)
+.not_walking
+    cpx #ST_CLIMB : bne done
+    ldx tclimb : beq done
+    and #15 : bne done                  \ (climbing: every 16)
+.thud
+    lda #SFX_THUD : jmp play_sfx
+.done
+    rts
+}
+
 \ Count vertical syncs (MOS event 4) so the main loop can pace itself
 EVNTV = &0220
 .vsync_event
@@ -738,10 +778,79 @@ EVNTV = &0220
     php
     cmp #4 : bne chain
     inc vsyncs
+    \ ... and the music and sound effects (src/sound.asm, in MUSIC_BANK)
+    pha : txa : pha : tya : pha
+    lda tblptr : pha : lda tblptr+1 : pha
+    lda #MUSIC_BANK : sta ROMSEL
+    jsr snd_tick
+    lda ROMSEL_COPY : sta ROMSEL
+    pla : sta tblptr+1 : pla : sta tblptr
+    pla : tay : pla : tax : pla
 .chain
     plp
 .^old_evntv
     jmp &FFFF                       \ (operand set to the previous EVNTV)
+}
+
+\ Start tune A (0: silence), even if it's already playing
+.play_music
+{
+    sta snd_cur : sta snd_music_req
+    rts
+}
+
+\ Start tune A unless it's the one playing
+.play_music_new
+{
+    cmp snd_cur : bne play_music
+    rts
+}
+
+\ Start sound effect A (X and Y kept)
+.play_sfx
+{
+    bit snd_sfx_req : bpl second
+    sta snd_sfx_req
+    rts
+.second
+    sta snd_sfx_req2
+    rts
+}
+
+\ Stop the music and the sound effects
+.stop_sounds
+{
+    lda #0 : jsr play_music
+    lda #SFX_STOP : jmp play_sfx
+}
+
+\ The level's tune (as the Steam version): with Poglets, "A Little Bag of Weed";
+\ with Hooters, "The Man Who Once Was I"; else the Frak! theme
+.level_music
+{
+    ldy #TUNE_WEED : lda #IMG_Poglet : jsr level_has : bcs play
+    ldy #TUNE_MAN : lda #IMG_Hooter : jsr level_has : bcs play
+    ldy #TUNE_FRAK
+.play
+    tya : jmp play_music
+}
+
+\ Carry set if image A is one of the level's objects or moving sprites
+.level_has
+{
+    ldx num_draw : beq no_draw
+.draw
+    cmp draw_img - 1,x : beq yes
+    dex : bne draw
+.no_draw
+    ldx num_slow : beq no
+.slow
+    cmp sl_img - 1,x : beq yes
+    dex : bne slow
+.no
+    clc : rts
+.yes
+    sec : rts
 }
 
 .install_vsync_counter
@@ -1328,8 +1437,8 @@ savebuf1 = &0900
 
     \ Sprite data address and bank for this shift (the image addresses are in
     \ DIR_BANK; ROMSEL_COPY too, in case an interrupt pages a ROM)
-    lda #DIR_BANK : sta ROMSEL_COPY : sta ROMSEL
     ldy shift
+    lda dir_bank_tab,y : sta ROMSEL_COPY : sta ROMSEL
     lda shift_lo_tab,y : sta tblptr : lda shift_lo_tab+4,y : sta tblptr+1
     ldy p_img
     lda (tblptr),y : sta dptr
@@ -1425,6 +1534,7 @@ savebuf1 = &0900
     rts
 }
 
+.dir_bank_tab   EQUB CACHE_BANK, CACHE_BANK, CACHE_BANK, DIR_BANK
 .shift_lo_tab   EQUB LO(img_lo0), LO(img_lo1), LO(img_lo2), LO(img_lo3)
                 EQUB HI(img_lo0), HI(img_lo1), HI(img_lo2), HI(img_lo3)
 .shift_hi_tab   EQUB LO(img_hi0), LO(img_hi1), LO(img_hi2), LO(img_hi3)
@@ -1754,7 +1864,7 @@ FONT = &B900
     rts
 }
 
-\ Copy the level loader from bank 7 to OVERLAY_RUN (in main RAM's screen
+\ Unpack the level loader from bank 7 to OVERLAY_RUN (in main RAM's screen
 \ memory), blanking the screen first so it doesn't show
 .bring_overlay
 {
@@ -1764,14 +1874,9 @@ FONT = &B900
     lda ROMSEL_COPY : pha
     lda #CACHE_BANK : sta ROMSEL_COPY : sta ROMSEL
     lda ACCCON : and #&FB : sta ACCCON      \ (the CPU uses main RAM there)
-    lda #LO(OVERLAY_STORE) : sta src : lda #HI(OVERLAY_STORE) : sta src+1
+    lda #LO(OVERLAYZ_ORG) : sta src : lda #HI(OVERLAYZ_ORG) : sta src+1
     lda #LO(OVERLAY_RUN) : sta dp : lda #HI(OVERLAY_RUN) : sta dp+1
-    ldx #HI(overlay_end - overlay_start + 255)
-    ldy #0
-.copy
-    lda (src),y : sta (dp),y : iny : bne copy
-    inc src+1 : inc dp+1
-    dex : bne copy
+    jsr unpack
     pla : sta ROMSEL_COPY : sta ROMSEL
     rts
 }
@@ -1784,6 +1889,7 @@ FONT = &B900
 \ ------------------------------------------------------------------------------
 
 INCLUDE "src/gen/sprites.asm"
+INCLUDE "src/sound_main.asm"
 
 \ Screen address of each character row (level row R lives at char index R*80 MOD 2560)
 .rowaddr_lo
@@ -1868,6 +1974,7 @@ MV_DAGGER = 3
 \ Start a meanie flying off: X = draw-list index, A = whole-pixel x velocity (signed)
 .launch_meanie
 {
+    pha : lda #SFX_SQUEAL : jsr play_sfx : pla
     sta tmp
     jsr find_mover : bcs none       \ no free slot: it just vanishes
     lda #MV_FLYING : sta mv_active,y
@@ -2284,6 +2391,7 @@ ENDMACRO
     jmp trogg_dies
 .pickup
     lda #0 : sta alive,x
+    lda #SFX_CHING : jsr play_sfx
     jsr queue_repaint
     lda draw_kind,x
     cmp #KIND_GEM : bne not_gem
@@ -2668,7 +2776,7 @@ IF INVINCIBLE
     rts                             \ (test builds: INVINCIBLE=1 ./build.sh)
 ENDIF
     lda #50 : sta dead              \ restart in a second (50 game ticks)
-    rts
+    jmp stop_sounds
 }
 
 \ Enter the climbing state, direction from ymove
@@ -2914,7 +3022,7 @@ YOYO_HIT_SPEED = 8                  \ pixels a tick that a yoyoed meanie flies o
     lda yb_t : cmp tmp : lda yb_t+1 : sbc tmp+1 : bcs next
     \ meanie top <= yoyo bottom ?
     lda yo_y : cmp draw_tl,x : lda yo_y+1 : sbc draw_th,x : bcc next
-    \ Hit! It flies off in the yoyo's direction
+    \ Hit! It flies off in the yoyo's direction (launch_meanie squeals)
     lda #1 : sta yo_hit
     lda #0 : sta alive,x
     txa : pha
@@ -2950,6 +3058,8 @@ YOYO_HIT_SPEED = 8                  \ pixels a tick that a yoyoed meanie flies o
     lda yb_t : cmp tmp : lda yb_t+1 : sbc tmp+1 : bvc v4 : eor #&80 : .v4 : bpl mnext     \ yoyo top > bottom
     lda #1 : sta yo_hit
     lda mv_active,x : cmp #MV_FLYING : beq mnext
+    lda #SFX_DAGGER : ldy mv_img,x : cpy #IMG_Balloon : bne m_sfx : lda #SFX_POP : .m_sfx
+    jsr play_sfx
     lda #0 : sta mv_active,x
 .mnext
     dec mvc_i : bmi m_done
@@ -3255,6 +3365,7 @@ ENDMACRO
     jmp next
 .ok4
     \ Hit: it flies off in the yoyo's direction
+    lda #SFX_SQUEAL : jsr play_sfx
     lda #1 : sta yo_hit
     lda #0 : sta s_alive,x
     jsr find_mover : bcc slot
@@ -3861,6 +3972,7 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
 \ pause for 7 seconds, less one for each restart (as the Steam version)
 .level_complete
 {
+    lda #TUNE_VICTORY : jsr play_music
     lda #1 : sta won
     lda #0 : sta bwon : sta bwon + 1
     lda restarts : cmp #3 : bcc r : lda #3 : .r : tax
@@ -3979,7 +4091,7 @@ ENDMACRO
 \ Choose the next level: A, or the first after it that can be played
 .load_playable
 {
-    pha : jsr bring_overlay : pla
+    pha : jsr stop_sounds : jsr bring_overlay : pla
 .try
     cmp #NUM_LEVELS : bcc in_range : lda #0 : .in_range
     jsr load_level : bcc done
@@ -4124,8 +4236,9 @@ PRINT "Bank 6: spans and tables to", ~logic_start, ", logic to", ~logic_end, ", 
 \                row) of the non-empty cells (bit 7 of the first byte = the top
 \                cell, or the leftmost), bit 8 of their numbers and bit 9, then
 \                each non-empty cell's number (low byte)
-\   BG_TOP       the front end's records, then this code
-\   OVERLAY_STORE  the level loader (copied to OVERLAY_RUN when a level loads)
+\   BG_TOP       the front end's records, then this code, then where shifts 0-2
+\                of each image are (img_bank0-2, img_lo0-2, img_hi0-2)
+\   OVERLAYZ_ORG the level loader, packed (unpacked to OVERLAY_RUN when a level loads)
 \ While the menus are up, the front end is unpacked to &8000 instead (it ends
 \ before BG_TOP, so the records stay put).
 \ ------------------------------------------------------------------------------
@@ -4135,7 +4248,7 @@ BG_HI = &8100
 
 CLEAR &8000, &C000
 ORG BG_TOP
-GUARD OVERLAY_STORE
+GUARD OVERLAYZ_ORG
 .bank7_start
 
 \ ---- The part of the front end that stays: the records (they last until the
@@ -4172,9 +4285,11 @@ GUARD OVERLAY_STORE
 \ Unpack the front end from SCREEN (put there by fe_stage, in whichever screen
 \ buffer the CPU is using) to &8000. See tools/pack.py for the format.
 .fe_unpack
-{
     lda #0 : sta src : sta dp
     lda #HI(SCREEN) : sta src+1 : lda #&80 : sta dp+1
+\ Unpack from (src) to (dp)
+.unpack
+{
     ldy #0
 .next
     jsr get : beq done : bmi copy
@@ -4334,9 +4449,11 @@ NEXT
 .bitpos  EQUB &80, &40, &20, &10, &08, &04, &02, &01
 .bitpos_lo EQUB &01, &02, &04, &08, &10, &20, &40, &80
 
+\ Where shifts 0-2 of each image are (plot pages this bank in to look them up)
+INCLUDE "src/gen/imgdir.asm"
 .bank7_end
 SAVE "BANK7", bank7_start, bank7_end
-PRINT "Bank 7: background to", ~BG_TOP, ", code to", ~bank7_end, "(", OVERLAY_STORE - bank7_end, "bytes free )"
+PRINT "Bank 7: background to", ~BG_TOP, ", code and image addresses to", ~bank7_end, "(", OVERLAYZ_ORG - bank7_end, "bytes free )"
 
 
 \ ------------------------------------------------------------------------------
@@ -5053,7 +5170,7 @@ ASSERT MAX_BG <= &50
     stx u_cur
     ldx #0 : lda u_s : beq no_prev : lda u_j : beq no_prev : inx : .no_prev
     stx u_prev
-    lda #DIR_BANK : sta ROMSEL_COPY : sta ROMSEL
+    lda #CACHE_BANK : sta ROMSEL_COPY : sta ROMSEL     \ (shift 0's address is in bank 7)
     lda img_lo0,y : sta dp : lda img_hi0,y : sta dp+1
     lda img_bank0,y : sta u_bank
     lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL
@@ -5264,10 +5381,19 @@ ASSERT MAX_BG <= &50
     rts
 
 .overlay_end
-SAVE "OVERLAY", overlay_start, overlay_end
-ASSERT OVERLAY_STORE + (overlay_end - overlay_start) <= &C000
-ASSERT bank7_end <= OVERLAY_STORE
-PRINT "Loader overlay:", overlay_end - overlay_start, "bytes, kept in bank 7 at", ~OVERLAY_STORE, "(", &C000 - OVERLAY_STORE - (overlay_end - overlay_start), "bytes free )"
+PRINT "Loader overlay:", overlay_end - overlay_start, "bytes"
+IF PASS = 1
+    SAVE "OVERLAY", overlay_start, overlay_end      \ (packed by tools/pack.py for the second pass)
+ELSE
+    ASSERT OVERLAY_SIZE = overlay_end - overlay_start
+    CLEAR &8000, &C000
+    ORG OVERLAYZ_ORG
+    .overlayz_start
+    INCBIN "build/OVERLAY.lz"
+    .overlayz_end
+    SAVE "LOADERZ", overlayz_start, overlayz_end
+    PRINT "Packed loader:", overlayz_end - overlayz_start, "bytes at", ~OVERLAYZ_ORG, "in bank 7"
+ENDIF
 
 \ ------------------------------------------------------------------------------
 \ The front end: the attract screen and the menus (simplified from the Steam
@@ -5351,6 +5477,7 @@ ENDMACRO
 
 .fe_attract
 {
+    lda #TUNE_INTRO : jsr play_music_new
     lda #2 : jsr fe_screen                          \ green, as the Steam start room
     CAST_SPRITE IMG_Frak, 128 - 28, 8 * 3 + 6
     CAST_CENTRE 10 + 8 * 3, "The Cast"
@@ -5433,12 +5560,14 @@ ENDMACRO
     rts
 }
 .next_difficulty EQUB 1, 2, 4, 4, 6, 6, 1
+.fe_tunes EQUB TUNE_SELECT, TUNE_LEVELS
 
 \ A 3x3 grid of buttons (fe_kind: the top menu or a level group), with button
 \ fe_sel selected. Moved around with Z X O K (or the cursor keys); returns with
 \ carry clear and A = fe_sel when one is chosen, carry set on Escape.
 .fe_grid
 {
+    ldx fe_kind : lda fe_tunes,x : jsr play_music_new   \ (as the Steam version's select and level screens)
     lda #6 : jsr fe_screen                          \ cyan
     lda #8 : sta fe_i
 .buttons
@@ -5859,14 +5988,14 @@ ENDIF
 .fe_vars_end
 PRINT "Front end:", front_end_ - front_start, "bytes, unpacked to &8000 in bank", CACHE_BANK, "(", BG_TOP - fe_vars_end, "bytes to spare )"
 
-\ ---- Where each image's data is (bank and address, for each shift). Only
-\ plot and unroll_item read it, paging in DIR_BANK to do so. Just below the
-\ save area in the emptier sprite bank.
+\ ---- Where shift 3 of each image is (bank and address; shifts 0-2 are in bank
+\ 7). plot pages DIR_BANK in to read it. Just below the save area in the
+\ emptier sprite bank.
 CLEAR &8000, &C000
 ORG IMGDIR_ORG
 GUARD SLOWSAVE0_START
 .imgdir_start
-INCLUDE "src/gen/imgdir.asm"
+INCLUDE "src/gen/imgdir3.asm"
 .imgdir_end
 SAVE "IMGDIR", imgdir_start, imgdir_end
 ASSERT imgdir_end = SLOWSAVE0_START
@@ -5874,7 +6003,6 @@ ASSERT imgdir_end = SLOWSAVE0_START
 \ ---- The packed front end, at the top of the emptier sprite bank (below the
 \ save area), and the routine that copies it to the screen for fe_unpack
 IF PASS = 2
-INCLUDE "src/gen/packed.asm"
 ASSERT FRONT_SIZE = front_end_ - front_start    \ (the first pass assembled the same front end)
 CLEAR &8000, &C000
 ORG FRONTZ_ORG
@@ -5903,9 +6031,21 @@ ELSE
 fe_stage = &8000                    \ (a dummy for the first pass)
 ENDIF
 
+\ ---- The music and sound effects player and its data, after the sprites in the
+\ emptier sprite bank (see src/sound.asm)
+MUSIC_BANK = DIR_BANK
+CLEAR &8000, &C000
+ORG SPRITES_END
+GUARD FRONTZ_ORG
+.music_start
+INCLUDE "src/sound.asm"
+.music_end
+SAVE "MUSIC", music_start, music_end
+PRINT "Music:", music_end - music_start, "bytes at", ~SPRITES_END, "in bank", MUSIC_BANK, "(", FRONTZ_ORG - music_end, "bytes free after it )"
+
 INCLUDE "src/gen/disc.asm"
 
 PRINT "Code from", ~code_start, "to", ~end, "(", end - code_start, "bytes ), free:", SCREEN - ram_top
 \ Addresses used by test scripts (profiling and poking variables)
 PRINT "TIMING", ~main_loop, ~t_restore, ~t_scroll, ~t_draw, ~t_vsync, ~t_after_vsync, ~t_logic, ~t_logic_done, ~t_slow, ~t_slow_done
-PRINT "SYMBOLS loops", ~loops, "draw_kind", ~draw_kind, "num_keys", ~num_keys, "lvl_ticks", ~lvl_ticks, "done_valid", ~done_valid, "fe_sel", ~fe_sel, "cur_level", ~cur_level, "num_plats", ~num_plats, "num_ladders", ~num_ladders, "num_draw", ~num_draw, "num_slow", ~num_slow, "plat_w", ~plat_w, "plat_x0l", ~plat_x0l, "plat_x0h", ~plat_x0h, "plat_y0l", ~plat_y0l, "plat_y0h", ~plat_y0h, "plat_moving", ~plat_moving, "lad_xl", ~lad_xl, "lad_xh", ~lad_xh, "lad_yl", ~lad_yl, "lad_yh", ~lad_yh, "lad_hl", ~lad_hl, "lad_hh", ~lad_hh, "lad_ext", ~lad_ext, "draw_img", ~draw_img, "draw_xl", ~draw_xl, "draw_xh", ~draw_xh, "draw_yl", ~draw_yl, "draw_yh", ~draw_yh, "sl_kind", ~sl_kind, "sl_img", ~sl_img, "sl_x0l", ~sl_x0l, "sl_x0h", ~sl_x0h, "sl_y0l", ~sl_y0l, "sl_y0h", ~sl_y0h, "sl_aminl", ~sl_aminl, "sl_aminh", ~sl_aminh, "sl_amaxl", ~sl_amaxl, "sl_amaxh", ~sl_amaxh, "sl_bminl", ~sl_bminl, "sl_bminh", ~sl_bminh, "sl_bmaxl", ~sl_bmaxl, "sl_bmaxh", ~sl_bmaxh, "sl_vf", ~sl_vf, "sl_vi", ~sl_vi, "sl_vy", ~sl_vy, "sl_plat", ~sl_plat, "sl_wait", ~sl_wait, "sl_simple", ~sl_simple, "plat_yh", ~plat_yh, "level_bg", ~level_bg, "trogg_x0", ~trogg_x0, "trogg_y0", ~trogg_y0, "dmg_n", ~dmg_n, "s_alive", ~s_alive, "s_xl", ~s_xl, "s_xh", ~s_xh, "s_yl", ~s_yl, "s_yh", ~s_yh, "cur_plat", ~cur_plat, "plat_xl", ~plat_xl, "plat_xh", ~plat_xh, "plat_yl", ~plat_yl, "mv_img", ~mv_img, "mv_vxi", ~mv_vxi, "mv_vyi", ~mv_vyi, "mv_vyf", ~mv_vyf, "mv_yl", ~mv_yl, "mv_yh", ~mv_yh, "mv_pause", ~mv_pause, "bal_timer", ~bal_timer, "dag_timer", ~dag_timer, "bscroll", ~bscroll, "front", ~front, "vsyncs", ~vsyncs, "yo_len", ~yo_len, "mv_active", ~mv_active, "mv_xl", ~mv_xl, "mv_xh", ~mv_xh, "tface", ~tface, "keys_found", ~keys_found, "gems_found", ~gems_found, "won", ~won, "have_cp", ~have_cp, "restarts", ~restarts, "alive", ~alive, "newcol", ~newcol, "dead", ~dead, "tx", ~tx, "ty", ~ty, "tstate", ~tstate, "fallt", ~fallt, "dead", ~dead, "anim", ~anim, "p_img", ~p_img, "bank", ~bank, "oldbank", ~oldbank, "dptr", ~dptr, "scrollcol", ~scrollcol
+PRINT "SYMBOLS loops", ~loops, "snd_tune", ~snd_tune, "snd_qb", ~snd_qb, "v_phase", ~v_phase, "v_left", ~v_left, "v_ord", ~v_ord, "v_on", ~v_on, "v_att", ~v_att, "snd_music_req", ~snd_music_req, "snd_cur", ~snd_cur, "snd_music_opt", ~snd_music_opt, "snd_sfx_opt", ~snd_sfx_opt, "snd_acc", ~snd_acc, "draw_kind", ~draw_kind, "num_keys", ~num_keys, "lvl_ticks", ~lvl_ticks, "done_valid", ~done_valid, "fe_sel", ~fe_sel, "cur_level", ~cur_level, "num_plats", ~num_plats, "num_ladders", ~num_ladders, "num_draw", ~num_draw, "num_slow", ~num_slow, "plat_w", ~plat_w, "plat_x0l", ~plat_x0l, "plat_x0h", ~plat_x0h, "plat_y0l", ~plat_y0l, "plat_y0h", ~plat_y0h, "plat_moving", ~plat_moving, "lad_xl", ~lad_xl, "lad_xh", ~lad_xh, "lad_yl", ~lad_yl, "lad_yh", ~lad_yh, "lad_hl", ~lad_hl, "lad_hh", ~lad_hh, "lad_ext", ~lad_ext, "draw_img", ~draw_img, "draw_xl", ~draw_xl, "draw_xh", ~draw_xh, "draw_yl", ~draw_yl, "draw_yh", ~draw_yh, "sl_kind", ~sl_kind, "sl_img", ~sl_img, "sl_x0l", ~sl_x0l, "sl_x0h", ~sl_x0h, "sl_y0l", ~sl_y0l, "sl_y0h", ~sl_y0h, "sl_aminl", ~sl_aminl, "sl_aminh", ~sl_aminh, "sl_amaxl", ~sl_amaxl, "sl_amaxh", ~sl_amaxh, "sl_bminl", ~sl_bminl, "sl_bminh", ~sl_bminh, "sl_bmaxl", ~sl_bmaxl, "sl_bmaxh", ~sl_bmaxh, "sl_vf", ~sl_vf, "sl_vi", ~sl_vi, "sl_vy", ~sl_vy, "sl_plat", ~sl_plat, "sl_wait", ~sl_wait, "sl_simple", ~sl_simple, "plat_yh", ~plat_yh, "level_bg", ~level_bg, "trogg_x0", ~trogg_x0, "trogg_y0", ~trogg_y0, "dmg_n", ~dmg_n, "s_alive", ~s_alive, "s_xl", ~s_xl, "s_xh", ~s_xh, "s_yl", ~s_yl, "s_yh", ~s_yh, "cur_plat", ~cur_plat, "plat_xl", ~plat_xl, "plat_xh", ~plat_xh, "plat_yl", ~plat_yl, "mv_img", ~mv_img, "mv_vxi", ~mv_vxi, "mv_vyi", ~mv_vyi, "mv_vyf", ~mv_vyf, "mv_yl", ~mv_yl, "mv_yh", ~mv_yh, "mv_pause", ~mv_pause, "bal_timer", ~bal_timer, "dag_timer", ~dag_timer, "bscroll", ~bscroll, "front", ~front, "vsyncs", ~vsyncs, "yo_len", ~yo_len, "mv_active", ~mv_active, "mv_xl", ~mv_xl, "mv_xh", ~mv_xh, "tface", ~tface, "keys_found", ~keys_found, "gems_found", ~gems_found, "won", ~won, "have_cp", ~have_cp, "restarts", ~restarts, "alive", ~alive, "newcol", ~newcol, "dead", ~dead, "tx", ~tx, "ty", ~ty, "tstate", ~tstate, "fallt", ~fallt, "dead", ~dead, "anim", ~anim, "p_img", ~p_img, "bank", ~bank, "oldbank", ~oldbank, "dptr", ~dptr, "scrollcol", ~scrollcol
