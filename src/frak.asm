@@ -160,7 +160,13 @@ GUARD &90
 \ program (&0E00-&10FF is free on a Master: the DFS workspace is elsewhere)
 ORG &0E00
 .initcol    SKIP 1
-.yo_len     SKIP 2          \ yoyo string length, 8.8 fixed point
+.yo_len     SKIP 2          \ yoyo string length: tenths of a pixel, then pixels
+.yo_turn    SKIP 1          \ yoyo_out: let go of the key, or at full length
+.carry      SKIP 1          \ the movable platform Trogg's carrying, 255 = none
+.dropped    SKIP 1          \ he dropped it on this throw of the yoyo
+.cp_carry   SKIP 1          \ checkpoint copies
+.cp_dropped SKIP 1
+.hl_yel     SKIP 1          \ hline: &F0 for yellow, 0 for black
 .yo_x       SKIP 2
 .yo_y       SKIP 2
 .yo_hit     SKIP 1
@@ -499,6 +505,7 @@ INCLUDE "src/gen/tables.asm"
     lda cp_ty : sta ty : lda cp_ty+1 : sta ty+1 : lda cp_tyf : sta tyf
     lda cp_face : sta tface
     lda cp_bal : sta bal_timer : lda cp_dag : sta dag_timer
+    lda cp_carry : sta carry : lda cp_dropped : sta dropped
     jsr slow_restore_checkpoint
     lda #0 : sta save_cp
 }
@@ -2423,7 +2430,7 @@ ENDMACRO
     lda tstate : cmp #ST_WALK + 1 : bcs done      \ standing or walking only
     \ ... on a platform that isn't moving
     ldx cur_plat : cpx #255 : beq done
-    lda plat_moving,x : bne done
+    lda plat_moving,x : cmp #1 : beq done      \ (Trogg moves the movable ones)
     lda #0 : sta save_cp
     lda #1 : sta have_cp
     ldx #MAX_OBJECTS - 1
@@ -2435,6 +2442,7 @@ ENDMACRO
     lda ty : sta cp_ty : lda ty+1 : sta cp_ty+1 : lda tyf : sta cp_tyf
     lda tface : sta cp_face
     lda bal_timer : sta cp_bal : lda dag_timer : sta cp_dag
+    lda carry : sta cp_carry : lda dropped : sta cp_dropped
     jsr slow_save_checkpoint
 .done
     rts
@@ -2660,7 +2668,23 @@ ENDMACRO
     lda ty : clc : adc tmp : sta ty : lda ty+1 : adc tmp+1 : sta ty+1
     lda #255 : sta cur_plat
 .no_ride
+    lda tstate : pha
     jsr trogg_move
+    pla : cmp #ST_YOYO_OUT : bcs moved      \ (the yoyo states carry a platform themselves)
+    pha : jsr carry_above : pla
+    \ GameMaker puts him on whole pixels when he lands from a fall: rounded up onto
+    \ a platform, rounded (halves to even) onto a ladder
+    cmp #ST_FALL : bne moved
+    ldx tyf : beq moved
+    lda tstate : cmp #ST_STAND : beq inc_y
+    cmp #ST_CLIMB : bne moved
+    cpx #10 : bcc whole : bne inc_y
+    lda ty : lsr a : bcc whole              \ (a half: to the even pixel)
+.inc_y
+    inc ty : bne whole : inc ty+1
+.whole
+    lda #0 : sta tyf
+.moved
     \ remember where his platform is now
     lda cur_plat : cmp #255 : beq done
     lda dead : bne done
@@ -2799,13 +2823,25 @@ ENDMACRO
 }
 
 \ Draw (into the draw log) the springs of the bouncy platforms that move: they
-\ can't be in the background like the others
+\ can't be in the background like the others. A platform Trogg can move has a
+\ yellow line under it.
 .draw_springs
 {
     ldx num_plats
 .loop
     dex : bmi done
     lda plat_moving,x : beq loop
+    cmp #2 : bne spring
+    \ the line, from x to x + w - 1, on the row under it
+    lda plat_xl,x : sta p_x : clc : adc plat_w,x : sta q_x
+    lda plat_xh,x : sta p_x+1 : adc #0 : sta q_x+1
+    lda q_x : bne q1 : dec q_x+1 : .q1 : dec q_x
+    ldy plat_img,x
+    lda plat_yl,x : clc : adc img_h,y : sta p_y : lda plat_yh,x : adc #0 : sta p_y+1
+    lda #&F0 : sta hl_yel
+    txa : pha : jsr log_line : pla : tax
+    lda #0 : sta hl_yel
+.spring
     lda plat_bouncy,x : beq loop
     jsr spring_pos
     lda #IMG_Spring : sta p_img
@@ -3034,42 +3070,60 @@ ENDIF
 \ ------------------------------------------------------------------------------
 \ The yoyo (port of the Yoyoing states of oTrogg and YoyoCollide)
 \
-\ yo_len is the string length in 8.8 fixed point: it grows by 1.3 pixels a tick
-\ while the key is held, up to 80 pixels, then shrinks back at the same rate.
+\ yo_len is the string length, in pixels (yo_len+1) and tenths (yo_len): it grows
+\ by 1.3 pixels a tick while the key is held, until it's 80 pixels or more, then
+\ shrinks back at the same rate. (GameMaker's length is a real, 1.3 times the
+\ ticks out; in tenths it's exact.)
+\
+\ Movable platforms (is_movable_by_trogg): the yoyo picks one up (unless it
+\ dropped one on this throw), Trogg carries it above his head, and letting go of
+\ the yoyo key while the yoyo is going out drops it where the yoyo is.
 \ ------------------------------------------------------------------------------
 
-YOYO_STEP = 333                     \ 1.3 * 256
 YOYO_MAX = 80
 YOYO_HIT_SPEED = 8                  \ pixels a tick that a yoyoed meanie flies off at
 
 .start_yoyo
 {
     lda #ST_YOYO_OUT : sta tstate
-    lda #0 : sta yo_len : lda #1 : sta yo_len+1     \ length 1
+    lda #0 : sta yo_len : sta dropped
+    lda #1 : sta yo_len+1           \ length 1 for this tick's position
     jsr yoyo_position
     jsr yoyo_collide : bcc done
     lda #ST_YOYO_BACK : sta tstate
     lda #1 : sta yo_db
 .done
+    lda #0 : sta yo_len+1           \ (then it starts from 0)
     rts
 }
 
 .yoyo_out
 {
     jsr platform_under
-    lda doyoyo : beq turn
-    lda yo_len+1 : cmp #YOYO_MAX : bcs turn
-    lda yo_len : clc : adc #LO(YOYO_STEP) : sta yo_len
-    lda yo_len+1 : adc #HI(YOYO_STEP) : sta yo_len+1
+    lda #0 : sta yo_turn
+    lda doyoyo : beq change
+    lda yo_len+1 : cmp #YOYO_MAX : bcs change
+    jsr yoyo_longer
+    jmp moved
+.change
+    lda #1 : sta yo_turn            \ (let go, or as long as it goes)
+.moved
     jsr yoyo_position
-    jsr yoyo_collide : bcs turn
-    \ reached the left edge of the level?
-    lda yo_x+1 : bne done
+    jsr yoyo_collide : php
+    jsr carry_on_yoyo
+    plp : bcs turn
+    lda yo_turn : bne turn
+    \ reached the left edge of the level? (yo_x < 2, signed)
+    lda yo_x+1 : bmi turn : bne done
     lda yo_x : cmp #2 : bcs done
 .turn
+    lda yo_turn : beq back
+    lda #255 : cmp carry : beq back
+    sta carry                       \ let go: drop the platform here
+    lda #1 : sta dropped
+.back
     lda #ST_YOYO_BACK : sta tstate
     lda #1 : sta yo_db
-    jmp yoyo_position
 .done
     rts
 }
@@ -3077,15 +3131,27 @@ YOYO_HIT_SPEED = 8                  \ pixels a tick that a yoyoed meanie flies o
 .yoyo_back
 {
     jsr platform_under
-    lda yo_len : sec : sbc #LO(YOYO_STEP) : sta yo_len
-    lda yo_len+1 : sbc #HI(YOYO_STEP) : sta yo_len+1
+    \ length -= 1.3; home if that's 0 or less
+    lda yo_len : sec : sbc #3 : bcs t_ok : adc #10 : clc : .t_ok
+    sta yo_len
+    lda yo_len+1 : sbc #1 : sta yo_len+1
     bcc home : bmi home
     ora yo_len : beq home
     jsr yoyo_position
-    jmp yoyo_collide                \ still knocks meanies off on the way back
+    jsr yoyo_collide                \ still knocks meanies off on the way back
+    jmp carry_on_yoyo
 .home
     lda #ST_STAND : sta tstate
     lda #0 : sta yo_len : sta yo_len+1
+    rts
+}
+
+\ length += 1.3
+.yoyo_longer
+{
+    lda yo_len : clc : adc #3 : cmp #10 : bcc t_ok : sbc #10 : .t_ok
+    sta yo_len
+    lda yo_len+1 : adc #1 : sta yo_len+1
     rts
 }
 
@@ -3103,7 +3169,7 @@ YOYO_HIT_SPEED = 8                  \ pixels a tick that a yoyoed meanie flies o
     rts
 }
 
-\ yo_x = tx + (length + 12) * direction, yo_y = ty - 11
+\ yo_x = tx + (length + 12) * direction (rounded down), yo_y = ty - 11
 .yoyo_position
 {
     lda yo_len+1 : clc : adc #12 : sta tmp
@@ -3111,7 +3177,8 @@ YOYO_HIT_SPEED = 8                  \ pixels a tick that a yoyoed meanie flies o
     lda tx : clc : adc tmp : sta yo_x : lda tx+1 : adc #0 : sta yo_x+1
     jmp have_x
 .left
-    lda tx : sec : sbc tmp : sta yo_x : lda tx+1 : sbc #0 : sta yo_x+1
+    lda #0 : cmp yo_len                 \ (carry clear if there are tenths: one further)
+    lda tx : sbc tmp : sta yo_x : lda tx+1 : sbc #0 : sta yo_x+1
 .have_x
     lda ty : sec : sbc #11 : sta yo_y : lda ty+1 : sbc #0 : sta yo_y+1
     rts
@@ -3187,7 +3254,103 @@ YOYO_HIT_SPEED = 8                  \ pixels a tick that a yoyoed meanie flies o
     jmp mloop
 .m_done
     jsr yoyo_slow
+    jsr pick_up
     lda yo_hit : cmp #1             \ carry set if hit
+    rts
+}
+
+\ Nothing hit: pick up a movable platform the yoyo is in (the first), unless
+\ carrying one, or one was dropped on this throw
+.pick_up
+{
+    lda yo_hit : bne done
+    lda dropped : bne done
+    lda carry : bmi look
+.done
+    rts
+.look
+    ldx #0
+.find
+    cpx num_plats : bcs done
+    lda plat_moving,x : cmp #2 : bne fnext
+    \ plat_x <= yo_x < plat_x + w ?
+    lda yo_x : cmp plat_xl,x : lda yo_x+1 : sbc plat_xh,x : bvc v5 : eor #&80 : .v5 : bmi fnext
+    lda plat_xl,x : clc : adc plat_w,x : sta tmp : lda plat_xh,x : adc #0 : sta tmp+1
+    lda yo_x : cmp tmp : lda yo_x+1 : sbc tmp+1 : bvc v6 : eor #&80 : .v6 : bpl fnext
+    \ plat_y <= yo_y < plat_y + h ?
+    lda yo_y : cmp plat_yl,x : lda yo_y+1 : sbc plat_yh,x : bvc v7 : eor #&80 : .v7 : bmi fnext
+    ldy plat_img,x
+    lda plat_yl,x : clc : adc img_h,y : sta tmp : lda plat_yh,x : adc #0 : sta tmp+1
+    lda yo_y : cmp tmp : lda yo_y+1 : sbc tmp+1 : bvc v8 : eor #&80 : .v8 : bmi got
+.fnext
+    inx : bne find
+.got
+    stx carry
+    lda #1 : sta yo_hit
+    rts
+}
+
+\ Move platform X to (p_x, p_y), and the slow sprite that draws it
+.plat_move_to
+{
+    lda p_x : sta plat_xl,x : lda p_x+1 : sta plat_xh,x
+    lda p_y : sta plat_yl,x : lda p_y+1 : sta plat_yh,x
+    ldy #MAX_SLOW - 1
+.find
+    lda sl_kind,y : cmp #SL_PLATFORM : bne next
+    txa : cmp sl_plat,y : beq found
+.next
+    dey : bpl find
+    rts
+.found
+    lda p_x : sta s_xl,y : lda p_x+1 : sta s_xh,y
+    lda p_y : sta s_yl,y : lda p_y+1 : sta s_yh,y
+    rts
+}
+
+\ The platform Trogg's carrying goes above his head: centred on him, its top 14
+\ pixels above his feet (between pixels, the pixel above)
+.carry_above
+{
+    ldx carry : bmi done
+    lda plat_w,x : lsr a : sta tmp
+    lda tx : sec : sbc tmp : sta p_x : lda tx+1 : sbc #0 : sta p_x+1
+    lda ty : sec : sbc #14 : sta p_y : lda ty+1 : sbc #0 : sta p_y+1
+    jmp plat_move_to
+.done
+    rts
+}
+
+\ ... or, while yoyoing, on the yoyo: 3 pixels in from the yoyo's x, on the side
+\ towards Trogg, rounded to the nearest pixel (halves to even, as GameMaker's
+\ round), at the same height
+.carry_on_yoyo
+{
+    ldx carry : bmi done
+    lda tface : bne left
+    \ tx + 9 + length
+    lda yo_len+1 : clc : adc #9 : adc tx : sta p_x : lda tx+1 : adc #0 : sta p_x+1
+    jsr round_away : bcc have_x
+    inc p_x : bne have_x : inc p_x+1
+    jmp have_x
+.left
+    \ tx - 8 - w - length
+    lda plat_w,x : clc : adc #8 : sta tmp : lda #0 : adc #0 : sta tmp+1
+    lda tmp : clc : adc yo_len+1 : sta tmp : lda tmp+1 : adc #0 : sta tmp+1
+    lda tx : sec : sbc tmp : sta p_x : lda tx+1 : sbc tmp+1 : sta p_x+1
+    jsr round_away : bcc have_x
+    lda p_x : bne l1 : dec p_x+1 : .l1 : dec p_x
+.have_x
+    lda ty : sec : sbc #14 : sta p_y : lda ty+1 : sbc #0 : sta p_y+1
+    jmp plat_move_to
+.done
+    rts
+\ carry set if the length's tenths take p_x a pixel further from Trogg: more
+\ than a half, or a half when p_x is odd
+.round_away
+    lda yo_len : cmp #5 : bne ra
+    lda p_x : lsr a
+.ra
     rts
 }
 
@@ -3223,7 +3386,8 @@ HOOTER_GRAVITY = 13                 \ 0.05 pixels/tick^2 in 8.8 fixed point
     lda plat_x0l,x : sta plat_xl,x : lda plat_x0h,x : sta plat_xh,x
     lda plat_y0l,x : sta plat_yl,x : lda plat_y0h,x : sta plat_yh,x
     dex : bpl plats
-    lda #255 : sta cur_plat
+    lda #255 : sta cur_plat : sta carry
+    lda #0 : sta dropped
     rts
 }
 
@@ -3938,7 +4102,8 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
 
 
 \ ------------------------------------------------------------------------------
-\ hline: a 1-pixel black line from (p_x, p_y) to (q_x, p_y), inclusive.
+\ hline: a 1-pixel black (or, with hl_yel, yellow) line from (p_x, p_y) to
+\ (q_x, p_y), inclusive.
 \ PM_SAVE draws it saving the background at sbase; PM_RESTORE puts it back.
 \ Clipped to the visible window and to the level's 256 rows.
 \ ------------------------------------------------------------------------------
@@ -3974,8 +4139,11 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
     lda p_y+1 : lsr a : sta hl_row : lda p_y : ror a : lsr hl_row : ror a : lsr hl_row : ror a : sta hl_row
     lda hl_c0 : sta colw
 .col
-    lda colw : cmp clip_l : bcc next_col
-    cmp clip_r : bcs next_col
+    lda colw : cmp clip_l : bcc skip
+    cmp clip_r : bcc in_window
+.skip
+    jmp next_col
+.in_window
     \ which pixels of this byte are on the line?
     lda #&FF : sta hl_mask
     lda colw : cmp hl_c0 : bne not_first
@@ -3999,7 +4167,7 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
     lda (ptr),y : sta (sptr,x)
     \ black is logical colour 1: low bit set, high bit clear, in each masked pixel
     lda hl_mask : eor #&FF : and (ptr),y : sta tmp
-    lda hl_mask : and #&0F : ora tmp
+    lda hl_yel : ora #&0F : and hl_mask : ora tmp   \ (yellow, colour 3, has both bits)
     sta (ptr),y
     jmp advance
 .restore
@@ -4944,7 +5112,8 @@ ROMSEL_ANDY = &80                   \ ROMSEL bit 7: ANDY at &8000-&8FFF
 {
     ldy #0 : lda (sp),y : sta ld_p : tax           \ the platform
     iny : lda (sp),y : sta ld_f
-    lda #1 : sta plat_moving,x
+    lda #1 : bit ld_f : bvc m1 : lda #2 : .m1     \ (2: Trogg moves it)
+    sta plat_moving,x
     ldy ld_i
     lda #SL_PLATFORM : sta sl_kind,y
     lda plat_img,x : sta sl_img,y
@@ -6209,4 +6378,4 @@ INCLUDE "src/gen/disc.asm"
 PRINT "Code from", ~code_start, "to", ~end, "(", end - code_start, "bytes ), free:", SCREEN - ram_top
 \ Addresses used by test scripts (profiling and poking variables)
 PRINT "TIMING", ~main_loop, ~t_restore, ~t_scroll, ~t_draw, ~t_vsync, ~t_after_vsync, ~t_logic, ~t_logic_done, ~t_slow, ~t_slow_done
-PRINT "SYMBOLS loops", ~loops, "trogg_standing", ~trogg_standing, "trogg_falling", ~trogg_falling, "trogg_climbing", ~trogg_climbing, "xmove", ~xmove, "ymove", ~ymove, "xvel", ~xvel, "tyf", ~tyf, "res_i", ~res_i, "res_found", ~res_found, "res_y", ~res_y, "res_yf", ~res_yf, "doyoyo", ~doyoyo, "tclimb", ~tclimb, "x_max", ~x_max, "level_h", ~level_h, "snd_tune", ~snd_tune, "snd_qb", ~snd_qb, "v_phase", ~v_phase, "v_left", ~v_left, "v_ord", ~v_ord, "v_on", ~v_on, "v_att", ~v_att, "snd_music_req", ~snd_music_req, "snd_cur", ~snd_cur, "snd_music_opt", ~snd_music_opt, "snd_sfx_opt", ~snd_sfx_opt, "snd_acc", ~snd_acc, "draw_kind", ~draw_kind, "num_keys", ~num_keys, "lvl_ticks", ~lvl_ticks, "done_valid", ~done_valid, "fe_sel", ~fe_sel, "cur_level", ~cur_level, "num_plats", ~num_plats, "num_ladders", ~num_ladders, "num_draw", ~num_draw, "num_slow", ~num_slow, "plat_w", ~plat_w, "plat_x0l", ~plat_x0l, "plat_x0h", ~plat_x0h, "plat_y0l", ~plat_y0l, "plat_y0h", ~plat_y0h, "plat_moving", ~plat_moving, "plat_bouncy", ~plat_bouncy, "lad_xl", ~lad_xl, "lad_xh", ~lad_xh, "lad_yl", ~lad_yl, "lad_yh", ~lad_yh, "lad_hl", ~lad_hl, "lad_hh", ~lad_hh, "lad_ext", ~lad_ext, "draw_img", ~draw_img, "draw_xl", ~draw_xl, "draw_xh", ~draw_xh, "draw_yl", ~draw_yl, "draw_yh", ~draw_yh, "sl_kind", ~sl_kind, "sl_img", ~sl_img, "sl_x0l", ~sl_x0l, "sl_x0h", ~sl_x0h, "sl_y0l", ~sl_y0l, "sl_y0h", ~sl_y0h, "sl_aminl", ~sl_aminl, "sl_aminh", ~sl_aminh, "sl_amaxl", ~sl_amaxl, "sl_amaxh", ~sl_amaxh, "sl_bminl", ~sl_bminl, "sl_bminh", ~sl_bminh, "sl_bmaxl", ~sl_bmaxl, "sl_bmaxh", ~sl_bmaxh, "sl_vf", ~sl_vf, "sl_vi", ~sl_vi, "sl_vy", ~sl_vy, "sl_plat", ~sl_plat, "sl_wait", ~sl_wait, "sl_simple", ~sl_simple, "plat_yh", ~plat_yh, "level_bg", ~level_bg, "trogg_x0", ~trogg_x0, "trogg_y0", ~trogg_y0, "dmg_n", ~dmg_n, "s_alive", ~s_alive, "s_xl", ~s_xl, "s_xh", ~s_xh, "s_yl", ~s_yl, "s_yh", ~s_yh, "cur_plat", ~cur_plat, "plat_xl", ~plat_xl, "plat_xh", ~plat_xh, "plat_yl", ~plat_yl, "mv_img", ~mv_img, "mv_vxi", ~mv_vxi, "mv_vyi", ~mv_vyi, "mv_vyf", ~mv_vyf, "mv_yl", ~mv_yl, "mv_yh", ~mv_yh, "mv_pause", ~mv_pause, "bal_timer", ~bal_timer, "dag_timer", ~dag_timer, "bscroll", ~bscroll, "front", ~front, "vsyncs", ~vsyncs, "yo_len", ~yo_len, "mv_active", ~mv_active, "mv_xl", ~mv_xl, "mv_xh", ~mv_xh, "tface", ~tface, "keys_found", ~keys_found, "gems_found", ~gems_found, "won", ~won, "have_cp", ~have_cp, "restarts", ~restarts, "alive", ~alive, "newcol", ~newcol, "dead", ~dead, "tx", ~tx, "ty", ~ty, "tstate", ~tstate, "tv", ~tv, "dead", ~dead, "anim", ~anim, "p_img", ~p_img, "bank", ~bank, "oldbank", ~oldbank, "dptr", ~dptr, "scrollcol", ~scrollcol
+PRINT "SYMBOLS loops", ~loops, "carry_on_yoyo", ~carry_on_yoyo, "tface", ~tface, "carry", ~carry, "dropped", ~dropped, "yo_x", ~yo_x, "trogg_standing", ~trogg_standing, "trogg_falling", ~trogg_falling, "trogg_climbing", ~trogg_climbing, "xmove", ~xmove, "ymove", ~ymove, "xvel", ~xvel, "tyf", ~tyf, "res_i", ~res_i, "res_found", ~res_found, "res_y", ~res_y, "res_yf", ~res_yf, "doyoyo", ~doyoyo, "tclimb", ~tclimb, "x_max", ~x_max, "level_h", ~level_h, "snd_tune", ~snd_tune, "snd_qb", ~snd_qb, "v_phase", ~v_phase, "v_left", ~v_left, "v_ord", ~v_ord, "v_on", ~v_on, "v_att", ~v_att, "snd_music_req", ~snd_music_req, "snd_cur", ~snd_cur, "snd_music_opt", ~snd_music_opt, "snd_sfx_opt", ~snd_sfx_opt, "snd_acc", ~snd_acc, "draw_kind", ~draw_kind, "num_keys", ~num_keys, "lvl_ticks", ~lvl_ticks, "done_valid", ~done_valid, "fe_sel", ~fe_sel, "cur_level", ~cur_level, "num_plats", ~num_plats, "num_ladders", ~num_ladders, "num_draw", ~num_draw, "num_slow", ~num_slow, "plat_w", ~plat_w, "plat_x0l", ~plat_x0l, "plat_x0h", ~plat_x0h, "plat_y0l", ~plat_y0l, "plat_y0h", ~plat_y0h, "plat_moving", ~plat_moving, "plat_bouncy", ~plat_bouncy, "lad_xl", ~lad_xl, "lad_xh", ~lad_xh, "lad_yl", ~lad_yl, "lad_yh", ~lad_yh, "lad_hl", ~lad_hl, "lad_hh", ~lad_hh, "lad_ext", ~lad_ext, "draw_img", ~draw_img, "draw_xl", ~draw_xl, "draw_xh", ~draw_xh, "draw_yl", ~draw_yl, "draw_yh", ~draw_yh, "sl_kind", ~sl_kind, "sl_img", ~sl_img, "sl_x0l", ~sl_x0l, "sl_x0h", ~sl_x0h, "sl_y0l", ~sl_y0l, "sl_y0h", ~sl_y0h, "sl_aminl", ~sl_aminl, "sl_aminh", ~sl_aminh, "sl_amaxl", ~sl_amaxl, "sl_amaxh", ~sl_amaxh, "sl_bminl", ~sl_bminl, "sl_bminh", ~sl_bminh, "sl_bmaxl", ~sl_bmaxl, "sl_bmaxh", ~sl_bmaxh, "sl_vf", ~sl_vf, "sl_vi", ~sl_vi, "sl_vy", ~sl_vy, "sl_plat", ~sl_plat, "sl_wait", ~sl_wait, "sl_simple", ~sl_simple, "plat_yh", ~plat_yh, "level_bg", ~level_bg, "trogg_x0", ~trogg_x0, "trogg_y0", ~trogg_y0, "dmg_n", ~dmg_n, "s_alive", ~s_alive, "s_xl", ~s_xl, "s_xh", ~s_xh, "s_yl", ~s_yl, "s_yh", ~s_yh, "cur_plat", ~cur_plat, "plat_xl", ~plat_xl, "plat_xh", ~plat_xh, "plat_yl", ~plat_yl, "mv_img", ~mv_img, "mv_vxi", ~mv_vxi, "mv_vyi", ~mv_vyi, "mv_vyf", ~mv_vyf, "mv_yl", ~mv_yl, "mv_yh", ~mv_yh, "mv_pause", ~mv_pause, "bal_timer", ~bal_timer, "dag_timer", ~dag_timer, "bscroll", ~bscroll, "front", ~front, "vsyncs", ~vsyncs, "yo_len", ~yo_len, "mv_active", ~mv_active, "mv_xl", ~mv_xl, "mv_xh", ~mv_xh, "tface", ~tface, "keys_found", ~keys_found, "gems_found", ~gems_found, "won", ~won, "have_cp", ~have_cp, "restarts", ~restarts, "alive", ~alive, "newcol", ~newcol, "dead", ~dead, "tx", ~tx, "ty", ~ty, "tstate", ~tstate, "tv", ~tv, "dead", ~dead, "anim", ~anim, "p_img", ~p_img, "bank", ~bank, "oldbank", ~oldbank, "dptr", ~dptr, "scrollcol", ~scrollcol

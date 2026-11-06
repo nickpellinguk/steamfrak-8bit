@@ -11,7 +11,7 @@ another, including the 19 that scroll vertically:
 * The screen scrolls smoothly at a steady 25 frames a second, with the game logic at 50 ticks a second.
 * Gems and keys can be collected.
 * Touching a meanie kills Trogg, with the "FRAK!" speech bubble.
-* The yoyo (Space or P): it goes out up to 80 pixels while the key is held, on a string drawn
+* The yoyo (Space or P): it goes out about 80 pixels while the key is held, on a string drawn
   as a line of black pixels, and knocks meanies flying off the screen. A flying meanie can
   still kill Trogg, as in the Steam version.
 * Balloons float up from the bottom and daggers fly down from the top, aimed ahead of Trogg,
@@ -46,9 +46,11 @@ another, including the 19 that scroll vertically:
   Footsteps are heard only when the music isn't playing all its tracks, as in the Steam version.
 
 * Bouncing platforms (the Bouncing levels), with their springs (see "Movement and physics").
+* Movable platforms (the Placing levels, with a yellow line under them): the yoyo picks one
+  up, Trogg carries it above his head, and letting go of the yoyo key while the yoyo is
+  going out drops it there (see "Movement and physics").
 
-Not done yet: Trogg-movable platforms (the Placing levels), the Pugwash tune (an easter egg in a settings
-screen that isn't here).
+Not done yet: the Pugwash tune (an easter egg in a settings screen that isn't here).
 
 ## Building
 
@@ -379,10 +381,11 @@ velocity 4, a ladder grabbed only while not falling faster than 1.275, a landing
 faster deadly. (GameMaker compares reals with an epsilon, so its own floating-point errors in
 these never matter; whole numbers don't have any.)
 
-That includes the original's warts. A fall that crosses a platform's top between pixels lands
-Trogg where he was, above it, and the next tick, finding no platform exactly under him, he
-drops onto it. If two platforms are at the same height in the same place, the first in the
-level counts.
+That includes the original's warts. A fall that crosses a platform's top between pixels stops
+Trogg where he was, above it; then, as in the original, he's put on the next whole pixel down
+(onto the platform, if it was less than a pixel below). Grabbing a ladder from a fall rounds
+him to the nearest pixel (halves to the even one, as GameMaker's `round`). If two platforms
+are at the same height in the same place, the first in the level counts.
 
 Bouncy platforms (the Bouncing levels, with a spring under them): as in the original, Trogg
 leaves a bouncy platform's top as fast as he was falling before that tick's gravity, plus twice
@@ -391,6 +394,23 @@ bit 7 of its palette entry in the level pack. Springs under platforms that stay 
 of the background (the loader adds them as background items, `spring_item`); the three under
 moving platforms are drawn each frame with Trogg (`draw_springs`), so they show over meanies
 where the Steam version had them under.
+
+Movable platforms (the Placing levels, and two of the Bouncing ones): each is a slow sprite
+that doesn't move by itself (`plat_moving` is 2 for them, 1 for platforms that move by
+themselves), marked by bit 6 of its flags in the level pack, and drawn with a yellow line
+under it (`draw_springs`, with `hline` in yellow). As in the original:
+
+* The yoyo's length is 1.3 pixels a tick out, from 0, so it's kept in pixels and tenths
+  (`yo_len`), which is exact. It goes out until it's 80 pixels or more.
+* If the yoyo hits nothing else, isn't carrying a platform, and hasn't dropped one on this
+  throw, it picks up the first movable platform it's in (`pick_up`), and turns back.
+* A carried platform rides on the yoyo, 3 pixels in from it (rounded to the nearest pixel,
+  halves to even), and otherwise sits centred above Trogg, its top 14 pixels above his feet
+  (`carry_on_yoyo`, `carry_above`).
+* Letting go of the yoyo key while it's going out (or it reaching full length) drops the
+  platform where it is. It can then be stood on like any other platform.
+* Standing on a movable platform still sets a checkpoint; the checkpoint keeps where the
+  movable platforms are and what Trogg is carrying.
 
 The game logic runs at 50 ticks a second (5/6 of the Steam version's 60): one tick per
 vertical sync. The screen is redrawn at 25 frames a second (`FRAMES_PER_DRAW`), so normally

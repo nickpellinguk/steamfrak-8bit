@@ -293,6 +293,14 @@ def build_level(data, room_name):
     for pi, (px, py, pw, ph) in enumerate(plats):
         inst = insts[plat_order[pi]]
         p = data.props(inst)
+        if p.get('is_movable_by_trogg'):
+            # Trogg moves it with his yoyo: a slow sprite that doesn't move by itself
+            assert not any(p.get(k) for k in ('scan_left', 'scan_right', 'scan_up', 'scan_down')), inst
+            moving_orders.add(plat_order[pi])
+            slow.append({'kind': SL_PLATFORM, 'spr': data.sprite_of(inst[0]), 'x': px, 'y': py,
+                         'amin': px, 'amax': px, 'bmin': py, 'bmax': py, 'v': 0, 'vy': 0,
+                         'plat': pi, 'wait': 5, 'pflags': PF_MOVABLE, 'movable': True})
+            continue
         if not any(p.get(k) for k in ('scan_left', 'scan_right', 'scan_up', 'scan_down')):
             continue
         xl = xr = px
@@ -381,7 +389,8 @@ def build_level(data, room_name):
             draw.append((DEPTH['oPlatform'], order + 0.5, 'sSpring_Beeb', px + pw // 2,
                          py + ph - (3 if re.match(r'sLog[1-5]_Beeb$', spr) else 0), 'spring'))
     draw.sort(key=lambda d: (-d[0], d[1]))
-    plat_moving = [1 if o in moving_orders else 0 for o in plat_order]
+    movable = {plat_order[v['plat']] for v in slow if v.get('movable')}
+    plat_moving = [2 if o in movable else 1 if o in moving_orders else 0 for o in plat_order]
     return {
         'w': room['w'], 'h': room['h'], 'bg': BG_PHYSICAL.get(room['bg'], 6),
         'trogg': trogg, 'plats': plats, 'plat_moving': plat_moving, 'ladders': ladders,
@@ -510,6 +519,7 @@ def slow_simple_flags(data, lev, draw):
     for i, (v, r) in enumerate(zip(sl, rects)):
         raw = slow_swept(data, v)
         ok = (v['plat'] == 255 or v['kind'] == SL_PLATFORM) and raw[0] >= 0 and raw[1] >= 0 and raw[3] <= 254
+        ok = ok and not v.get('movable')    # (it can go anywhere)
         ok = ok and lev['h'] == 256         # (only for horizontally scrolling levels)
         ok = ok and not any(overlap(r, rects[j]) for j in range(len(sl)) if j != i)
         ok = ok and not any(overlap(r, it) for it in items)
@@ -541,6 +551,7 @@ SLOWSAVE1_SIZE = 0x400          # the second save area for meanies flying off is
 BG_DICT = 0x8200                # the unrolled background, in bank 7 (see render_background)
 BG_TOP = 0xAA00                 # ... which must end here (the front end's records follow it)
 MAX_PAL = 16
+PF_MOVABLE = 64                 # a moving platform that Trogg moves (is_movable_by_trogg)
 
 
 def bg_sprites(data):
@@ -585,7 +596,8 @@ def pack_level(data, lev, image_id, params):
               x low, y low, then x high (bits 0-1), y high (bits 2-3), palette entry (bits 4-7)
       moving meanies: a byte each, settings (index into sl_params) + 128 if drawn the simple way
       moving platforms: 2 bytes each, platform number, then scan and direction flags
-              (bits 0-5: scan left, right, up, down, start right, start up; bit 7 = simple)
+              (bits 0-5: scan left, right, up, down, start right, start up; bit 6: moved by
+              Trogg (with his yoyo) instead; bit 7 = simple)
     """
     d = [item for item in lev['draw'] if item[0] not in CACHE_BG_DEPTHS]
     meanies = [v for v in lev['slow'] if v['kind'] != SL_PLATFORM]
@@ -798,16 +810,17 @@ def main():
         for k, n in (('plats', len(lev['plats'])), ('ladders', len(lev['ladders'])), ('slow', len(lev['slow'])),
                      ('draw', len(t['draw_img'])), ('bg', len(lev['plats']) + len(lev['ladders']) + sum(lev['plat_bouncy']))):
             maxima[k] = max(maxima.get(k, 0), n)
+    # (each level goes where it fits best, biggest first)
     segs = [bytearray() for _ in PACK_SEGMENTS]
-    where = []
-    seg = 0
-    for name, blob in zip(LEVELS, packed):
-        while seg < len(segs) and len(segs[seg]) + len(blob) > PACK_SEGMENTS[seg][1]:
-            seg += 1
-        if seg == len(segs):
-            raise SystemExit('Levels too big for HAZEL and ANDY (at %s)' % name)
-        where.append(PACK_SEGMENTS[seg][0] + len(segs[seg]))
-        segs[seg] += blob
+    where = [None] * len(packed)
+    for i in sorted(range(len(packed)), key=lambda i: -len(packed[i])):
+        room = [(PACK_SEGMENTS[k][1] - len(segs[k]) - len(packed[i]), k) for k in range(len(segs))]
+        fits = [r for r in room if r[0] >= 0]
+        if not fits:
+            raise SystemExit('Levels too big for HAZEL and ANDY (at %s)' % LEVELS[i])
+        k = min(fits)[1]
+        where[i] = PACK_SEGMENTS[k][0] + len(segs[k])
+        segs[k] += packed[i]
     # The PACK file is loaded at &3000 and copied by copy_pack: 8KB to HAZEL, then 4KB to ANDY
     pack = bytearray()
     for (addr, size), blob in zip(PACK_SEGMENTS, segs):
