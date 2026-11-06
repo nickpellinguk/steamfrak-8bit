@@ -322,6 +322,12 @@ ORG &0E00
 .trogg_x0   SKIP 2
 .trogg_y0   SKIP 2
 .scroll_max SKIP 2          \ LEVEL_W - WINDOW_W
+.col_max    SKIP 1          \ ... in byte columns
+.view_col   SKIP 1          \ the column the view scrolls to (see band_scroll)
+.view_row   SKIP 1          \ ... and the row (vertically scrolling levels)
+.scroll_dir SKIP 1          \ band_scroll: 1 scrolling right, &FF left, 0 not
+.bs_n       SKIP 1          \ band_scroll: columns still to move this frame
+.frame_ticks SKIP 1         \ game ticks run in the last frame
 .x_max      SKIP 2          \ LEVEL_W - 10
 .dm_c0      SKIP 1          \ damage rectangle to record (byte columns, pixel rows, inclusive)
 .dm_c1      SKIP 1
@@ -510,7 +516,7 @@ INCLUDE "src/gen/tables.asm"
     lda #0 : sta rr_raw
     lda #&FF : sta hud_secs : sta hud_secs+1
     jsr slow_reset_display
-    jsr calc_scroll
+    jsr centre_scroll
     ldx #1
 .init_buffer
     stx back
@@ -574,6 +580,7 @@ INCLUDE "src/gen/tables.asm"
     jsr restore_log
 
 .^t_scroll
+    jsr band_scroll
     jsr do_scroll
     ldx back
     lda scrollcol : sta bscroll,x
@@ -690,7 +697,7 @@ INCLUDE "src/gen/tables.asm"
     cmp #MAX_TICKS_PER_FRAME + 1 : bcc ticks_ok
     lda #MAX_TICKS_PER_FRAME
 .ticks_ok
-    sta ticks_left
+    sta ticks_left : sta frame_ticks
     lda vsyncs : sta last_flip
 .tick
 .^t_logic
@@ -1048,9 +1055,12 @@ savebuf1 = &0900
 \ ------------------------------------------------------------------------------
 
 \ newcol = clamp(tx - WINDOW_W/2, 0, LEVEL_W - WINDOW_W) / 4
-.calc_scroll
+\ Centre the view on Trogg (at a level's start or a restart): see band_scroll
+.centre_scroll
 {
-    lda is_vert : bne vertical
+    lda #0 : sta scroll_dir
+    lda scroll_max+1 : sta tmp : lda scroll_max
+    lsr tmp : ror a : lsr tmp : ror a : sta col_max
     sec
     lda tx : sbc #LO(WINDOW_W/2) : sta tmp
     lda tx+1 : sbc #HI(WINDOW_W/2) : sta tmp+1
@@ -1065,12 +1075,8 @@ savebuf1 = &0900
 .in_range
     lsr tmp+1 : ror tmp
     lsr tmp+1 : ror tmp
-    lda tmp : sta newcol
-    lda #0 : sta newrow
-    rts
-.vertical
-    \ newrow = clamp(ty - 128, 0, level_h - 256) / 8
-    lda #0 : sta newcol
+    lda tmp : sta view_col
+    \ ... and vertically: view_row = clamp(ty - 128, 0, level_h - 256) / 8
     sec
     lda ty : sbc #128 : sta tmp
     lda ty+1 : sbc #0 : sta tmp+1
@@ -1080,7 +1086,19 @@ savebuf1 = &0900
     lsr tmp+1 : ror tmp : lsr tmp+1 : ror tmp : lsr tmp+1 : ror tmp
     lda tmp : cmp row_max : bcc v_ok : lda row_max
 .v_ok
-    sta newrow
+    sta view_row
+}
+    \ (falls through)
+\ newcol (newrow) = the column (row) the view is to scroll to
+.calc_scroll
+{
+    lda is_vert : bne vertical
+    lda view_col : sta newcol
+    lda #0 : sta newrow
+    rts
+.vertical
+    lda #0 : sta newcol
+    lda view_row : sta newrow
     rts
 }
 
@@ -2648,6 +2666,114 @@ ENDMACRO
 .dec_x
     lda res_x : bne dx1 : dec res_x+1 : .dx1 : dec res_x
 .fx_done
+    rts
+}
+
+\ Horizontal scrolling, in bands, once per drawn frame: the view stays put while
+\ Trogg is between VIEW_L and VIEW_R across the window; once he's past one end, it
+\ scrolls a column (4 pixels) a frame (more if the frame took more than two
+\ ticks: twice his walking speed) until he's at the other (or the level's edge
+\ is). So he moves smoothly on the screen, a pixel at a time, instead of
+\ jumping back 4 pixels with the view every 4 he walks.
+VIEW_L = 120
+VIEW_R = 200
+.band_scroll
+{
+    lda is_vert : beq horizontal
+    jmp band_scroll_v
+.horizontal
+    \ tmp = his x in the window (signed): tx - view_col * 4
+    lda view_col : sta tmp : lda #0 : sta tmp+1
+    asl tmp : rol tmp+1 : asl tmp : rol tmp+1
+    lda tx : sec : sbc tmp : sta tmp : lda tx+1 : sbc tmp+1 : sta tmp+1
+    \ columns to move: as fast as he can walk, twice over (4 pixels a frame at
+    \ two ticks a frame, more when drawing takes longer)
+    lda frame_ticks : clc : adc #1 : lsr a : bne n_ok : lda #1 : .n_ok
+    sta bs_n
+    lda scroll_dir : bmi left : bne right
+    \ not scrolling: past either end of the band?
+    lda tmp+1 : bmi start_left : bne start_right
+    lda tmp : cmp #VIEW_R + 1 : bcs start_right
+    cmp #VIEW_L : bcc start_left
+.done
+    rts
+.start_right
+    lda #1 : sta scroll_dir
+.right
+    \ (until he's at VIEW_L: not past it, or he'd set it scrolling back)
+    lda tmp+1 : bmi stop : bne go_right
+    lda tmp : cmp #VIEW_L + 4 : bcc stop
+.go_right
+    lda view_col : cmp col_max : bcs stop
+    inc view_col
+    lda tmp : sec : sbc #4 : sta tmp : bcs r_next : dec tmp+1 : .r_next
+    dec bs_n : bne right
+    rts
+.start_left
+    lda #&FF : sta scroll_dir
+.left
+    \ (until he's at VIEW_R)
+    lda tmp+1 : bmi go_left : bne stop
+    lda tmp : cmp #VIEW_R - 4 + 1 : bcs stop
+.go_left
+    lda view_col : beq stop
+    dec view_col
+    lda tmp : clc : adc #4 : sta tmp : bcc l_next : inc tmp+1 : .l_next
+    dec bs_n : bne left
+    rts
+.stop
+    lda #0 : sta scroll_dir
+    rts
+}
+
+\ ... and vertically, in character rows (8 pixels): the view stays put while his
+\ feet are between VIEW_T and VIEW_B down the window; once he's past one end,
+\ it scrolls a row a tick (twice as fast as he falls at his fastest, but at most
+\ 4 rows a frame) until he's at the other end, or the level's.
+VIEW_T = 96
+VIEW_B = 176
+.band_scroll_v
+{
+    \ tmp = his y in the window (signed): ty - view_row * 8
+    lda view_row : sta tmp : lda #0 : sta tmp+1
+    asl tmp : rol tmp+1 : asl tmp : rol tmp+1 : asl tmp : rol tmp+1
+    lda ty : sec : sbc tmp : sta tmp : lda ty+1 : sbc tmp+1 : sta tmp+1
+    lda frame_ticks : bne n_some : lda #1 : .n_some
+    cmp #5 : bcc n_ok : lda #4 : .n_ok
+    sta bs_n
+    lda scroll_dir : bmi up : bne down
+    \ not scrolling: past either end of the band?
+    lda tmp+1 : bmi start_up : bne start_down
+    lda tmp : cmp #VIEW_B + 1 : bcs start_down
+    cmp #VIEW_T : bcc start_up
+.done
+    rts
+.start_down
+    lda #1 : sta scroll_dir
+.down
+    \ (until he's at VIEW_T: not past it, or he'd set it scrolling back)
+    lda tmp+1 : bmi stop : bne go_down
+    lda tmp : cmp #VIEW_T + 8 : bcc stop
+.go_down
+    lda view_row : cmp row_max : bcs stop
+    inc view_row
+    lda tmp : sec : sbc #8 : sta tmp : bcs d_next : dec tmp+1 : .d_next
+    dec bs_n : bne down
+    rts
+.start_up
+    lda #&FF : sta scroll_dir
+.up
+    \ (until he's at VIEW_B)
+    lda tmp+1 : bmi go_up : bne stop
+    lda tmp : cmp #VIEW_B - 8 + 1 : bcs stop
+.go_up
+    lda view_row : beq stop
+    dec view_row
+    lda tmp : clc : adc #8 : sta tmp : bcc u_next : inc tmp+1 : .u_next
+    dec bs_n : bne up
+    rts
+.stop
+    lda #0 : sta scroll_dir
     rts
 }
 
@@ -6450,4 +6576,4 @@ INCLUDE "src/gen/disc.asm"
 PRINT "Code from", ~code_start, "to", ~end, "(", end - code_start, "bytes ), free:", SCREEN - ram_top
 \ Addresses used by test scripts (profiling and poking variables)
 PRINT "TIMING", ~main_loop, ~t_restore, ~t_scroll, ~t_draw, ~t_vsync, ~t_after_vsync, ~t_logic, ~t_logic_done, ~t_slow, ~t_slow_done
-PRINT "SYMBOLS loops", ~loops, "done_ticks", ~done_ticks, "done_restarts", ~done_restarts, "done_gems", ~done_gems, "snd_tick", ~snd_tick, "snd_sfx_req", ~snd_sfx_req, "MUSIC_BANK", ~MUSIC_BANK, "win_ticks", ~win_ticks, "bwon", ~bwon, "carry_on_yoyo", ~carry_on_yoyo, "tface", ~tface, "carry", ~carry, "dropped", ~dropped, "yo_x", ~yo_x, "trogg_standing", ~trogg_standing, "trogg_falling", ~trogg_falling, "trogg_climbing", ~trogg_climbing, "xmove", ~xmove, "ymove", ~ymove, "xvel", ~xvel, "tyf", ~tyf, "res_i", ~res_i, "res_found", ~res_found, "res_y", ~res_y, "res_yf", ~res_yf, "doyoyo", ~doyoyo, "tclimb", ~tclimb, "x_max", ~x_max, "level_h", ~level_h, "snd_tune", ~snd_tune, "snd_qb", ~snd_qb, "v_phase", ~v_phase, "v_left", ~v_left, "v_ord", ~v_ord, "v_on", ~v_on, "v_att", ~v_att, "snd_music_req", ~snd_music_req, "snd_cur", ~snd_cur, "snd_music_opt", ~snd_music_opt, "snd_sfx_opt", ~snd_sfx_opt, "snd_acc", ~snd_acc, "draw_kind", ~draw_kind, "num_keys", ~num_keys, "lvl_ticks", ~lvl_ticks, "done_valid", ~done_valid, "fe_sel", ~fe_sel, "cur_level", ~cur_level, "num_plats", ~num_plats, "num_ladders", ~num_ladders, "num_draw", ~num_draw, "num_slow", ~num_slow, "plat_w", ~plat_w, "plat_x0l", ~plat_x0l, "plat_x0h", ~plat_x0h, "plat_y0l", ~plat_y0l, "plat_y0h", ~plat_y0h, "plat_moving", ~plat_moving, "plat_bouncy", ~plat_bouncy, "lad_xl", ~lad_xl, "lad_xh", ~lad_xh, "lad_yl", ~lad_yl, "lad_yh", ~lad_yh, "lad_hl", ~lad_hl, "lad_hh", ~lad_hh, "lad_ext", ~lad_ext, "draw_img", ~draw_img, "draw_xl", ~draw_xl, "draw_xh", ~draw_xh, "draw_yl", ~draw_yl, "draw_yh", ~draw_yh, "sl_kind", ~sl_kind, "sl_img", ~sl_img, "sl_x0l", ~sl_x0l, "sl_x0h", ~sl_x0h, "sl_y0l", ~sl_y0l, "sl_y0h", ~sl_y0h, "sl_aminl", ~sl_aminl, "sl_aminh", ~sl_aminh, "sl_amaxl", ~sl_amaxl, "sl_amaxh", ~sl_amaxh, "sl_bminl", ~sl_bminl, "sl_bminh", ~sl_bminh, "sl_bmaxl", ~sl_bmaxl, "sl_bmaxh", ~sl_bmaxh, "sl_vf", ~sl_vf, "sl_vi", ~sl_vi, "sl_vy", ~sl_vy, "sl_plat", ~sl_plat, "sl_wait", ~sl_wait, "sl_simple", ~sl_simple, "plat_yh", ~plat_yh, "level_bg", ~level_bg, "trogg_x0", ~trogg_x0, "trogg_y0", ~trogg_y0, "dmg_n", ~dmg_n, "s_alive", ~s_alive, "s_xl", ~s_xl, "s_xh", ~s_xh, "s_yl", ~s_yl, "s_yh", ~s_yh, "cur_plat", ~cur_plat, "plat_xl", ~plat_xl, "plat_xh", ~plat_xh, "plat_yl", ~plat_yl, "mv_img", ~mv_img, "mv_vxi", ~mv_vxi, "mv_vyi", ~mv_vyi, "mv_vyf", ~mv_vyf, "mv_yl", ~mv_yl, "mv_yh", ~mv_yh, "mv_pause", ~mv_pause, "bal_timer", ~bal_timer, "dag_timer", ~dag_timer, "bscroll", ~bscroll, "front", ~front, "vsyncs", ~vsyncs, "yo_len", ~yo_len, "mv_active", ~mv_active, "mv_xl", ~mv_xl, "mv_xh", ~mv_xh, "tface", ~tface, "keys_found", ~keys_found, "gems_found", ~gems_found, "won", ~won, "have_cp", ~have_cp, "restarts", ~restarts, "alive", ~alive, "newcol", ~newcol, "dead", ~dead, "tx", ~tx, "ty", ~ty, "tstate", ~tstate, "tv", ~tv, "dead", ~dead, "anim", ~anim, "p_img", ~p_img, "bank", ~bank, "oldbank", ~oldbank, "dptr", ~dptr, "scrollcol", ~scrollcol
+PRINT "SYMBOLS loops", ~loops, "view_row", ~view_row, "scrollrow", ~scrollrow, "brow", ~brow, "view_col", ~view_col, "scroll_dir", ~scroll_dir, "done_ticks", ~done_ticks, "done_restarts", ~done_restarts, "done_gems", ~done_gems, "snd_tick", ~snd_tick, "snd_sfx_req", ~snd_sfx_req, "MUSIC_BANK", ~MUSIC_BANK, "win_ticks", ~win_ticks, "bwon", ~bwon, "carry_on_yoyo", ~carry_on_yoyo, "tface", ~tface, "carry", ~carry, "dropped", ~dropped, "yo_x", ~yo_x, "trogg_standing", ~trogg_standing, "trogg_falling", ~trogg_falling, "trogg_climbing", ~trogg_climbing, "xmove", ~xmove, "ymove", ~ymove, "xvel", ~xvel, "tyf", ~tyf, "res_i", ~res_i, "res_found", ~res_found, "res_y", ~res_y, "res_yf", ~res_yf, "doyoyo", ~doyoyo, "tclimb", ~tclimb, "x_max", ~x_max, "level_h", ~level_h, "snd_tune", ~snd_tune, "snd_qb", ~snd_qb, "v_phase", ~v_phase, "v_left", ~v_left, "v_ord", ~v_ord, "v_on", ~v_on, "v_att", ~v_att, "snd_music_req", ~snd_music_req, "snd_cur", ~snd_cur, "snd_music_opt", ~snd_music_opt, "snd_sfx_opt", ~snd_sfx_opt, "snd_acc", ~snd_acc, "draw_kind", ~draw_kind, "num_keys", ~num_keys, "lvl_ticks", ~lvl_ticks, "done_valid", ~done_valid, "fe_sel", ~fe_sel, "cur_level", ~cur_level, "num_plats", ~num_plats, "num_ladders", ~num_ladders, "num_draw", ~num_draw, "num_slow", ~num_slow, "plat_w", ~plat_w, "plat_x0l", ~plat_x0l, "plat_x0h", ~plat_x0h, "plat_y0l", ~plat_y0l, "plat_y0h", ~plat_y0h, "plat_moving", ~plat_moving, "plat_bouncy", ~plat_bouncy, "lad_xl", ~lad_xl, "lad_xh", ~lad_xh, "lad_yl", ~lad_yl, "lad_yh", ~lad_yh, "lad_hl", ~lad_hl, "lad_hh", ~lad_hh, "lad_ext", ~lad_ext, "draw_img", ~draw_img, "draw_xl", ~draw_xl, "draw_xh", ~draw_xh, "draw_yl", ~draw_yl, "draw_yh", ~draw_yh, "sl_kind", ~sl_kind, "sl_img", ~sl_img, "sl_x0l", ~sl_x0l, "sl_x0h", ~sl_x0h, "sl_y0l", ~sl_y0l, "sl_y0h", ~sl_y0h, "sl_aminl", ~sl_aminl, "sl_aminh", ~sl_aminh, "sl_amaxl", ~sl_amaxl, "sl_amaxh", ~sl_amaxh, "sl_bminl", ~sl_bminl, "sl_bminh", ~sl_bminh, "sl_bmaxl", ~sl_bmaxl, "sl_bmaxh", ~sl_bmaxh, "sl_vf", ~sl_vf, "sl_vi", ~sl_vi, "sl_vy", ~sl_vy, "sl_plat", ~sl_plat, "sl_wait", ~sl_wait, "sl_simple", ~sl_simple, "plat_yh", ~plat_yh, "level_bg", ~level_bg, "trogg_x0", ~trogg_x0, "trogg_y0", ~trogg_y0, "dmg_n", ~dmg_n, "s_alive", ~s_alive, "s_xl", ~s_xl, "s_xh", ~s_xh, "s_yl", ~s_yl, "s_yh", ~s_yh, "cur_plat", ~cur_plat, "plat_xl", ~plat_xl, "plat_xh", ~plat_xh, "plat_yl", ~plat_yl, "mv_img", ~mv_img, "mv_vxi", ~mv_vxi, "mv_vyi", ~mv_vyi, "mv_vyf", ~mv_vyf, "mv_yl", ~mv_yl, "mv_yh", ~mv_yh, "mv_pause", ~mv_pause, "bal_timer", ~bal_timer, "dag_timer", ~dag_timer, "bscroll", ~bscroll, "front", ~front, "vsyncs", ~vsyncs, "yo_len", ~yo_len, "mv_active", ~mv_active, "mv_xl", ~mv_xl, "mv_xh", ~mv_xh, "tface", ~tface, "keys_found", ~keys_found, "gems_found", ~gems_found, "won", ~won, "have_cp", ~have_cp, "restarts", ~restarts, "alive", ~alive, "newcol", ~newcol, "dead", ~dead, "tx", ~tx, "ty", ~ty, "tstate", ~tstate, "tv", ~tv, "dead", ~dead, "anim", ~anim, "p_img", ~p_img, "bank", ~bank, "oldbank", ~oldbank, "dptr", ~dptr, "scrollcol", ~scrollcol

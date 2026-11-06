@@ -134,10 +134,10 @@ and is listed: Trogg can never get near it.)
 | `&0400-&07FF` | save area for the main-RAM screen buffer (BASIC's workspace, unused); while a level loads, the packed level |
 | `&0900-&0CFF` | save area for the shadow screen buffer (RS423/cassette buffers, soft keys, UDGs); while a level loads, a column of the background and the list of things in it |
 | `&0E00-&10FF` | other variables: object states, checkpoint, draw logs, moving objects |
-| `&1100-&2FFF` | drawing code and its tables, each image's size and origin, the sound player's variables, instruments and pitch and loudness tables (175 bytes free) |
+| `&1100-&2FFF` | drawing code and its tables, each image's size and origin, the sound player's variables, instruments and pitch and loudness tables (135 bytes free) |
 | `&3000-&7FFF` | MODE 1 screen, **double buffered**: main RAM and shadow RAM. While a level loads (with the screen blanked) it holds the loader's workspace (`&3000-&4FFF`: the dictionary's hash table, a row of the background, the lines being built) and the loader itself (`&6000`) |
 | SWRAM banks 4-5 | sprites, pre-shifted, including unshifted copies of the platforms and ladders to unroll backgrounds from (23.1KB); in bank 5 after the sprites, the music and sound effects player and the tunes (4.2KB at `&9F58`, see "Sound"), then the front end, packed (2.5KB, see below), then where shift 3 of each image is (`img_bank3`, `img_lo3`, `img_hi3`, 240 bytes at `&BB10`), then a save area for meanies flying off (the top 1KB); 164 bytes free |
-| SWRAM bank 6 | collision spans and tables (from `&8000`), the **game logic** (to `&AD25`), then the current level's tables and the second save area for meanies flying off (584 bytes free). Stays paged in while playing |
+| SWRAM bank 6 | collision spans and tables (from `&8000`), the **game logic** (to `&AD25`), then the current level's tables and the second save area for meanies flying off (244 bytes free). Stays paged in while playing |
 | SWRAM bank 7 | the current level's background, unrolled when it starts (`&8000-&A9FF`, see below), or, while the menus or the level-complete screen are up, the front end (unpacked to `&8000`); the front end's records and the unpacker (`&AA00`); the code that paints the background; where shifts 0-2 of each image are (`img_bank0-2`, `img_lo0-2`, `img_hi0-2`, 720 bytes: `plot` and the background unroller page bank 7 in to read them); the level loader, the code that starts a level and the boot code, packed (3.2KB at the top, unpacked to `&6000` when a level loads); 165 bytes free |
 | HAZEL (`&C000-&DFFF`) and ANDY (`&8000-&8FFF`) | **all 55 levels**, packed: 11.8KB, about 215 bytes each. `&8800-&88FF` of ANDY is left to the MOS |
 
@@ -302,8 +302,14 @@ one).
 * MODE 1 (320×256, 4 colours): background (cyan/green/red per level), black, magenta, yellow.
   That is exactly the Steam version's palette, and its 256-pixel-high playfield maps 1:1.
 * Scrolling uses the CRTC start address: horizontally in 4-pixel steps, vertically a character
-  row (8 lines) at a time, following Trogg as the Steam version does (keeping him in the middle,
-  within the level). Screen memory is addressed in **level coordinates**: level byte-column C on
+  row (8 lines) at a time. Following Trogg exactly, as the Steam version does, would jump the
+  view back 4 (or 8) pixels for every 4 (or 8) he moves, so it scrolls in bands
+  (`band_scroll`, `band_scroll_v`): the view stays put while he's between 120 and 200 pixels
+  across the window (his feet between 96 and 176 down it); once he's past one end, it
+  scrolls until he's at the other end (but not past it), or the level's. Horizontally that's a
+  column a frame, or more when a frame takes more than two ticks (twice his walking speed);
+  vertically a row a tick, at most 4 a frame (twice his fastest fall). A level starts (and
+  restarts) with him in the middle. Screen memory is addressed in **level coordinates**: level byte-column C on
   character row R is always at `&3000 + ((C + R*80) MOD 2560) * 8`, however far the screen has
   scrolled, either way. So a scroll only needs the newly exposed column or row drawing, and
   sprites are drawn and erased in level coordinates.
