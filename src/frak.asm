@@ -1722,12 +1722,16 @@ FONT = &B900
     rts
 }
 
-\ The front end (in the emptier sprite bank): A = 0 for the attract screen and
-\ then the menus, 1 for just the menus. Returns A = the level to play.
+\ The front end: A = 0 for the attract screen and then the menus, 1 for just the
+\ menus. Returns A = the level to play. It's kept packed in the emptier sprite
+\ bank and unpacked into bank 7 (where the level's background goes) each time.
 .front_end
 {
     pha
     lda #FRONT_BANK : sta ROMSEL_COPY : sta ROMSEL
+    jsr fe_stage                    \ (the packed front end to the hidden screen)
+    lda #CACHE_BANK : sta ROMSEL_COPY : sta ROMSEL
+    jsr fe_unpack                   \ (... and from there to &8000)
     pla : jsr fe_main
     sta last_level
     pha : lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL : pla
@@ -1739,7 +1743,7 @@ FONT = &B900
 {
     lda done_valid : beq none
     lda #0 : sta done_valid
-    lda #FRONT_BANK : sta ROMSEL_COPY : sta ROMSEL
+    lda #CACHE_BANK : sta ROMSEL_COPY : sta ROMSEL
     jsr fe_record
     lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL
 .none
@@ -4116,8 +4120,10 @@ PRINT "Bank 6: spans and tables to", ~logic_start, ", logic to", ~logic_end, ", 
 \                row) of the non-empty cells (bit 7 of the first byte = the top
 \                cell, or the leftmost), bit 8 of their numbers and bit 9, then
 \                each non-empty cell's number (low byte)
-\   BG_TOP       this code
+\   BG_TOP       the front end's records, then this code
 \   OVERLAY_STORE  the level loader (copied to OVERLAY_RUN when a level loads)
+\ While the menus are up, the front end is unpacked to &8000 instead (it ends
+\ before BG_TOP, so the records stay put).
 \ ------------------------------------------------------------------------------
 
 BG_LO = &8000
@@ -4127,6 +4133,77 @@ CLEAR &8000, &C000
 ORG BG_TOP
 GUARD OVERLAY_STORE
 .bank7_start
+
+\ ---- The part of the front end that stays: the records (they last until the
+\ machine is switched off), adding a result to them, and unpacking the rest.
+.rec_best_lo SKIP NUM_LEVELS        \ best time (game ticks), &FFFF if none
+.rec_best_hi SKIP NUM_LEVELS
+.rec_gem    SKIP NUM_LEVELS         \ 1 if completed with all the gems
+.rec_rate   SKIP NUM_LEVELS * 4     \ fewest restarts, per difficulty (Easy, Hard, Harder, Insane), &FF if none
+.fe_lev     SKIP 1
+
+\ Add the result of the level just finished (done_*) to the records
+.fe_record
+{
+    ldx done_level : stx fe_lev
+    lda done_ticks : cmp rec_best_lo,x : lda done_ticks+1 : sbc rec_best_hi,x : bcs not_best
+    lda done_ticks : sta rec_best_lo,x : lda done_ticks+1 : sta rec_best_hi,x
+.not_best
+    lda done_gems : beq no_gem : lda #1 : sta rec_gem,x : .no_gem
+    jsr fe_rate_index
+    lda done_restarts : cmp rec_rate,y : bcs done : sta rec_rate,y
+.done
+    rts
+}
+
+\ Y = the index in rec_rate of level fe_lev at this difficulty
+.fe_rate_index
+{
+    ldx difficulty : lda fe_diff_index,x : sta tmp
+    lda fe_lev : asl a : asl a : clc : adc tmp : tay
+    rts
+}
+.fe_diff_index EQUB 0, 0, 1, 1, 2, 2, 3
+
+\ Unpack the front end from SCREEN (put there by fe_stage, in whichever screen
+\ buffer the CPU is using) to &8000. See tools/pack.py for the format.
+.fe_unpack
+{
+    lda #0 : sta src : sta dp
+    lda #HI(SCREEN) : sta src+1 : lda #&80 : sta dp+1
+    ldy #0
+.next
+    jsr get : beq done : bmi copy
+    tax                                     \ X literal bytes
+.literal
+    jsr get : jsr put : dex : bne literal
+    beq next
+.copy
+    and #&7F : clc : adc #2 : tax           \ X bytes from (dp - distance)
+    lda #0 : sta ptr+1
+    jsr get : bpl short
+    and #&7F : sta ptr+1 : jsr get
+.short
+    sta tmp
+    clc : lda dp : sbc tmp : sta ptr        \ (- 1 more: distance - 1 is stored)
+    lda dp+1 : sbc ptr+1 : sta ptr+1
+.copy_loop
+    lda (ptr),y : jsr put
+    inc ptr : bne same : inc ptr+1 : .same
+    dex : bne copy_loop
+    beq next
+.done
+    rts
+.get
+    lda (src),y
+    inc src : bne got : inc src+1 : .got
+    ora #0                                  \ (flags from the byte)
+    rts
+.put
+    sta (dp),y
+    inc dp : bne put_done : inc dp+1 : .put_done
+    rts
+}
 
 \ Copy cell A of dictionary page X to the screen at (ptr). X, Y changed.
 .copy_cell
@@ -5194,8 +5271,8 @@ PRINT "Loader overlay:", overlay_end - overlay_start, "bytes, kept in bank 7 at"
 \ ------------------------------------------------------------------------------
 
 CLEAR &8000, &C000
-ORG FRONT_ORG
-GUARD SLOWSAVE0_START
+ORG &8000
+GUARD BG_TOP
 .front_start
 
 \ A = 0: the attract screen, then the menus; 1: just the menus. Returns A = level.
@@ -5236,9 +5313,8 @@ GUARD SLOWSAVE0_START
 {
     pha
     lda #0 : sta back : sta scrollcol : sta scrollrow
-    jsr select_back : jsr show_back
-    jsr set_crtc_start : jsr set_window_clip
-    jsr clear_screen
+    jsr select_back : jsr clear_screen      \ (cleared before it's shown: it may hold the packed front end)
+    jsr show_back : jsr set_crtc_start : jsr set_window_clip
     ldx #0
 .colours
     lda vdu_colours,x : jsr OSWRCH : inx : cpx #vdu_init_end - vdu_colours : bne colours
@@ -5724,14 +5800,6 @@ ENDMACRO
     EQUW icon_Rating_1_Small, icon_Rating_2_Small, icon_Rating_3_Small, icon_Rating_Tick_Small
     EQUW icon_Rating_None_Small, icon_Stopwatch_Outline_Small
 
-\ Y = the index in rec_rate of level fe_lev at this difficulty
-.fe_rate_index
-{
-    ldx difficulty : lda fe_diff_index,x : sta tmp
-    lda fe_lev : asl a : asl a : clc : adc tmp : tay
-    rts
-}
-.fe_diff_index EQUB 0, 0, 1, 1, 2, 2, 3
 
 \ Print the time tmp (game ticks) as m:ss, at byte column 11 of the current
 \ button, A rows down
@@ -5773,36 +5841,49 @@ ENDMACRO
     rts
 }
 
-\ Add a finished level's result (done_*) to the records: the best time, the
-\ gem medal, and the fewest restarts at this difficulty
-.fe_record
-{
-    ldx done_level : stx fe_lev
-    lda done_ticks : cmp rec_best_lo,x : lda done_ticks+1 : sbc rec_best_hi,x : bcs not_best
-    lda done_ticks : sta rec_best_lo,x : lda done_ticks+1 : sta rec_best_hi,x
-.not_best
-    lda done_gems : beq no_gem : lda #1 : sta rec_gem,x : .no_gem
-    jsr fe_rate_index
-    lda done_restarts : cmp rec_rate,y : bcs done : sta rec_rate,y
-.done
-    rts
-}
-
 INCLUDE "src/gen/names.asm"
 .front_end_
-SAVE "FRONT", front_start, front_end_
-\ The records (not saved: they last until the machine is switched off)
-.rec_best_lo SKIP NUM_LEVELS        \ best time (game ticks), &FFFF if none
-.rec_best_hi SKIP NUM_LEVELS
-.rec_gem    SKIP NUM_LEVELS         \ 1 if completed with all the gems
-.rec_rate   SKIP NUM_LEVELS * 4     \ fewest restarts, per difficulty (Easy, Hard, Harder, Insane), &FF if none
+IF PASS = 1
+    SAVE "FRONT", front_start, front_end_   \ (packed by tools/pack.py for the second pass)
+ENDIF
 .fe_d       SKIP 1
 .fe_r       SKIP 1
 .fe_iw      SKIP 1
 .fe_ih      SKIP 1
-.fe_lev     SKIP 1
-.fe_records_end
-PRINT "Front end:", front_end_ - front_start, "bytes in bank", FRONT_BANK, "at", ~FRONT_ORG, "(", SLOWSAVE0_START - fe_records_end, "bytes free after its records )"
+.fe_vars_end
+PRINT "Front end:", front_end_ - front_start, "bytes, unpacked to &8000 in bank", CACHE_BANK, "(", BG_TOP - fe_vars_end, "bytes to spare )"
+
+\ ---- The packed front end, at the top of the emptier sprite bank (below the
+\ save area), and the routine that copies it to the screen for fe_unpack
+IF PASS = 2
+INCLUDE "src/gen/packed.asm"
+ASSERT FRONT_SIZE = front_end_ - front_start    \ (the first pass assembled the same front end)
+CLEAR &8000, &C000
+ORG FRONTZ_ORG
+GUARD SLOWSAVE0_START
+.frontz_start
+.front_packed
+    INCBIN "build/FRONT.lz"
+\ Copy it to SCREEN in the screen buffer that isn't on show
+.fe_stage
+{
+    lda ACCCON : and #&FB : sta tmp
+    and #1 : eor #1 : asl a : asl a : ora tmp : sta ACCCON
+    lda #LO(front_packed) : sta src : lda #HI(front_packed) : sta src+1
+    lda #0 : sta dp : lda #HI(SCREEN) : sta dp+1
+    ldx #(FRONTZ_SIZE + 255) DIV 256 : ldy #0
+.copy
+    lda (src),y : sta (dp),y : iny : bne copy
+    inc src+1 : inc dp+1 : dex : bne copy
+    rts
+}
+.frontz_end
+SAVE "FRONTZ", frontz_start, frontz_end
+ASSERT FRONTZ_ORG >= SPRITES_END
+PRINT "Packed front end:", frontz_end - frontz_start, "bytes at", ~FRONTZ_ORG, "in bank", FRONT_BANK, "(", FRONTZ_ORG - SPRITES_END, "bytes free below it )"
+ELSE
+fe_stage = &8000                    \ (a dummy for the first pass)
+ENDIF
 
 INCLUDE "src/gen/disc.asm"
 

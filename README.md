@@ -83,7 +83,7 @@ sprite tables, and every byte of the unrolled background) with what the converte
 |---|---|
 | Data converter: sprites, the level pack, jump table | `tools/convert.py` |
 | Level loader: unpacking a level, ladders' extensions, moving platforms' ranges | `fetch_level`, `load_level`, `meanie_settings`, `moving_platform`, `scan_left` etc. |
-| Attract screen and menus | `fe_main`, `fe_attract`, `fe_menus`, `fe_grid` (in bank 5); text: `print_inline`, `print_char` |
+| Attract screen and menus | `fe_main`, `fe_attract`, `fe_menus`, `fe_grid` (packed in bank 5, unpacked to bank 7 by `fe_stage` and `fe_unpack`); records: `fe_record`; text: `print_inline`, `print_char` |
 | Unrolling the background into bank 7 | `bg_items`, `unroll_bg`, `unroll_item`, `store_column`, `dict_find` |
 | Copying it back to the screen | `repaint_column`, `repaint_rect`, `cache_seek`, `copy_cell` |
 | Main loop, double buffering, scrolling | `src/frak.asm` (top) |
@@ -97,7 +97,7 @@ sprite tables, and every byte of the unrolled background) with what the converte
 | Collisions, pickups, checkpoints | `check_collisions`, `hit_test`, `collide`, `check_checkpoint` |
 | Platform and ladder queries | `platform_find`, `ladder_find` (ports of `PlatformFind` / `LadderFind`) |
 | Trogg movement | `trogg_standing`, `trogg_falling`, `trogg_climbing` (ports of `TroggStanding` etc.) |
-| Generated data | `src/gen/*`, `build/GFX4-5`, `build/SPANS`, `build/PACK` (the assembler also writes `BANK6`) |
+| Generated data | `src/gen/*`, `build/GFX4-5`, `build/SPANS`, `build/PACK`, `build/FRONT.lz` (by `tools/pack.py`) |
 
 ### Memory map (Master 128)
 
@@ -107,12 +107,27 @@ sprite tables, and every byte of the unrolled background) with what the converte
 | `&0400-&07FF` | save area for the main-RAM screen buffer (BASIC's workspace, unused); while a level loads, the packed level |
 | `&0900-&0CFF` | save area for the shadow screen buffer (RS423/cassette buffers, soft keys, UDGs); while a level loads, a column of the background and the list of things in it |
 | `&0E00-&10FF` | other variables: object states, checkpoint, draw logs, moving objects |
-| `&1100-&2FFF` | drawing code and its tables (43 bytes free) |
+| `&1100-&2FFF` | drawing code and its tables (30 bytes free) |
 | `&3000-&7FFF` | MODE 1 screen, **double buffered**: main RAM and shadow RAM. While a level loads (with the screen blanked) it holds the loader's workspace (`&3000-&4FFF`: the dictionary's hash table, a row of the background, the lines being built) and the loader itself (`&6000`) |
-| SWRAM banks 4-5 | sprites, pre-shifted, including unshifted copies of the platforms and ladders to unroll backgrounds from (23.1KB); the front end (attract screen, menus, level names and target times, menu icons, 3.2KB at `&A800` in bank 5, then the records); a save area for meanies flying off (the top 1KB of bank 5); **4.7KB free** |
+| SWRAM banks 4-5 | sprites, pre-shifted, including unshifted copies of the platforms and ladders to unroll backgrounds from (23.1KB); the front end, packed (2.6KB at `&B184` in bank 5, see below); a save area for meanies flying off (the top 1KB of bank 5); **4.5KB free**, in one piece (`&9F58-&B183`) |
 | SWRAM bank 6 | collision spans and tables (from `&8000`), the **game logic** (to `&A9CE`), then the current level's tables and the second save area for meanies flying off (398 bytes free). Stays paged in while playing |
-| SWRAM bank 7 | the current level's background, unrolled when it starts (`&8000-&ABFF`, see below); the code that paints it (`&AC00`); the level loader (`&B000`, 3.9KB, copied to `&6000` when a level loads) |
+| SWRAM bank 7 | the current level's background, unrolled when it starts (`&8000-&A9FF`, see below), or, while the menus are up, the front end (unpacked to `&8000`); the front end's records and the unpacker (`&AA00`); the code that paints the background; the level loader (`&B000`, 3.9KB, copied to `&6000` when a level loads) |
 | HAZEL (`&C000-&DFFF`) and ANDY (`&8000-&8FFF`) | **all 55 levels**, packed: 11.8KB, about 215 bytes each. `&8800-&88FF` of ANDY is left to the MOS |
+
+### The packed front end
+
+The attract screen and the menus (their code, the level names and target times, and the
+menu icons) are only needed while the menus are up, and at that point the level's unrolled
+background in bank 7 isn't. So the front end is assembled to run at `&8000` in bank 7 and kept
+packed in bank 5. Each time the menus come up, `fe_stage` (in bank 5) copies the packed data to
+the screen buffer that isn't being shown, and `fe_unpack` (in bank 7) unpacks it to `&8000`.
+The records (best times, gems and ratings) sit just above, at `&AA00`, with `fe_record`, so
+they stay put. The next level's background replaces the front end when a level starts.
+
+`build.sh` assembles twice: the first pass's `FRONT` is packed by `tools/pack.py` (a simple
+byte-aligned LZ77; 6502 code doesn't pack well, about 84%), and the second pass puts the packed
+data at the top of bank 5's free space, so the space below it stays in one piece. The unpacked
+front end can grow to 10.75KB (`&8000-&A9FF`) without needing more of bank 5 than its packed size.
 
 All 55 levels stay in memory, so nothing is loaded from disc after the start. At boot, `!BOOT`
 loads the level pack at `&3000` and `copy_pack` copies it into HAZEL and ANDY with interrupts

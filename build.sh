@@ -13,7 +13,12 @@ LEVEL=${LEVEL:-room_A_1}
 DIFFICULTY=${DIFFICULTY:-1}
 INVINCIBLE=${INVINCIBLE:-0}
 python3 tools/convert.py "$STEAMFRAK" "$LEVEL"
-"$BEEBASM" -D DIFFICULTY="$DIFFICULTY" -D INVINCIBLE="$INVINCIBLE" -i src/frak.asm -do build/frak.ssd -opt 3 -title FRAK \
+# Two passes: the first assembles the front end for tools/pack.py to compress,
+# the second builds the disc with the packed front end in it
+"$BEEBASM" -D PASS=1 -D DIFFICULTY="$DIFFICULTY" -D INVINCIBLE="$INVINCIBLE" -i src/frak.asm -do build/pass1.ssd \
+    > build/pass1.txt
+python3 tools/pack.py build/pass1.ssd
+"$BEEBASM" -D PASS=2 -D DIFFICULTY="$DIFFICULTY" -D INVINCIBLE="$INVINCIBLE" -i src/frak.asm -do build/frak.ssd -opt 3 -title FRAK \
     > build/assembler.txt
 grep -v "^TIMING\|^SYMBOLS" build/assembler.txt     # (those two lines are for the test scripts)
 echo "Built build/frak.ssd"
