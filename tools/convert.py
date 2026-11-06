@@ -254,6 +254,7 @@ def build_level(data, room_name):
     # (stray objects far outside the level are left out)
     insts = [inst for inst in room['inst'] if -256 <= int(inst[1]) < 2048 and -256 <= int(inst[2]) < 2048]
     plats, plat_order, plat_spr, ladders, ladder_spr, draw, trogg = [], [], [], [], [], [], None
+    plat_bouncy = []
     moving_enabled = False
     for order, inst in enumerate(insts):
         obj, x, y = inst[0], int(inst[1]), int(inst[2])
@@ -271,6 +272,7 @@ def build_level(data, room_name):
             plats.append((x, y, info['w'], info['h']))
             plat_order.append(order)
             plat_spr.append(spr)
+            plat_bouncy.append(1 if data.props(inst).get('is_bouncy') else 0)
         draw.append((DEPTH[kind], order, spr, x, y, obj))
     # Ladders reach up to the platform above them (LadderAdd)
     for order, inst in enumerate(insts):
@@ -372,12 +374,18 @@ def build_level(data, room_name):
                 moving_orders.add(order)
 
     draw = [d for d in draw if d[1] not in moving_orders]
+    # a spring under each bouncy platform that stays put (oPlatform's Draw event), drawn just
+    # after it, into the background
+    for (px, py, pw, ph), order, spr, bouncy in zip(plats, plat_order, plat_spr, plat_bouncy):
+        if bouncy and order not in moving_orders:
+            draw.append((DEPTH['oPlatform'], order + 0.5, 'sSpring_Beeb', px + pw // 2,
+                         py + ph - (3 if re.match(r'sLog[1-5]_Beeb$', spr) else 0), 'spring'))
     draw.sort(key=lambda d: (-d[0], d[1]))
     plat_moving = [1 if o in moving_orders else 0 for o in plat_order]
     return {
         'w': room['w'], 'h': room['h'], 'bg': BG_PHYSICAL.get(room['bg'], 6),
         'trogg': trogg, 'plats': plats, 'plat_moving': plat_moving, 'ladders': ladders,
-        'plat_spr': plat_spr, 'ladder_spr': ladder_spr,
+        'plat_spr': plat_spr, 'ladder_spr': ladder_spr, 'plat_bouncy': plat_bouncy,
         'draw': draw, 'slow': slow, 'moving_enabled': moving_enabled,
     }
 
@@ -511,35 +519,43 @@ def slow_simple_flags(data, lev, draw):
 
 # --- Jump / fall table ---------------------------------------------------------------------------
 
+FALL_JUMP_SPEED = 25        # (in 1/20 pixel a tick: the units of fall_table)
+FALL_TOP_SPEED = 82          # the fastest bounce: from terminal velocity (80), plus 2
+
+
 def fall_table():
     """
     Simulate the Steam version's Trogg falling (gravity 0.05/tick, terminal velocity -4, y rounded
     to multiples of 0.05) and reduce it to whole-pixel steps.
 
-    Index t is the state at the start of a tick, with upward velocity 1.25 - 0.05 * t:
-    t = 0 is the start of a jump, t = 25 is stepping off a ledge, t = 45 is dropping off the
-    bottom of a ladder. For each t we store the whole-pixel y change (positive = down), whether
+    Index t is the state at the start of a tick, with upward velocity (82 - t) / 20 pixels:
+    t = 57 is the start of a jump (1.25), t = 82 is stepping off a ledge (0), t = 102 is dropping
+    off the bottom of a ladder (-1). Before 57 are the faster upward speeds a bounce can give
+    (see FALL_BOUNCE). For each t we store the whole-pixel y change (positive = down), whether
     Trogg may still grab a ladder, and whether landing would kill him.
     """
-    # Work in exact units of 1/20 pixel: gravity is 1 unit/tick, jump speed 25, terminal -80
-    yvel = 25
-    pos = 0             # 1/20ths of a pixel, positive = down
-    ipos = 0
-    dys, flags = [], []
-    t = 0
+    # Work in exact units of 1/20 pixel: gravity is 1 unit/tick, terminal velocity -80. Positions
+    # count from the start of a jump, so jumps and falls are as they were before bounces came in
+    first = FALL_JUMP_SPEED - FALL_TOP_SPEED            # (negative: the bounce speeds)
+    speed = lambda t: max(-80, FALL_TOP_SPEED - t)      # at the start of tick t
+    pos = {FALL_TOP_SPEED - FALL_JUMP_SPEED: 0}         # 1/20ths of a pixel, positive = down
+    t = FALL_TOP_SPEED - FALL_JUMP_SPEED
     while True:
-        if yvel > -80:
-            yvel -= 1
-        ladder_ok = yvel * 2 >= -51         # yvel >= -1.275 pixels/tick
-        deadly = yvel <= -32                # yvel <= -1.60 pixels/tick
-        pos -= yvel
-        dy = (pos + 10) // 20 - ipos        # round to the nearest whole pixel
-        ipos += dy
-        dys.append(dy)
-        flags.append((1 if ladder_ok else 0) | (2 if deadly else 0))
+        v = speed(t)
+        pos[t + 1] = pos[t] - (v - 1 if v > -80 else v)
         t += 1
-        if yvel <= -80 and t > 110:
+        if speed(t) <= -80 and t > 110 - first:
             break
+    for t in range(FALL_TOP_SPEED - FALL_JUMP_SPEED - 1, -1, -1):
+        v = speed(t)
+        pos[t] = pos[t + 1] + (v - 1 if v > -80 else v)
+    rnd = lambda p: (p + 10) // 20                      # (to the nearest whole pixel)
+    dys, flags = [], []
+    for t in range(max(pos)):
+        v = speed(t)
+        yvel = v - 1 if v > -80 else v                  # (after this tick's gravity)
+        dys.append(rnd(pos[t + 1]) - rnd(pos[t]))
+        flags.append((1 if yvel * 2 >= -51 else 0) | (2 if yvel <= -32 else 0))
     return dys, flags
 
 
@@ -583,7 +599,7 @@ def level_tables(data, lev, image_id, simple):
     d = [item for item in lev['draw'] if item[0] not in CACHE_BG_DEPTHS]
     info = lambda spr: data.sprites[spr]
     t = {'plat_x': [v[0] for v in p], 'plat_y': [v[1] for v in p], 'plat_w': [v[2] for v in p],
-         'plat_moving': lev['plat_moving'],
+         'plat_moving': lev['plat_moving'], 'plat_bouncy': [128 * b for b in lev['plat_bouncy']],
          'lad_x': [v[0] for v in lad], 'lad_y': [v[1] for v in lad], 'lad_h': [v[2] for v in lad],
          'lad_ext': [v[3] for v in lad],
          'draw_img': [image_id[(spr, 0)] for (_, _, spr, _, _, _) in d],
@@ -604,7 +620,7 @@ def pack_level(data, lev, image_id, params):
       header: byte columns, character rows, background colour, Trogg's x and y (2 bytes each),
               flags (bit 0 = meanies move), then counts of: palette entries, platforms, ladders,
               objects, moving meanies, moving platforms
-      palette: the image of each sprite the level uses
+      palette: the image of each sprite the level uses (+ 128 for a bouncy platform's)
       platforms, ladders, objects (in drawing order) and moving meanies: 3 bytes each,
               x low, y low, then x high (bits 0-1), y high (bits 2-3), palette entry (bits 4-7)
       moving meanies: a byte each, settings (index into sl_params) + 128 if drawn the simple way
@@ -616,17 +632,17 @@ def pack_level(data, lev, image_id, params):
     mplats = [v for v in lev['slow'] if v['kind'] == SL_PLATFORM]
     simple = slow_simple_flags(data, lev, d)
     pal = []
-    def pe(spr):
-        img = image_id[(spr, 0)]
+    def pe(spr, flag=0):
+        img = image_id[(spr, 0)] | flag
         if img not in pal:
             pal.append(img)
         return pal.index(img)
-    def rec(x, y, spr):
+    def rec(x, y, spr, flag=0):
         assert 0 <= x < 1024 and 0 <= y < 1024, (x, y)
-        return bytes((x & 0xFF, y & 0xFF, (x >> 8) | ((y >> 8) << 2) | (pe(spr) << 4)))
+        return bytes((x & 0xFF, y & 0xFF, (x >> 8) | ((y >> 8) << 2) | (pe(spr, flag) << 4)))
     body = bytearray()
-    for (x, y, w, h), spr in zip(lev['plats'], lev['plat_spr']):
-        body += rec(x, y, spr)
+    for (x, y, w, h), spr, bouncy in zip(lev['plats'], lev['plat_spr'], lev['plat_bouncy']):
+        body += rec(x, y, spr, 128 if bouncy else 0)
     for spr, y in lev['ladder_spr']:
         lx = lev['ladders'][len(body) // 3 - len(lev['plats'])][0]
         body += rec(lx, y, spr)
@@ -796,9 +812,10 @@ def main():
     dys, flags = fall_table()
     out = ['\\ Lookup tables - GENERATED by tools/convert.py, do not edit', '']
     out.append('FALL_LEN = %d' % len(dys))
-    out.append('FALL_JUMP = 0          \\ start of a jump (upward speed 1.25)')
-    out.append('FALL_STEP_OFF = 25     \\ walking off a ledge (speed 0)')
-    out.append('FALL_LADDER_DROP = 45  \\ dropping off the bottom of a ladder (speed -1)')
+    out.append('FALL_JUMP = %d         \\ start of a jump (upward speed 1.25)' % (FALL_TOP_SPEED - FALL_JUMP_SPEED))
+    out.append('FALL_STEP_OFF = %d     \\ walking off a ledge (speed 0)' % FALL_TOP_SPEED)
+    out.append('FALL_LADDER_DROP = %d  \\ dropping off the bottom of a ladder (speed -1)' % (FALL_TOP_SPEED + 20))
+    out.append('FALL_BOUNCE = %d       \\ bouncing at index t continues at FALL_BOUNCE - t (0 if that is negative: terminal velocity)' % (2 * FALL_TOP_SPEED - 2))
     out.append('')
     out.append('ALIGN &100')
     out.append(asm_bytes('masktab', mask_table()))
@@ -831,7 +848,7 @@ def main():
         maxima['bg_end'] = max(maxima.get('bg_end', 0), start + len(bgdata))
         expect[name] = t
         for k, n in (('plats', len(lev['plats'])), ('ladders', len(lev['ladders'])), ('slow', len(lev['slow'])),
-                     ('draw', len(t['draw_img'])), ('bg', len(lev['plats']) + len(lev['ladders']))):
+                     ('draw', len(t['draw_img'])), ('bg', len(lev['plats']) + len(lev['ladders']) + sum(lev['plat_bouncy']))):
             maxima[k] = max(maxima.get(k, 0), n)
     segs = [bytearray() for _ in PACK_SEGMENTS]
     where = []

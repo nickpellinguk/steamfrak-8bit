@@ -227,6 +227,7 @@ ORG &0E00
 .res_y      SKIP 2
 .res_i      SKIP 1
 .res_found  SKIP 1
+.fall_t     SKIP 1          \ trogg_falling: this tick's index in the fall table
 .lad_top    SKIP 2
 .lad_len    SKIP 2
 .tx         SKIP 2
@@ -646,6 +647,7 @@ INCLUDE "src/gen/tables.asm"
     lda yo_y : sta p_y : lda yo_y+1 : sta p_y+1
     jsr log_sprite
 .no_yoyo
+    jsr draw_springs                \ (moving bouncy platforms' springs)
 
     \ Trogg (standing or walking, he's two images: his body and his legs)
     jsr trogg_image : tax
@@ -2700,6 +2702,53 @@ ENDMACRO
     lda anim : clc : adc #30 : sta anim     \ ~7 frames a second, as in GameMaker
     rts
 
+\ p_x, p_y = where platform X's spring goes: under its middle (3 rows higher
+\ under a log). X kept.
+.spring_pos
+{
+    lda plat_w,x : lsr a : clc : adc plat_xl,x : sta p_x
+    lda plat_xh,x : adc #0 : sta p_x+1
+    stx tmp
+    lda plat_img,x : tax : lda img_h,x
+    cpx #IMG_Log1 : bcc not_log : cpx #IMG_Log5 + 1 : bcs not_log
+    sbc #2                                          \ (carry clear: 3)
+.not_log
+    ldx tmp
+    clc : adc plat_yl,x : sta p_y : lda plat_yh,x : adc #0 : sta p_y+1
+    rts
+}
+
+\ For the level loader's bg_items: if platform X is bouncy, background item Y
+\ (then Y + 1) is its spring. X kept.
+.spring_item
+{
+    lda plat_bouncy,x : beq done
+    jsr spring_pos
+    lda #IMG_Spring : sta BG_IMG,y
+    lda p_x : sta BG_XL,y : lda p_x+1 : sta BG_XH,y
+    lda p_y : sta BG_YL,y : lda p_y+1 : sta BG_YH,y
+    iny
+.done
+    rts
+}
+
+\ Draw (into the draw log) the springs of the bouncy platforms that move: they
+\ can't be in the background like the others
+.draw_springs
+{
+    ldx num_plats
+.loop
+    dex : bmi done
+    lda plat_moving,x : beq loop
+    lda plat_bouncy,x : beq loop
+    jsr spring_pos
+    lda #IMG_Spring : sta p_img
+    txa : pha : jsr log_sprite : pla : tax
+    jmp loop
+.done
+    rts
+}
+
 .trogg_falling
 {
     \ x += xvel, clamped to [12, LEVEL_W - 10]
@@ -2713,7 +2762,7 @@ ENDMACRO
 .x_ok2
     lda tx : sta q_x : lda tx+1 : sta q_x+1
 
-    ldx fallt
+    ldx fallt : stx fall_t
     lda fall_dy,x : sta dy
     lda fall_flags,x : sta fflags
     cpx #FALL_LEN - 1 : bcs no_inc
@@ -2735,13 +2784,27 @@ ENDMACRO
     jmp start_climbing
 .no_grab
 
-    lda dy : beq done : bmi rising
+    lda dy : bne moves
+    rts
+.moves
+    bpl down
+    jmp rising
+.down
     \ Falling: land on a platform between y and y + dy?
     lda ty : sta q_y1 : lda ty+1 : sta q_y1+1
     jsr set_q_y2_ty_plus_dy
     jsr platform_find
     lda res_found : beq keep_falling
     lda res_y : sta ty : lda res_y+1 : sta ty+1
+    \ a bouncy platform throws him back up: the Steam version reverses his speed (plus
+    \ twice gravity), which in the fall table is index FALL_BOUNCE - this tick's
+    ldx res_i : lda plat_bouncy,x : beq land
+    lda #FALL_BOUNCE : sec : sbc fall_t : bcs bounce_ok
+    lda #0                                          \ (from terminal velocity)
+.bounce_ok
+    sta fallt
+    rts
+.land
     lda #0 : sta xvel
     lda #1 : sta ud_db
     lda #ST_STAND : sta tstate
@@ -4118,6 +4181,7 @@ ENDMACRO
 .plat_y0h   SKIP MAX_PLATS
 .plat_moving SKIP MAX_PLATS
 .plat_img   SKIP MAX_PLATS
+.plat_bouncy SKIP MAX_PLATS         \ 128 if Trogg bounces off it (it has a spring), else 0
 .lad_xl     SKIP MAX_LADDERS    \ ladders, including their hidden extensions
 .lad_xh     SKIP MAX_LADDERS
 .lad_yl     SKIP MAX_LADDERS
@@ -4543,7 +4607,8 @@ ROMSEL_ANDY = &80                   \ ROMSEL bit 7: ANDY at &8000-&8FFF
     jsr next_rec
     lda rx : sta plat_xl,x : sta plat_x0l,x : lda rx+1 : sta plat_xh,x : sta plat_x0h,x
     lda ry : sta plat_yl,x : sta plat_y0l,x : lda ry+1 : sta plat_yh,x : sta plat_y0h,x
-    lda rimg : sta plat_img,x : tay
+    lda rimg : and #&80 : sta plat_bouncy,x           \ (the palette marks bouncy platforms)
+    lda rimg : and #&7F : sta plat_img,x : tay
     lda img_w,y : sta plat_w,x
     lda #0 : sta plat_moving,x
     inx : bne plat_loop
@@ -4991,6 +5056,7 @@ ENDMACRO
     lda plat_xl,x : sta BG_XL,y : lda plat_xh,x : sta BG_XH,y
     lda plat_yl,x : sta BG_YL,y : lda plat_yh,x : sta BG_YH,y
     iny
+    jsr spring_item                                 \ (and a bouncy one's spring)
 .next_plat
     inx : bne plats
 .plats_done
@@ -6048,4 +6114,4 @@ INCLUDE "src/gen/disc.asm"
 PRINT "Code from", ~code_start, "to", ~end, "(", end - code_start, "bytes ), free:", SCREEN - ram_top
 \ Addresses used by test scripts (profiling and poking variables)
 PRINT "TIMING", ~main_loop, ~t_restore, ~t_scroll, ~t_draw, ~t_vsync, ~t_after_vsync, ~t_logic, ~t_logic_done, ~t_slow, ~t_slow_done
-PRINT "SYMBOLS loops", ~loops, "snd_tune", ~snd_tune, "snd_qb", ~snd_qb, "v_phase", ~v_phase, "v_left", ~v_left, "v_ord", ~v_ord, "v_on", ~v_on, "v_att", ~v_att, "snd_music_req", ~snd_music_req, "snd_cur", ~snd_cur, "snd_music_opt", ~snd_music_opt, "snd_sfx_opt", ~snd_sfx_opt, "snd_acc", ~snd_acc, "draw_kind", ~draw_kind, "num_keys", ~num_keys, "lvl_ticks", ~lvl_ticks, "done_valid", ~done_valid, "fe_sel", ~fe_sel, "cur_level", ~cur_level, "num_plats", ~num_plats, "num_ladders", ~num_ladders, "num_draw", ~num_draw, "num_slow", ~num_slow, "plat_w", ~plat_w, "plat_x0l", ~plat_x0l, "plat_x0h", ~plat_x0h, "plat_y0l", ~plat_y0l, "plat_y0h", ~plat_y0h, "plat_moving", ~plat_moving, "lad_xl", ~lad_xl, "lad_xh", ~lad_xh, "lad_yl", ~lad_yl, "lad_yh", ~lad_yh, "lad_hl", ~lad_hl, "lad_hh", ~lad_hh, "lad_ext", ~lad_ext, "draw_img", ~draw_img, "draw_xl", ~draw_xl, "draw_xh", ~draw_xh, "draw_yl", ~draw_yl, "draw_yh", ~draw_yh, "sl_kind", ~sl_kind, "sl_img", ~sl_img, "sl_x0l", ~sl_x0l, "sl_x0h", ~sl_x0h, "sl_y0l", ~sl_y0l, "sl_y0h", ~sl_y0h, "sl_aminl", ~sl_aminl, "sl_aminh", ~sl_aminh, "sl_amaxl", ~sl_amaxl, "sl_amaxh", ~sl_amaxh, "sl_bminl", ~sl_bminl, "sl_bminh", ~sl_bminh, "sl_bmaxl", ~sl_bmaxl, "sl_bmaxh", ~sl_bmaxh, "sl_vf", ~sl_vf, "sl_vi", ~sl_vi, "sl_vy", ~sl_vy, "sl_plat", ~sl_plat, "sl_wait", ~sl_wait, "sl_simple", ~sl_simple, "plat_yh", ~plat_yh, "level_bg", ~level_bg, "trogg_x0", ~trogg_x0, "trogg_y0", ~trogg_y0, "dmg_n", ~dmg_n, "s_alive", ~s_alive, "s_xl", ~s_xl, "s_xh", ~s_xh, "s_yl", ~s_yl, "s_yh", ~s_yh, "cur_plat", ~cur_plat, "plat_xl", ~plat_xl, "plat_xh", ~plat_xh, "plat_yl", ~plat_yl, "mv_img", ~mv_img, "mv_vxi", ~mv_vxi, "mv_vyi", ~mv_vyi, "mv_vyf", ~mv_vyf, "mv_yl", ~mv_yl, "mv_yh", ~mv_yh, "mv_pause", ~mv_pause, "bal_timer", ~bal_timer, "dag_timer", ~dag_timer, "bscroll", ~bscroll, "front", ~front, "vsyncs", ~vsyncs, "yo_len", ~yo_len, "mv_active", ~mv_active, "mv_xl", ~mv_xl, "mv_xh", ~mv_xh, "tface", ~tface, "keys_found", ~keys_found, "gems_found", ~gems_found, "won", ~won, "have_cp", ~have_cp, "restarts", ~restarts, "alive", ~alive, "newcol", ~newcol, "dead", ~dead, "tx", ~tx, "ty", ~ty, "tstate", ~tstate, "fallt", ~fallt, "dead", ~dead, "anim", ~anim, "p_img", ~p_img, "bank", ~bank, "oldbank", ~oldbank, "dptr", ~dptr, "scrollcol", ~scrollcol
+PRINT "SYMBOLS loops", ~loops, "snd_tune", ~snd_tune, "snd_qb", ~snd_qb, "v_phase", ~v_phase, "v_left", ~v_left, "v_ord", ~v_ord, "v_on", ~v_on, "v_att", ~v_att, "snd_music_req", ~snd_music_req, "snd_cur", ~snd_cur, "snd_music_opt", ~snd_music_opt, "snd_sfx_opt", ~snd_sfx_opt, "snd_acc", ~snd_acc, "draw_kind", ~draw_kind, "num_keys", ~num_keys, "lvl_ticks", ~lvl_ticks, "done_valid", ~done_valid, "fe_sel", ~fe_sel, "cur_level", ~cur_level, "num_plats", ~num_plats, "num_ladders", ~num_ladders, "num_draw", ~num_draw, "num_slow", ~num_slow, "plat_w", ~plat_w, "plat_x0l", ~plat_x0l, "plat_x0h", ~plat_x0h, "plat_y0l", ~plat_y0l, "plat_y0h", ~plat_y0h, "plat_moving", ~plat_moving, "plat_bouncy", ~plat_bouncy, "lad_xl", ~lad_xl, "lad_xh", ~lad_xh, "lad_yl", ~lad_yl, "lad_yh", ~lad_yh, "lad_hl", ~lad_hl, "lad_hh", ~lad_hh, "lad_ext", ~lad_ext, "draw_img", ~draw_img, "draw_xl", ~draw_xl, "draw_xh", ~draw_xh, "draw_yl", ~draw_yl, "draw_yh", ~draw_yh, "sl_kind", ~sl_kind, "sl_img", ~sl_img, "sl_x0l", ~sl_x0l, "sl_x0h", ~sl_x0h, "sl_y0l", ~sl_y0l, "sl_y0h", ~sl_y0h, "sl_aminl", ~sl_aminl, "sl_aminh", ~sl_aminh, "sl_amaxl", ~sl_amaxl, "sl_amaxh", ~sl_amaxh, "sl_bminl", ~sl_bminl, "sl_bminh", ~sl_bminh, "sl_bmaxl", ~sl_bmaxl, "sl_bmaxh", ~sl_bmaxh, "sl_vf", ~sl_vf, "sl_vi", ~sl_vi, "sl_vy", ~sl_vy, "sl_plat", ~sl_plat, "sl_wait", ~sl_wait, "sl_simple", ~sl_simple, "plat_yh", ~plat_yh, "level_bg", ~level_bg, "trogg_x0", ~trogg_x0, "trogg_y0", ~trogg_y0, "dmg_n", ~dmg_n, "s_alive", ~s_alive, "s_xl", ~s_xl, "s_xh", ~s_xh, "s_yl", ~s_yl, "s_yh", ~s_yh, "cur_plat", ~cur_plat, "plat_xl", ~plat_xl, "plat_xh", ~plat_xh, "plat_yl", ~plat_yl, "mv_img", ~mv_img, "mv_vxi", ~mv_vxi, "mv_vyi", ~mv_vyi, "mv_vyf", ~mv_vyf, "mv_yl", ~mv_yl, "mv_yh", ~mv_yh, "mv_pause", ~mv_pause, "bal_timer", ~bal_timer, "dag_timer", ~dag_timer, "bscroll", ~bscroll, "front", ~front, "vsyncs", ~vsyncs, "yo_len", ~yo_len, "mv_active", ~mv_active, "mv_xl", ~mv_xl, "mv_xh", ~mv_xh, "tface", ~tface, "keys_found", ~keys_found, "gems_found", ~gems_found, "won", ~won, "have_cp", ~have_cp, "restarts", ~restarts, "alive", ~alive, "newcol", ~newcol, "dead", ~dead, "tx", ~tx, "ty", ~ty, "tstate", ~tstate, "fallt", ~fallt, "dead", ~dead, "anim", ~anim, "p_img", ~p_img, "bank", ~bank, "oldbank", ~oldbank, "dptr", ~dptr, "scrollcol", ~scrollcol

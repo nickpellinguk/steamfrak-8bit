@@ -54,6 +54,7 @@ for (let li = 0; li < names.length; li++) {
   cmp('plat_y', rng(np).map(i => s16(w16('plat_y0l', 'plat_y0h', i))), e.plat_y);
   cmp('plat_w', rng(np).map(i => r(sym.plat_w + i)), e.plat_w);
   cmp('plat_moving', rng(np).map(i => r(sym.plat_moving + i)), e.plat_moving);
+  cmp('plat_bouncy', rng(np).map(i => r(sym.plat_bouncy + i)), e.plat_bouncy);
   cmp('lad_x', rng(nl).map(i => w16('lad_xl', 'lad_xh', i)), e.lad_x);
   cmp('lad_y', rng(nl).map(i => s16(w16('lad_yl', 'lad_yh', i))), e.lad_y);
   cmp('lad_h', rng(nl).map(i => w16('lad_hl', 'lad_hh', i)), e.lad_h);
