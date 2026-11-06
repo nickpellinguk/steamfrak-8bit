@@ -1,0 +1,6 @@
+build/*
+!build/frak.ssd
+tools/emu/node_modules/
+tools/emu/package-lock.json
+tools/emu/screenshots/
+__pycache__/
