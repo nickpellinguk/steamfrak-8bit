@@ -384,7 +384,6 @@ ORG &0E00
 .txt_glyph  SKIP 8
 .t_part_b   SKIP 1          \ Trogg's second image (legs), 255 if none
 .pages1     SKIP 1          \ non-zero if the background's dictionary has more than one page
-.bg_have    SKIP 1          \ the level whose background is unrolled in bank 7, plus 1 (0: none)
 .u_sx       SKIP 1
 .cmask      SKIP 30         \ a background line's masks
 .ds_base    SKIP 1          \ draw_slow: index of this buffer's drawn records
@@ -471,7 +470,14 @@ INCLUDE "src/gen/tables.asm"
 \ Go back to the last checkpoint (the state saved after collecting a key)
 .restore_checkpoint
 {
+    lda have_cp : bne counted
+    \ (no key yet: back to the start of the level, saved when it began, as if it
+    \ had just started, as GameMaker restarts the room)
+    sta restarts : sta lvl_ticks : sta lvl_ticks+1
+    beq restore
+.counted
     inc restarts
+.restore
     ldx #MAX_OBJECTS - 1
 .objs
     lda cp_alive,x : sta alive,x : dex : bpl objs
@@ -693,11 +699,7 @@ INCLUDE "src/gen/tables.asm"
     beq next_tick
     cmp #TICK_WON : beq next_level
     cmp #TICK_QUIT : beq to_menu
-    lda have_cp : beq from_scratch          \ TICK_DIED: restart
-    jmp restore_checkpoint
-.from_scratch
-    lda cur_level : jsr load_playable       \ (no checkpoint: the level again, as GameMaker's room_restart)
-    jmp redraw_all
+    jmp restore_checkpoint          \ TICK_DIED: back to the checkpoint (or the level's start)
 .next_level
     jsr record_result
     lda cur_level : clc : adc #1 : jsr load_playable
@@ -1834,7 +1836,6 @@ FONT = &B900
 {
     ldx back : lda #1 : sta bwon,x
     lda bwon : and bwon+1 : bne unpacked        \ (the first buffer unpacks it)
-    lda #0 : sta bg_have
     lda #FRONT_BANK : sta ROMSEL_COPY : sta ROMSEL
     jsr fe_stage                    \ (the packed front end to this buffer's screen)
     lda #CACHE_BANK : sta ROMSEL_COPY : sta ROMSEL
@@ -1851,7 +1852,6 @@ FONT = &B900
 .front_end
 {
     pha
-    lda #0 : sta bg_have            \ (the front end goes where the background was)
     lda #FRONT_BANK : sta ROMSEL_COPY : sta ROMSEL
     jsr fe_stage                    \ (the packed front end to the hidden screen)
     lda #CACHE_BANK : sta ROMSEL_COPY : sta ROMSEL
@@ -2426,6 +2426,14 @@ ENDMACRO
     lda plat_moving,x : cmp #1 : beq done      \ (Trogg moves the movable ones)
     lda #0 : sta save_cp
     lda #1 : sta have_cp
+    jmp save_checkpoint
+.done
+    rts
+}
+
+\ Save the checkpoint (also at the start of a level, for a death before the first key)
+.save_checkpoint
+{
     ldx #MAX_OBJECTS - 1
 .objs
     lda alive,x : sta cp_alive,x : dex : bpl objs
@@ -2436,9 +2444,7 @@ ENDMACRO
     lda tface : sta cp_face
     lda bal_timer : sta cp_bal : lda dag_timer : sta cp_dag
     lda carry : sta cp_carry : lda dropped : sta cp_dropped
-    jsr slow_save_checkpoint
-.done
-    rts
+    jmp slow_save_checkpoint
 }
 
 \ ------------------------------------------------------------------------------
@@ -4856,13 +4862,8 @@ ROMSEL_ANDY = &80                   \ ROMSEL bit 7: ANDY at &8000-&8FFF
     inx : bne unused
 .unused_done
 
-    \ (the background is still in bank 7 if it was this level's, as when it's
-    \ reloaded after Trogg dies with no checkpoint)
-    ldx cur_level : inx : cpx bg_have : beq bg_kept
     jsr bg_items
     jsr unroll_bg
-    ldx cur_level : inx : stx bg_have
-.bg_kept
     clc
     rts
 }
@@ -5595,9 +5596,9 @@ ASSERT MAX_BG <= &50
 \ Where each level is in the pack, and the moving meanies' settings (only the
 \ loader needs them, so they're packed with it)
 INCLUDE "src/gen/levels.asm"
-\ A level's start (when it's loaded, or reloaded after Trogg dies with no
-\ checkpoint): its objects, Trogg, the timer and the moving things. Then
-\ redraw_all.
+\ A level's start, when it's loaded: its objects, Trogg, the timer and the
+\ moving things, saved as a checkpoint for a death before the first key (which
+\ isn't counted as a restart). Then redraw_all.
 .level_init
 {
     ldx #MAX_OBJECTS - 1
@@ -5612,7 +5613,7 @@ INCLUDE "src/gen/levels.asm"
     lda trogg_x0 : sta tx : lda trogg_x0+1 : sta tx+1
     lda trogg_y0 : sta ty : lda trogg_y0+1 : sta ty+1
     lda #0 : sta tface : sta tyf : sta tv
-    rts
+    jmp save_checkpoint             \ (where a death before the first key goes back to)
 }
 
 \ Start of level: everything at its starting position
