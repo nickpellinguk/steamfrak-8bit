@@ -2625,7 +2625,8 @@ ENDMACRO
     lda #FALL_JUMP
 .start_fall
     sta fallt
-    lda #1 : sta ud_db
+    \ (no up/down debounce: the Steam version's TroggStanding asks for one, but its
+    \ caller ignores it, so holding up through a jump catches a ladder on the way)
     lda #ST_FALL : sta tstate
     rts
 
@@ -2645,7 +2646,6 @@ ENDMACRO
     jsr move_to_qx
     lda xmove : sta xvel
     lda #FALL_JUMP : sta fallt
-    lda #1 : sta ud_db
     lda #ST_FALL : sta tstate
     rts
 
