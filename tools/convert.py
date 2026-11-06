@@ -255,7 +255,6 @@ def build_level(data, room_name):
     insts = [inst for inst in room['inst'] if -256 <= int(inst[1]) < 2048 and -256 <= int(inst[2]) < 2048]
     plats, plat_order, plat_spr, ladders, ladder_spr, draw, trogg = [], [], [], [], [], [], None
     plat_bouncy = []
-    ladder_half = []        # (a ladder half a pixel to the right of its x: one, in D_9)
     moving_enabled = False
     for order, inst in enumerate(insts):
         obj, x, y = inst[0], int(inst[1]), int(inst[2])
@@ -280,8 +279,6 @@ def build_level(data, room_name):
         obj, x, y = inst[0], int(inst[1]), int(inst[2])
         if data.kind(obj) != 'oLadder':
             continue
-        assert inst[1] in (x, x + 0.5) and inst[2] == y, inst
-        ladder_half.append(1 if inst[1] != x else 0)
         ladder_spr.append((data.sprite_of(obj), y))
         info = data.sprites[data.sprite_of(obj)]
         h = info['h'] + LADDER_EXTRA_LENGTH
@@ -388,7 +385,7 @@ def build_level(data, room_name):
     return {
         'w': room['w'], 'h': room['h'], 'bg': BG_PHYSICAL.get(room['bg'], 6),
         'trogg': trogg, 'plats': plats, 'plat_moving': plat_moving, 'ladders': ladders,
-        'plat_spr': plat_spr, 'ladder_spr': ladder_spr, 'plat_bouncy': plat_bouncy, 'ladder_half': ladder_half,
+        'plat_spr': plat_spr, 'ladder_spr': ladder_spr, 'plat_bouncy': plat_bouncy,
         'draw': draw, 'slow': slow, 'moving_enabled': moving_enabled,
     }
 
@@ -564,7 +561,7 @@ def level_tables(data, lev, image_id, simple):
     t = {'plat_x': [v[0] for v in p], 'plat_y': [v[1] for v in p], 'plat_w': [v[2] for v in p],
          'plat_moving': lev['plat_moving'], 'plat_bouncy': [128 * b for b in lev['plat_bouncy']],
          'lad_x': [v[0] for v in lad], 'lad_y': [v[1] for v in lad], 'lad_h': [v[2] for v in lad],
-         'lad_ext': [v[3] for v in lad], 'lad_half': [128 * h for h in lev['ladder_half']],
+         'lad_ext': [v[3] for v in lad],
          'draw_img': [image_id[(spr, 0)] for (_, _, spr, _, _, _) in d],
          'draw_x': [v[3] for v in d], 'draw_y': [v[4] for v in d],
          'sl_kind': [v['kind'] for v in sl], 'sl_img': [image_id[(v['spr'], 0)] for v in sl],
@@ -583,8 +580,7 @@ def pack_level(data, lev, image_id, params):
       header: byte columns, character rows, background colour, Trogg's x and y (2 bytes each),
               flags (bit 0 = meanies move), then counts of: palette entries, platforms, ladders,
               objects, moving meanies, moving platforms
-      palette: the image of each sprite the level uses (+ 128 for a bouncy platform's, or a
-              ladder's half a pixel right of its x)
+      palette: the image of each sprite the level uses (+ 128 for a bouncy platform's)
       platforms, ladders, objects (in drawing order) and moving meanies: 3 bytes each,
               x low, y low, then x high (bits 0-1), y high (bits 2-3), palette entry (bits 4-7)
       moving meanies: a byte each, settings (index into sl_params) + 128 if drawn the simple way
@@ -607,9 +603,9 @@ def pack_level(data, lev, image_id, params):
     body = bytearray()
     for (x, y, w, h), spr, bouncy in zip(lev['plats'], lev['plat_spr'], lev['plat_bouncy']):
         body += rec(x, y, spr, 128 if bouncy else 0)
-    for (spr, y), half in zip(lev['ladder_spr'], lev['ladder_half']):
+    for spr, y in lev['ladder_spr']:
         lx = lev['ladders'][len(body) // 3 - len(lev['plats'])][0]
-        body += rec(lx, y, spr, 128 if half else 0)
+        body += rec(lx, y, spr)
     for (_, _, spr, x, y, _) in d:
         body += rec(x, y, spr)
     for v in meanies:

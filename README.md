@@ -93,13 +93,12 @@ interpreter (`cpu6502.mjs`) against that memory, from every pixel of every platf
 point of every ladder, holding every key. It needs the steamfrak repository alongside this one
 (`STEAMFRAK=...` otherwise) and the GameMaker project alongside that. All 55 levels come out the
 same as the original: every start (about 520,000) ends the same way at the same tick and
-position, and every connection (about 4,100) is the same. (One stray platform 368,215 pixels
-off to the side of Jungled Up, which the converter leaves out, is listed but can't matter. And
-one ladder in D_9 is at x = 48.5: the level pack marks it, as it does bouncy platforms, and
-`ladder_find` treats it as GameMaker does, catching Trogg from 5 pixels left of 48 to 6 right,
-and nudging him right when he's at 48. The search starts some climbs at the ladder's x, 48.5,
-which Trogg can never be at, as his x is always whole: from there the 6502 version starts at
-48, so those starts end a pixel apart.)
+position, and every connection (about 4,100) is the same. (Three things in the original's rooms are off by half a pixel or worse, which were bugs: a
+ladder in D_9 at x = 48.5, a key in B_6 at y = 40.5 and a Hooter in C_6 at x = 74.5. The
+converter rounds them down to whole pixels, so the D_9 ladder catches Trogg one pixel further
+left than the original's, and that level's search shows it, under the ladder's two names, L(48)
+and L(48.5). A platform 368,215 pixels off to the side of Jungled Up is left out altogether,
+and is listed: Trogg can never get near it.)
 `--trace=room_A_1,572,83,1` shows one jump, tick by tick, in both.
 
 ## How it works

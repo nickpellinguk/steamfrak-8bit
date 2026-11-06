@@ -90,7 +90,7 @@ function beebEngine(mem) {
     return {
         name: 'beeb',
         platforms: () => ({ n, x: arr(n, sym.plat_xl, sym.plat_xh), y: arr(n, sym.plat_yl, sym.plat_yh), w: arr(n, sym.plat_w) }),
-        ladders: () => ({ n: nl, x: arr(nl, sym.lad_xl, sym.lad_xh).map((x, i) => x + (mem[sym.lad_half + i] ? 0.5 : 0)),
+        ladders: () => ({ n: nl, x: arr(nl, sym.lad_xl, sym.lad_xh),
                           y: arr(nl, sym.lad_yl, sym.lad_yh), h: arr(nl, sym.lad_hl, sym.lad_hh) }),
         standing(x, y, xm, ym) {
             setup(ST.STAND, x, y, xm, ym);

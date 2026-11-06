@@ -2551,15 +2551,13 @@ ENDMACRO
     cpx num_ladders : bne check
     rts
 .check
-    \ only ladders within 6 pixels of q_x (5 to the left of one at x + 0.5)
+    \ only ladders within 6 pixels of q_x
     lda q_x : sec : sbc lad_xl,x : sta tmp
     lda q_x+1 : sbc lad_xh,x
     beq pos
     cmp #&FF : bne next
     lda tmp : cmp #&FA : bcc next
-    bne near
-    lda lad_half,x : bne next
-    beq near
+    bcs near
 .pos
     lda tmp : cmp #7 : bcs next
 .near
@@ -2636,8 +2634,7 @@ ENDMACRO
     lda lad_xl,x : cmp q_x : lda lad_xh,x : sbc q_x+1
     bcc dec_x
     lda lad_xl,x : cmp q_x : bne inc_x
-    lda lad_xh,x : cmp q_x+1 : bne inc_x
-    lda lad_half,x : beq fx_done          \ (at x of one at x + 0.5: right)
+    lda lad_xh,x : cmp q_x+1 : beq fx_done
 .inc_x
     inc res_x : bne fx_done : inc res_x+1
     rts
@@ -4251,7 +4248,6 @@ ENDMACRO
 .lad_hh     SKIP MAX_LADDERS
 .lad_ext    SKIP MAX_LADDERS
 .lad_img    SKIP MAX_LADDERS
-.lad_half   SKIP MAX_LADDERS        \ 128 if the ladder is really half a pixel right of its x (one, in D_9)
 .draw_img   SKIP MAX_DRAW       \ keys, gems, bulbs and static meanies, in drawing order
 .draw_xl    SKIP MAX_DRAW
 .draw_xh    SKIP MAX_DRAW
@@ -4719,8 +4715,7 @@ ROMSEL_ANDY = &80                   \ ROMSEL bit 7: ANDY at &8000-&8FFF
     jsr next_rec
     ldx ld_i
     lda rx : sta lad_xl,x : sta q_x : lda rx+1 : sta lad_xh,x : sta q_x+1
-    lda rimg : and #&80 : sta lad_half,x             \ (the palette marks a ladder at x + 0.5)
-    lda rimg : and #&7F : sta rimg : sta lad_img,x
+    lda rimg : sta lad_img,x
     \ a platform with its top in [y - 16, y - 1)?
     lda ry : sec : sbc #LADDER_EXTRA_LENGTH : sta q_y1 : lda ry+1 : sbc #0 : sta q_y1+1
     lda ry : sec : sbc #1 : sta q_y2 : lda ry+1 : sbc #0 : sta q_y2+1
@@ -6214,4 +6209,4 @@ INCLUDE "src/gen/disc.asm"
 PRINT "Code from", ~code_start, "to", ~end, "(", end - code_start, "bytes ), free:", SCREEN - ram_top
 \ Addresses used by test scripts (profiling and poking variables)
 PRINT "TIMING", ~main_loop, ~t_restore, ~t_scroll, ~t_draw, ~t_vsync, ~t_after_vsync, ~t_logic, ~t_logic_done, ~t_slow, ~t_slow_done
-PRINT "SYMBOLS loops", ~loops, "trogg_standing", ~trogg_standing, "trogg_falling", ~trogg_falling, "trogg_climbing", ~trogg_climbing, "xmove", ~xmove, "ymove", ~ymove, "xvel", ~xvel, "tyf", ~tyf, "res_i", ~res_i, "res_found", ~res_found, "res_y", ~res_y, "res_yf", ~res_yf, "doyoyo", ~doyoyo, "tclimb", ~tclimb, "x_max", ~x_max, "level_h", ~level_h, "snd_tune", ~snd_tune, "snd_qb", ~snd_qb, "v_phase", ~v_phase, "v_left", ~v_left, "v_ord", ~v_ord, "v_on", ~v_on, "v_att", ~v_att, "snd_music_req", ~snd_music_req, "snd_cur", ~snd_cur, "snd_music_opt", ~snd_music_opt, "snd_sfx_opt", ~snd_sfx_opt, "snd_acc", ~snd_acc, "draw_kind", ~draw_kind, "num_keys", ~num_keys, "lvl_ticks", ~lvl_ticks, "done_valid", ~done_valid, "fe_sel", ~fe_sel, "cur_level", ~cur_level, "num_plats", ~num_plats, "num_ladders", ~num_ladders, "num_draw", ~num_draw, "num_slow", ~num_slow, "plat_w", ~plat_w, "plat_x0l", ~plat_x0l, "plat_x0h", ~plat_x0h, "plat_y0l", ~plat_y0l, "plat_y0h", ~plat_y0h, "plat_moving", ~plat_moving, "plat_bouncy", ~plat_bouncy, "lad_xl", ~lad_xl, "lad_xh", ~lad_xh, "lad_yl", ~lad_yl, "lad_yh", ~lad_yh, "lad_hl", ~lad_hl, "lad_hh", ~lad_hh, "lad_ext", ~lad_ext, "lad_half", ~lad_half, "draw_img", ~draw_img, "draw_xl", ~draw_xl, "draw_xh", ~draw_xh, "draw_yl", ~draw_yl, "draw_yh", ~draw_yh, "sl_kind", ~sl_kind, "sl_img", ~sl_img, "sl_x0l", ~sl_x0l, "sl_x0h", ~sl_x0h, "sl_y0l", ~sl_y0l, "sl_y0h", ~sl_y0h, "sl_aminl", ~sl_aminl, "sl_aminh", ~sl_aminh, "sl_amaxl", ~sl_amaxl, "sl_amaxh", ~sl_amaxh, "sl_bminl", ~sl_bminl, "sl_bminh", ~sl_bminh, "sl_bmaxl", ~sl_bmaxl, "sl_bmaxh", ~sl_bmaxh, "sl_vf", ~sl_vf, "sl_vi", ~sl_vi, "sl_vy", ~sl_vy, "sl_plat", ~sl_plat, "sl_wait", ~sl_wait, "sl_simple", ~sl_simple, "plat_yh", ~plat_yh, "level_bg", ~level_bg, "trogg_x0", ~trogg_x0, "trogg_y0", ~trogg_y0, "dmg_n", ~dmg_n, "s_alive", ~s_alive, "s_xl", ~s_xl, "s_xh", ~s_xh, "s_yl", ~s_yl, "s_yh", ~s_yh, "cur_plat", ~cur_plat, "plat_xl", ~plat_xl, "plat_xh", ~plat_xh, "plat_yl", ~plat_yl, "mv_img", ~mv_img, "mv_vxi", ~mv_vxi, "mv_vyi", ~mv_vyi, "mv_vyf", ~mv_vyf, "mv_yl", ~mv_yl, "mv_yh", ~mv_yh, "mv_pause", ~mv_pause, "bal_timer", ~bal_timer, "dag_timer", ~dag_timer, "bscroll", ~bscroll, "front", ~front, "vsyncs", ~vsyncs, "yo_len", ~yo_len, "mv_active", ~mv_active, "mv_xl", ~mv_xl, "mv_xh", ~mv_xh, "tface", ~tface, "keys_found", ~keys_found, "gems_found", ~gems_found, "won", ~won, "have_cp", ~have_cp, "restarts", ~restarts, "alive", ~alive, "newcol", ~newcol, "dead", ~dead, "tx", ~tx, "ty", ~ty, "tstate", ~tstate, "tv", ~tv, "dead", ~dead, "anim", ~anim, "p_img", ~p_img, "bank", ~bank, "oldbank", ~oldbank, "dptr", ~dptr, "scrollcol", ~scrollcol
+PRINT "SYMBOLS loops", ~loops, "trogg_standing", ~trogg_standing, "trogg_falling", ~trogg_falling, "trogg_climbing", ~trogg_climbing, "xmove", ~xmove, "ymove", ~ymove, "xvel", ~xvel, "tyf", ~tyf, "res_i", ~res_i, "res_found", ~res_found, "res_y", ~res_y, "res_yf", ~res_yf, "doyoyo", ~doyoyo, "tclimb", ~tclimb, "x_max", ~x_max, "level_h", ~level_h, "snd_tune", ~snd_tune, "snd_qb", ~snd_qb, "v_phase", ~v_phase, "v_left", ~v_left, "v_ord", ~v_ord, "v_on", ~v_on, "v_att", ~v_att, "snd_music_req", ~snd_music_req, "snd_cur", ~snd_cur, "snd_music_opt", ~snd_music_opt, "snd_sfx_opt", ~snd_sfx_opt, "snd_acc", ~snd_acc, "draw_kind", ~draw_kind, "num_keys", ~num_keys, "lvl_ticks", ~lvl_ticks, "done_valid", ~done_valid, "fe_sel", ~fe_sel, "cur_level", ~cur_level, "num_plats", ~num_plats, "num_ladders", ~num_ladders, "num_draw", ~num_draw, "num_slow", ~num_slow, "plat_w", ~plat_w, "plat_x0l", ~plat_x0l, "plat_x0h", ~plat_x0h, "plat_y0l", ~plat_y0l, "plat_y0h", ~plat_y0h, "plat_moving", ~plat_moving, "plat_bouncy", ~plat_bouncy, "lad_xl", ~lad_xl, "lad_xh", ~lad_xh, "lad_yl", ~lad_yl, "lad_yh", ~lad_yh, "lad_hl", ~lad_hl, "lad_hh", ~lad_hh, "lad_ext", ~lad_ext, "draw_img", ~draw_img, "draw_xl", ~draw_xl, "draw_xh", ~draw_xh, "draw_yl", ~draw_yl, "draw_yh", ~draw_yh, "sl_kind", ~sl_kind, "sl_img", ~sl_img, "sl_x0l", ~sl_x0l, "sl_x0h", ~sl_x0h, "sl_y0l", ~sl_y0l, "sl_y0h", ~sl_y0h, "sl_aminl", ~sl_aminl, "sl_aminh", ~sl_aminh, "sl_amaxl", ~sl_amaxl, "sl_amaxh", ~sl_amaxh, "sl_bminl", ~sl_bminl, "sl_bminh", ~sl_bminh, "sl_bmaxl", ~sl_bmaxl, "sl_bmaxh", ~sl_bmaxh, "sl_vf", ~sl_vf, "sl_vi", ~sl_vi, "sl_vy", ~sl_vy, "sl_plat", ~sl_plat, "sl_wait", ~sl_wait, "sl_simple", ~sl_simple, "plat_yh", ~plat_yh, "level_bg", ~level_bg, "trogg_x0", ~trogg_x0, "trogg_y0", ~trogg_y0, "dmg_n", ~dmg_n, "s_alive", ~s_alive, "s_xl", ~s_xl, "s_xh", ~s_xh, "s_yl", ~s_yl, "s_yh", ~s_yh, "cur_plat", ~cur_plat, "plat_xl", ~plat_xl, "plat_xh", ~plat_xh, "plat_yl", ~plat_yl, "mv_img", ~mv_img, "mv_vxi", ~mv_vxi, "mv_vyi", ~mv_vyi, "mv_vyf", ~mv_vyf, "mv_yl", ~mv_yl, "mv_yh", ~mv_yh, "mv_pause", ~mv_pause, "bal_timer", ~bal_timer, "dag_timer", ~dag_timer, "bscroll", ~bscroll, "front", ~front, "vsyncs", ~vsyncs, "yo_len", ~yo_len, "mv_active", ~mv_active, "mv_xl", ~mv_xl, "mv_xh", ~mv_xh, "tface", ~tface, "keys_found", ~keys_found, "gems_found", ~gems_found, "won", ~won, "have_cp", ~have_cp, "restarts", ~restarts, "alive", ~alive, "newcol", ~newcol, "dead", ~dead, "tx", ~tx, "ty", ~ty, "tstate", ~tstate, "tv", ~tv, "dead", ~dead, "anim", ~anim, "p_img", ~p_img, "bank", ~bank, "oldbank", ~oldbank, "dptr", ~dptr, "scrollcol", ~scrollcol
