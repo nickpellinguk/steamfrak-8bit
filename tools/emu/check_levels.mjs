@@ -59,6 +59,7 @@ for (let li = 0; li < names.length; li++) {
   cmp('lad_y', rng(nl).map(i => s16(w16('lad_yl', 'lad_yh', i))), e.lad_y);
   cmp('lad_h', rng(nl).map(i => w16('lad_hl', 'lad_hh', i)), e.lad_h);
   cmp('lad_ext', rng(nl).map(i => r(sym.lad_ext + i)), e.lad_ext);
+  cmp('lad_half', rng(nl).map(i => r(sym.lad_half + i)), e.lad_half);
   cmp('draw_img', rng(nd).map(i => r(sym.draw_img + i)), e.draw_img);
   cmp('draw_x', rng(nd).map(i => w16('draw_xl', 'draw_xh', i)), e.draw_x);
   cmp('draw_y', rng(nd).map(i => w16('draw_yl', 'draw_yh', i)), e.draw_y);

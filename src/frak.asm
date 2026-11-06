@@ -61,6 +61,8 @@ SAVE_RESERVE_DEAD = SAVE_RESERVE_ALIVE + 6 + 14 * 21
 ASSERT DIFFICULTY >= 0 AND DIFFICULTY <= 6
 
 \ Trogg states
+JUMP_SPEED  = 25              \ Trogg's speeds in twentieths of a pixel a tick (gravity is 1)
+TERMINAL_SPEED = 80
 ST_STAND    = 0
 ST_WALK     = 1
 ST_FALL     = 2
@@ -227,16 +229,23 @@ ORG &0E00
 .res_y      SKIP 2
 .res_i      SKIP 1
 .res_found  SKIP 1
-.fall_t     SKIP 1          \ trogg_falling: this tick's index in the fall table
+.res_yf     SKIP 1          \ ladder_find: res_y's twentieths
+.q_y1f      SKIP 1          \ twentieths of q_y1 and q_y2 (platform_find_f, ladder_find)
+.q_y2f      SKIP 1
+.tv_prev    SKIP 1          \ trogg_falling: tv before this tick's gravity
+.fy2        SKIP 2          \ ... and where he'd fall to (pixels, twentieths)
+.fy2f       SKIP 1
 .lad_top    SKIP 2
 .lad_len    SKIP 2
+.lf_up      SKIP 1          \ ladder_find: 1 if going up
 .tx         SKIP 2
-.ty         SKIP 2
+.ty         SKIP 2          \ (whole pixels: Trogg's y is ty + tyf / 20)
+.tyf        SKIP 1          \ twentieths of a pixel, 0-19
 .tstate     SKIP 1
 .tface      SKIP 1          \ 0 = right, 1 = left
 .tclimb     SKIP 1          \ 0 = still, 1 = up, 2 = down
 .xvel       SKIP 1          \ signed
-.fallt      SKIP 1          \ index into fall_dy / fall_flags
+.tv         SKIP 1          \ y velocity, twentieths of a pixel a tick (+ = up), signed
 .anim       SKIP 1
 .xmove      SKIP 1          \ signed -1/0/1
 .ymove      SKIP 1          \ signed, +1 = up
@@ -252,8 +261,6 @@ ORG &0E00
 .dead       SKIP 1          \ frames until restart, 0 = alive
 .scrollcol  SKIP 1
 .newcol     SKIP 1
-.dy         SKIP 1
-.fflags     SKIP 1
 .cur_level  SKIP 1
 .num_bg     SKIP 1          \ loading: background items, and workspace
 .u_i        SKIP 1
@@ -400,6 +407,7 @@ ASSERT MAX_DRAW <= MAX_OBJECTS
 .cp_alive   SKIP MAX_OBJECTS        \ checkpoint copy
 .cp_tx      SKIP 2
 .cp_ty      SKIP 2
+.cp_tyf     SKIP 1
 .cp_face    SKIP 1
 .cp_keys    SKIP 1
 .cp_gems    SKIP 1
@@ -474,7 +482,7 @@ INCLUDE "src/gen/tables.asm"
     jsr slow_init
     lda trogg_x0 : sta tx : lda trogg_x0+1 : sta tx+1
     lda trogg_y0 : sta ty : lda trogg_y0+1 : sta ty+1
-    lda #0 : sta tface
+    lda #0 : sta tface : sta tyf : sta tv
     jmp redraw_all
 }
 
@@ -488,7 +496,7 @@ INCLUDE "src/gen/tables.asm"
     lda cp_keys : sta keys_found
     lda cp_gems : sta gems_found
     lda cp_tx : sta tx : lda cp_tx+1 : sta tx+1
-    lda cp_ty : sta ty : lda cp_ty+1 : sta ty+1
+    lda cp_ty : sta ty : lda cp_ty+1 : sta ty+1 : lda cp_tyf : sta tyf
     lda cp_face : sta tface
     lda cp_bal : sta bal_timer : lda cp_dag : sta dag_timer
     jsr slow_restore_checkpoint
@@ -1944,7 +1952,6 @@ GUARD &C000
 .bank6_start
 INCBIN "build/SPANS"
 INCLUDE "src/gen/collide.asm"
-INCLUDE "src/gen/fall.asm"
 .logic_start
 
 \ ------------------------------------------------------------------------------
@@ -2425,7 +2432,7 @@ ENDMACRO
     lda keys_found : sta cp_keys
     lda gems_found : sta cp_gems
     lda tx : sta cp_tx : lda tx+1 : sta cp_tx+1
-    lda ty : sta cp_ty : lda ty+1 : sta cp_ty+1
+    lda ty : sta cp_ty : lda ty+1 : sta cp_ty+1 : lda tyf : sta cp_tyf
     lda tface : sta cp_face
     lda bal_timer : sta cp_bal : lda dag_timer : sta cp_dag
     jsr slow_save_checkpoint
@@ -2437,12 +2444,15 @@ ENDMACRO
 \ Platforms and ladders (ports of PlatformFind and LadderFind)
 \ ------------------------------------------------------------------------------
 
-\ Find the highest platform top in [q_y1, q_y2) under column q_x.
-\ Returns res_found = 1 and res_y = its y.
+\ Find the highest platform top in [q_y1, q_y2) under column q_x (if two are at
+\ the same height, the first, as PlatformFind). Returns res_found = 1, res_y =
+\ its y and res_i = which.
 .platform_find
 {
     lda #0 : sta res_found
-    ldx num_plats : beq none
+    ldx num_plats : bne some
+    rts
+.some
     dex
 .loop
     \ y1 <= py ?
@@ -2455,9 +2465,11 @@ ENDMACRO
     lda plat_xl,x : clc : adc plat_w,x : sta tmp
     lda plat_xh,x : adc #0 : sta tmp+1
     lda q_x : cmp tmp : lda q_x+1 : sbc tmp+1 : bcs next
-    \ keep the highest (smallest y)
+    \ keep the highest (smallest y), and of those the first (going down the list)
     lda res_found : beq take
-    lda plat_yl,x : cmp res_y : lda plat_yh,x : sbc res_y+1 : bcs next
+    lda plat_yl,x : cmp res_y : lda plat_yh,x : sbc res_y+1 : bcc take
+    lda plat_yl,x : cmp res_y : bne next
+    lda plat_yh,x : cmp res_y+1 : bne next
 .take
     lda #1 : sta res_found
     lda plat_yl,x : sta res_y : lda plat_yh,x : sta res_y+1
@@ -2468,40 +2480,98 @@ ENDMACRO
     rts
 }
 
-\ Can Trogg at (q_x, q_y1) move along a ladder towards q_y2?
-\ q_onplat / q_jump as LadderFind's isOnPlatform / isJumping.
-\ Returns res_found, res_x, res_y, res_i.
+\ PlatformFind(x, y1, y2) with y1 and y2 in pixels and twentieths ((q_y1, q_y1f)
+\ and (q_y2, q_y2f)): the platforms at ceil(y1) <= y < y2 are those at whole
+\ pixels in [ceil(y1), ceil(y2)). (q_y1 and q_y2 become those.)
+.platform_find_f
+{
+    lda q_y1f : beq y1_ok : inc q_y1 : bne y1_ok : inc q_y1+1
+.y1_ok
+    lda q_y2f : beq y2_ok : inc q_y2 : bne y2_ok : inc q_y2+1
+.y2_ok
+    jmp platform_find
+}
+
+\ (q_y1, q_y1f) = Trogg's y
+.q1_is_y
+{
+    lda ty : sta q_y1 : lda ty+1 : sta q_y1+1 : lda tyf : sta q_y1f
+    rts
+}
+
+\ (q_y2, q_y2f) = Trogg's y + A twentieths (signed)
+.q2_is_y_plus
+{
+    ldx ty : stx q_y2 : ldx ty+1 : stx q_y2+1
+    clc : adc tyf
+.neg
+    cmp #&80 : bcc pos                  \ (below 0: a pixel less)
+    adc #20 - 1                         \ (carry set: + 20)
+    ldx q_y2 : bne n1 : dec q_y2+1 : .n1 : dec q_y2
+    jmp neg
+.pos
+    cmp #20 : bcc done                  \ (20 or more: a pixel more)
+    sbc #20
+    inc q_y2 : bne pos : inc q_y2+1 : jmp pos
+.done
+    sta q_y2f
+    rts
+}
+
+\ Trogg's position = res_x, (res_y, res_yf)
+.move_to_res
+{
+    lda res_x : sta tx : lda res_x+1 : sta tx+1
+.^move_y_to_res
+    lda res_y : sta ty : lda res_y+1 : sta ty+1 : lda res_yf : sta tyf
+    rts
+}
+
+\ Can Trogg at (q_x, y1) move along a ladder towards y2? (LadderFind, with y1 and
+\ y2 in pixels and twentieths: (q_y1, q_y1f) and (q_y2, q_y2f).) q_onplat and
+\ q_jump as its isOnPlatform and isJumping. Returns res_found, res_x, (res_y,
+\ res_yf) and res_i (which).
 .ladder_find
 {
     lda #0 : sta res_found
     lda q_x : sta res_x : lda q_x+1 : sta res_x+1
-    lda q_y1 : sta res_y : lda q_y1+1 : sta res_y+1
+    lda q_y1 : sta res_y : lda q_y1+1 : sta res_y+1 : lda q_y1f : sta res_yf
+    \ going up (y2 < y1) or down? Nothing if they're the same
+    lda #0 : sta lf_up
+    lda q_y2 : cmp q_y1 : lda q_y2+1 : sbc q_y1+1 : bcc is_up
+    lda q_y2 : cmp q_y1 : bne start
+    lda q_y2+1 : cmp q_y1+1 : bne start
+    lda q_y2f : cmp q_y1f : bcc is_up : bne start
+    rts
+.is_up
+    inc lf_up
+.start
     ldx #0
 .loop
     cpx num_ladders : bne check
     rts
 .check
-    \ only ladders within 6 pixels of q_x
+    \ only ladders within 6 pixels of q_x (5 to the left of one at x + 0.5)
     lda q_x : sec : sbc lad_xl,x : sta tmp
     lda q_x+1 : sbc lad_xh,x
     beq pos
     cmp #&FF : bne next
     lda tmp : cmp #&FA : bcc next
-    bcs near
+    bne near
+    lda lad_half,x : bne next
+    beq near
 .pos
     lda tmp : cmp #7 : bcs next
 .near
-    \ lad_top / lad_len, minus the invisible extension if jumping upwards
     lda lad_yl,x : sta lad_top : lda lad_yh,x : sta lad_top+1
     lda lad_hl,x : sta lad_len : lda lad_hh,x : sta lad_len+1
-    \ going up?  (q_y2 < q_y1)
-    lda q_y2 : cmp q_y1 : lda q_y2+1 : sbc q_y1+1
-    bcc going_up
+    lda lf_up : bne going_up
     jmp going_down
 .next
     inx : jmp loop
 
 .going_up
+    \ (jumping: not the invisible part above the top)
     lda q_jump : beq up1
     lda lad_top : clc : adc lad_ext,x : sta lad_top : bcc nc1 : inc lad_top+1 : .nc1
     lda lad_len : sec : sbc lad_ext,x : sta lad_len : bcs nc2 : dec lad_len+1 : .nc2
@@ -2510,21 +2580,22 @@ ENDMACRO
     \ skip if lad_top > y1
     lda q_y1 : cmp lad_top : lda q_y1+1 : sbc lad_top+1 : bcc next
 .up2
-    \ need res_y >= lad_top
+    \ need res_y >= lad_top and y2 < lad_top + lad_len (whole-pixel tops: the
+    \ twentieths don't matter)
     lda res_y : cmp lad_top : lda res_y+1 : sbc lad_top+1 : bcc next
-    \ and y2 < lad_top + lad_len
     lda lad_top : clc : adc lad_len : sta tmp
     lda lad_top+1 : adc lad_len+1 : sta tmp+1
     lda q_y2 : cmp tmp : lda q_y2+1 : sbc tmp+1 : bcs next
     jsr found_x
-    \ res_y = max(y2, lad_top)
+    \ res_y = max(y2, lad_top), and stop if that's y2
     lda q_y2 : cmp lad_top : lda q_y2+1 : sbc lad_top+1
     bcs use_y2
     lda lad_top : sta res_y : lda lad_top+1 : sta res_y+1
+    lda #0 : sta res_yf
     jmp next
 .use_y2
-    lda q_y2 : sta res_y : lda q_y2+1 : sta res_y+1
-    rts                             \ reached y2: stop searching
+    lda q_y2 : sta res_y : lda q_y2+1 : sta res_y+1 : lda q_y2f : sta res_yf
+    rts
 
 .next_d
     jmp next
@@ -2533,20 +2604,28 @@ ENDMACRO
     lda q_onplat : beq dn1
     \ skip if lad_top < y1
     lda lad_top : cmp q_y1 : lda lad_top+1 : sbc q_y1+1 : bcc next_d
+    lda lad_top : cmp q_y1 : bne dn1
+    lda lad_top+1 : cmp q_y1+1 : bne dn1
+    lda q_y1f : bne next_d
 .dn1
     \ tmp = lad_top + lad_len - 1 (bottom)
     lda lad_top : clc : adc lad_len : sta tmp
     lda lad_top+1 : adc lad_len+1 : sta tmp+1
     lda tmp : bne dn2 : dec tmp+1 : .dn2 : dec tmp
-    \ need res_y < bottom
+    \ need res_y < bottom and y2 >= lad_top
     lda res_y : cmp tmp : lda res_y+1 : sbc tmp+1 : bcs next_d
-    \ and y2 >= lad_top
     lda q_y2 : cmp lad_top : lda q_y2+1 : sbc lad_top+1 : bcc next_d
     jsr found_x
-    \ res_y = min(y2, bottom)
-    lda q_y2 : cmp tmp : lda q_y2+1 : sbc tmp+1
-    bcc use_y2
+    \ res_y = min(y2, bottom), and stop if that's y2
+    lda q_y2 : cmp tmp : lda q_y2+1 : sbc tmp+1 : bcc use_y2b
+    lda q_y2 : cmp tmp : bne bottom
+    lda q_y2+1 : cmp tmp+1 : bne bottom
+    lda q_y2f : bne bottom
+.use_y2b
+    jmp use_y2
+.bottom
     lda tmp : sta res_y : lda tmp+1 : sta res_y+1
+    lda #0 : sta res_yf
     jmp next_d
 
     \ res_x = x + sign(ladx - x)
@@ -2557,7 +2636,8 @@ ENDMACRO
     lda lad_xl,x : cmp q_x : lda lad_xh,x : sbc q_x+1
     bcc dec_x
     lda lad_xl,x : cmp q_x : bne inc_x
-    lda lad_xh,x : cmp q_x+1 : beq fx_done
+    lda lad_xh,x : cmp q_x+1 : bne inc_x
+    lda lad_half,x : beq fx_done          \ (at x of one at x + 0.5: right)
 .inc_x
     inc res_x : bne fx_done : inc res_x+1
     rts
@@ -2610,21 +2690,22 @@ ENDMACRO
 
 .trogg_standing
 {
-    \ nx = tx + xmove
+    \ nx = tx + xmove; PlatformFind(nx, y, y + 1)
     lda xmove : jsr add_x_signed       \ q_x = tx + A
-    lda ty : sta q_y1 : lda ty+1 : sta q_y1+1
-    lda ty : clc : adc #1 : sta q_y2 : lda ty+1 : adc #0 : sta q_y2+1
-    jsr platform_find
+    jsr q1_is_y : lda #20 : jsr q2_is_y_plus
+    jsr platform_find_f
     lda res_i : sta plat_hit
-    lda res_found : bne on_platform
-    \ walked off the edge
+    \ on it only if exactly at its top (between pixels above it, he drops onto it)
+    lda res_found : beq off
+    lda tyf : beq on_platform
+.off
     jsr move_to_qx
     lda xmove : sta xvel
-    lda #FALL_STEP_OFF
+    lda #0
     ldx ymove : beq start_fall : bmi start_fall
-    lda #FALL_JUMP
+    lda #JUMP_SPEED
 .start_fall
-    sta fallt
+    sta tv
     \ (no up/down debounce: the Steam version's TroggStanding asks for one, but its
     \ caller ignores it, so holding up through a jump catches a ladder on the way)
     lda #ST_FALL : sta tstate
@@ -2633,19 +2714,20 @@ ENDMACRO
 .on_platform
     lda ymove : beq walk
     \ Try a ladder: LadderFind(nx, y, y - ymove, onplat, jumping)
-    jsr set_q_y2_minus_ymove
+    jsr q1_is_y
+    lda #256 - 20 : ldx ymove : bpl updown : lda #20 : .updown
+    jsr q2_is_y_plus
     lda #1 : sta q_onplat : sta q_jump
     jsr ladder_find
     lda res_found : beq no_ladder
-    lda res_x : sta tx : lda res_x+1 : sta tx+1
-    lda res_y : sta ty : lda res_y+1 : sta ty+1
+    jsr move_to_res
     jmp start_climbing
 .no_ladder
     lda ymove : bmi walk
     \ Jump
     jsr move_to_qx
     lda xmove : sta xvel
-    lda #FALL_JUMP : sta fallt
+    lda #JUMP_SPEED : sta tv
     lda #ST_FALL : sta tstate
     rts
 
@@ -2665,18 +2747,6 @@ ENDMACRO
     jmp animate
 .stand
     lda #ST_STAND : sta tstate
-    rts
-}
-
-\ q_y2 = ty - ymove; q_y1 = ty; q_x already set
-.set_q_y2_minus_ymove
-{
-    lda ty : sta q_y1 : lda ty+1 : sta q_y1+1
-    lda ymove : bmi down
-    lda ty : sec : sbc ymove : sta q_y2 : lda ty+1 : sbc #0 : sta q_y2+1
-    rts
-.down
-    lda ty : clc : adc #1 : sta q_y2 : lda ty+1 : adc #0 : sta q_y2+1
     rts
 }
 
@@ -2761,74 +2831,65 @@ ENDMACRO
 .x_ok2
     lda tx : sta q_x : lda tx+1 : sta q_x+1
 
-    ldx fallt : stx fall_t
-    lda fall_dy,x : sta dy
-    lda fall_flags,x : sta fflags
-    cpx #FALL_LEN - 1 : bcs no_inc
-    inc fallt
-.no_inc
+    \ gravity, down to terminal velocity
+    lda tv : sta tv_prev
+    cmp #256 - TERMINAL_SPEED : beq no_gravity
+    dec tv
+.no_gravity
 
-    \ Grab a ladder?
+    \ Grab a ladder? (up or down held, and not falling faster than 1.275 pixels a tick)
     lda ymove : beq no_grab
-    lda fflags : and #1 : beq no_grab
-    lda ty : sta q_y1 : lda ty+1 : sta q_y1+1
-    jsr set_q_y2_ty_plus_dy
+    lda tv : clc : adc #25 : bmi no_grab
+    \ LadderFind(x, y, y - yvel, false, true)
+    jsr q1_is_y
+    lda #0 : sec : sbc tv : jsr q2_is_y_plus
     lda #0 : sta q_onplat : lda #1 : sta q_jump
     jsr ladder_find
     lda res_found : beq no_grab
-    lda res_x : sta tx : lda res_x+1 : sta tx+1
-    lda res_y : sta ty : lda res_y+1 : sta ty+1
-    lda #0 : sta xvel
+    jsr move_to_res
+    lda #0 : sta xvel : sta tv
     lda #1 : sta lr_db
     jmp start_climbing
 .no_grab
 
-    lda dy : bne moves
-    rts
-.moves
-    bpl down
-    jmp rising
-.down
-    \ Falling: land on a platform between y and y + dy?
-    lda ty : sta q_y1 : lda ty+1 : sta q_y1+1
-    jsr set_q_y2_ty_plus_dy
-    jsr platform_find
-    lda res_found : beq keep_falling
-    lda res_y : sta ty : lda res_y+1 : sta ty+1
-    \ a bouncy platform throws him back up: the Steam version reverses his speed (plus
-    \ twice gravity), which in the fall table is index FALL_BOUNCE - this tick's
+    \ y2 = y - yvel
+    lda #0 : sec : sbc tv : jsr q2_is_y_plus
+    lda tv : bmi falling
+    jmp to_y2                       \ (rising: nothing in the way)
+.falling
+    \ land on a platform between y and y2? PlatformFind(x, y, y2)
+    lda q_y2 : sta fy2 : lda q_y2+1 : sta fy2+1 : lda q_y2f : sta fy2f
+    jsr q1_is_y
+    jsr platform_find_f
+    lda res_found : bne hit
+    lda fy2 : sta q_y2 : lda fy2+1 : sta q_y2+1 : lda fy2f : sta q_y2f
+.to_y2
+    lda q_y2 : sta ty : lda q_y2+1 : sta ty+1 : lda q_y2f : sta tyf
+    jmp bottom
+.hit
     ldx res_i : lda plat_bouncy,x : beq land
-    lda #FALL_BOUNCE : sec : sbc fall_t : bcs bounce_ok
-    lda #0                                          \ (from terminal velocity)
-.bounce_ok
-    sta fallt
-    rts
+    \ a bouncy platform throws him back up from its top: the Steam version
+    \ reverses his speed from before gravity, plus twice gravity
+    lda res_y : sta ty : lda res_y+1 : sta ty+1
+    lda #0 : sta tyf
+    lda #2 : sec : sbc tv_prev : sta tv
+    jmp bottom
 .land
-    lda #0 : sta xvel
+    \ (he stays where he is: if that's between pixels above it, he drops onto it next)
+    lda tv : clc : adc #32 : sta tmp            \ (landing at 1.6 pixels a tick or faster kills him)
+    lda #0 : sta xvel : sta tv
     lda #1 : sta ud_db
     lda #ST_STAND : sta tstate
-    lda fflags : and #2 : beq done
-    jmp trogg_dies                  \ landed too fast!
-.keep_falling
-    lda q_y2 : sta ty : lda q_y2+1 : sta ty+1
+    lda tmp : beq dies : bpl bottom
+.dies
+    jsr trogg_dies
+.bottom
     \ off the bottom of the level?
     lda ty : cmp level_h : lda ty+1 : sbc level_h+1 : bcc done
+    lda #0 : sta xvel : sta tyf
     lda level_h : sec : sbc #1 : sta ty : lda level_h+1 : sbc #0 : sta ty+1
     jmp trogg_dies
-.rising
-    clc : adc ty : sta ty : lda ty+1 : adc #&FF : sta ty+1
 .done
-    rts
-}
-
-\ q_y2 = ty + dy (dy signed)
-.set_q_y2_ty_plus_dy
-{
-    lda dy : bmi neg
-    clc : adc ty : sta q_y2 : lda ty+1 : adc #0 : sta q_y2+1
-    rts
-.neg
-    clc : adc ty : sta q_y2 : lda ty+1 : adc #&FF : sta q_y2+1
     rts
 }
 
@@ -2853,10 +2914,10 @@ ENDIF
     lda #0 : sta tclimb : rts
 }
 
-\ Start falling with fall-table index A and x velocity xvel
+\ Start falling at y velocity A (twentieths of a pixel a tick), x velocity xvel
 .climb_to_fall
 {
-    sta fallt
+    sta tv
     lda #ST_FALL : sta tstate
     lda xvel : bmi left
     lda #0 : sta tface : rts
@@ -2866,7 +2927,7 @@ ENDIF
 
 .trogg_climbing
 {
-    lda #0 : sta xvel
+    lda #0 : sta xvel : sta tv
     lda tx : sta q_x : lda tx+1 : sta q_x+1
     lda #0 : sta q_onplat : sta q_jump
     lda ymove : bne moving : jmp still
@@ -2875,31 +2936,30 @@ ENDIF
 
 .up
     \ LadderFind(x, y, y - 1)
-    lda ty : sta q_y1 : lda ty+1 : sta q_y1+1
-    lda ty : sec : sbc #1 : sta q_y2 : lda ty+1 : sbc #0 : sta q_y2+1
+    jsr q1_is_y : lda #256 - 20 : jsr q2_is_y_plus
     jsr ladder_find
     jsr ladder_moved : bcc up_no
-    lda res_y : sta ty : lda res_y+1 : sta ty+1
+    jsr move_y_to_res
     jsr maybe_step_off : bcc stay1 : rts
 .stay1
     jmp climbing
 .up_no
-    \ At the top: step off onto a platform if there is one
-    lda ty : sec : sbc #1 : sta q_y1 : lda ty+1 : sbc #0 : sta q_y1+1
-    lda ty : clc : adc #2 : sta q_y2 : lda ty+1 : adc #0 : sta q_y2+1
-    jsr platform_find
+    \ At the top: step off onto a platform if there is one, PlatformFind(x, y - 1, y + 2)
+    jsr q1_is_y
+    lda q_y1 : bne u0 : dec q_y1+1 : .u0 : dec q_y1
+    lda #40 : jsr q2_is_y_plus
+    jsr platform_find_f
     lda #1 : sta ud_db
     lda res_found : beq climb_j
     lda ty : bne u1 : dec ty+1 : .u1 : dec ty
-    lda #FALL_STEP_OFF : jmp climb_to_fall
+    lda #0 : jmp climb_to_fall
 
 .climb_j
     jmp climbing
 
 .still
     \ LadderFind(x, y, y + 2)
-    lda ty : sta q_y1 : lda ty+1 : sta q_y1+1
-    lda ty : clc : adc #2 : sta q_y2 : lda ty+1 : adc #0 : sta q_y2+1
+    jsr q1_is_y : lda #40 : jsr q2_is_y_plus
     jsr ladder_find
     jsr ladder_moved : bcc still_no
     jsr maybe_step_off : bcc stay2 : rts
@@ -2908,32 +2968,32 @@ ENDIF
 .still_no
     lda xmove : beq climb_j
     sta xvel
-    lda #FALL_STEP_OFF : jmp climb_to_fall
+    lda #0 : jmp climb_to_fall
 
 .down
-    \ Climbing down onto a platform?
-    lda ty : sta q_y1 : lda ty+1 : sta q_y1+1
-    lda ty : clc : adc #1 : sta q_y2 : lda ty+1 : adc #0 : sta q_y2+1
-    jsr platform_find
+    \ Climbing down onto a platform? PlatformFind(x, y, y + 1)
+    jsr q1_is_y : lda #20 : jsr q2_is_y_plus
+    jsr platform_find_f
     lda res_found : beq down_ladder
     lda #1 : sta ud_db
     lda #ST_STAND : sta tstate
     lda #0 : sta tface
     rts
 .down_ladder
+    \ LadderFind(x, y, y + 1)
+    jsr q1_is_y : lda #20 : jsr q2_is_y_plus
     jsr ladder_find
     jsr ladder_moved : bcc down_no
-    lda res_y : sta ty : lda res_y+1 : sta ty+1
+    jsr move_y_to_res
     jsr maybe_step_off : bcc stay3 : rts
 .stay3
     jmp climbing
 .down_no
-    \ Off the bottom of the ladder
+    \ Off the bottom of the ladder: y + 1, falling at a pixel a tick
     lda #0 : sta xvel
     inc ty : bne d1 : inc ty+1 : .d1
     lda #1 : sta ud_db
-    lda #FALL_LADDER_DROP : jmp climb_to_fall
-
+    lda #256 - 20 : jmp climb_to_fall
 
 .climbing
     jsr start_climbing
@@ -2943,13 +3003,14 @@ ENDIF
     rts
 }
 
-\ After ladder_find: carry set if a ladder was found and res_y differs from ty.
+\ After ladder_find: carry set if a ladder was found and its y isn't Trogg's.
 \ Also moves tx to res_x when found.
 .ladder_moved
 {
     lda res_found : beq no
     lda res_y : cmp ty : bne yes
-    lda res_y+1 : cmp ty+1 : beq no
+    lda res_y+1 : cmp ty+1 : bne yes
+    lda res_yf : cmp tyf : beq no
 .yes
     lda res_x : sta tx : lda res_x+1 : sta tx+1
     sec : rts
@@ -2967,7 +3028,7 @@ ENDIF
     lda lad_yh,x : adc #0 : sta tmp+1
     lda ty : cmp tmp : lda ty+1 : sbc tmp+1 : bcc no
     lda xmove : sta xvel
-    lda #FALL_STEP_OFF : jsr climb_to_fall
+    lda #0 : jsr climb_to_fall
     sec : rts
 .no
     clc : rts
@@ -3037,6 +3098,7 @@ YOYO_HIT_SPEED = 8                  \ pixels a tick that a yoyoed meanie flies o
     lda tx : sta q_x : lda tx+1 : sta q_x+1
     lda ty : sta q_y1 : lda ty+1 : sta q_y1+1
     lda ty : clc : adc #1 : sta q_y2 : lda ty+1 : adc #0 : sta q_y2+1
+    lda tyf : bne none                  \ (between pixels: not on it)
     jsr platform_find
     lda res_found : beq none
     lda res_i : sta cur_plat
@@ -4189,6 +4251,7 @@ ENDMACRO
 .lad_hh     SKIP MAX_LADDERS
 .lad_ext    SKIP MAX_LADDERS
 .lad_img    SKIP MAX_LADDERS
+.lad_half   SKIP MAX_LADDERS        \ 128 if the ladder is really half a pixel right of its x (one, in D_9)
 .draw_img   SKIP MAX_DRAW       \ keys, gems, bulbs and static meanies, in drawing order
 .draw_xl    SKIP MAX_DRAW
 .draw_xh    SKIP MAX_DRAW
@@ -4656,7 +4719,8 @@ ROMSEL_ANDY = &80                   \ ROMSEL bit 7: ANDY at &8000-&8FFF
     jsr next_rec
     ldx ld_i
     lda rx : sta lad_xl,x : sta q_x : lda rx+1 : sta lad_xh,x : sta q_x+1
-    lda rimg : sta lad_img,x
+    lda rimg : and #&80 : sta lad_half,x             \ (the palette marks a ladder at x + 0.5)
+    lda rimg : and #&7F : sta rimg : sta lad_img,x
     \ a platform with its top in [y - 16, y - 1)?
     lda ry : sec : sbc #LADDER_EXTRA_LENGTH : sta q_y1 : lda ry+1 : sbc #0 : sta q_y1+1
     lda ry : sec : sbc #1 : sta q_y2 : lda ry+1 : sbc #0 : sta q_y2+1
@@ -6150,4 +6214,4 @@ INCLUDE "src/gen/disc.asm"
 PRINT "Code from", ~code_start, "to", ~end, "(", end - code_start, "bytes ), free:", SCREEN - ram_top
 \ Addresses used by test scripts (profiling and poking variables)
 PRINT "TIMING", ~main_loop, ~t_restore, ~t_scroll, ~t_draw, ~t_vsync, ~t_after_vsync, ~t_logic, ~t_logic_done, ~t_slow, ~t_slow_done
-PRINT "SYMBOLS loops", ~loops, "snd_tune", ~snd_tune, "snd_qb", ~snd_qb, "v_phase", ~v_phase, "v_left", ~v_left, "v_ord", ~v_ord, "v_on", ~v_on, "v_att", ~v_att, "snd_music_req", ~snd_music_req, "snd_cur", ~snd_cur, "snd_music_opt", ~snd_music_opt, "snd_sfx_opt", ~snd_sfx_opt, "snd_acc", ~snd_acc, "draw_kind", ~draw_kind, "num_keys", ~num_keys, "lvl_ticks", ~lvl_ticks, "done_valid", ~done_valid, "fe_sel", ~fe_sel, "cur_level", ~cur_level, "num_plats", ~num_plats, "num_ladders", ~num_ladders, "num_draw", ~num_draw, "num_slow", ~num_slow, "plat_w", ~plat_w, "plat_x0l", ~plat_x0l, "plat_x0h", ~plat_x0h, "plat_y0l", ~plat_y0l, "plat_y0h", ~plat_y0h, "plat_moving", ~plat_moving, "plat_bouncy", ~plat_bouncy, "lad_xl", ~lad_xl, "lad_xh", ~lad_xh, "lad_yl", ~lad_yl, "lad_yh", ~lad_yh, "lad_hl", ~lad_hl, "lad_hh", ~lad_hh, "lad_ext", ~lad_ext, "draw_img", ~draw_img, "draw_xl", ~draw_xl, "draw_xh", ~draw_xh, "draw_yl", ~draw_yl, "draw_yh", ~draw_yh, "sl_kind", ~sl_kind, "sl_img", ~sl_img, "sl_x0l", ~sl_x0l, "sl_x0h", ~sl_x0h, "sl_y0l", ~sl_y0l, "sl_y0h", ~sl_y0h, "sl_aminl", ~sl_aminl, "sl_aminh", ~sl_aminh, "sl_amaxl", ~sl_amaxl, "sl_amaxh", ~sl_amaxh, "sl_bminl", ~sl_bminl, "sl_bminh", ~sl_bminh, "sl_bmaxl", ~sl_bmaxl, "sl_bmaxh", ~sl_bmaxh, "sl_vf", ~sl_vf, "sl_vi", ~sl_vi, "sl_vy", ~sl_vy, "sl_plat", ~sl_plat, "sl_wait", ~sl_wait, "sl_simple", ~sl_simple, "plat_yh", ~plat_yh, "level_bg", ~level_bg, "trogg_x0", ~trogg_x0, "trogg_y0", ~trogg_y0, "dmg_n", ~dmg_n, "s_alive", ~s_alive, "s_xl", ~s_xl, "s_xh", ~s_xh, "s_yl", ~s_yl, "s_yh", ~s_yh, "cur_plat", ~cur_plat, "plat_xl", ~plat_xl, "plat_xh", ~plat_xh, "plat_yl", ~plat_yl, "mv_img", ~mv_img, "mv_vxi", ~mv_vxi, "mv_vyi", ~mv_vyi, "mv_vyf", ~mv_vyf, "mv_yl", ~mv_yl, "mv_yh", ~mv_yh, "mv_pause", ~mv_pause, "bal_timer", ~bal_timer, "dag_timer", ~dag_timer, "bscroll", ~bscroll, "front", ~front, "vsyncs", ~vsyncs, "yo_len", ~yo_len, "mv_active", ~mv_active, "mv_xl", ~mv_xl, "mv_xh", ~mv_xh, "tface", ~tface, "keys_found", ~keys_found, "gems_found", ~gems_found, "won", ~won, "have_cp", ~have_cp, "restarts", ~restarts, "alive", ~alive, "newcol", ~newcol, "dead", ~dead, "tx", ~tx, "ty", ~ty, "tstate", ~tstate, "fallt", ~fallt, "dead", ~dead, "anim", ~anim, "p_img", ~p_img, "bank", ~bank, "oldbank", ~oldbank, "dptr", ~dptr, "scrollcol", ~scrollcol
+PRINT "SYMBOLS loops", ~loops, "trogg_standing", ~trogg_standing, "trogg_falling", ~trogg_falling, "trogg_climbing", ~trogg_climbing, "xmove", ~xmove, "ymove", ~ymove, "xvel", ~xvel, "tyf", ~tyf, "res_i", ~res_i, "res_found", ~res_found, "res_y", ~res_y, "res_yf", ~res_yf, "doyoyo", ~doyoyo, "tclimb", ~tclimb, "x_max", ~x_max, "level_h", ~level_h, "snd_tune", ~snd_tune, "snd_qb", ~snd_qb, "v_phase", ~v_phase, "v_left", ~v_left, "v_ord", ~v_ord, "v_on", ~v_on, "v_att", ~v_att, "snd_music_req", ~snd_music_req, "snd_cur", ~snd_cur, "snd_music_opt", ~snd_music_opt, "snd_sfx_opt", ~snd_sfx_opt, "snd_acc", ~snd_acc, "draw_kind", ~draw_kind, "num_keys", ~num_keys, "lvl_ticks", ~lvl_ticks, "done_valid", ~done_valid, "fe_sel", ~fe_sel, "cur_level", ~cur_level, "num_plats", ~num_plats, "num_ladders", ~num_ladders, "num_draw", ~num_draw, "num_slow", ~num_slow, "plat_w", ~plat_w, "plat_x0l", ~plat_x0l, "plat_x0h", ~plat_x0h, "plat_y0l", ~plat_y0l, "plat_y0h", ~plat_y0h, "plat_moving", ~plat_moving, "plat_bouncy", ~plat_bouncy, "lad_xl", ~lad_xl, "lad_xh", ~lad_xh, "lad_yl", ~lad_yl, "lad_yh", ~lad_yh, "lad_hl", ~lad_hl, "lad_hh", ~lad_hh, "lad_ext", ~lad_ext, "lad_half", ~lad_half, "draw_img", ~draw_img, "draw_xl", ~draw_xl, "draw_xh", ~draw_xh, "draw_yl", ~draw_yl, "draw_yh", ~draw_yh, "sl_kind", ~sl_kind, "sl_img", ~sl_img, "sl_x0l", ~sl_x0l, "sl_x0h", ~sl_x0h, "sl_y0l", ~sl_y0l, "sl_y0h", ~sl_y0h, "sl_aminl", ~sl_aminl, "sl_aminh", ~sl_aminh, "sl_amaxl", ~sl_amaxl, "sl_amaxh", ~sl_amaxh, "sl_bminl", ~sl_bminl, "sl_bminh", ~sl_bminh, "sl_bmaxl", ~sl_bmaxl, "sl_bmaxh", ~sl_bmaxh, "sl_vf", ~sl_vf, "sl_vi", ~sl_vi, "sl_vy", ~sl_vy, "sl_plat", ~sl_plat, "sl_wait", ~sl_wait, "sl_simple", ~sl_simple, "plat_yh", ~plat_yh, "level_bg", ~level_bg, "trogg_x0", ~trogg_x0, "trogg_y0", ~trogg_y0, "dmg_n", ~dmg_n, "s_alive", ~s_alive, "s_xl", ~s_xl, "s_xh", ~s_xh, "s_yl", ~s_yl, "s_yh", ~s_yh, "cur_plat", ~cur_plat, "plat_xl", ~plat_xl, "plat_xh", ~plat_xh, "plat_yl", ~plat_yl, "mv_img", ~mv_img, "mv_vxi", ~mv_vxi, "mv_vyi", ~mv_vyi, "mv_vyf", ~mv_vyf, "mv_yl", ~mv_yl, "mv_yh", ~mv_yh, "mv_pause", ~mv_pause, "bal_timer", ~bal_timer, "dag_timer", ~dag_timer, "bscroll", ~bscroll, "front", ~front, "vsyncs", ~vsyncs, "yo_len", ~yo_len, "mv_active", ~mv_active, "mv_xl", ~mv_xl, "mv_xh", ~mv_xh, "tface", ~tface, "keys_found", ~keys_found, "gems_found", ~gems_found, "won", ~won, "have_cp", ~have_cp, "restarts", ~restarts, "alive", ~alive, "newcol", ~newcol, "dead", ~dead, "tx", ~tx, "ty", ~ty, "tstate", ~tstate, "tv", ~tv, "dead", ~dead, "anim", ~anim, "p_img", ~p_img, "bank", ~bank, "oldbank", ~oldbank, "dptr", ~dptr, "scrollcol", ~scrollcol

@@ -18,7 +18,7 @@ Writes:
     src/gen/collide.asm         collision boxes and spans, save sizes, what each image is
     src/gen/levels.asm          where each level is, and the moving meanies' settings
     src/gen/consts.asm          constants: table sizes, start level, save areas
-    src/gen/tables.asm, fall.asm  mask table and the jump/fall table
+    src/gen/tables.asm          mask and identity tables
     src/gen/disc.asm, boot.txt  the disc's file list and !BOOT
 
 Sprites are MODE 1 (2 bits per pixel, 4 pixels per byte). Logical colour 0 is the level
@@ -255,6 +255,7 @@ def build_level(data, room_name):
     insts = [inst for inst in room['inst'] if -256 <= int(inst[1]) < 2048 and -256 <= int(inst[2]) < 2048]
     plats, plat_order, plat_spr, ladders, ladder_spr, draw, trogg = [], [], [], [], [], [], None
     plat_bouncy = []
+    ladder_half = []        # (a ladder half a pixel to the right of its x: one, in D_9)
     moving_enabled = False
     for order, inst in enumerate(insts):
         obj, x, y = inst[0], int(inst[1]), int(inst[2])
@@ -279,6 +280,8 @@ def build_level(data, room_name):
         obj, x, y = inst[0], int(inst[1]), int(inst[2])
         if data.kind(obj) != 'oLadder':
             continue
+        assert inst[1] in (x, x + 0.5) and inst[2] == y, inst
+        ladder_half.append(1 if inst[1] != x else 0)
         ladder_spr.append((data.sprite_of(obj), y))
         info = data.sprites[data.sprite_of(obj)]
         h = info['h'] + LADDER_EXTRA_LENGTH
@@ -385,7 +388,7 @@ def build_level(data, room_name):
     return {
         'w': room['w'], 'h': room['h'], 'bg': BG_PHYSICAL.get(room['bg'], 6),
         'trogg': trogg, 'plats': plats, 'plat_moving': plat_moving, 'ladders': ladders,
-        'plat_spr': plat_spr, 'ladder_spr': ladder_spr, 'plat_bouncy': plat_bouncy,
+        'plat_spr': plat_spr, 'ladder_spr': ladder_spr, 'plat_bouncy': plat_bouncy, 'ladder_half': ladder_half,
         'draw': draw, 'slow': slow, 'moving_enabled': moving_enabled,
     }
 
@@ -519,46 +522,6 @@ def slow_simple_flags(data, lev, draw):
 
 # --- Jump / fall table ---------------------------------------------------------------------------
 
-FALL_JUMP_SPEED = 25        # (in 1/20 pixel a tick: the units of fall_table)
-FALL_TOP_SPEED = 82          # the fastest bounce: from terminal velocity (80), plus 2
-
-
-def fall_table():
-    """
-    Simulate the Steam version's Trogg falling (gravity 0.05/tick, terminal velocity -4, y rounded
-    to multiples of 0.05) and reduce it to whole-pixel steps.
-
-    Index t is the state at the start of a tick, with upward velocity (82 - t) / 20 pixels:
-    t = 57 is the start of a jump (1.25), t = 82 is stepping off a ledge (0), t = 102 is dropping
-    off the bottom of a ladder (-1). Before 57 are the faster upward speeds a bounce can give
-    (see FALL_BOUNCE). For each t we store the whole-pixel y change (positive = down), whether
-    Trogg may still grab a ladder, and whether landing would kill him.
-    """
-    # Work in exact units of 1/20 pixel: gravity is 1 unit/tick, terminal velocity -80. Positions
-    # count from the start of a jump, so jumps and falls are as they were before bounces came in
-    first = FALL_JUMP_SPEED - FALL_TOP_SPEED            # (negative: the bounce speeds)
-    speed = lambda t: max(-80, FALL_TOP_SPEED - t)      # at the start of tick t
-    pos = {FALL_TOP_SPEED - FALL_JUMP_SPEED: 0}         # 1/20ths of a pixel, positive = down
-    t = FALL_TOP_SPEED - FALL_JUMP_SPEED
-    while True:
-        v = speed(t)
-        pos[t + 1] = pos[t] - (v - 1 if v > -80 else v)
-        t += 1
-        if speed(t) <= -80 and t > 110 - first:
-            break
-    for t in range(FALL_TOP_SPEED - FALL_JUMP_SPEED - 1, -1, -1):
-        v = speed(t)
-        pos[t] = pos[t + 1] + (v - 1 if v > -80 else v)
-    rnd = lambda p: (p + 10) // 20                      # (to the nearest whole pixel)
-    dys, flags = [], []
-    for t in range(max(pos)):
-        v = speed(t)
-        yvel = v - 1 if v > -80 else v                  # (after this tick's gravity)
-        dys.append(rnd(pos[t + 1]) - rnd(pos[t]))
-        flags.append((1 if yvel * 2 >= -51 else 0) | (2 if yvel <= -32 else 0))
-    return dys, flags
-
-
 # --- Output --------------------------------------------------------------------------------------
 
 def asm_bytes(label, values, per_line=16):
@@ -601,7 +564,7 @@ def level_tables(data, lev, image_id, simple):
     t = {'plat_x': [v[0] for v in p], 'plat_y': [v[1] for v in p], 'plat_w': [v[2] for v in p],
          'plat_moving': lev['plat_moving'], 'plat_bouncy': [128 * b for b in lev['plat_bouncy']],
          'lad_x': [v[0] for v in lad], 'lad_y': [v[1] for v in lad], 'lad_h': [v[2] for v in lad],
-         'lad_ext': [v[3] for v in lad],
+         'lad_ext': [v[3] for v in lad], 'lad_half': [128 * h for h in lev['ladder_half']],
          'draw_img': [image_id[(spr, 0)] for (_, _, spr, _, _, _) in d],
          'draw_x': [v[3] for v in d], 'draw_y': [v[4] for v in d],
          'sl_kind': [v['kind'] for v in sl], 'sl_img': [image_id[(v['spr'], 0)] for v in sl],
@@ -620,7 +583,8 @@ def pack_level(data, lev, image_id, params):
       header: byte columns, character rows, background colour, Trogg's x and y (2 bytes each),
               flags (bit 0 = meanies move), then counts of: palette entries, platforms, ladders,
               objects, moving meanies, moving platforms
-      palette: the image of each sprite the level uses (+ 128 for a bouncy platform's)
+      palette: the image of each sprite the level uses (+ 128 for a bouncy platform's, or a
+              ladder's half a pixel right of its x)
       platforms, ladders, objects (in drawing order) and moving meanies: 3 bytes each,
               x low, y low, then x high (bits 0-1), y high (bits 2-3), palette entry (bits 4-7)
       moving meanies: a byte each, settings (index into sl_params) + 128 if drawn the simple way
@@ -643,9 +607,9 @@ def pack_level(data, lev, image_id, params):
     body = bytearray()
     for (x, y, w, h), spr, bouncy in zip(lev['plats'], lev['plat_spr'], lev['plat_bouncy']):
         body += rec(x, y, spr, 128 if bouncy else 0)
-    for spr, y in lev['ladder_spr']:
+    for (spr, y), half in zip(lev['ladder_spr'], lev['ladder_half']):
         lx = lev['ladders'][len(body) // 3 - len(lev['plats'])][0]
-        body += rec(lx, y, spr)
+        body += rec(lx, y, spr, 128 if half else 0)
     for (_, _, spr, x, y, _) in d:
         body += rec(x, y, spr)
     for v in meanies:
@@ -809,25 +773,13 @@ def main():
     open(os.path.join(gen, 'collide.asm'), 'w').write('\n'.join(out) + '\n')
 
     # ---- tables
-    dys, flags = fall_table()
     out = ['\\ Lookup tables - GENERATED by tools/convert.py, do not edit', '']
-    out.append('FALL_LEN = %d' % len(dys))
-    out.append('FALL_JUMP = %d         \\ start of a jump (upward speed 1.25)' % (FALL_TOP_SPEED - FALL_JUMP_SPEED))
-    out.append('FALL_STEP_OFF = %d     \\ walking off a ledge (speed 0)' % FALL_TOP_SPEED)
-    out.append('FALL_LADDER_DROP = %d  \\ dropping off the bottom of a ladder (speed -1)' % (FALL_TOP_SPEED + 20))
-    out.append('FALL_BOUNCE = %d       \\ bouncing at index t continues at FALL_BOUNCE - t (0 if that is negative: terminal velocity)' % (2 * FALL_TOP_SPEED - 2))
     out.append('')
     out.append('ALIGN &100')
     out.append(asm_bytes('masktab', mask_table()))
     out.append('ALIGN &100')
     out.append(asm_bytes('identity', list(range(256))))
     open(os.path.join(gen, 'tables.asm'), 'w').write('\n'.join(out) + '\n')
-    fall = ['\\ Jump/fall table (in bank 6) - GENERATED by tools/convert.py, do not edit', '']
-    fall.append('\\ y change per tick (positive = down)')
-    fall.append(asm_bytes('fall_dy', dys))
-    fall.append('\\ bit 0 = may grab a ladder, bit 1 = landing kills Trogg')
-    fall.append(asm_bytes('fall_flags', flags))
-    open(os.path.join(gen, 'fall.asm'), 'w').write('\n'.join(fall) + '\n')
 
     # ---- levels: all of them, packed, for HAZEL and ANDY
     params, packed, expect, maxima = [], [], {}, {}

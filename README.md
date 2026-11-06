@@ -83,11 +83,30 @@ node run.mjs "wait:1500 shot:start down:KeyX wait:100 up:KeyX shot:walked" scree
 every playable level and compares what the 6502 built (the platform, ladder, object and moving
 sprite tables, and every byte of the unrolled background) with what the converter expects.
 
+`node connections8.mjs` (also in `tools/emu`) checks that the 6502 code moves Trogg exactly as
+the GameMaker original does. It's the platform-and-ladder connection finder from the steamfrak
+repository (`tools/connections.js`: the original's unused `GraphFind` search, and the
+original's scripts transcribed with GameMaker's epsilon comparisons, on the GameMaker project's
+rooms), with the 6502 version as the other side: for each level, jsbeeb loads it, then
+`trogg_standing`, `trogg_falling` and `trogg_climbing` themselves are run, on a small 6502
+interpreter (`cpu6502.mjs`) against that memory, from every pixel of every platform and every
+point of every ladder, holding every key. It needs the steamfrak repository alongside this one
+(`STEAMFRAK=...` otherwise) and the GameMaker project alongside that. All 55 levels come out the
+same as the original: every start (about 520,000) ends the same way at the same tick and
+position, and every connection (about 4,100) is the same. (One stray platform 368,215 pixels
+off to the side of Jungled Up, which the converter leaves out, is listed but can't matter. And
+one ladder in D_9 is at x = 48.5: the level pack marks it, as it does bouncy platforms, and
+`ladder_find` treats it as GameMaker does, catching Trogg from 5 pixels left of 48 to 6 right,
+and nudging him right when he's at 48. The search starts some climbs at the ladder's x, 48.5,
+which Trogg can never be at, as his x is always whole: from there the 6502 version starts at
+48, so those starts end a pixel apart.)
+`--trace=room_A_1,572,83,1` shows one jump, tick by tick, in both.
+
 ## How it works
 
 | Part | Where |
 |---|---|
-| Data converter: sprites, the level pack, jump table | `tools/convert.py` |
+| Data converter: sprites, the level pack | `tools/convert.py` |
 | Level loader: unpacking a level, ladders' extensions, moving platforms' ranges | `fetch_level`, `load_level`, `meanie_settings`, `moving_platform`, `scan_left` etc. |
 | Music and sound effects | `snd_tick`, `snd_quarter_beat`, `snd_voice`, `snd_output` (`src/sound.asm`, bank 5); `play_music`, `play_sfx`, `level_music`, `footsteps`; data: `tools/music.py` |
 | Attract screen and menus | `fe_main`, `fe_attract`, `fe_menus`, `fe_grid` (packed in bank 5, unpacked to bank 7 by `fe_stage` and `fe_unpack`); records: `fe_record`; text: `print_inline`, `print_char` |
@@ -114,11 +133,11 @@ sprite tables, and every byte of the unrolled background) with what the converte
 | `&0400-&07FF` | save area for the main-RAM screen buffer (BASIC's workspace, unused); while a level loads, the packed level |
 | `&0900-&0CFF` | save area for the shadow screen buffer (RS423/cassette buffers, soft keys, UDGs); while a level loads, a column of the background and the list of things in it |
 | `&0E00-&10FF` | other variables: object states, checkpoint, draw logs, moving objects |
-| `&1100-&2FFF` | drawing code and its tables, each image's size and origin, the sound player's variables, instruments and pitch and loudness tables (89 bytes free) |
+| `&1100-&2FFF` | drawing code and its tables, each image's size and origin, the sound player's variables, instruments and pitch and loudness tables (77 bytes free) |
 | `&3000-&7FFF` | MODE 1 screen, **double buffered**: main RAM and shadow RAM. While a level loads (with the screen blanked) it holds the loader's workspace (`&3000-&4FFF`: the dictionary's hash table, a row of the background, the lines being built) and the loader itself (`&6000`) |
 | SWRAM banks 4-5 | sprites, pre-shifted, including unshifted copies of the platforms and ladders to unroll backgrounds from (23.1KB); in bank 5 after the sprites, the music and sound effects player and the tunes (4.2KB at `&9F58`, see "Sound"), then the front end, packed (2.2KB, see below), then where shift 3 of each image is (`img_bank3`, `img_lo3`, `img_hi3`, 240 bytes at `&BB10`), then a save area for meanies flying off (the top 1KB); 503 bytes free |
-| SWRAM bank 6 | collision spans and tables (from `&8000`), the **game logic** (to `&A9CE`), then the current level's tables and the second save area for meanies flying off (465 bytes free). Stays paged in while playing |
-| SWRAM bank 7 | the current level's background, unrolled when it starts (`&8000-&A9FF`, see below), or, while the menus are up, the front end (unpacked to `&8000`); the front end's records and the unpacker (`&AA00`); the code that paints the background; where shifts 0-2 of each image are (`img_bank0-2`, `img_lo0-2`, `img_hi0-2`, 720 bytes: `plot` and the background unroller page bank 7 in to read them); the level loader and its tables, packed (2.9KB at the top, unpacked to `&6000` when a level loads); 451 bytes free |
+| SWRAM bank 6 | collision spans and tables (from `&8000`), the **game logic** (to `&AC9B`), then the current level's tables and the second save area for meanies flying off (722 bytes free). Stays paged in while playing |
+| SWRAM bank 7 | the current level's background, unrolled when it starts (`&8000-&A9FF`, see below), or, while the menus are up, the front end (unpacked to `&8000`); the front end's records and the unpacker (`&AA00`); the code that paints the background; where shifts 0-2 of each image are (`img_bank0-2`, `img_lo0-2`, `img_hi0-2`, 720 bytes: `plot` and the background unroller page bank 7 in to read them); the level loader and its tables, packed (2.9KB at the top, unpacked to `&6000` when a level loads); 448 bytes free |
 | HAZEL (`&C000-&DFFF`) and ANDY (`&8000-&8FFF`) | **all 55 levels**, packed: 11.8KB, about 215 bytes each. `&8800-&88FF` of ANDY is left to the MOS |
 
 ### The packed front end
@@ -348,18 +367,27 @@ the last one, as in GameMaker.
 
 ### Movement and physics
 
-Positions are whole pixels. The Steam version's sub-pixel jumping and falling (gravity 0.05
-pixels/tick², rounded to 1/20 pixel) is reproduced by `fall_dy`, a table of whole-pixel steps
-generated by the converter. Index t means an upward speed of (82 - t)/20 pixels a tick: 57 is
-the start of a jump, 82 is walking off a ledge and 102 is dropping off the bottom of a ladder.
-`fall_flags` marks where Trogg can still grab a ladder and where landing would kill him, using
-the same thresholds as the Steam code.
+Trogg's x is whole pixels, as in the original (he only ever moves a pixel at a time). His y is
+kept in pixels and twentieths of a pixel (`ty`, `tyf`), and his y velocity in twentieths of a
+pixel a tick (`tv`, + = up): in the original, gravity is 0.05, a jump starts at 1.25, a bounce
+adds 0.10, and y is rounded to a multiple of 0.05 every tick, so everything its y and velocity
+can be is a whole number of twentieths. So `trogg_standing`, `trogg_falling` and
+`trogg_climbing` are straight ports of TroggStanding, TroggFalling and TroggClimbing, with
+exact arithmetic, and the original's tests come out the same: PlatformFind's `ceil(y1) <= top <
+y2` is the platforms at whole pixels in `[ceil(y1), ceil(y2))` (`platform_find_f`), LadderFind
+compares fractional y with whole-pixel ladder ends (`ladder_find`), a jump from 1.25, terminal
+velocity 4, a ladder grabbed only while not falling faster than 1.275, a landing at 1.6 or
+faster deadly. (GameMaker compares reals with an epsilon, so its own floating-point errors in
+these never matter; whole numbers don't have any.)
 
-Bouncy platforms (the Bouncing levels, with a spring under them): the Steam version turns
-Trogg's speed round as he lands (plus twice gravity), so in the table a bounce at index t
-carries on at index 162 - t, going up as fast as he came down (from terminal velocity, index
-0). The indices before 57 are there for those faster upward speeds, worked out backwards from
-the start of a jump so jumps and falls keep their exact steps. A bouncy platform is marked by
+That includes the original's warts. A fall that crosses a platform's top between pixels lands
+Trogg where he was, above it, and the next tick, finding no platform exactly under him, he
+drops onto it. If two platforms are at the same height in the same place, the first in the
+level counts.
+
+Bouncy platforms (the Bouncing levels, with a spring under them): as in the original, Trogg
+leaves a bouncy platform's top as fast as he was falling before that tick's gravity, plus twice
+gravity, so each bounce goes a little higher than the last. A bouncy platform is marked by
 bit 7 of its palette entry in the level pack. Springs under platforms that stay put are part
 of the background (the loader adds them as background items, `spring_item`); the three under
 moving platforms are drawn each frame with Trogg (`draw_springs`), so they show over meanies
