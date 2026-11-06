@@ -58,10 +58,18 @@ function screenshot(name) {
     writeFileSync(`${shotdir}/${name}.png`, Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ih), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]));
 }
 
-// steps: [keys held, frames, note]
+// steps: keys held (+ between them), frames, note; or @x,y,face:frames to put Trogg somewhere
 const steps = (process.argv[3] || 'Space:150:throw KeyX:20:face Space:60:drop :50:wait').split(' ').map(t => t.split(':'));
 let n = 0;
 for (const [keys, frames, note] of steps) {
+    if (keys.startsWith('@')) {         // @x,y,face: put Trogg there, standing
+        const [x, y, f] = keys.slice(1).split(',').map(Number);
+        cpu.writemem(sym.tx, x & 255); cpu.writemem(sym.tx + 1, x >> 8);
+        cpu.writemem(sym.ty, y & 255); cpu.writemem(sym.ty + 1, y >> 8);
+        cpu.writemem(sym.tyf, 0); cpu.writemem(sym.tstate, 0); cpu.writemem(sym.tface, f || 0);
+        await s.runFrames(+frames || 2);
+        continue;
+    }
     const held = keys ? keys.split('+') : [];
     held.forEach(k => s.keyDown(k));
     let last = '';

@@ -387,10 +387,10 @@ ORG &0E00
 .u_sx       SKIP 1
 .cmask      SKIP 30         \ a background line's masks
 .ds_base    SKIP 1          \ draw_slow: index of this buffer's drawn records
-.rr_i       SKIP 1          \ the next Scrubbly in turn to move
+.rr_k       SKIP 5          \ per kind: the one that moved last (the next after it goes next)
 .cm_left    SKIP 1
 .cm_count   SKIP 1
-.cm_q       SKIP 5          \ moves left this frame, per kind
+.cm_kind    SKIP 1
 .m_ncol     SKIP 1          \ raw_setup: the sprite's byte columns, first cell,
 .m_wb       SKIP 1          \ and range of full cells
 .m_ntop     SKIP 1
@@ -3693,7 +3693,6 @@ MAX_DMG = 40
 DONE = &80                          \ n_chg: already redrawn this frame
 \ Moves per drawn frame for each kind: none, Scrubbly, Poglet, Hooter, platform
 .turn_quota EQUB 0, 1, 2, 3, 0
-TURN_MOVES = 1 + 2 + 3
 
 \ Record damage rectangle dm_c0..dm_c1, dm_y0..dm_y1. Preserves X.
 .add_damage
@@ -3754,35 +3753,38 @@ TURN_MOVES = 1 + 2 + 3
     lda view_l : sec : sbc #64 : sta view_l : lda view_l+1 : sbc #0 : sta view_l+1
     ldx #MAX_SLOW - 1
 .loop
+    lda dead : ora won : bne all    \ (then the buffers stop being redrawn: both must match)
     jsr takes_turns : bcs next
+.all
     jsr commit_one
 .next
     dex : bpl loop
-    \ Meanies' turns
-    ldy #4
-.quotas
-    lda turn_quota,y : sta cm_q,y : dey : bpl quotas
-    lda #TURN_MOVES : sta cm_left
+    \ Meanies' turns: each kind gets its quota of moves a frame, shared out in turn
+    \ between the ones that have moved since they were last drawn
+    ldy #SL_HOOTER
+.kinds
+    sty cm_kind
+    lda turn_quota,y : beq knext : sta cm_left
     lda #MAX_SLOW : sta cm_count
-    ldx rr_i
+    ldx rr_k,y
 .turn
     inx : cpx #MAX_SLOW : bcc in : ldx #0
 .in
     lda s_alive,x : beq tnext
+    lda sl_kind,x : cmp cm_kind : bne tnext
     jsr takes_turns : bcc tnext
     lda s_xl,x : cmp d_xl,x : bne move
     lda s_xh,x : cmp d_xh,x : bne move
     lda s_yl,x : cmp d_yl,x : bne move
     lda s_yh,x : cmp d_yh,x : beq tnext
 .move
-    ldy sl_kind,x : lda cm_q,y : beq tnext   \ this kind has had its moves
-    sec : sbc #1 : sta cm_q,y
     jsr commit_one
-    dec cm_left : beq tdone
+    txa : ldy cm_kind : sta rr_k,y
+    dec cm_left : beq knext
 .tnext
     dec cm_count : bne turn
-.tdone
-    stx rr_i
+.knext
+    ldy cm_kind : dey : bne kinds
     rts
 }
 
@@ -4127,12 +4129,13 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
     \ byte columns and the pixel within the first and last
     lda left : and #3 : sta hl_p0
     lda tmp : and #3 : sta hl_p1
-    lda left+1 : lsr a : lda left : ror a : lsr a : sta hl_c0
-    lda left+1 : lsr a : lsr a : beq on_level        \ off the level?
+    lda left+1 : cmp #4 : bcc on_level              \ off the level?
     rts
 .on_level
-    lda tmp+1 : lsr a : lda tmp : ror a : lsr a : sta hl_c1
-    lda tmp+1 : lsr a : lsr a : beq c1_ok : lda #255 : sta hl_c1
+    sta hl_c0 : lda left : lsr hl_c0 : ror a : lsr hl_c0 : ror a : sta hl_c0     \ (x / 4)
+    lda #255 : sta hl_c1
+    lda tmp+1 : cmp #4 : bcs c1_ok
+    sta hl_c1 : lda tmp : lsr hl_c1 : ror a : lsr hl_c1 : ror a : sta hl_c1
 .c1_ok
     \ screen address of the first column on this row
     lda p_y : and #7 : sta hl_line
@@ -4280,8 +4283,8 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
 .win_len_lo EQUB LO(7 * 50), LO(6 * 50), LO(5 * 50), LO(4 * 50)
 .win_len_hi EQUB HI(7 * 50), HI(6 * 50), HI(5 * 50), HI(4 * 50)
 
-\ The level-complete panel, drawn once into each buffer: the time, the gems,
-\ the medal and a trophy over Trogg (the Steam version's, less its animation)
+\ The level-complete panel, drawn once into each buffer, cleared but for Trogg:
+\ the time, the gems, the medal and a trophy over Trogg (the Steam version's, less its animation)
 MACRO WIN_TEXT dy, text
     jsr win_text
     EQUB dy
@@ -4290,6 +4293,18 @@ ENDMACRO
 .win_panel
 {
     ldx back : lda #1 : sta bwon,x
+    \ just Trogg, on the background colour (no meanies, platforms or ladders)
+    jsr clear_screen
+    jsr trogg_image : tax
+    lda img_part_b,x : sta t_part_b
+    lda img_part_a,x : sta p_img
+    lda tx : sta p_x : lda tx+1 : sta p_x+1
+    lda ty : sta p_y : lda ty+1 : sta p_y+1
+    lda #PM_PLOT : sta p_mode
+    jsr plot
+    lda t_part_b : cmp #255 : beq one_part
+    sta p_img : jsr plot
+.one_part
     lda #1 : sta txt_colour
     \ the top line: 40 rows up from the middle (60 with a medal)
     lda #88 : ldx done_restarts : cpx #3 : bcs base : lda #68 : .base : sta hud_y
@@ -6378,4 +6393,4 @@ INCLUDE "src/gen/disc.asm"
 PRINT "Code from", ~code_start, "to", ~end, "(", end - code_start, "bytes ), free:", SCREEN - ram_top
 \ Addresses used by test scripts (profiling and poking variables)
 PRINT "TIMING", ~main_loop, ~t_restore, ~t_scroll, ~t_draw, ~t_vsync, ~t_after_vsync, ~t_logic, ~t_logic_done, ~t_slow, ~t_slow_done
-PRINT "SYMBOLS loops", ~loops, "carry_on_yoyo", ~carry_on_yoyo, "tface", ~tface, "carry", ~carry, "dropped", ~dropped, "yo_x", ~yo_x, "trogg_standing", ~trogg_standing, "trogg_falling", ~trogg_falling, "trogg_climbing", ~trogg_climbing, "xmove", ~xmove, "ymove", ~ymove, "xvel", ~xvel, "tyf", ~tyf, "res_i", ~res_i, "res_found", ~res_found, "res_y", ~res_y, "res_yf", ~res_yf, "doyoyo", ~doyoyo, "tclimb", ~tclimb, "x_max", ~x_max, "level_h", ~level_h, "snd_tune", ~snd_tune, "snd_qb", ~snd_qb, "v_phase", ~v_phase, "v_left", ~v_left, "v_ord", ~v_ord, "v_on", ~v_on, "v_att", ~v_att, "snd_music_req", ~snd_music_req, "snd_cur", ~snd_cur, "snd_music_opt", ~snd_music_opt, "snd_sfx_opt", ~snd_sfx_opt, "snd_acc", ~snd_acc, "draw_kind", ~draw_kind, "num_keys", ~num_keys, "lvl_ticks", ~lvl_ticks, "done_valid", ~done_valid, "fe_sel", ~fe_sel, "cur_level", ~cur_level, "num_plats", ~num_plats, "num_ladders", ~num_ladders, "num_draw", ~num_draw, "num_slow", ~num_slow, "plat_w", ~plat_w, "plat_x0l", ~plat_x0l, "plat_x0h", ~plat_x0h, "plat_y0l", ~plat_y0l, "plat_y0h", ~plat_y0h, "plat_moving", ~plat_moving, "plat_bouncy", ~plat_bouncy, "lad_xl", ~lad_xl, "lad_xh", ~lad_xh, "lad_yl", ~lad_yl, "lad_yh", ~lad_yh, "lad_hl", ~lad_hl, "lad_hh", ~lad_hh, "lad_ext", ~lad_ext, "draw_img", ~draw_img, "draw_xl", ~draw_xl, "draw_xh", ~draw_xh, "draw_yl", ~draw_yl, "draw_yh", ~draw_yh, "sl_kind", ~sl_kind, "sl_img", ~sl_img, "sl_x0l", ~sl_x0l, "sl_x0h", ~sl_x0h, "sl_y0l", ~sl_y0l, "sl_y0h", ~sl_y0h, "sl_aminl", ~sl_aminl, "sl_aminh", ~sl_aminh, "sl_amaxl", ~sl_amaxl, "sl_amaxh", ~sl_amaxh, "sl_bminl", ~sl_bminl, "sl_bminh", ~sl_bminh, "sl_bmaxl", ~sl_bmaxl, "sl_bmaxh", ~sl_bmaxh, "sl_vf", ~sl_vf, "sl_vi", ~sl_vi, "sl_vy", ~sl_vy, "sl_plat", ~sl_plat, "sl_wait", ~sl_wait, "sl_simple", ~sl_simple, "plat_yh", ~plat_yh, "level_bg", ~level_bg, "trogg_x0", ~trogg_x0, "trogg_y0", ~trogg_y0, "dmg_n", ~dmg_n, "s_alive", ~s_alive, "s_xl", ~s_xl, "s_xh", ~s_xh, "s_yl", ~s_yl, "s_yh", ~s_yh, "cur_plat", ~cur_plat, "plat_xl", ~plat_xl, "plat_xh", ~plat_xh, "plat_yl", ~plat_yl, "mv_img", ~mv_img, "mv_vxi", ~mv_vxi, "mv_vyi", ~mv_vyi, "mv_vyf", ~mv_vyf, "mv_yl", ~mv_yl, "mv_yh", ~mv_yh, "mv_pause", ~mv_pause, "bal_timer", ~bal_timer, "dag_timer", ~dag_timer, "bscroll", ~bscroll, "front", ~front, "vsyncs", ~vsyncs, "yo_len", ~yo_len, "mv_active", ~mv_active, "mv_xl", ~mv_xl, "mv_xh", ~mv_xh, "tface", ~tface, "keys_found", ~keys_found, "gems_found", ~gems_found, "won", ~won, "have_cp", ~have_cp, "restarts", ~restarts, "alive", ~alive, "newcol", ~newcol, "dead", ~dead, "tx", ~tx, "ty", ~ty, "tstate", ~tstate, "tv", ~tv, "dead", ~dead, "anim", ~anim, "p_img", ~p_img, "bank", ~bank, "oldbank", ~oldbank, "dptr", ~dptr, "scrollcol", ~scrollcol
+PRINT "SYMBOLS loops", ~loops, "snd_tick", ~snd_tick, "snd_sfx_req", ~snd_sfx_req, "MUSIC_BANK", ~MUSIC_BANK, "win_ticks", ~win_ticks, "bwon", ~bwon, "carry_on_yoyo", ~carry_on_yoyo, "tface", ~tface, "carry", ~carry, "dropped", ~dropped, "yo_x", ~yo_x, "trogg_standing", ~trogg_standing, "trogg_falling", ~trogg_falling, "trogg_climbing", ~trogg_climbing, "xmove", ~xmove, "ymove", ~ymove, "xvel", ~xvel, "tyf", ~tyf, "res_i", ~res_i, "res_found", ~res_found, "res_y", ~res_y, "res_yf", ~res_yf, "doyoyo", ~doyoyo, "tclimb", ~tclimb, "x_max", ~x_max, "level_h", ~level_h, "snd_tune", ~snd_tune, "snd_qb", ~snd_qb, "v_phase", ~v_phase, "v_left", ~v_left, "v_ord", ~v_ord, "v_on", ~v_on, "v_att", ~v_att, "snd_music_req", ~snd_music_req, "snd_cur", ~snd_cur, "snd_music_opt", ~snd_music_opt, "snd_sfx_opt", ~snd_sfx_opt, "snd_acc", ~snd_acc, "draw_kind", ~draw_kind, "num_keys", ~num_keys, "lvl_ticks", ~lvl_ticks, "done_valid", ~done_valid, "fe_sel", ~fe_sel, "cur_level", ~cur_level, "num_plats", ~num_plats, "num_ladders", ~num_ladders, "num_draw", ~num_draw, "num_slow", ~num_slow, "plat_w", ~plat_w, "plat_x0l", ~plat_x0l, "plat_x0h", ~plat_x0h, "plat_y0l", ~plat_y0l, "plat_y0h", ~plat_y0h, "plat_moving", ~plat_moving, "plat_bouncy", ~plat_bouncy, "lad_xl", ~lad_xl, "lad_xh", ~lad_xh, "lad_yl", ~lad_yl, "lad_yh", ~lad_yh, "lad_hl", ~lad_hl, "lad_hh", ~lad_hh, "lad_ext", ~lad_ext, "draw_img", ~draw_img, "draw_xl", ~draw_xl, "draw_xh", ~draw_xh, "draw_yl", ~draw_yl, "draw_yh", ~draw_yh, "sl_kind", ~sl_kind, "sl_img", ~sl_img, "sl_x0l", ~sl_x0l, "sl_x0h", ~sl_x0h, "sl_y0l", ~sl_y0l, "sl_y0h", ~sl_y0h, "sl_aminl", ~sl_aminl, "sl_aminh", ~sl_aminh, "sl_amaxl", ~sl_amaxl, "sl_amaxh", ~sl_amaxh, "sl_bminl", ~sl_bminl, "sl_bminh", ~sl_bminh, "sl_bmaxl", ~sl_bmaxl, "sl_bmaxh", ~sl_bmaxh, "sl_vf", ~sl_vf, "sl_vi", ~sl_vi, "sl_vy", ~sl_vy, "sl_plat", ~sl_plat, "sl_wait", ~sl_wait, "sl_simple", ~sl_simple, "plat_yh", ~plat_yh, "level_bg", ~level_bg, "trogg_x0", ~trogg_x0, "trogg_y0", ~trogg_y0, "dmg_n", ~dmg_n, "s_alive", ~s_alive, "s_xl", ~s_xl, "s_xh", ~s_xh, "s_yl", ~s_yl, "s_yh", ~s_yh, "cur_plat", ~cur_plat, "plat_xl", ~plat_xl, "plat_xh", ~plat_xh, "plat_yl", ~plat_yl, "mv_img", ~mv_img, "mv_vxi", ~mv_vxi, "mv_vyi", ~mv_vyi, "mv_vyf", ~mv_vyf, "mv_yl", ~mv_yl, "mv_yh", ~mv_yh, "mv_pause", ~mv_pause, "bal_timer", ~bal_timer, "dag_timer", ~dag_timer, "bscroll", ~bscroll, "front", ~front, "vsyncs", ~vsyncs, "yo_len", ~yo_len, "mv_active", ~mv_active, "mv_xl", ~mv_xl, "mv_xh", ~mv_xh, "tface", ~tface, "keys_found", ~keys_found, "gems_found", ~gems_found, "won", ~won, "have_cp", ~have_cp, "restarts", ~restarts, "alive", ~alive, "newcol", ~newcol, "dead", ~dead, "tx", ~tx, "ty", ~ty, "tstate", ~tstate, "tv", ~tv, "dead", ~dead, "anim", ~anim, "p_img", ~p_img, "bank", ~bank, "oldbank", ~oldbank, "dptr", ~dptr, "scrollcol", ~scrollcol
