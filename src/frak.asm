@@ -43,7 +43,8 @@ MAX_MOVERS = 12                 \ moving objects: balloons, daggers, meanies fly
 \ balloons, daggers and meanies. Each sprite's save record has a 6-byte header
 \ and a 2-byte screen address per column.
 SAVE_SIZE = 1024
-SAVE_RESERVE_ALIVE = 6 + 8 * 36 + 6 + 8 * 2 + 6 + 3 * 8 + 24    \ (Trogg is two records: body and legs)
+SAVE_RESERVE_ALIVE = 6 + 8 * 36 + 6 + 8 * 2 + 6 + 3 * 8 + 24 + 6 + 8 * 10 + 6 + 5 * 17
+\ (Trogg is two records: body and legs; then the yoyo and string, the timer and rating)
 SAVE_RESERVE_DEAD = SAVE_RESERVE_ALIVE + 6 + 14 * 21
 
 \ DIFFICULTY is set by build.sh (DIFFICULTY=n ./build.sh), as in the Steam version:
@@ -337,6 +338,16 @@ ORG &0E00
 .fe_n       SKIP 1
 .fe_n2      SKIP 1
 .fe_pat     SKIP 1
+.lvl_ticks  SKIP 2          \ the level's timer (game ticks, 50 a second)
+.win_ticks  SKIP 2          \ ticks left of the level-complete pause
+.hud_secs   SKIP 2          \ the seconds shown on the timer
+.num_gems   SKIP 1
+.done_valid SKIP 1          \ a finished level's result, for the front end's records
+.done_level SKIP 1
+.done_ticks SKIP 2
+.done_restarts SKIP 1
+.done_gems  SKIP 1
+.txt_yh     SKIP 1
 .txt_col    SKIP 1          \ text: where (byte column, pixel row) and colour
 .txt_y      SKIP 1
 .txt_colour SKIP 1
@@ -435,6 +446,7 @@ INCLUDE "src/gen/tables.asm"
     lda #0 : cpx num_draw : bcs gone : lda #1 : .gone
     sta alive,x : dex : bpl objs
     lda #0 : sta keys_found : sta gems_found : sta have_cp : sta save_cp : sta restarts
+    sta lvl_ticks : sta lvl_ticks+1
     sta bal_timer : sta dag_timer
     lda vsyncs : ora #1 : sta rng : lda #&5A : sta rng+1
     jsr slow_init
@@ -476,6 +488,7 @@ INCLUDE "src/gen/tables.asm"
     sta mv_active,x : dex : bpl movers
 
     lda #0 : sta rr_raw
+    lda #&FF : sta hud_secs : sta hud_secs+1
     jsr slow_reset_display
     jsr calc_scroll
     ldx #1
@@ -502,7 +515,7 @@ INCLUDE "src/gen/tables.asm"
     ldx back
     lda newcol : sta bscroll,x
     lda newrow : sta brow,x
-    lda #0 : sta log_n,x : sta bfrak,x : sta pend_hi,x
+    lda #0 : sta log_n,x : sta bfrak,x : sta bwon,x : sta pend_hi,x
     lda #&FF : sta pend_lo,x
     dex : bpl init_buffer
     lda #1 : sta front              \ buffer 0 is drawn first
@@ -526,6 +539,10 @@ INCLUDE "src/gen/tables.asm"
 
     \ Once Trogg is dead and this buffer already shows the FRAK! bubble, nothing
     \ changes until the restart, so don't redraw
+    lda won : beq not_won
+    lda bwon,x : beq redraw
+    jmp show
+.not_won
     lda dead : beq redraw
     lda bfrak,x : beq redraw
     jmp show
@@ -620,6 +637,9 @@ INCLUDE "src/gen/tables.asm"
     jsr log_sprite
 .one_part
 
+    \ the timer and rating (or, once the level is complete, its panel)
+    jsr draw_hud
+
     \ ... and "FRAK!" at (x + 12, y - 26) if he's dead
     ldx back
     lda dead : sta bfrak,x : beq show
@@ -661,6 +681,7 @@ INCLUDE "src/gen/tables.asm"
 .from_scratch
     jmp level_start
 .next_level
+    jsr record_result
     lda cur_level : clc : adc #1 : jsr load_playable
     jmp level_start
 .to_menu
@@ -687,11 +708,14 @@ TICK_QUIT = 3
     lda #TICK_DIED : rts
 .alive
     lda won : beq playing
-    jsr win_tick : bcs finished
+    \ level complete: wait, then the next level
+    lda win_ticks : ora win_ticks+1 : beq finished
+    lda win_ticks : bne w1 : dec win_ticks+1 : .w1 : dec win_ticks
     lda #TICK_OK : rts
 .finished
     lda #TICK_WON : rts
 .playing
+    inc lvl_ticks : bne t1 : inc lvl_ticks+1 : .t1
     jsr read_keys
     lda #KEY_ESCAPE : jsr key_pressed : beq stay
     lda #TICK_QUIT : rts
@@ -1613,23 +1637,6 @@ ENDMACRO
     rts
 }
 
-\ Level complete: flash the background, then start again. Carry set when done.
-WIN_FRAMES = 150                    \ (game ticks)
-.win_tick
-{
-    dec won : beq finished
-    lda won : and #7 : bne not_yet
-    lda won : and #8 : beq bg
-    lda #7 : jsr set_bg                 \ white
-    clc : rts
-.bg
-    jsr set_palette
-.not_yet
-    clc : rts
-.finished
-    jsr set_palette
-    sec : rts
-}
 
 \ ------------------------------------------------------------------------------
 \ Keyboard
@@ -1651,6 +1658,7 @@ FONT = &B900
     pla : sta src : pla : sta src+1                 \ (the address of the last byte of the JSR)
     ldy #1 : lda (src),y : sta txt_col
     iny : lda (src),y : sta txt_y
+    lda #0 : sta txt_yh
 .loop
     iny : lda (src),y : beq done
     sty txt_i
@@ -1666,7 +1674,27 @@ FONT = &B900
 \ Draw character A at byte column txt_col, pixel row txt_y
 .print_char
 {
-    \ its 8 rows, from the font in ROM 15
+    jsr get_glyph
+    \ each row: 2 screen bytes, from the left and right 4 pixels
+    lda #0 : sta txt_i2
+.row
+    lda txt_y : clc : adc txt_i2 : sta tmp : lda txt_yh : adc #0      \ the pixel row (16-bit)
+    lsr a : ror tmp : lsr a : ror tmp : lsr a : ror tmp : ldx tmp     \ its character row
+    lda txt_y : clc : adc txt_i2 : and #7 : sta tmp+1
+    lda #0 : sta tmp
+    lda txt_col : asl a : rol tmp : asl a : rol tmp : asl a : rol tmp
+    clc : adc tmp+1 : adc rowaddr_lo,x : sta ptr
+    lda tmp : adc rowaddr_hi,x : cmp #&80 : bcc ok : sbc #&50 : .ok : sta ptr+1
+    ldx txt_i2 : lda txt_glyph,x
+    pha : lsr a : lsr a : lsr a : lsr a : ldy #0 : jsr txt_nibble
+    pla : and #15 : ldy #8 : jsr txt_nibble
+    inc txt_i2 : lda txt_i2 : cmp #8 : bne row
+    rts
+}
+
+\ txt_glyph = the 8 rows of character A, from the font in ROM 15
+.get_glyph
+{
     sec : sbc #32 : sta pt : lda #0 : sta pt+1
     asl pt : rol pt+1 : asl pt : rol pt+1 : asl pt : rol pt+1
     lda pt : clc : adc #LO(FONT) : sta pt : lda pt+1 : adc #HI(FONT) : sta pt+1
@@ -1677,20 +1705,6 @@ FONT = &B900
     lda (pt),y : sta txt_glyph,y : dey : bpl fetch
     lda ROMSEL_COPY : sta ROMSEL
     cli
-    \ each row: 2 screen bytes, from the left and right 4 pixels
-    lda #0 : sta txt_i2
-.row
-    lda txt_y : clc : adc txt_i2 : tax              \ the pixel row
-    and #7 : sta tmp+1
-    txa : lsr a : lsr a : lsr a : tax
-    lda #0 : sta tmp
-    lda txt_col : asl a : rol tmp : asl a : rol tmp : asl a : rol tmp
-    clc : adc tmp+1 : adc rowaddr_lo,x : sta ptr
-    lda tmp : adc rowaddr_hi,x : cmp #&80 : bcc ok : sbc #&50 : .ok : sta ptr+1
-    ldx txt_i2 : lda txt_glyph,x
-    pha : lsr a : lsr a : lsr a : lsr a : ldy #0 : jsr txt_nibble
-    pla : and #15 : ldy #8 : jsr txt_nibble
-    inc txt_i2 : lda txt_i2 : cmp #8 : bne row
     rts
 }
 
@@ -1717,6 +1731,18 @@ FONT = &B900
     pla : jsr fe_main
     sta last_level
     pha : lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL : pla
+    rts
+}
+
+\ Give the result of the level just finished (done_*) to the front end's records
+.record_result
+{
+    lda done_valid : beq none
+    lda #0 : sta done_valid
+    lda #FRONT_BANK : sta ROMSEL_COPY : sta ROMSEL
+    jsr fe_record
+    lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL
+.none
     rts
 }
 
@@ -1781,6 +1807,7 @@ NEXT
 .bscroll    SKIP 2
 .brow       SKIP 2          \ scrollrow, per buffer
 .bfrak      SKIP 2          \ FRAK! bubble drawn in this buffer
+.bwon       SKIP 2          \ level-complete panel drawn in this buffer
 .pend_lo    SKIP 2          \ columns waiting to be repainted, per buffer
 .pend_hi    SKIP 2
 .ram_top
@@ -2258,8 +2285,7 @@ ENDMACRO
     cmp #KIND_KEY : bne done
     inc keys_found
     lda keys_found : cmp num_keys : bne more_keys
-    lda #WIN_FRAMES : sta won           \ all the keys: level complete!
-    rts
+    jmp level_complete                  \ all the keys!
 .more_keys
     lda #1 : sta save_cp                \ checkpoint once Trogg is standing still
 .done
@@ -3752,6 +3778,196 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
 .left_pixels  EQUB &FF, &77, &33, &11
 .right_pixels EQUB &88, &CC, &EE, &FF
 
+\ ------------------------------------------------------------------------------
+\ The level timer (as the Steam version: it runs while Trogg is alive and the
+\ level isn't complete) and his rating (gold, silver, bronze or a tick, for 0,
+\ 1, 2 or more restarts from a checkpoint), drawn over the playfield like
+\ sprites: the timer is an image (IMG_Hud) made from the font each second.
+\ ------------------------------------------------------------------------------
+
+.draw_hud
+{
+    lda won : beq playing
+    jmp win_panel
+.playing
+    \ the seconds; a new timer image when they change
+    lda lvl_ticks : sta tmp : lda lvl_ticks+1 : sta tmp+1
+    lda #50 : jsr div16
+    lda tmp : cmp hud_secs : bne new : lda tmp+1 : cmp hud_secs+1 : beq same
+.new
+    lda tmp : sta hud_secs : lda tmp+1 : sta hud_secs+1
+    jsr time_digits
+    ldx #0
+.chars
+    stx hud_k
+    lda time_text,x : jsr get_glyph
+    lda hud_k : asl a : asl a : asl a : asl a : tax     \ 2 byte columns of 8 rows each
+    ldy #0
+.rows
+    lda txt_glyph,y : lsr a : lsr a : lsr a : lsr a : sta hud_image,x     \ black: colour 1
+    lda txt_glyph,y : and #15 : sta hud_image + 8,x
+    inx : iny : cpy #8 : bne rows
+    ldx hud_k : inx : cpx #4 : bne chars
+.same
+    \ at the top left of the window, and the rating at the bottom right
+    lda #IMG_Hud : sta p_img
+    lda #0 : sta p_x+1
+    lda scrollcol : asl a : rol p_x+1 : asl a : rol p_x+1 : clc : adc #4 : sta p_x : bcc x1 : inc p_x+1 : .x1
+    lda clip_t : clc : adc #2 : sta p_y : lda clip_t+1 : adc #0 : sta p_y+1
+    jsr log_sprite
+    lda restarts : cmp #3 : bcc r_ok : lda #3 : .r_ok : clc : adc #IMG_Rating_1 : sta p_img
+    lda p_x : clc : adc #LO(WINDOW_W - 12) : sta p_x : lda p_x+1 : adc #HI(WINDOW_W - 12) : sta p_x+1
+    lda p_y : clc : adc #253 : sta p_y : lda p_y+1 : adc #0 : sta p_y+1
+    jmp log_sprite
+}
+
+\ tmp (16-bit) = tmp / A, remainder in A
+.div16
+{
+    sta hud_d : lda #0 : ldx #16
+.loop
+    asl tmp : rol tmp+1 : rol a
+    cmp hud_d : bcc no : sbc hud_d : inc tmp : .no
+    dex : bne loop
+    rts
+}
+
+\ time_text = "m:ss" for tmp seconds (at most 9:59)
+.time_digits
+{
+    lda tmp+1 : bne cap : lda tmp : cmp #LO(600) : lda tmp+1 : sbc #HI(600) : bcc ok
+.cap
+    lda #LO(599) : sta tmp : lda #HI(599) : sta tmp+1
+.ok
+    lda #60 : jsr div16 : sta hud_d2                \ tmp = minutes, A = seconds
+    lda tmp : ora #'0' : sta time_text
+    lda #':' : sta time_text + 1
+    lda hud_d2 : ldx #'0' - 1
+.tens
+    inx : sec : sbc #10 : bcs tens
+    adc #10 + '0' : sta time_text + 3 : stx time_text + 2
+    rts
+}
+
+\ All the keys: the level is complete. Note the result for the records, and
+\ pause for 7 seconds, less one for each restart (as the Steam version)
+.level_complete
+{
+    lda #1 : sta won
+    lda #0 : sta bwon : sta bwon + 1
+    lda restarts : cmp #3 : bcc r : lda #3 : .r : tax
+    lda win_len_lo,x : sta win_ticks : lda win_len_hi,x : sta win_ticks+1
+    lda cur_level : sta done_level
+    lda lvl_ticks : sta done_ticks : lda lvl_ticks+1 : sta done_ticks+1
+    lda restarts : sta done_restarts
+    lda #0 : sta done_gems
+    lda num_gems : beq no_gems
+    lda gems_found : cmp num_gems : bcc no_gems
+    inc done_gems
+.no_gems
+    lda #1 : sta done_valid
+    rts
+}
+.win_len_lo EQUB LO(7 * 50), LO(6 * 50), LO(5 * 50), LO(4 * 50)
+.win_len_hi EQUB HI(7 * 50), HI(6 * 50), HI(5 * 50), HI(4 * 50)
+
+\ The level-complete panel, drawn once into each buffer: the time, the gems,
+\ the medal and a trophy over Trogg (the Steam version's, less its animation)
+MACRO WIN_TEXT dy, text
+    jsr win_text
+    EQUB dy
+    EQUS text, 0
+ENDMACRO
+.win_panel
+{
+    ldx back : lda #1 : sta bwon,x
+    lda #1 : sta txt_colour
+    \ the top line: 40 rows up from the middle (60 with a medal)
+    lda #88 : ldx done_restarts : cpx #3 : bcs base : lda #68 : .base : sta hud_y
+    WIN_TEXT 0, "We've done it!"
+    \ the time, to a thousandth of a second
+    lda done_ticks : sta tmp : lda done_ticks+1 : sta tmp+1
+    lda #50 : jsr div16 : sta hud_r                 \ (the ticks over: 20 ms each)
+    jsr time_digits
+    \ milliseconds: r * 20, so the digits are r / 5, (r MOD 5) * 2 and 0
+    lda #'.' : sta time_text + 4
+    lda hud_r : ldx #'0' - 1
+.fifths
+    inx : sec : sbc #5 : bcs fifths
+    adc #5 : asl a : ora #'0' : sta time_text + 6
+    stx time_text + 5
+    lda #'0' : sta time_text + 7
+    lda #0 : sta time_text + 8
+    lda #16 : jsr win_line
+    lda #LO(time_text) : sta src : lda #HI(time_text) : sta src+1
+    jsr win_print
+    lda #32 : sta hud_dy
+    lda done_gems : beq no_gems
+    WIN_TEXT 32, "You collected all the gems!"
+    lda #48 : sta hud_dy
+.no_gems
+    \ the medal
+    lda done_restarts : cmp #3 : bcs no_medal
+    lda hud_dy : clc : adc #32 : sta hud_dy
+    lda done_restarts : asl a : tax
+    lda medal_text,x : sta src : lda medal_text + 1,x : sta src+1
+    lda hud_dy : jsr win_line
+    jsr win_print
+    \ ... and the trophy over Trogg
+    lda done_restarts : clc : adc #IMG_Rating_1 : sta p_img
+    lda tx : clc : adc #21 : sta p_x : lda tx+1 : adc #0 : sta p_x+1
+    lda ty : sec : sbc #23 : sta p_y : lda ty+1 : sbc #0 : sta p_y+1
+    lda #PM_PLOT : sta p_mode
+    jsr plot
+    lda #IMG_TrophyStand : sta p_img
+    jsr plot
+.no_medal
+    rts
+}
+.medal_text EQUW t_gold, t_silver, t_bronze
+.t_gold   EQUS "!!! Gold Medal !!!", 0
+.t_silver EQUS "!!! Silver Medal !!!", 0
+.t_bronze EQUS "!!! Bronze Medal !!!", 0
+
+
+\ Print the string after the JSR (after a byte: its row below hud_y), centred
+.win_text
+{
+    pla : sta src : pla : sta src+1
+    ldy #1 : lda (src),y : jsr win_line
+    inc src : bne s1 : inc src+1 : .s1
+    inc src : bne s2 : inc src+1 : .s2
+    jsr win_print
+    tya : clc : adc src : tax : lda src+1 : adc #0 : pha : txa : pha
+    rts
+}
+\ txt_y = the window's top + hud_y + A
+.win_line
+{
+    clc : adc hud_y : adc clip_t : sta txt_y : lda clip_t+1 : adc #0 : sta txt_yh
+    rts
+}
+\ Print the string at (src), centred in the window, at txt_y; Y ends at its 0
+.win_print
+{
+    ldy #0
+.len
+    lda (src),y : beq got : iny : bne len
+.got
+    sty tmp
+    lda scrollcol : clc : adc #40 : sec : sbc tmp : sta txt_col
+    ldy #0
+.loop
+    lda (src),y : beq done
+    sty txt_i
+    jsr print_char
+    ldy txt_i
+    inc txt_col : inc txt_col
+    iny : bne loop
+.done
+    rts
+}
+
 \ Choose the next level: A, or the first after it that can be played
 .load_playable
 {
@@ -3823,6 +4039,14 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
 .sl_wait    SKIP MAX_SLOW
 .sl_simple  SKIP MAX_SLOW
 .slowsave1  SKIP SLOWSAVE1_SIZE     \ the second buffer's save area for meanies flying off
+.hud_image  SKIP 64                 \ the timer, as an image: 8 byte columns of 8 rows
+.time_text  SKIP 9
+.hud_k      SKIP 1
+.hud_d      SKIP 1
+.hud_d2     SKIP 1
+.hud_r      SKIP 1
+.hud_y      SKIP 1
+.hud_dy     SKIP 1
 \ Moving platforms and meanies: current state, and copies for checkpoints
 SLOW_N = MAX_SLOW
 .s_alive    SKIP SLOW_N
@@ -4155,7 +4379,7 @@ ROMSEL_ANDY = &80                   \ ROMSEL bit 7: ANDY at &8000-&8FFF
 .lads_done
 
     \ Keys, gems, bulbs and meanies that don't move, in drawing order
-    lda #0 : sta num_keys
+    lda #0 : sta num_keys : sta num_gems
     ldx #0
 .draw_loop
     cpx num_draw : bne draw_one
@@ -4165,6 +4389,7 @@ ROMSEL_ANDY = &80                   \ ROMSEL bit 7: ANDY at &8000-&8FFF
     ldy rimg : tya : sta draw_img,x
     lda img_kind,y : sta draw_kind,x
     cmp #KIND_KEY : bne not_key : inc num_keys : .not_key
+    cmp #KIND_GEM : bne not_gem : inc num_gems : .not_gem
     lda rx : sta draw_xl,x : lda rx+1 : sta draw_xh,x
     lda ry : sta draw_yl,x : lda ry+1 : sta draw_yh,x
     \ left = x - xo, top = y - yo
@@ -4977,6 +5202,15 @@ GUARD SLOWSAVE0_START
 .fe_main
 {
     cmp #0 : bne menus
+    \ (at the start: no records yet)
+    ldx #NUM_LEVELS - 1
+.clear
+    lda #&FF : sta rec_best_lo,x : sta rec_best_hi,x
+    lda #0 : sta rec_gem,x
+    dex : bpl clear
+    ldx #0 : lda #&FF
+.clear_rates
+    sta rec_rate,x : inx : cpx #NUM_LEVELS * 4 : bne clear_rates
     jsr fe_attract
 .menus
     jmp fe_menus
@@ -5011,6 +5245,7 @@ GUARD SLOWSAVE0_START
     pla : jsr set_bg
     lda #PM_PLOT : sta p_mode
     lda #1 : sta txt_colour                         \ black text
+    lda #0 : sta txt_yh
     rts
 }
 
@@ -5428,18 +5663,150 @@ ENDMACRO
 .name
     \ level = 1 + group * 9 + button
     lda fe_group : asl a : asl a : asl a : adc fe_group : adc fe_i2 : adc #1
+    sta fe_lev
     pha : lda fe_y0 : clc : adc #70 : tay : pla
-    jmp fe_level_name
+    jsr fe_level_name
+    \ its "good" time at the top right, and the best so far below it
+    ldx fe_lev
+    lda level_good_lo,x : sta tmp : lda level_good_hi,x : sta tmp+1
+    lda #7 : jsr fe_time_at
+    ldx fe_lev
+    lda rec_best_hi,x : cmp #&FF : beq no_best
+    sta tmp+1 : lda rec_best_lo,x : sta tmp
+    lda #43 : jsr fe_time_at
+.no_best
+    \ the medals: rating (for this difficulty), gems, speed
+    jsr fe_rate_index
+    lda rec_rate,y : cmp #3 : bcc rated : cmp #&FF : beq unrated : lda #3 : bne rated
+.unrated
+    lda #5
+.rated
+    asl a : tax
+    lda fe_rating_icons,x : sta src : lda fe_rating_icons + 1,x : sta src+1
+    lda #11 : jsr fe_icon_at
+    ldx fe_lev : lda rec_gem,x : beq outline
+    lda #LO(icon_Gem_Small) : ldy #HI(icon_Gem_Small) : jmp gem
+.outline
+    lda #LO(icon_Gem_Outline_Small) : ldy #HI(icon_Gem_Outline_Small)
+.gem
+    sta src : sty src+1
+    lda #14 : jsr fe_icon_at
+    \ the stopwatch: if the best time beats the good one
+    lda #LO(icon_Stopwatch_Outline_Small) : sta src : lda #HI(icon_Stopwatch_Outline_Small) : sta src+1
+    ldx fe_lev
+    lda rec_best_lo,x : cmp level_good_lo,x : lda rec_best_hi,x : sbc level_good_hi,x : bcs slow
+    lda #LO(icon_Stopwatch_Small) : sta src : lda #HI(icon_Stopwatch_Small) : sta src+1
+.slow
+    lda #17
+    \ (falls through)
+}
+
+\ Draw the icon at (src) at byte column A of the current button, 62 rows down
+.fe_icon_at
+{
+    clc : adc fe_bx : sta fe_n
+    lda fe_y0 : clc : adc #62 : sta fe_n2
+    ldy #0 : lda (src),y : sta fe_iw : iny : lda (src),y : sta fe_ih
+    lda src : clc : adc #2 : sta src : bcc nc : inc src+1 : .nc
+.col
+    lda #0 : sta fe_r
+.row
+    lda fe_n2 : clc : adc fe_r : tax : lda fe_n : jsr fe_addr
+    ldy #0 : lda (src),y : beq clear : tax
+    lda (ptr),y : and masktab,x : ora identity,x : sta (ptr),y
+.clear
+    inc src : bne nc2 : inc src+1 : .nc2
+    inc fe_r : lda fe_r : cmp fe_ih : bne row
+    inc fe_n : dec fe_iw : bne col
+    rts
+}
+.fe_rating_icons
+    EQUW icon_Rating_1_Small, icon_Rating_2_Small, icon_Rating_3_Small, icon_Rating_Tick_Small
+    EQUW icon_Rating_None_Small, icon_Stopwatch_Outline_Small
+
+\ Y = the index in rec_rate of level fe_lev at this difficulty
+.fe_rate_index
+{
+    ldx difficulty : lda fe_diff_index,x : sta tmp
+    lda fe_lev : asl a : asl a : clc : adc tmp : tay
+    rts
+}
+.fe_diff_index EQUB 0, 0, 1, 1, 2, 2, 3
+
+\ Print the time tmp (game ticks) as m:ss, at byte column 11 of the current
+\ button, A rows down
+.fe_time_at
+{
+    clc : adc fe_y0 : sta txt_y
+    lda fe_bx : clc : adc #11 : sta txt_col
+    lda #50 : jsr fe_div16                          \ seconds
+    lda tmp+1 : bne cap : lda tmp : cmp #LO(600) : lda tmp+1 : sbc #HI(600) : bcc ok
+.cap
+    lda #LO(599) : sta tmp : lda #HI(599) : sta tmp+1
+.ok
+    lda #60 : jsr fe_div16 : sta fe_r               \ tmp = minutes, A = seconds
+    lda tmp : ora #'0' : jsr fe_char
+    lda #':' : jsr fe_char
+    lda fe_r : ldx #'0' - 1
+.tens
+    inx : sec : sbc #10 : bcs tens
+    adc #10 + '0' : pha : txa : jsr fe_char
+    pla
+    \ (falls through)
+}
+\ Print character A at txt_col, txt_y, and move on
+.fe_char
+{
+    jsr print_char
+    inc txt_col : inc txt_col
+    rts
+}
+
+\ tmp (16-bit) = tmp / A, remainder in A
+.fe_div16
+{
+    sta fe_d : lda #0 : ldx #16
+.loop
+    asl tmp : rol tmp+1 : rol a
+    cmp fe_d : bcc no : sbc fe_d : inc tmp : .no
+    dex : bne loop
+    rts
+}
+
+\ Add a finished level's result (done_*) to the records: the best time, the
+\ gem medal, and the fewest restarts at this difficulty
+.fe_record
+{
+    ldx done_level : stx fe_lev
+    lda done_ticks : cmp rec_best_lo,x : lda done_ticks+1 : sbc rec_best_hi,x : bcs not_best
+    lda done_ticks : sta rec_best_lo,x : lda done_ticks+1 : sta rec_best_hi,x
+.not_best
+    lda done_gems : beq no_gem : lda #1 : sta rec_gem,x : .no_gem
+    jsr fe_rate_index
+    lda done_restarts : cmp rec_rate,y : bcs done : sta rec_rate,y
+.done
+    rts
 }
 
 INCLUDE "src/gen/names.asm"
 .front_end_
 SAVE "FRONT", front_start, front_end_
-PRINT "Front end:", front_end_ - front_start, "bytes in bank", FRONT_BANK, "at", ~FRONT_ORG, "(", SLOWSAVE0_START - front_end_, "bytes free )"
+\ The records (not saved: they last until the machine is switched off)
+.rec_best_lo SKIP NUM_LEVELS        \ best time (game ticks), &FFFF if none
+.rec_best_hi SKIP NUM_LEVELS
+.rec_gem    SKIP NUM_LEVELS         \ 1 if completed with all the gems
+.rec_rate   SKIP NUM_LEVELS * 4     \ fewest restarts, per difficulty (Easy, Hard, Harder, Insane), &FF if none
+.fe_d       SKIP 1
+.fe_r       SKIP 1
+.fe_iw      SKIP 1
+.fe_ih      SKIP 1
+.fe_lev     SKIP 1
+.fe_records_end
+PRINT "Front end:", front_end_ - front_start, "bytes in bank", FRONT_BANK, "at", ~FRONT_ORG, "(", SLOWSAVE0_START - fe_records_end, "bytes free after its records )"
 
 INCLUDE "src/gen/disc.asm"
 
 PRINT "Code from", ~code_start, "to", ~end, "(", end - code_start, "bytes ), free:", SCREEN - ram_top
 \ Addresses used by test scripts (profiling and poking variables)
 PRINT "TIMING", ~main_loop, ~t_restore, ~t_scroll, ~t_draw, ~t_vsync, ~t_after_vsync, ~t_logic, ~t_logic_done, ~t_slow, ~t_slow_done
-PRINT "SYMBOLS loops", ~loops, "cur_level", ~cur_level, "num_plats", ~num_plats, "num_ladders", ~num_ladders, "num_draw", ~num_draw, "num_slow", ~num_slow, "plat_w", ~plat_w, "plat_x0l", ~plat_x0l, "plat_x0h", ~plat_x0h, "plat_y0l", ~plat_y0l, "plat_y0h", ~plat_y0h, "plat_moving", ~plat_moving, "lad_xl", ~lad_xl, "lad_xh", ~lad_xh, "lad_yl", ~lad_yl, "lad_yh", ~lad_yh, "lad_hl", ~lad_hl, "lad_hh", ~lad_hh, "lad_ext", ~lad_ext, "draw_img", ~draw_img, "draw_xl", ~draw_xl, "draw_xh", ~draw_xh, "draw_yl", ~draw_yl, "draw_yh", ~draw_yh, "sl_kind", ~sl_kind, "sl_img", ~sl_img, "sl_x0l", ~sl_x0l, "sl_x0h", ~sl_x0h, "sl_y0l", ~sl_y0l, "sl_y0h", ~sl_y0h, "sl_aminl", ~sl_aminl, "sl_aminh", ~sl_aminh, "sl_amaxl", ~sl_amaxl, "sl_amaxh", ~sl_amaxh, "sl_bminl", ~sl_bminl, "sl_bminh", ~sl_bminh, "sl_bmaxl", ~sl_bmaxl, "sl_bmaxh", ~sl_bmaxh, "sl_vf", ~sl_vf, "sl_vi", ~sl_vi, "sl_vy", ~sl_vy, "sl_plat", ~sl_plat, "sl_wait", ~sl_wait, "sl_simple", ~sl_simple, "plat_yh", ~plat_yh, "level_bg", ~level_bg, "trogg_x0", ~trogg_x0, "trogg_y0", ~trogg_y0, "dmg_n", ~dmg_n, "s_alive", ~s_alive, "s_xl", ~s_xl, "s_xh", ~s_xh, "s_yl", ~s_yl, "s_yh", ~s_yh, "cur_plat", ~cur_plat, "plat_xl", ~plat_xl, "plat_xh", ~plat_xh, "plat_yl", ~plat_yl, "mv_img", ~mv_img, "mv_vxi", ~mv_vxi, "mv_vyi", ~mv_vyi, "mv_vyf", ~mv_vyf, "mv_yl", ~mv_yl, "mv_yh", ~mv_yh, "mv_pause", ~mv_pause, "bal_timer", ~bal_timer, "dag_timer", ~dag_timer, "bscroll", ~bscroll, "front", ~front, "vsyncs", ~vsyncs, "yo_len", ~yo_len, "mv_active", ~mv_active, "mv_xl", ~mv_xl, "mv_xh", ~mv_xh, "tface", ~tface, "keys_found", ~keys_found, "gems_found", ~gems_found, "won", ~won, "have_cp", ~have_cp, "restarts", ~restarts, "alive", ~alive, "newcol", ~newcol, "dead", ~dead, "tx", ~tx, "ty", ~ty, "tstate", ~tstate, "fallt", ~fallt, "dead", ~dead, "anim", ~anim, "p_img", ~p_img, "bank", ~bank, "oldbank", ~oldbank, "dptr", ~dptr, "scrollcol", ~scrollcol
+PRINT "SYMBOLS loops", ~loops, "draw_kind", ~draw_kind, "num_keys", ~num_keys, "lvl_ticks", ~lvl_ticks, "done_valid", ~done_valid, "fe_sel", ~fe_sel, "cur_level", ~cur_level, "num_plats", ~num_plats, "num_ladders", ~num_ladders, "num_draw", ~num_draw, "num_slow", ~num_slow, "plat_w", ~plat_w, "plat_x0l", ~plat_x0l, "plat_x0h", ~plat_x0h, "plat_y0l", ~plat_y0l, "plat_y0h", ~plat_y0h, "plat_moving", ~plat_moving, "lad_xl", ~lad_xl, "lad_xh", ~lad_xh, "lad_yl", ~lad_yl, "lad_yh", ~lad_yh, "lad_hl", ~lad_hl, "lad_hh", ~lad_hh, "lad_ext", ~lad_ext, "draw_img", ~draw_img, "draw_xl", ~draw_xl, "draw_xh", ~draw_xh, "draw_yl", ~draw_yl, "draw_yh", ~draw_yh, "sl_kind", ~sl_kind, "sl_img", ~sl_img, "sl_x0l", ~sl_x0l, "sl_x0h", ~sl_x0h, "sl_y0l", ~sl_y0l, "sl_y0h", ~sl_y0h, "sl_aminl", ~sl_aminl, "sl_aminh", ~sl_aminh, "sl_amaxl", ~sl_amaxl, "sl_amaxh", ~sl_amaxh, "sl_bminl", ~sl_bminl, "sl_bminh", ~sl_bminh, "sl_bmaxl", ~sl_bmaxl, "sl_bmaxh", ~sl_bmaxh, "sl_vf", ~sl_vf, "sl_vi", ~sl_vi, "sl_vy", ~sl_vy, "sl_plat", ~sl_plat, "sl_wait", ~sl_wait, "sl_simple", ~sl_simple, "plat_yh", ~plat_yh, "level_bg", ~level_bg, "trogg_x0", ~trogg_x0, "trogg_y0", ~trogg_y0, "dmg_n", ~dmg_n, "s_alive", ~s_alive, "s_xl", ~s_xl, "s_xh", ~s_xh, "s_yl", ~s_yl, "s_yh", ~s_yh, "cur_plat", ~cur_plat, "plat_xl", ~plat_xl, "plat_xh", ~plat_xh, "plat_yl", ~plat_yl, "mv_img", ~mv_img, "mv_vxi", ~mv_vxi, "mv_vyi", ~mv_vyi, "mv_vyf", ~mv_vyf, "mv_yl", ~mv_yl, "mv_yh", ~mv_yh, "mv_pause", ~mv_pause, "bal_timer", ~bal_timer, "dag_timer", ~dag_timer, "bscroll", ~bscroll, "front", ~front, "vsyncs", ~vsyncs, "yo_len", ~yo_len, "mv_active", ~mv_active, "mv_xl", ~mv_xl, "mv_xh", ~mv_xh, "tface", ~tface, "keys_found", ~keys_found, "gems_found", ~gems_found, "won", ~won, "have_cp", ~have_cp, "restarts", ~restarts, "alive", ~alive, "newcol", ~newcol, "dead", ~dead, "tx", ~tx, "ty", ~ty, "tstate", ~tstate, "fallt", ~fallt, "dead", ~dead, "anim", ~anim, "p_img", ~p_img, "bank", ~bank, "oldbank", ~oldbank, "dptr", ~dptr, "scrollcol", ~scrollcol

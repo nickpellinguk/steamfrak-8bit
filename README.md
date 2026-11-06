@@ -30,7 +30,14 @@ another, including the 19 that scroll vertically:
   Difficulty (Easy, Hard, Harder, Insane), Training and the six groups of levels, each a 3x3
   grid of levels with the column's meanie and the level's name. Z X O K (or the cursor keys)
   move, Space, Return, P or Y choose, Escape goes back (and, while playing, back to the menus).
-  There are no times, ratings or medals yet.
+* The level timer (top left, while Trogg is alive) and his rating (bottom right: gold, silver,
+  bronze or a tick, for 0, 1, 2 or more restarts from a checkpoint), as in the Steam version.
+  Completing a level shows its time (to a thousandth of a second), whether all the gems were
+  collected, the medal and a trophy over Trogg, for 4-7 seconds, then the next level starts.
+* Records: each level's best time, gem medal (completed with all the gems), and best rating at
+  each difficulty. The level buttons show the level's target time, the best time, and the three
+  medals (rating, gems, stopwatch: beating the target time). There's nowhere to save them, so
+  they last until the machine is switched off.
 * Collecting every key completes the level: the background flashes and the next level starts
   (there is no text drawing yet).
 
@@ -100,10 +107,10 @@ sprite tables, and every byte of the unrolled background) with what the converte
 | `&0400-&07FF` | save area for the main-RAM screen buffer (BASIC's workspace, unused); while a level loads, the packed level |
 | `&0900-&0CFF` | save area for the shadow screen buffer (RS423/cassette buffers, soft keys, UDGs); while a level loads, a column of the background and the list of things in it |
 | `&0E00-&10FF` | other variables: object states, checkpoint, draw logs, moving objects |
-| `&1100-&2FFF` | drawing code and its tables (224 bytes free) |
+| `&1100-&2FFF` | drawing code and its tables (43 bytes free) |
 | `&3000-&7FFF` | MODE 1 screen, **double buffered**: main RAM and shadow RAM. While a level loads (with the screen blanked) it holds the loader's workspace (`&3000-&4FFF`: the dictionary's hash table, a row of the background, the lines being built) and the loader itself (`&6000`) |
-| SWRAM banks 4-5 | sprites, pre-shifted, including unshifted copies of the platforms and ladders to unroll backgrounds from (23.1KB); the front end (attract screen, menus and level names, 2.3KB at `&A000` in bank 5); a save area for meanies flying off (the top 1KB of bank 5); **6.2KB free** |
-| SWRAM bank 6 | collision spans and tables (from `&8000`), the **game logic** (to `&A9CE`), then the current level's tables and the second save area for meanies flying off (1.3KB free). Stays paged in while playing |
+| SWRAM banks 4-5 | sprites, pre-shifted, including unshifted copies of the platforms and ladders to unroll backgrounds from (23.1KB); the front end (attract screen, menus, level names and target times, menu icons, 3.2KB at `&A800` in bank 5, then the records); a save area for meanies flying off (the top 1KB of bank 5); **4.7KB free** |
+| SWRAM bank 6 | collision spans and tables (from `&8000`), the **game logic** (to `&A9CE`), then the current level's tables and the second save area for meanies flying off (398 bytes free). Stays paged in while playing |
 | SWRAM bank 7 | the current level's background, unrolled when it starts (`&8000-&ABFF`, see below); the code that paints it (`&AC00`); the level loader (`&B000`, 3.9KB, copied to `&6000` when a level loads) |
 | HAZEL (`&C000-&DFFF`) and ANDY (`&8000-&8FFF`) | **all 55 levels**, packed: 11.8KB, about 215 bytes each. `&8800-&88FF` of ANDY is left to the MOS |
 

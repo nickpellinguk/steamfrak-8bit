@@ -23,7 +23,10 @@ const bank = (b, a) => cpu.ramRomOs[cpu.romOffset + b * 16384 + a - 0x8000];
 const r = a => a >= 0x8000 && a < 0xC000 ? bank(6, a) : cpu.readmem(a);
 const w16 = (lo, hi, i) => r(sym[lo] + i) + 256 * r(sym[hi] + i);
 const s16 = v => v >= 32768 ? v - 65536 : v;
-await s.runFrames(1500);
+await s.runFrames(600);
+// past the attract screen, then "Replay" on the menu starts the build's level
+for (let i = 0; i < 2; i++) { s.keyDown('Space'); await s.runFrames(5); s.keyUp('Space'); await s.runFrames(60); }
+await s.runFrames(300);
 let bad = 0, checked = 0;
 const only = process.env.ONLY ? process.env.ONLY.split(',') : null;
 for (let li = 0; li < names.length; li++) {
