@@ -1,4 +1,5 @@
-// A small 6502 interpreter (the documented NMOS instructions, binary arithmetic only), for
+// A small 6502 interpreter (the documented NMOS instructions and the 65C02 ones the Master's
+// 65SC12 has, binary arithmetic only), for
 // running pieces of the game's own code against a snapshot of memory, much faster than a whole
 // emulated machine. Used by connections8.mjs to run Trogg's movement routines.
 //
@@ -58,6 +59,7 @@ export class Cpu6502 {
         const aby = () => (abs() + this.y) & 0xFFFF;
         const izx = () => { const z = (this.rd(imm()) + this.x) & 0xFF; return this.rd(z) | this.rd((z + 1) & 0xFF) << 8; };
         const izy = () => { const z = this.rd(imm()); return ((this.rd(z) | this.rd((z + 1) & 0xFF) << 8) + this.y) & 0xFFFF; };
+        const izp = () => { const z = this.rd(imm()); return this.rd(z) | this.rd((z + 1) & 0xFF) << 8; };
         const branch = cond => { const o = this.rd(imm()); if (cond) this.pc = (this.pc + (o < 128 ? o : o - 256)) & 0xFFFF; };
         // read-modify-write helpers
         const asl = v => { this.flag(C, v & 0x80); return this.nz(v << 1); };
@@ -224,6 +226,34 @@ export class Cpu6502 {
             case 0xD8: this.p &= ~D; break;
             case 0xF8: throw new Error('SED (decimal mode isn\'t supported) at &' + ((this.pc - 1) & 0xFFFF).toString(16));
             case 0xEA: break;
+            // the 65C02 (65SC12) instructions the Master has
+            case 0x80: branch(true); break;                                         // BRA
+            case 0xDA: this.push(this.x); break;                                    // PHX
+            case 0xFA: this.x = this.nz(this.pull()); break;                        // PLX
+            case 0x5A: this.push(this.y); break;                                    // PHY
+            case 0x7A: this.y = this.nz(this.pull()); break;                        // PLY
+            case 0x64: this.wr(zp(), 0); break;                                     // STZ
+            case 0x74: this.wr(zpx(), 0); break;
+            case 0x9C: this.wr(abs(), 0); break;
+            case 0x9E: this.wr(abx(), 0); break;
+            case 0x1A: this.a = this.nz(this.a + 1); break;                         // INC A
+            case 0x3A: this.a = this.nz(this.a - 1); break;                         // DEC A
+            case 0x12: this.a = this.nz(this.a | this.rd(izp())); break;            // (zp)
+            case 0x32: this.a = this.nz(this.a & this.rd(izp())); break;
+            case 0x52: this.a = this.nz(this.a ^ this.rd(izp())); break;
+            case 0x72: this.adc(this.rd(izp())); break;
+            case 0x92: this.wr(izp(), this.a); break;
+            case 0xB2: this.a = this.nz(this.rd(izp())); break;
+            case 0xD2: this.cmp(this.a, this.rd(izp())); break;
+            case 0xF2: this.adc(this.rd(izp()) ^ 0xFF); break;
+            case 0x89: this.flag(Z, !(this.a & this.rd(imm()))); break;             // BIT #
+            case 0x34: a = this.rd(zpx()); this.flag(Z, !(this.a & a)); this.flag(N, a & N); this.flag(V, a & V); break;
+            case 0x3C: a = this.rd(abx()); this.flag(Z, !(this.a & a)); this.flag(N, a & N); this.flag(V, a & V); break;
+            case 0x04: rmw(zp, v => { this.flag(Z, !(this.a & v)); return v | this.a; }); break;    // TSB
+            case 0x0C: rmw(abs, v => { this.flag(Z, !(this.a & v)); return v | this.a; }); break;
+            case 0x14: rmw(zp, v => { this.flag(Z, !(this.a & v)); return v & ~this.a; }); break;   // TRB
+            case 0x1C: rmw(abs, v => { this.flag(Z, !(this.a & v)); return v & ~this.a; }); break;
+            case 0x7C: this.pc = this.rd16(abx()); break;                           // JMP (abs,X)
             case 0x00: throw new Error('BRK at &' + ((this.pc - 1) & 0xFFFF).toString(16));
             default: throw new Error('unknown opcode &' + op.toString(16) + ' at &' + ((this.pc - 1) & 0xFFFF).toString(16));
         }

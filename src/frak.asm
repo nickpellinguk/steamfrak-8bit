@@ -14,6 +14,8 @@
 \ column drawing, and sprites can be drawn and erased using level coordinates.
 \ ******************************************************************************
 
+CPU 1                       \ the Master's 65SC12: 65C02 instructions (but not Rockwell's bit ones)
+
 OSWRCH      = &FFEE
 OSBYTE      = &FFF4
 ROMSEL      = &FE30
@@ -463,7 +465,7 @@ INCLUDE "src/gen/tables.asm"
     inx : cpx #vdu_init_end - vdu_init : bne vdu_loop
     lda #0 : jsr front_end          \ the attract screen and the menus
     jsr load_playable
-    jmp redraw_all
+    bra redraw_all
 }
 
 \ Double buffering: the screen is drawn in whichever of main RAM (buffer 0) and
@@ -513,7 +515,7 @@ INCLUDE "src/gen/tables.asm"
 .movers
     sta mv_active,x : dex : bpl movers
 
-    lda #0 : sta rr_raw
+    stz rr_raw
     lda #&FF : sta hud_secs : sta hud_secs+1
     jsr slow_reset_display
     jsr centre_scroll
@@ -530,7 +532,7 @@ INCLUDE "src/gen/tables.asm"
     lda scrollcol : clc : adc initcol
     jsr repaint_column
     dec initcol : bpl init_col
-    jmp init_done
+    bra init_done
 .init_rows
     lda #31 : sta initcol
 .init_row
@@ -541,7 +543,7 @@ INCLUDE "src/gen/tables.asm"
     ldx back
     lda newcol : sta bscroll,x
     lda newrow : sta brow,x
-    lda #0 : sta log_n,x : sta bfrak,x : sta bwon,x : sta pend_hi,x
+    stz log_n,x : stz bfrak,x : stz bwon,x : stz pend_hi,x
     lda #&FF : sta pend_lo,x
     dex : bpl init_buffer
     lda #1 : sta front              \ buffer 0 is drawn first
@@ -605,7 +607,7 @@ INCLUDE "src/gen/tables.asm"
 .^t_slow_done
 
     \ view_l = left edge of the window - 64, for skipping off-screen movers
-    lda scrollcol : sta view_l : lda #0 : sta view_l+1
+    lda scrollcol : sta view_l : stz view_l+1
     asl view_l : rol view_l+1 : asl view_l : rol view_l+1
     lda view_l : sec : sbc #64 : sta view_l : lda view_l+1 : sbc #0 : sta view_l+1
     \ Moving objects (drawn behind Trogg, as meanies were in GameMaker). Keep
@@ -613,12 +615,12 @@ INCLUDE "src/gen/tables.asm"
     lda dead : bne reserve_dead
     lda send : sec : sbc #LO(SAVE_RESERVE_ALIVE) : sta send
     lda send+1 : sbc #HI(SAVE_RESERVE_ALIVE) : sta send+1
-    jmp reserved
+    bra reserved
 .reserve_dead
     lda send : sec : sbc #LO(SAVE_RESERVE_DEAD) : sta send
     lda send+1 : sbc #HI(SAVE_RESERVE_DEAD) : sta send+1
 .reserved
-    lda #0 : sta mv_i
+    stz mv_i
 .movers
     ldx mv_i
     lda mv_active,x : beq next_mover
@@ -634,12 +636,12 @@ INCLUDE "src/gen/tables.asm"
     lda mv_yl,x : sta p_y : lda mv_yh,x : sta p_y+1
     lda mv_active,x : cmp #MV_FLYING : beq big
     jsr log_sprite
-    jmp next_mover
+    bra next_mover
 .big
     jsr log_sprite7                 \ meanies are big: save in the slow save area
 .next_mover
     inc mv_i : lda mv_i : cmp #MAX_MOVERS : beq movers_done
-    jmp movers
+    bra movers
 .movers_done
     ldx back
     lda savebuf_end_lo,x : sta send : lda savebuf_end_hi,x : sta send+1
@@ -709,7 +711,7 @@ INCLUDE "src/gen/tables.asm"
     jmp restore_checkpoint          \ TICK_DIED: back to the checkpoint (or the level's start)
 .next_level
     jsr record_result
-    lda cur_level : clc : adc #1 : jsr load_playable
+    lda cur_level : inc a : jsr load_playable
     jmp redraw_all
 .to_menu
     lda cur_level : sta last_level
@@ -771,7 +773,7 @@ TICK_QUIT = 3
     ldx tclimb : beq done
     and #15 : bne done                  \ (climbing: every 16)
 .thud
-    lda #SFX_THUD : jmp play_sfx
+    lda #SFX_THUD : bra play_sfx
 .done
     rts
 }
@@ -784,13 +786,13 @@ EVNTV = &0220
     cmp #4 : bne chain
     inc vsyncs
     \ ... and the music and sound effects (src/sound.asm, in MUSIC_BANK)
-    pha : txa : pha : tya : pha
+    pha : phx : phy
     lda tblptr : pha : lda tblptr+1 : pha
     lda #MUSIC_BANK : sta ROMSEL
     jsr snd_tick
     lda ROMSEL_COPY : sta ROMSEL
     pla : sta tblptr+1 : pla : sta tblptr
-    pla : tay : pla : tax : pla
+    ply : plx : pla
 .chain
     plp
 .^old_evntv
@@ -826,7 +828,7 @@ EVNTV = &0220
 .stop_sounds
 {
     lda #0 : jsr play_music
-    lda #SFX_STOP : jmp play_sfx
+    lda #SFX_STOP : bra play_sfx
 }
 
 \ The level's tune (as the Steam version): with Poglets, "A Little Bag of Weed";
@@ -837,7 +839,7 @@ EVNTV = &0220
     ldy #TUNE_MAN : lda #IMG_Hooter : jsr level_has : bcs play
     ldy #TUNE_FRAK
 .play
-    tya : jmp play_music
+    tya : bra play_music
 }
 
 \ Carry set if image A is one of the level's objects or moving sprites
@@ -982,10 +984,10 @@ LINE_SAVE = 24                      \ bytes: the longest line is about 82 pixels
     lda log_bank,x : sta ROMSEL_COPY : sta ROMSEL
     jsr restore_saved
     pla : sta ROMSEL_COPY : sta ROMSEL
-    jmp next
+    bra next
 .sprite
     jsr restore_saved
-    jmp next
+    bra next
 .line
     jsr hline
 .next
@@ -1058,14 +1060,14 @@ savebuf1 = &0900
 \ Centre the view on Trogg (at a level's start or a restart): see band_scroll
 .centre_scroll
 {
-    lda #0 : sta scroll_dir
+    stz scroll_dir
     lda scroll_max+1 : sta tmp : lda scroll_max
     lsr tmp : ror a : lsr tmp : ror a : sta col_max
     sec
     lda tx : sbc #LO(WINDOW_W/2) : sta tmp
     lda tx+1 : sbc #HI(WINDOW_W/2) : sta tmp+1
     bpl not_neg
-    lda #0 : sta tmp : sta tmp+1
+    stz tmp : stz tmp+1
 .not_neg
     lda tmp : cmp scroll_max
     lda tmp+1 : sbc scroll_max+1
@@ -1081,7 +1083,7 @@ savebuf1 = &0900
     lda ty : sbc #128 : sta tmp
     lda ty+1 : sbc #0 : sta tmp+1
     bpl v_pos
-    lda #0 : sta tmp : sta tmp+1
+    stz tmp : stz tmp+1
 .v_pos
     lsr tmp+1 : ror tmp : lsr tmp+1 : ror tmp : lsr tmp+1 : ror tmp
     lda tmp : cmp row_max : bcc v_ok : lda row_max
@@ -1097,7 +1099,7 @@ savebuf1 = &0900
     lda #0 : sta newrow
     rts
 .vertical
-    lda #0 : sta newcol
+    stz newcol
     lda view_row : sta newrow
     rts
 }
@@ -1115,13 +1117,13 @@ savebuf1 = &0900
     jsr set_window_clip
     lda scrollcol : clc : adc #SCREEN_COLS - 1
     jsr repaint_column
-    jmp loop
+    bra loop
 .go_left
     dec scrollcol
     jsr set_window_clip
     lda scrollcol
     jsr repaint_column
-    jmp loop
+    bra loop
 .done
     rts
 .vertical
@@ -1133,19 +1135,19 @@ savebuf1 = &0900
     jsr set_window_clip
     lda scrollrow : clc : adc #31
     jsr repaint_row
-    jmp vertical
+    bra vertical
 .go_up
     dec scrollrow
     jsr set_window_clip
     lda scrollrow
     jsr repaint_row
-    jmp vertical
+    bra vertical
 }
 
 .set_crtc_start
 {
     \ start = (&3000 / 8) + (scrollrow MOD 32) * 80 + scrollcol
-    lda scrollrow : and #31 : sta tmp : lda #0 : sta tmp+1
+    lda scrollrow : and #31 : sta tmp : stz tmp+1
     asl tmp : asl tmp : asl tmp : asl tmp : rol tmp+1        \ * 16
     lda tmp : sta left : lda tmp+1 : sta left+1
     asl tmp : rol tmp+1 : asl tmp : rol tmp+1                \ * 64
@@ -1162,7 +1164,7 @@ savebuf1 = &0900
 {
     lda scrollcol : sta clip_l
     clc : adc #SCREEN_COLS : sta clip_r
-    lda #0 : sta clip_t+1 : sta clip_h
+    stz clip_t+1 : stz clip_h
     lda scrollrow : asl a : rol clip_t+1 : asl a : rol clip_t+1 : asl a : rol clip_t+1 : sta clip_t
     rts
 }
@@ -1175,22 +1177,22 @@ savebuf1 = &0900
 {
     sta colw : sta pl_line
     sta clip_l
-    clc : adc #1 : sta clip_r
+    inc a : sta clip_r
     \ ptr = address of the column at row 0
-    lda #0 : sta tmp+1
+    stz tmp+1
     lda colw : asl a : rol tmp+1 : asl a : rol tmp+1 : asl a : rol tmp+1
     clc : adc #LO(SCREEN) : sta ptr
     lda tmp+1 : adc #HI(SCREEN) : sta ptr+1
     cmp #&80 : bcc ok : sbc #&50 : sta ptr+1
 .ok
-    lda #0 : sta pl_i0 : lda #31 : sta pl_i1
+    stz pl_i0 : lda #31 : sta pl_i1
     jsr paint_in_bank7
     \ moving sprites in this column will need drawing again
     lda colw : sta dm_c0 : sta dm_c1
-    lda #0 : sta dm_y0 : lda #255 : sta dm_y1
+    stz dm_y0 : lda #255 : sta dm_y1
     jsr add_damage
     jsr draw_scenery
-    jmp set_window_clip
+    bra set_window_clip
 }
 
 \ Repaint character row A of a vertically scrolling level (all 80 columns),
@@ -1199,13 +1201,13 @@ savebuf1 = &0900
 {
     sta pl_line
     tax : lda rowaddr_lo,x : sta ptr : lda rowaddr_hi,x : sta ptr+1
-    lda #0 : sta pl_i0 : lda #79 : sta pl_i1
+    stz pl_i0 : lda #79 : sta pl_i1
     jsr paint_in_bank7
-    lda #0 : sta dm_c0 : lda #79 : sta dm_c1
+    stz dm_c0 : lda #79 : sta dm_c1
     lda pl_line : asl a : sta dm_y0 : ora #1 : sta dm_y1
     jsr add_damage
     \ the scenery, clipped to this row
-    lda #0 : sta clip_t+1
+    stz clip_t+1
     lda pl_line : asl a : rol clip_t+1 : asl a : rol clip_t+1 : asl a : rol clip_t+1 : sta clip_t
     lda #8 : sta clip_h
     jsr draw_scenery
@@ -1236,7 +1238,7 @@ savebuf1 = &0900
 .col
     lda colw : sta pl_line
     \ ptr = rowaddr[k0] + colw * 8, wrapped
-    lda #0 : sta tmp+1
+    stz tmp+1
     lda colw : asl a : rol tmp+1 : asl a : rol tmp+1 : asl a : rol tmp+1
     ldx rr_k0
     clc : adc rowaddr_lo,x : sta ptr
@@ -1246,31 +1248,31 @@ savebuf1 = &0900
     sta ptr+1
     jsr paint_line
     lda colw : cmp rr_c1 : beq done
-    inc colw : jmp col
+    inc colw : bra col
 .by_rows
     \ rows rr_k0..rr_k1, columns rr_c0..rr_c1 of each (rows don't wrap)
     lda rr_c0 : sta pl_i0 : lda rr_c1 : sta pl_i1
     lda rr_k0 : sta pl_line
 .row
-    lda #0 : sta tmp+1
+    stz tmp+1
     lda rr_c0 : asl a : rol tmp+1 : asl a : rol tmp+1 : asl a : rol tmp+1
     ldx pl_line
     clc : adc rowaddr_lo,x : sta ptr
     lda tmp+1 : adc rowaddr_hi,x : sta ptr+1
     jsr paint_line
     lda pl_line : cmp rr_k1 : beq done
-    inc pl_line : jmp row
+    inc pl_line : bra row
 .done
     pla : sta ROMSEL_COPY : sta ROMSEL
     \ the damage, then the scenery over it, clipped to it
     lda rr_c0 : sta dm_c0 : sta clip_l
-    lda rr_c1 : sta dm_c1 : clc : adc #1 : sta clip_r
+    lda rr_c1 : sta dm_c1 : inc a : sta clip_r
     lda rr_k0 : asl a : sta dm_y0
     lda rr_k1 : asl a : ora #1 : sta dm_y1
     jsr add_damage
-    lda #0 : sta clip_t+1
+    stz clip_t+1
     lda rr_k0 : asl a : rol clip_t+1 : asl a : rol clip_t+1 : asl a : rol clip_t+1 : sta clip_t
-    lda rr_k1 : sec : sbc rr_k0 : clc : adc #1 : asl a : asl a : asl a : sta clip_h     \ (256 = 0)
+    lda rr_k1 : sec : sbc rr_k0 : inc a : asl a : asl a : asl a : sta clip_h     \ (256 = 0)
     jsr draw_scenery
     lda #0 : sta rr_raw
     jmp set_window_clip
@@ -1326,9 +1328,9 @@ savebuf1 = &0900
     lda draw_img,x : sta p_img
     lda draw_xl,x : sta p_x : lda draw_xh,x : sta p_x+1
     lda draw_yl,x : sta p_y : lda draw_yh,x : sta p_y+1
-    txa : pha
+    phx
     jsr plot
-    pla : tax
+    plx
 .skip
     inx : cpx num_draw : bcs done
     jmp loop
@@ -1364,7 +1366,7 @@ savebuf1 = &0900
     \ bank (p_sbank), which stays paged in throughout
     lda p_mode : cmp #PM_SAVEONLY : bne not_saveonly
     lda p_sbank : sta ROMSEL_COPY : sta ROMSEL
-    jmp header
+    bra header
 .not_saveonly
     \ When saving, the save area starts with a record header (see restore_saved):
     \ column count (0 until we know better), y0, cells, first_end, last_end, rows
@@ -1387,7 +1389,7 @@ savebuf1 = &0900
     lda img_h,x : sta hgt
 
     \ Rows: clip to clip_t .. clip_t + clip_h - 1 (clip_h = 0 means 256)
-    lda #0 : sta r0
+    stz r0
     lda hgt : sta rows
     lda top : sec : sbc clip_t : sta top : lda top+1 : sbc clip_t+1 : sta top+1
     beq top_ok
@@ -1400,7 +1402,7 @@ savebuf1 = &0900
     cmp rows : bcs above_ok : sta rows
 .above_ok
     lda clip_t : sta firsty : lda clip_t+1 : sta firsty+1
-    jmp rows_done
+    bra rows_done
 .nothing
     jmp exit
 .top_ok
@@ -1510,7 +1512,7 @@ savebuf1 = &0900
     lda col : clc : adc cidx : sta colw
 
     \ ptr = rowaddr[row] + colw * 8, wrapped
-    lda #0 : sta tmp+1
+    stz tmp+1
     lda colw : asl a : rol tmp+1 : asl a : rol tmp+1 : asl a : rol tmp+1
 .first_row
     ldx #0                          \ (operand set above)
@@ -1612,7 +1614,7 @@ ENDMACRO
     iny : cpy yend : bne loop
     dec cellsleft : beq done
     STEP_CELL
-    jmp loop
+    bra loop
 .done
     rts
 }
@@ -1634,13 +1636,13 @@ ENDMACRO
 .cell_done
     dec cellsleft : beq done
     STEP_CELL
-    jmp cell
+    bra cell
 .raw
     \ a whole cell over empty background (so Y = 0): just copy it
     FOR n, 1, 8
     lda (dp),y : sta (ptr),y : iny
     NEXT
-    jmp cell_done
+    bra cell_done
 .done
     rts
 }
@@ -1661,7 +1663,7 @@ ENDMACRO
 .cell_done
     dec cellsleft : beq done
     STEP_CELL
-    jmp loop
+    bra loop
 .done
     rts
 }
@@ -1674,7 +1676,7 @@ ENDMACRO
     iny : cpy yend : bne loop
     dec cellsleft : beq done
     STEP_CELL
-    jmp loop
+    bra loop
 .done
     rts
 }
@@ -1687,7 +1689,7 @@ ENDMACRO
     iny : cpy yend : bne loop
     dec cellsleft : beq done
     STEP_CELL
-    jmp loop
+    bra loop
 .done
     rts
 }
@@ -1742,7 +1744,7 @@ ENDMACRO
     lda pend_hi,x : cmp pc_end : bcs hi_ok : sta pc_end
 .hi_ok
     lda #&FF : sta pend_lo,x
-    lda #0 : sta pend_hi,x
+    stz pend_hi,x
     lda is_vert : beq loop
     \ (a vertically scrolling level: just the window's rows of those columns)
     lda pc_col : sta rr_c0
@@ -1753,7 +1755,7 @@ ENDMACRO
     lda pc_col : cmp pc_end : bcs none
     jsr repaint_column
     inc pc_col
-    jmp loop
+    bra loop
 .none
     rts
 }
@@ -1779,16 +1781,16 @@ FONT = &B900
     pla : sta src : pla : sta src+1                 \ (the address of the last byte of the JSR)
     ldy #1 : lda (src),y : sta txt_col
     iny : lda (src),y : sta txt_y
-    lda #0 : sta txt_yh
+    stz txt_yh
 .loop
     iny : lda (src),y : beq done
     sty txt_i
     jsr print_char
     ldy txt_i
     inc txt_col : inc txt_col
-    jmp loop
+    bra loop
 .done
-    tya : clc : adc src : tax : lda src+1 : adc #0 : pha : txa : pha
+    tya : clc : adc src : tax : lda src+1 : adc #0 : pha : phx
     rts
 }
 
@@ -1797,12 +1799,12 @@ FONT = &B900
 {
     jsr get_glyph
     \ each row: 2 screen bytes, from the left and right 4 pixels
-    lda #0 : sta txt_i2
+    stz txt_i2
 .row
     lda txt_y : clc : adc txt_i2 : sta tmp : lda txt_yh : adc #0      \ the pixel row (16-bit)
     lsr a : ror tmp : lsr a : ror tmp : lsr a : ror tmp : ldx tmp     \ its character row
     lda txt_y : clc : adc txt_i2 : and #7 : sta tmp+1
-    lda #0 : sta tmp
+    stz tmp
     lda txt_col : asl a : rol tmp : asl a : rol tmp : asl a : rol tmp
     clc : adc tmp+1 : adc rowaddr_lo,x : sta ptr
     lda tmp : adc rowaddr_hi,x : cmp #&80 : bcc ok : sbc #&50 : .ok : sta ptr+1
@@ -1816,7 +1818,7 @@ FONT = &B900
 \ txt_glyph = the 8 rows of character A, from the font in ROM 15
 .get_glyph
 {
-    sec : sbc #32 : sta pt : lda #0 : sta pt+1
+    sec : sbc #32 : sta pt : stz pt+1
     asl pt : rol pt+1 : asl pt : rol pt+1 : asl pt : rol pt+1
     lda pt : clc : adc #LO(FONT) : sta pt : lda pt+1 : adc #HI(FONT) : sta pt+1
     sei
@@ -1884,7 +1886,7 @@ FONT = &B900
 .record_result
 {
     lda done_valid : beq none
-    lda #0 : sta done_valid
+    stz done_valid
     lda #CACHE_BANK : sta ROMSEL_COPY : sta ROMSEL
     jsr fe_record
     lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL
@@ -2064,7 +2066,7 @@ MV_DAGGER = 3
     lda mv_xl,x : cmp #LO(-10) : lda mv_xh,x : sbc #HI(-10)
     bvc nv2 : eor #&80 : .nv2
     bmi gone
-    jmp next
+    bra next
 
 .gone
     lda #0 : sta mv_active,x
@@ -2136,7 +2138,7 @@ ENDMACRO
     ldx difficulty
     lda is_vert : beq b_spread
     lda vdiff_bspread_l,x : sta sp_spread : lda vdiff_bspread_h,x : sta sp_spread+1
-    jmp b_spread_ok
+    bra b_spread_ok
 .b_spread
     lda diff_spread_l,x : sta sp_spread : lda diff_spread_h,x : sta sp_spread+1
 .b_spread_ok
@@ -2163,7 +2165,7 @@ ENDMACRO
 .have_slot
     sty sp_slot
     lda ty : sec : sbc #4 : sta tmp : lda ty+1 : sbc #0 : sta tmp+1 : bpl h_ok
-    lda #0 : sta tmp : sta tmp+1
+    stz tmp : stz tmp+1
 .h_ok
     ldx difficulty
     lda is_vert : bne v_aim
@@ -2172,7 +2174,7 @@ ENDMACRO
     lda tmp : sta mul_a : lda #85 : jsr mul8      \ A = high byte of h * 85
     clc : adc tmp : sta sp_mid : lda #0 : adc #0 : sta sp_mid+1
     lda diff_spread_l,x : sta sp_spread : lda diff_spread_h,x : sta sp_spread+1
-    jmp aimed
+    bra aimed
 .v_aim
     \ a vertically scrolling level: mid = tx + h * 0.75 (h - h / 4)
     lda tmp+1 : lsr a : sta sp_mid+1 : lda tmp : ror a : lsr sp_mid+1 : ror a : sta sp_mid
@@ -2260,7 +2262,7 @@ ENDMACRO
     lda ct_l+1 : bmi left_edge
     lda ct_l : sta tmp : lda ct_l+1
     lsr a : ror tmp : lsr a : ror tmp
-    lda tmp : jmp have_c0
+    lda tmp : bra have_c0
 .left_edge
     lda #0
 .have_c0
@@ -2268,7 +2270,7 @@ ENDMACRO
     clc : adc #8 : sta ct_c1
     lda ROMSEL_COPY : pha
     lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL
-    lda #0 : sta co_i
+    stz co_i
 .loop
     ldx co_i
     lda alive,x : beq next
@@ -2296,7 +2298,7 @@ ENDMACRO
 .mloop
     ldx mvc_i
     lda mv_active,x : bne m_on
-    jmp mnext
+    bra mnext
 .m_on
     ldy mv_img,x : sty c_oimg
     \ c_dx = (x - xo) - Trogg left, c_dy = (y - yo) - Trogg top
@@ -2311,7 +2313,7 @@ ENDMACRO
     jsr trogg_dies
 .mnext
     dec mvc_i : bmi m_done
-    jmp mloop
+    bra mloop
 .m_done
     jsr collide_slow
     pla : sta ROMSEL_COPY : sta ROMSEL
@@ -2363,7 +2365,7 @@ ENDMACRO
     lda img_by0,y : ora #&80 : sta tmp+1
     lda tmp : cmp tmp+1 : bcc early_miss
 
-    jmp rows
+    bra rows
 .early_miss
     clc : rts
 .rows
@@ -2398,7 +2400,7 @@ ENDMACRO
     lda tmp : cmp tmp+1 : bcs hit                      \ object right >= Trogg left
 .row_miss
     iny
-    jmp next_row
+    bra next_row
 .skip_row
     iny : iny
 .next_row
@@ -2416,7 +2418,7 @@ ENDMACRO
     cmp #KIND_MEANIE : bne pickup
     jmp trogg_dies
 .pickup
-    lda #0 : sta alive,x
+    stz alive,x
     lda #SFX_CHING : jsr play_sfx
     jsr queue_repaint
     lda draw_kind,x
@@ -2442,9 +2444,9 @@ ENDMACRO
     \ ... on a platform that isn't moving
     ldx cur_plat : cpx #255 : beq done
     lda plat_moving,x : cmp #1 : beq done      \ (Trogg moves the movable ones)
-    lda #0 : sta save_cp
+    stz save_cp
     lda #1 : sta have_cp
-    jmp save_checkpoint
+    bra save_checkpoint
 .done
     rts
 }
@@ -2533,11 +2535,11 @@ ENDMACRO
     cmp #&80 : bcc pos                  \ (below 0: a pixel less)
     adc #20 - 1                         \ (carry set: + 20)
     ldx q_y2 : bne n1 : dec q_y2+1 : .n1 : dec q_y2
-    jmp neg
+    bra neg
 .pos
     cmp #20 : bcc done                  \ (20 or more: a pixel more)
     sbc #20
-    inc q_y2 : bne pos : inc q_y2+1 : jmp pos
+    inc q_y2 : bne pos : inc q_y2+1 : bra pos
 .done
     sta q_y2f
     rts
@@ -2558,11 +2560,11 @@ ENDMACRO
 \ res_yf) and res_i (which).
 .ladder_find
 {
-    lda #0 : sta res_found
+    stz res_found
     lda q_x : sta res_x : lda q_x+1 : sta res_x+1
     lda q_y1 : sta res_y : lda q_y1+1 : sta res_y+1 : lda q_y1f : sta res_yf
     \ going up (y2 < y1) or down? Nothing if they're the same
-    lda #0 : sta lf_up
+    stz lf_up
     lda q_y2 : cmp q_y1 : lda q_y2+1 : sbc q_y1+1 : bcc is_up
     lda q_y2 : cmp q_y1 : bne start
     lda q_y2+1 : cmp q_y1+1 : bne start
@@ -2591,7 +2593,7 @@ ENDMACRO
     lda lf_up : bne going_up
     jmp going_down
 .next
-    inx : jmp loop
+    inx : bra loop
 
 .going_up
     \ (jumping: not the invisible part above the top)
@@ -2683,12 +2685,12 @@ VIEW_R = 200
     jmp band_scroll_v
 .horizontal
     \ tmp = his x in the window (signed): tx - view_col * 4
-    lda view_col : sta tmp : lda #0 : sta tmp+1
+    lda view_col : sta tmp : stz tmp+1
     asl tmp : rol tmp+1 : asl tmp : rol tmp+1
     lda tx : sec : sbc tmp : sta tmp : lda tx+1 : sbc tmp+1 : sta tmp+1
     \ columns to move: as fast as he can walk, twice over (4 pixels a frame at
     \ two ticks a frame, more when drawing takes longer)
-    lda frame_ticks : clc : adc #1 : lsr a : bne n_ok : lda #1 : .n_ok
+    lda frame_ticks : inc a : lsr a : bne n_ok : lda #1 : .n_ok
     sta bs_n
     lda scroll_dir : bmi left : bne right
     \ not scrolling: past either end of the band?
@@ -2735,7 +2737,7 @@ VIEW_B = 176
 .band_scroll_v
 {
     \ tmp = his y in the window (signed): ty - view_row * 8
-    lda view_row : sta tmp : lda #0 : sta tmp+1
+    lda view_row : sta tmp : stz tmp+1
     asl tmp : rol tmp+1 : asl tmp : rol tmp+1 : asl tmp : rol tmp+1
     lda ty : sec : sbc tmp : sta tmp : lda ty+1 : sbc tmp+1 : sta tmp+1
     lda frame_ticks : bne n_some : lda #1 : .n_some
@@ -2808,7 +2810,7 @@ VIEW_B = 176
 .inc_y
     inc ty : bne whole : inc ty+1
 .whole
-    lda #0 : sta tyf
+    stz tyf
 .moved
     \ remember where his platform is now
     lda cur_plat : cmp #255 : beq done
@@ -2890,7 +2892,7 @@ VIEW_B = 176
     lda #1 : sta tface
 .walking
     lda #ST_WALK : sta tstate
-    jmp animate
+    bra animate
 .stand
     lda #ST_STAND : sta tstate
     rts
@@ -2951,14 +2953,14 @@ VIEW_B = 176
     ldy plat_img,x
     lda plat_yl,x : clc : adc img_h,y : sta p_y : lda plat_yh,x : adc #0 : sta p_y+1
     lda #&F0 : sta hl_yel
-    txa : pha : jsr log_line : pla : tax
-    lda #0 : sta hl_yel
+    phx : jsr log_line : plx
+    stz hl_yel
 .spring
     lda plat_bouncy,x : beq loop
     jsr spring_pos
     lda #IMG_Spring : sta p_img
-    txa : pha : jsr log_sprite : pla : tax
-    jmp loop
+    phx : jsr log_sprite : plx
+    bra loop
 .done
     rts
 }
@@ -2969,7 +2971,7 @@ VIEW_B = 176
     lda xvel : jsr add_x_signed
     jsr move_to_qx
     lda tx : cmp #12 : lda tx+1 : sbc #0 : bcs x_ok1
-    lda #12 : sta tx : lda #0 : sta tx+1
+    lda #12 : sta tx : stz tx+1
 .x_ok1
     lda tx : cmp x_max : lda tx+1 : sbc x_max+1 : bcc x_ok2
     lda x_max : sta tx : lda x_max+1 : sta tx+1
@@ -2988,11 +2990,11 @@ VIEW_B = 176
     \ LadderFind(x, y, y - yvel, false, true)
     jsr q1_is_y
     lda #0 : sec : sbc tv : jsr q2_is_y_plus
-    lda #0 : sta q_onplat : lda #1 : sta q_jump
+    stz q_onplat : lda #1 : sta q_jump
     jsr ladder_find
     lda res_found : beq no_grab
     jsr move_to_res
-    lda #0 : sta xvel : sta tv
+    stz xvel : stz tv
     lda #1 : sta lr_db
     jmp start_climbing
 .no_grab
@@ -3000,7 +3002,7 @@ VIEW_B = 176
     \ y2 = y - yvel
     lda #0 : sec : sbc tv : jsr q2_is_y_plus
     lda tv : bmi falling
-    jmp to_y2                       \ (rising: nothing in the way)
+    bra to_y2                       \ (rising: nothing in the way)
 .falling
     \ land on a platform between y and y2? PlatformFind(x, y, y2)
     lda q_y2 : sta fy2 : lda q_y2+1 : sta fy2+1 : lda q_y2f : sta fy2f
@@ -3010,19 +3012,19 @@ VIEW_B = 176
     lda fy2 : sta q_y2 : lda fy2+1 : sta q_y2+1 : lda fy2f : sta q_y2f
 .to_y2
     lda q_y2 : sta ty : lda q_y2+1 : sta ty+1 : lda q_y2f : sta tyf
-    jmp bottom
+    bra bottom
 .hit
     ldx res_i : lda plat_bouncy,x : beq land
     \ a bouncy platform throws him back up from its top: the Steam version
     \ reverses his speed from before gravity, plus twice gravity
     lda res_y : sta ty : lda res_y+1 : sta ty+1
-    lda #0 : sta tyf
+    stz tyf
     lda #2 : sec : sbc tv_prev : sta tv
-    jmp bottom
+    bra bottom
 .land
     \ (he stays where he is: if that's between pixels above it, he drops onto it next)
     lda tv : clc : adc #32 : sta tmp            \ (landing at 1.6 pixels a tick or faster kills him)
-    lda #0 : sta xvel : sta tv
+    stz xvel : stz tv
     lda #1 : sta ud_db
     lda #ST_STAND : sta tstate
     lda tmp : beq dies : bpl bottom
@@ -3031,9 +3033,9 @@ VIEW_B = 176
 .bottom
     \ off the bottom of the level?
     lda ty : cmp level_h : lda ty+1 : sbc level_h+1 : bcc done
-    lda #0 : sta xvel : sta tyf
+    stz xvel : stz tyf
     lda level_h : sec : sbc #1 : sta ty : lda level_h+1 : sbc #0 : sta ty+1
-    jmp trogg_dies
+    bra trogg_dies
 .done
     rts
 }
@@ -3072,12 +3074,12 @@ ENDIF
 
 .trogg_climbing
 {
-    lda #0 : sta xvel : sta tv
+    stz xvel : stz tv
     lda tx : sta q_x : lda tx+1 : sta q_x+1
-    lda #0 : sta q_onplat : sta q_jump
-    lda ymove : bne moving : jmp still
+    stz q_onplat : stz q_jump
+    lda ymove : bne moving : bra still
 .moving
-    bpl up : jmp down
+    bpl up : bra down
 
 .up
     \ LadderFind(x, y, y - 1)
@@ -3100,7 +3102,7 @@ ENDIF
     lda #0 : jmp climb_to_fall
 
 .climb_j
-    jmp climbing
+    bra climbing
 
 .still
     \ LadderFind(x, y, y + 2)
@@ -3109,7 +3111,7 @@ ENDIF
     jsr ladder_moved : bcc still_no
     jsr maybe_step_off : bcc stay2 : rts
 .stay2
-    jmp climbing
+    bra climbing
 .still_no
     lda xmove : beq climb_j
     sta xvel
@@ -3132,7 +3134,7 @@ ENDIF
     jsr move_y_to_res
     jsr maybe_step_off : bcc stay3 : rts
 .stay3
-    jmp climbing
+    bra climbing
 .down_no
     \ Off the bottom of the ladder: y + 1, falling at a pixel a tick
     lda #0 : sta xvel
@@ -3198,7 +3200,7 @@ YOYO_HIT_SPEED = 8                  \ pixels a tick that a yoyoed meanie flies o
 .start_yoyo
 {
     lda #ST_YOYO_OUT : sta tstate
-    lda #0 : sta yo_len : sta dropped
+    stz yo_len : stz dropped
     lda #1 : sta yo_len+1           \ length 1 for this tick's position
     jsr yoyo_position
     jsr yoyo_collide : bcc done
@@ -3212,11 +3214,11 @@ YOYO_HIT_SPEED = 8                  \ pixels a tick that a yoyoed meanie flies o
 .yoyo_out
 {
     jsr platform_under
-    lda #0 : sta yo_turn
+    stz yo_turn
     lda doyoyo : beq change
     lda yo_len+1 : cmp #YOYO_MAX : bcs change
     jsr yoyo_longer
-    jmp moved
+    bra moved
 .change
     lda #1 : sta yo_turn            \ (let go, or as long as it goes)
 .moved
@@ -3287,7 +3289,7 @@ YOYO_HIT_SPEED = 8                  \ pixels a tick that a yoyoed meanie flies o
     lda yo_len+1 : clc : adc #12 : sta tmp
     lda tface : bne left
     lda tx : clc : adc tmp : sta yo_x : lda tx+1 : adc #0 : sta yo_x+1
-    jmp have_x
+    bra have_x
 .left
     lda #0 : cmp yo_len                 \ (carry clear if there are tenths: one further)
     lda tx : sbc tmp : sta yo_x : lda tx+1 : sbc #0 : sta yo_x+1
@@ -3302,7 +3304,7 @@ YOYO_HIT_SPEED = 8                  \ pixels a tick that a yoyoed meanie flies o
 \ A meanie that's hit flies off. Carry set if anything was hit.
 .yoyo_collide
 {
-    lda #0 : sta yo_hit
+    stz yo_hit
     \ yoyo box
     lda yo_x : sec : sbc #3 : sta yb_l : lda yo_x+1 : sbc #0 : sta yb_l+1
     lda yo_x : clc : adc #3 : sta yb_r : lda yo_x+1 : adc #0 : sta yb_r+1
@@ -3324,16 +3326,16 @@ YOYO_HIT_SPEED = 8                  \ pixels a tick that a yoyoed meanie flies o
     lda yo_y : cmp draw_tl,x : lda yo_y+1 : sbc draw_th,x : bcc next
     \ Hit! It flies off in the yoyo's direction (launch_meanie squeals)
     lda #1 : sta yo_hit
-    lda #0 : sta alive,x
-    txa : pha
+    stz alive,x
+    phx
     jsr queue_repaint
-    pla : tax : pha
+    plx : phx
     lda #YOYO_HIT_SPEED
     ldy tface : beq right
     lda #256 - YOYO_HIT_SPEED
 .right
     jsr launch_meanie
-    pla : tax
+    plx
 .next
     dex : bmi finished
     jmp loop
@@ -3428,7 +3430,7 @@ YOYO_HIT_SPEED = 8                  \ pixels a tick that a yoyoed meanie flies o
     lda plat_w,x : lsr a : sta tmp
     lda tx : sec : sbc tmp : sta p_x : lda tx+1 : sbc #0 : sta p_x+1
     lda ty : sec : sbc #14 : sta p_y : lda ty+1 : sbc #0 : sta p_y+1
-    jmp plat_move_to
+    bra plat_move_to
 .done
     rts
 }
@@ -3444,7 +3446,7 @@ YOYO_HIT_SPEED = 8                  \ pixels a tick that a yoyoed meanie flies o
     lda yo_len+1 : clc : adc #9 : adc tx : sta p_x : lda tx+1 : adc #0 : sta p_x+1
     jsr round_away : bcc have_x
     inc p_x : bne have_x : inc p_x+1
-    jmp have_x
+    bra have_x
 .left
     \ tx - 8 - w - length
     lda plat_w,x : clc : adc #8 : sta tmp : lda #0 : adc #0 : sta tmp+1
@@ -3546,13 +3548,13 @@ ENDMACRO
     lda s_alive,x : beq next
     lda sl_kind,x
     cmp #SL_PLATFORM : bne not_plat
-    jsr move_platform : jmp next
+    jsr move_platform : bra next
 .not_plat
     cmp #SL_SCRUBBLY : bne not_scrub
-    jsr move_scrubbly : jmp next
+    jsr move_scrubbly : bra next
 .not_scrub
     cmp #SL_POGLET : bne not_pog
-    jsr move_poglet : jmp next
+    jsr move_poglet : bra next
 .not_pog
     jsr move_hooter
 .next
@@ -3572,7 +3574,7 @@ ENDMACRO
     lda sl_amaxl,x : cmp s_xl,x : lda sl_amaxh,x : sbc s_xh,x : bcs y_move
     lda sl_amaxl,x : sta s_xl,x : lda sl_amaxh,x : sta s_xh,x
     lda #&FF : sta s_vi,x : lda #SLOW_PAUSE : sta s_wait,x
-    jmp y_move
+    bra y_move
 .left
     lda s_xl,x : bne nb1 : dec s_xh,x : .nb1 : dec s_xl,x
     lda s_xl,x : cmp sl_aminl,x : lda s_xh,x : sbc sl_aminh,x : bcs y_move
@@ -3585,7 +3587,7 @@ ENDMACRO
     lda sl_bmaxl,x : cmp s_yl,x : lda sl_bmaxh,x : sbc s_yh,x : bcs store
     lda sl_bmaxl,x : sta s_yl,x : lda sl_bmaxh,x : sta s_yh,x
     lda #&FF : sta s_vy,x : lda #SLOW_PAUSE : sta s_wait,x
-    jmp store
+    bra store
 .up
     lda s_yl,x : bne nb2 : dec s_yh,x : .nb2 : dec s_yl,x
     lda s_yl,x : cmp sl_bminl,x : lda s_yh,x : sbc sl_bminh,x : bcs store
@@ -3612,7 +3614,7 @@ ENDMACRO
     lda sl_aminl,x : sta s_xl,x : lda sl_aminh,x : sta s_xh,x : lda #0 : sta s_xf,x
     jsr abs_speed
     lda tmp : sta s_vf,x : lda tmp+1 : sta s_vi,x
-    jmp follow
+    bra follow
 .not_low
     \ x > amax ?
     lda sl_amaxl,x : cmp s_xl,x : lda sl_amaxh,x : sbc s_xh,x : bcc high
@@ -3677,7 +3679,7 @@ ENDMACRO
     lda sl_y0h,x : cmp s_yh,x : bne done
     lda s_yf,x : beq done
 .land
-    lda sl_y0l,x : sta s_yl,x : lda sl_y0h,x : sta s_yh,x : lda #0 : sta s_yf,x
+    lda sl_y0l,x : sta s_yl,x : lda sl_y0h,x : sta s_yh,x : stz s_yf,x
     lda sl_vf,x : sta s_vf,x : lda sl_vi,x : sta s_vi,x
 .done
     rts
@@ -3729,18 +3731,18 @@ ENDMACRO
 .ok2
     lda d_yl,x : sec : sbc img_yo,y : sta tmp : lda d_yh,x : sbc #0 : sta tmp+1
     lda yo_y : cmp tmp : lda yo_y+1 : sbc tmp+1 : bvc v3 : eor #&80 : .v3 : bpl ok3
-    jmp next
+    bra next
 .ok3
     lda tmp : clc : adc img_h,y : sta tmp : lda tmp+1 : adc #0 : sta tmp+1
     lda yb_t : cmp tmp : lda yb_t+1 : sbc tmp+1 : bvc v4 : eor #&80 : .v4 : bmi ok4
-    jmp next
+    bra next
 .ok4
     \ Hit: it flies off in the yoyo's direction
     lda #SFX_SQUEAL : jsr play_sfx
     lda #1 : sta yo_hit
     lda #0 : sta s_alive,x
     jsr find_mover : bcc slot
-    jmp next
+    bra next
 .slot
     lda #MV_FLYING : sta mv_active,y
     lda sl_img,x : sta mv_img,y
@@ -3834,7 +3836,7 @@ DONE = &80                          \ n_chg: already redrawn this frame
 .commit_slow
 {
     \ view_l = left edge of the window - 64
-    lda scrollcol : sta view_l : lda #0 : sta view_l+1
+    lda scrollcol : sta view_l : stz view_l+1
     asl view_l : rol view_l+1 : asl view_l : rol view_l+1
     lda view_l : sec : sbc #64 : sta view_l : lda view_l+1 : sbc #0 : sta view_l+1
     ldx #MAX_SLOW - 1
@@ -3897,15 +3899,15 @@ DONE = &80                          \ n_chg: already redrawn this frame
 .r_ok
     lda left+1 : bmi l_neg : bne out1
     lda left : cmp clip_r : bcs out1
-    sta nr_c0 : jmp have_l
+    sta nr_c0 : bra have_l
 .l_neg
-    lda #0 : sta nr_c0
+    stz nr_c0
 .have_l
     lda tmp+1 : beq r_byte
     lda #255 : sta tmp
 .r_byte
     lda tmp : sta nr_c1
-    jmp rows_part
+    bra rows_part
 .out1
     clc : rts
 .rows_part
@@ -3969,11 +3971,11 @@ DONE = &80                          \ n_chg: already redrawn this frame
     lda #PM_RAWPLOT : sta p_mode
     jsr plot
     lda #PM_PLOT : sta p_mode
-    lda #0 : sta rr_raw
+    stz rr_raw
     ldx sl_i
     lda ds_base : clc : adc sl_i : tay
     lda #DONE : sta n_chg,x                 \ (done: no need to plot it again)
-    jmp store
+    bra store
 .erase
     jsr erase_drawn
     ldx sl_i
@@ -4026,7 +4028,7 @@ DONE = &80                          \ n_chg: already redrawn this frame
     lda dr_c0,y : cmp clip_l : bcs c0 : lda clip_l
 .c0
     sta rr_c0
-    lda clip_r : sec : sbc #1 : cmp dr_c1,y : bcc c1 : lda dr_c1,y
+    lda clip_r : dec a : cmp dr_c1,y : bcc c1 : lda dr_c1,y
 .c1
     sta rr_c1
     cmp rr_c0 : bcc none
@@ -4097,7 +4099,7 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
 
     \ doyoyo, with debounce: after the yoyo comes back, the key must be released
     lda yo_db : beq yo_live
-    lda #0 : sta doyoyo
+    stz doyoyo
     lda k_yoyo : bne yo_done
     sta yo_db
     beq yo_done
@@ -4107,7 +4109,7 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
 
     \ ymove (+1 = up), with debounce after landing/climbing
     lda ud_db : beq ud_live
-    lda #0 : sta ymove
+    stz ymove
     lda k_up : ora k_down : bne ud_done
     sta ud_db
     beq ud_done
@@ -4115,7 +4117,7 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
     lda k_up : sec : sbc k_down : sta ymove
 .ud_done
     lda lr_db : beq lr_live
-    lda #0 : sta xmove
+    stz xmove
     lda k_left : ora k_right : bne lr_done
     sta lr_db
     beq lr_done
@@ -4132,7 +4134,7 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
     lda yo_x : sta q_x : lda yo_x+1 : sta q_x+1
     lda tface : bne left
     lda tx : clc : adc #12 : sta p_x : lda tx+1 : adc #0 : sta p_x+1
-    jmp have_x
+    bra have_x
 .left
     lda tx : sec : sbc #12 : sta p_x : lda tx+1 : sbc #0 : sta p_x+1
 .have_x
@@ -4145,9 +4147,9 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
 {
     lda yo_len+1
     ldx tface : beq right
-    eor #&FF : clc : adc #1                 \ negate
+    eor #&FF : inc a                        \ negate
     cmp #&80 : ror a : cmp #&80 : ror a : cmp #&80 : ror a
-    jmp frame
+    bra frame
 .right
     lsr a : lsr a : lsr a
 .frame
@@ -4207,7 +4209,7 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
     lda q_x : cmp p_x : lda q_x+1 : sbc p_x+1 : bcs ordered
     lda q_x : sta left : lda q_x+1 : sta left+1
     lda p_x : sta tmp : lda p_x+1 : sta tmp+1
-    jmp have_ends
+    bra have_ends
 .ordered
     lda p_x : sta left : lda p_x+1 : sta left+1
     lda q_x : sta tmp : lda q_x+1 : sta tmp+1
@@ -4231,7 +4233,7 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
     lda colw : cmp clip_l : bcc skip
     cmp clip_r : bcc in_window
 .skip
-    jmp next_col
+    bra next_col
 .in_window
     \ which pixels of this byte are on the line?
     lda #&FF : sta hl_mask
@@ -4242,7 +4244,7 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
     ldx hl_p1 : lda right_pixels,x : and hl_mask : sta hl_mask
 .not_last
     \ ptr = rowaddr[row] + colw * 8, wrapped; Y = line
-    lda #0 : sta tmp+1
+    stz tmp+1
     lda colw : asl a : rol tmp+1 : asl a : rol tmp+1 : asl a : rol tmp+1
     ldx hl_row
     clc : adc rowaddr_lo,x : sta ptr
@@ -4258,7 +4260,7 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
     lda hl_mask : eor #&FF : and (ptr),y : sta tmp
     lda hl_yel : ora #&0F : and hl_mask : ora tmp   \ (yellow, colour 3, has both bits)
     sta (ptr),y
-    jmp advance
+    bra advance
 .restore
     lda (sptr,x) : sta (ptr),y
 .advance
@@ -4305,7 +4307,7 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
 .same
     \ at the top left of the window, and the rating at the bottom right
     lda #IMG_Hud : sta p_img
-    lda #0 : sta p_x+1
+    stz p_x+1
     lda scrollcol : asl a : rol p_x+1 : asl a : rol p_x+1 : clc : adc #4 : sta p_x : bcc x1 : inc p_x+1 : .x1
     lda clip_t : clc : adc #2 : sta p_y : lda clip_t+1 : adc #0 : sta p_y+1
     jsr log_sprite
@@ -4355,7 +4357,7 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
     lda cur_level : sta done_level
     lda lvl_ticks : sta done_ticks : lda lvl_ticks+1 : sta done_ticks+1
     lda restarts : sta done_restarts
-    lda #0 : sta done_gems
+    stz done_gems
     lda num_gems : beq no_gems
     lda gems_found : cmp num_gems : bcc no_gems
     inc done_gems
@@ -4399,8 +4401,8 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
 .try
     cmp #NUM_LEVELS : bcc in_range : lda #0 : .in_range
     jsr load_level : bcc done
-    lda cur_level : clc : adc #1
-    jmp try
+    lda cur_level : inc a
+    bra try
 .done
     jmp level_init                  \ (in the overlay too)
 }
@@ -4587,7 +4589,7 @@ GUARD OVERLAYZ_ORG
 \ Unpack the front end from SCREEN (put there by fe_stage, in whichever screen
 \ buffer the CPU is using) to &8000. See tools/pack.py for the format.
 .fe_unpack
-    lda #0 : sta src : sta dp
+    stz src : stz dp
     lda #HI(SCREEN) : sta src+1 : lda #&80 : sta dp+1
 \ Unpack from (src) to (dp): see tools/pack.py for the format. Uses tmp (a
 \ length), UDIST (the distance - 1) and UBITS (the bits left of the last byte
@@ -4616,7 +4618,7 @@ UBITS = p_x
     jsr gamma
     inc tmp : bne len_ok : inc tmp+1 : .len_ok   \ (the length - 1 was stored)
     jsr copy
-    jmp after_copy
+    bra after_copy
 .done
     rts
 \ copy tmp bytes from dp - UDIST - 1
@@ -4641,7 +4643,7 @@ UBITS = p_x
 .gamma_loop
     jsr bit : bcs gamma_done
     jsr bit : rol tmp : rol tmp+1
-    jmp gamma_loop
+    bra gamma_loop
 .gamma_done
     rts
 \ C = the next bit (a new byte of them when those run out)
@@ -4702,13 +4704,13 @@ UBITS = p_x
 .getmask
     lda (src),y : sta cmask,y : dey : bpl getmask
     \ skip the numbers of the non-empty cells before pl_i0 (count its mask bits)
-    lda #0 : sta tmp
+    stz tmp
     ldx #0
     lda pl_i0
 .whole
     cmp #8 : bcc part
     pha : lda cmask,x : jsr popcount_add : pla
-    inx : sec : sbc #8 : jmp whole
+    inx : sec : sbc #8 : bra whole
 .part
     tay : lda cmask,x : and topbits,y : jsr popcount_add
     lda tmp : clc : adc tmp+1 : adc src : sta src : bcc nc : inc src+1 : .nc
@@ -4728,7 +4730,7 @@ UBITS = p_x
     lda cmask,x : and curbit : beq empty
     \ its dictionary page, from the second and third masks (if the level has more than one)
     stx u_sx
-    lda #0 : sta cpage
+    stz cpage
     lda pages1 : beq page_ok
     txa : clc : adc mb : tay
     lda cmask,y : and curbit : beq b8 : inc cpage : .b8
@@ -4739,7 +4741,7 @@ UBITS = p_x
     inc src : bne nc : inc src+1 : .nc
     ldx cpage : jsr copy_cell
     ldx u_sx
-    jmp next
+    bra next
 .empty
     lda rr_raw : beq clear
     \ will the sprite cover this cell completely? (then leave it)
@@ -4753,7 +4755,7 @@ UBITS = p_x
     sec : sbc m_nk0 : stx tmp : tax
     lda bitpos_lo,x : ora rawbits,y : sta rawbits,y
     ldx tmp
-    jmp next
+    bra next
 .clear
     lda #0 : ldy #7
     sta (ptr),y : dey : sta (ptr),y : dey : sta (ptr),y : dey : sta (ptr),y : dey
@@ -4849,7 +4851,7 @@ ROMSEL_ANDY = &80                   \ ROMSEL bit 7: ANDY at &8000-&8FFF
     jsr fetch_level
     \ the level's size (and which way it scrolls), colour and Trogg's start
     lda STAGE + H_CELLS : sta level_rows
-    lda #0 : sta level_h+1
+    stz level_h+1
     lda level_rows : asl a : rol level_h+1 : asl a : rol level_h+1 : asl a : rol level_h+1 : sta level_h
     ldx #0 : ldy #4                                 \ (columns have 4-byte masks)
     lda level_rows : sec : sbc #32 : beq horizontal
@@ -4857,7 +4859,7 @@ ROMSEL_ANDY = &80                   \ ROMSEL bit 7: ANDY at &8000-&8FFF
 .horizontal
     sta row_max : stx is_vert : sty mb
     lda STAGE + H_COLS : sta level_cols
-    lda #0 : sta tmp+1
+    stz tmp+1
     lda level_cols : asl a : rol tmp+1 : asl a : rol tmp+1 : sta tmp       \ width
     sec : sbc #LO(WINDOW_W) : sta scroll_max : lda tmp+1 : sbc #HI(WINDOW_W) : sta scroll_max+1
     lda tmp : sec : sbc #10 : sta x_max : lda tmp+1 : sbc #0 : sta x_max+1
@@ -4901,7 +4903,7 @@ ROMSEL_ANDY = &80                   \ ROMSEL bit 7: ANDY at &8000-&8FFF
     lda ry : sec : sbc #1 : sta q_y2 : lda ry+1 : sbc #0 : sta q_y2+1
     jsr platform_find
     ldx ld_i
-    lda #0 : sta tmp
+    stz tmp
     lda res_found : beq no_ext
     lda ry : clc : sbc res_y : sta tmp           \ y - top - 1
 .no_ext
@@ -4951,7 +4953,7 @@ ROMSEL_ANDY = &80                   \ ROMSEL bit 7: ANDY at &8000-&8FFF
     \ Moving meanies: their records (they come after the moving platforms in
     \ the slow sprite tables)
     lda STAGE + H_NMPLAT : sta ld_i
-    lda #0 : sta ld_j
+    stz ld_j
 .mean_loop
     lda ld_j : cmp STAGE + H_NMEAN : beq means_done
     jsr next_rec
@@ -4959,25 +4961,25 @@ ROMSEL_ANDY = &80                   \ ROMSEL bit 7: ANDY at &8000-&8FFF
     lda rimg : sta sl_img,x
     lda rx : sta sl_x0l,x : lda rx+1 : sta sl_x0h,x
     lda ry : sta sl_y0l,x : lda ry+1 : sta sl_y0h,x
-    inc ld_i : inc ld_j : jmp mean_loop
+    inc ld_i : inc ld_j : bra mean_loop
 .means_done
     \ ... then their settings
     lda STAGE + H_NMPLAT : sta ld_i
-    lda #0 : sta ld_j
+    stz ld_j
 .param_loop
     lda ld_j : cmp STAGE + H_NMEAN : beq params_done
     jsr meanie_settings
     inc sp : bne pn : inc sp+1 : .pn
-    inc ld_i : inc ld_j : jmp param_loop
+    inc ld_i : inc ld_j : bra param_loop
 .params_done
 
     \ Moving platforms
-    lda #0 : sta ld_i
+    stz ld_i
 .mplat_loop
     lda ld_i : cmp STAGE + H_NMPLAT : beq mplats_done
     jsr moving_platform
     lda sp : clc : adc #2 : sta sp : bcc mp : inc sp+1 : .mp
-    inc ld_i : jmp mplat_loop
+    inc ld_i : bra mplat_loop
 .mplats_done
 
     \ Nothing in the unused slow sprite slots
@@ -5025,9 +5027,9 @@ ROMSEL_ANDY = &80                   \ ROMSEL bit 7: ANDY at &8000-&8FFF
     pla : and #127 : tay
     lda slp_kind,y : sta sl_kind,x
     lda slp_vf,y : sta sl_vf,x : lda slp_vi,y : sta sl_vi,x
-    lda #0 : sta sl_vy,x : sta sl_wait,x
-    sta sl_aminl,x : sta sl_aminh,x : sta sl_amaxl,x : sta sl_amaxh,x
-    sta sl_bminl,x : sta sl_bminh,x : sta sl_bmaxl,x : sta sl_bmaxh,x
+    stz sl_vy,x : stz sl_wait,x
+    stz sl_aminl,x : stz sl_aminh,x : stz sl_amaxl,x : stz sl_amaxh,x
+    stz sl_bminl,x : stz sl_bminh,x : stz sl_bmaxl,x : stz sl_bmaxh,x
     lda #255 : sta sl_plat,x
     lda sl_kind,x
     cmp #SL_SCRUBBLY : beq scrubbly
@@ -5113,7 +5115,7 @@ ROMSEL_ANDY = &80                   \ ROMSEL bit 7: ANDY at &8000-&8FFF
 .use_bottom
     lda tmp : sta res_y : lda tmp+1 : sta res_y+1
 .next
-    inx : jmp loop
+    inx : bra loop
 .done
     rts
 }
@@ -5199,7 +5201,7 @@ ENDMACRO
     lda tmp : sta best : lda tmp+1 : sta best+1 : lda #1 : sta found
 .no
     dex : bmi scanned
-    jmp loop
+    bra loop
 .scanned
     lda found : beq none
     ldy ld_i
@@ -5262,7 +5264,7 @@ ENDMACRO
 \ top at or above py - 2 (and at least -1)
 .scan_up
 {
-    lda #0 : sta found
+    stz found
     \ limit = py - 2
     lda py : sec : sbc #2 : sta pt : lda py+1 : sbc #0 : sta pt+1
     ldx num_plats : dex
@@ -5280,7 +5282,7 @@ ENDMACRO
     lda plat_yl,x : sta best : lda plat_yh,x : sta best+1 : lda #1 : sta found
 .no
     dex : bmi scanned
-    jmp loop
+    bra loop
 .scanned
     lda found : beq none
     ldy ld_i
@@ -5307,7 +5309,7 @@ ENDMACRO
     lda plat_yl,x : sta best : lda plat_yh,x : sta best+1 : lda #1 : sta found
 .no
     dex : bmi scanned
-    jmp loop
+    bra loop
 .scanned
     lda found : beq none
     ldy ld_i
@@ -5389,16 +5391,16 @@ ASSERT MAX_BG <= &50
 .clear_hash
     sta HASH_LO,x : sta HASH_HI,x : inx : bne clear_hash
     lda #LO(DSTAGE) : sta po : lda #HI(DSTAGE) : sta po+1    \ the lines are built here first
-    lda #0 : sta u_line : sta u_cntl : sta u_cnth
+    stz u_line : stz u_cntl : stz u_cnth
     lda is_vert : beq col_loop
-    jmp row_loop
+    bra row_loop
 
     \ A horizontally scrolling level: each byte column, from the top to row 255
 .col_loop
     lda #0 : tax
 .clr
     sta COLBUF,x : inx : bne clr
-    lda #0 : sta u_bl : sta u_bl+1 : sta u_bh : lda #1 : sta u_bh+1
+    stz u_bl : stz u_bl+1 : stz u_bh : lda #1 : sta u_bh+1
     lda #0 : sta u_i
 .item_loop
     ldx u_i : cpx num_bg : beq items_done
@@ -5407,7 +5409,7 @@ ASSERT MAX_BG <= &50
     lda #LO(COLBUF) : sta u_tb : lda #HI(COLBUF) : sta u_tb+1
     jsr unroll_item
 .next_item
-    inc u_i : jmp item_loop
+    inc u_i : bra item_loop
 .items_done
     lda #LO(COLBUF) : sta u_src : lda #HI(COLBUF) : sta u_src+1
     lda #32 : sta u_cells
@@ -5421,7 +5423,7 @@ ASSERT MAX_BG <= &50
 .rclr
     sta ROWBUF,x : sta ROWBUF + &100,x : sta ROWBUF + &180,x : inx : bne rclr
     \ the band of level rows [8R, 8R + 8)
-    lda #0 : sta u_bl+1
+    stz u_bl+1
     lda u_line : asl a : rol u_bl+1 : asl a : rol u_bl+1 : asl a : rol u_bl+1 : sta u_bl
     clc : adc #8 : sta u_bh : lda u_bl+1 : adc #0 : sta u_bh+1
     lda #0 : sta u_i
@@ -5435,15 +5437,15 @@ ASSERT MAX_BG <= &50
     lda BG_YL,x : clc : adc img_h,y : sta tmp : lda BG_YH,x : adc #0 : sta tmp+1
     lda u_bl : cmp tmp : lda u_bl+1 : sbc tmp+1 : bvc v2 : eor #&80 : .v2 : bmi reaches
 .rskip
-    jmp rnext
+    bra rnext
 .reaches
     \ each of its byte columns that's on the level
-    lda #0 : sta u_j
+    stz u_j
 .rcol
     lda BG_C0L,x : clc : adc u_j : sta tmp : lda BG_C0H,x : adc #0 : bne rcol_next
     lda tmp : cmp #80 : bcs rcol_next
     \ tb = ROWBUF + column * 8 - 8R (where level row 0 would be)
-    lda #0 : sta u_tb+1
+    stz u_tb+1
     lda tmp : asl a : rol u_tb+1 : asl a : rol u_tb+1 : asl a : rol u_tb+1
     clc : adc #LO(ROWBUF) : sta u_tb : lda u_tb+1 : adc #HI(ROWBUF) : sta u_tb+1
     lda u_tb : sec : sbc u_bl : sta u_tb : lda u_tb+1 : sbc u_bl+1 : sta u_tb+1
@@ -5464,10 +5466,10 @@ ASSERT MAX_BG <= &50
 .finish
     lda #CACHE_BANK : sta ROMSEL_COPY : sta ROMSEL
     \ start = BG_DICT + pages * &800 (at least one page)
-    lda u_cnth : ldx u_cntl : beq whole : clc : adc #1 : .whole
+    lda u_cnth : ldx u_cntl : beq whole : inc a : .whole
     cmp #0 : bne paged : lda #1
 .paged
-    pha : sec : sbc #1 : sta pages1 : pla
+    pha : dec a : sta pages1 : pla
     asl a : asl a : asl a : clc : adc #HI(BG_DICT) : sta dp+1 : lda #LO(BG_DICT) : sta dp
     \ each line's address: start + its offset; none for lines past the end
     ldx #0
@@ -5485,7 +5487,7 @@ ASSERT MAX_BG <= &50
     ldy #0 : lda (src),y : sta (dp),y
     inc src : bne c1 : inc src+1 : .c1
     inc dp : bne copy : inc dp+1
-    jmp copy
+    bra copy
 .copied
     lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL
     rts
@@ -5544,7 +5546,7 @@ ASSERT MAX_BG <= &50
     lda u_bank : sta ROMSEL_COPY : sta ROMSEL
     ldy u_r0
 .row
-    lda #0 : sta u_b
+    stz u_b
     lda u_cur : beq no_c
     lda (dp),y
     ldx u_s : beq c_ok
@@ -5593,7 +5595,7 @@ ASSERT MAX_BG <= &50
 .copy_pages
 {
     sta src+1 : stx dp+1
-    lda #0 : sta src : sta dp
+    stz src : stz dp
     tya : tax
     ldy #0
 .loop
@@ -5614,7 +5616,7 @@ ASSERT MAX_BG <= &50
 .clear
     sta cmask,x : dex : bpl clear
     lda mb : asl a : adc mb : clc : adc po : sta dp : lda po+1 : adc #0 : sta dp+1     \ the numbers
-    lda #0 : sta u_x
+    stz u_x
 .cell
     lda u_src : sta pt : lda u_src+1 : sta pt+1
     ldy #7 : lda #0
@@ -5661,12 +5663,12 @@ ASSERT MAX_BG <= &50
     lda u_cl : ora u_ch : beq new
     lda u_cl : sec : sbc #1 : sta u_nl : lda u_ch : sbc #0 : sta u_nh
     jsr cell_matches : bcc next
-    jmp done                                \ found it
+    bra done                                \ found it
 .next
     jsr link_ptr
     ldy #0 : lda (sp),y : sta u_cl
     lda sp+1 : clc : adc #4 : sta sp+1 : lda (sp),y : sta u_ch
-    jmp chain
+    bra chain
 .new
     \ a new cell: the next number
     lda u_cntl : sta u_nl : lda u_cnth : sta u_nh
@@ -5731,9 +5733,9 @@ INCLUDE "src/gen/levels.asm"
 .objs
     lda #0 : cpx num_draw : bcs gone : lda #1 : .gone
     sta alive,x : dex : bpl objs
-    lda #0 : sta keys_found : sta gems_found : sta have_cp : sta save_cp : sta restarts
-    sta lvl_ticks : sta lvl_ticks+1 : sta win_ticks : sta win_ticks+1
-    sta bal_timer : sta dag_timer
+    stz keys_found : stz gems_found : stz have_cp : stz save_cp : stz restarts
+    stz lvl_ticks : stz lvl_ticks+1 : stz win_ticks : stz win_ticks+1
+    stz bal_timer : stz dag_timer
     lda vsyncs : ora #1 : sta rng : lda #&5A : sta rng+1
     jsr slow_init
     lda trogg_x0 : sta tx : lda trogg_x0+1 : sta tx+1
@@ -5749,12 +5751,12 @@ INCLUDE "src/gen/levels.asm"
 .loop
     lda #0 : cpx num_slow : bcs dead : lda #1 : .dead
     sta s_alive,x
-    lda #0 : sta s_xf,x : sta s_yf,x
+    stz s_xf,x : stz s_yf,x
     lda sl_x0l,x : sta s_xl,x : lda sl_x0h,x : sta s_xh,x
     lda sl_y0l,x : sta s_yl,x : lda sl_y0h,x : sta s_yh,x
     lda sl_vf,x : sta s_vf,x : lda sl_vi,x : sta s_vi,x
     lda sl_kind,x : cmp #SL_HOOTER : bne vel_ok
-    lda #0 : sta s_vf,x : sta s_vi,x        \ Hooters start still, then jump
+    stz s_vf,x : stz s_vi,x         \ Hooters start still, then jump
 .vel_ok
     lda sl_vy,x : sta s_vy,x
     lda sl_wait,x : sta s_wait,x
@@ -5963,7 +5965,7 @@ ENDMACRO
 .fe_menus
 {
 .top
-    lda #0 : sta fe_kind
+    stz fe_kind
     lda fe_top_sel : sta fe_sel
     jsr fe_grid
     lda fe_sel : sta fe_top_sel
@@ -5974,7 +5976,7 @@ ENDMACRO
     cmp #1 : bne not_difficulty
     \ the next difficulty: Easy, Hard, Harder, Insane (the Steam version's 1, 2, 4, 6)
     ldx difficulty : lda next_difficulty,x : sta difficulty
-    jmp top
+    bra top
 .not_difficulty
     cmp #2 : bne a_group
     lda #0 : rts                                    \ Training
@@ -6021,17 +6023,17 @@ ENDMACRO
     lda #KEY_Z : jsr fe_key : bne left
     lda #KEY_LEFT : jsr fe_key : beq not_left
 .left
-    lda fe_i : jsr fe_col : beq loop2 : dec fe_i : jmp moved
+    lda fe_i : jsr fe_col : beq loop2 : dec fe_i : bra moved
 .not_left
     lda #KEY_X : jsr fe_key : bne right
     lda #KEY_RIGHT : jsr fe_key : beq not_right
 .right
-    lda fe_i : jsr fe_col : cmp #2 : beq loop2 : inc fe_i : jmp moved
+    lda fe_i : jsr fe_col : cmp #2 : beq loop2 : inc fe_i : bra moved
 .not_right
     lda #KEY_O : jsr fe_key : bne up
     lda #KEY_UP : jsr fe_key : beq not_up
 .up
-    lda fe_i : cmp #3 : bcc loop2 : sbc #3 : sta fe_i : jmp moved
+    lda fe_i : cmp #3 : bcc loop2 : sbc #3 : sta fe_i : bra moved
 .not_up
     lda #KEY_K : jsr fe_key : bne down
     lda #KEY_DOWN : jsr fe_key : beq loop2
@@ -6076,7 +6078,7 @@ ENDMACRO
     tay : lda fe_pattern,y : sta fe_pat
     txa : jsr fe_where
     \ top and bottom: 2 rows each of 20 bytes
-    lda fe_y0 : jsr fe_hrow : lda fe_y0 : clc : adc #1 : jsr fe_hrow
+    lda fe_y0 : jsr fe_hrow : lda fe_y0 : inc a : jsr fe_hrow
     lda fe_y0 : clc : adc #80 : jsr fe_hrow : lda fe_y0 : clc : adc #81 : jsr fe_hrow
     \ sides: the left 2 pixels of the first byte, the right 2 of the last
     lda #81 : sta fe_n
@@ -6113,7 +6115,7 @@ ENDMACRO
 \ ptr = the screen address of byte column A, row X (unscrolled)
 .fe_addr
 {
-    sta tmp : lda #0 : sta tmp+1
+    sta tmp : stz tmp+1
     asl tmp : rol tmp+1 : asl tmp : rol tmp+1 : asl tmp : rol tmp+1
     txa : and #7 : clc : adc tmp : sta tmp : bcc nc : inc tmp+1 : .nc
     txa : lsr a : lsr a : lsr a : tax
@@ -6142,9 +6144,9 @@ ENDMACRO
     jsr print_char
     ldy txt_i
     inc txt_col : inc txt_col
-    jmp loop
+    bra loop
 .done
-    tya : clc : adc src : tax : lda src+1 : adc #0 : pha : txa : pha
+    tya : clc : adc src : tax : lda src+1 : adc #0 : pha : phx
     rts
 }
 
@@ -6153,7 +6155,7 @@ ENDMACRO
 {
     sty txt_y
     \ src = level_names + level * 10
-    sta tmp : lda #0 : sta tmp+1
+    sta tmp : stz tmp+1
     asl tmp : rol tmp+1 : lda tmp : sta fe_n : lda tmp+1 : sta fe_n2   \ * 2
     asl tmp : rol tmp+1 : asl tmp : rol tmp+1                        \ * 8
     lda tmp : clc : adc fe_n : sta tmp : lda tmp+1 : adc fe_n2 : sta tmp+1
@@ -6180,7 +6182,7 @@ ENDMACRO
 .fe_sprite
 {
     sta p_img : stx fe_n : sty fe_n2
-    lda fe_bx : sta p_x : lda #0 : sta p_x+1
+    lda fe_bx : sta p_x : stz p_x+1
     asl p_x : rol p_x+1 : asl p_x : rol p_x+1
     lda p_x : clc : adc fe_n : sta p_x : bcc nc : inc p_x+1 : .nc
     lda fe_y0 : clc : adc fe_n2 : sta p_y : lda #0 : adc #0 : sta p_y+1
@@ -6216,7 +6218,7 @@ ENDMACRO
     lda fe_i2 : beq named
     asl a : asl a : asl a : asl a : adc #2 : tax    \ x = 2 + 16 * n
     lda #IMG_Balloon : ldy #44 : jsr fe_sprite
-    dec fe_i2 : jmp balloons
+    dec fe_i2 : bra balloons
 .named
     ldx difficulty : lda diff_name_lo,x : sta src : lda diff_name_hi,x : sta src+1
     jmp fe_print_centred
@@ -6292,11 +6294,11 @@ ENDMACRO
     jsr fe_col : beq scrubbly : cmp #1 : beq poglet
     FE_SPRITE IMG_Girder3, 7, 52
     FE_SPRITE IMG_Hooter, 23, 52
-    jmp name
+    bra name
 .scrubbly
     FE_SPRITE IMG_Ledge2, 7, 52
     FE_SPRITE IMG_Scrubbly, 23, 52
-    jmp name
+    bra name
 .poglet
     FE_SPRITE IMG_Log5, 7, 52
     FE_SPRITE IMG_Poglet, 23, 52
@@ -6325,7 +6327,7 @@ ENDMACRO
     lda fe_rating_icons,x : sta src : lda fe_rating_icons + 1,x : sta src+1
     lda #11 : jsr fe_icon_at
     ldx fe_lev : lda rec_gem,x : beq outline
-    lda #LO(icon_Gem_Small) : ldy #HI(icon_Gem_Small) : jmp gem
+    lda #LO(icon_Gem_Small) : ldy #HI(icon_Gem_Small) : bra gem
 .outline
     lda #LO(icon_Gem_Outline_Small) : ldy #HI(icon_Gem_Outline_Small)
 .gem
@@ -6349,7 +6351,7 @@ ENDMACRO
     ldy #0 : lda (src),y : sta fe_iw : iny : lda (src),y : sta fe_ih
     lda src : clc : adc #2 : sta src : bcc nc : inc src+1 : .nc
 .col
-    lda #0 : sta fe_r
+    stz fe_r
 .row
     lda fe_n2 : clc : adc fe_r : tax : lda fe_n : jsr fe_addr
     ldy #0 : lda (src),y : beq clear : tax
@@ -6471,7 +6473,7 @@ ENDMACRO
     inc src : bne s1 : inc src+1 : .s1
     inc src : bne s2 : inc src+1 : .s2
     jsr fe_win_print
-    tya : clc : adc src : tax : lda src+1 : adc #0 : pha : txa : pha
+    tya : clc : adc src : tax : lda src+1 : adc #0 : pha : phx
     rts
 }
 \ txt_y = the window's top + fe_wy + A
@@ -6544,7 +6546,7 @@ GUARD IMGDIR_ORG
     lda ACCCON : and #&FB : sta tmp
     and #1 : eor #1 : asl a : asl a : ora tmp : sta ACCCON
     lda #LO(front_packed) : sta src : lda #HI(front_packed) : sta src+1
-    lda #0 : sta dp : lda #HI(SCREEN) : sta dp+1
+    stz dp : lda #HI(SCREEN) : sta dp+1
     ldx #(FRONTZ_SIZE + 255) DIV 256 : ldy #0
 .copy
     lda (src),y : sta (dp),y : iny : bne copy
