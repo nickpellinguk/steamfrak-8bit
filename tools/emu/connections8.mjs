@@ -44,7 +44,11 @@ const s = new MachineSession('Master', { discImage: REPO + '/build/frak.ssd' });
 await s.initialise(); await s.boot(30); await s.autoboot();
 const cpu = s._machine.processor;
 const bank = (b, a) => cpu.ramRomOs[cpu.romOffset + b * 16384 + a - 0x8000];
-for (let t = 0; t < 100 && cpu.readmem(sym.snd_tune) !== 5; t++) await s.runFrames(20);
+// (until the game is running: its vertical sync counter counting, and the attract tune on)
+for (let t = 0, v = -1; t < 100; t++) {
+    if (cpu.readmem(sym.snd_tune) === 5 && cpu.readmem(sym.vsyncs) !== v && v >= 0) break;
+    v = cpu.readmem(sym.vsyncs); await s.runFrames(20);
+}
 await s.runFrames(100);
 for (let i = 0; i < 2; i++) { s.keyDown('Space'); await s.runFrames(5); s.keyUp('Space'); await s.runFrames(60); }
 await s.runFrames(300);

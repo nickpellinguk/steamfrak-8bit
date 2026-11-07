@@ -135,7 +135,7 @@ and is listed: Trogg can never get near it.)
 | `&0400-&07FF` | save area for the main-RAM screen buffer (BASIC's workspace, unused); while a level loads, the packed level |
 | `&0900-&0CFF` | save area for the shadow screen buffer (RS423/cassette buffers, soft keys, UDGs); while a level loads, a column of the background and the list of things in it |
 | `&0E00-&10FF` | other variables: object states, checkpoint, draw logs, moving objects |
-| `&1100-&2FFF` | drawing code and its tables, each image's size and origin, the sound player's variables, instruments and pitch and loudness tables (212 bytes free) |
+| `&1100-&2FFF` | drawing code and its tables, each image's size and origin, the sound player's variables, instruments and pitch and loudness tables (176 bytes free) |
 | `&3000-&7FFF` | MODE 1 screen, **double buffered**: main RAM and shadow RAM. While a level loads (with the screen blanked) it holds the loader's workspace (`&3000-&4FFF`: the dictionary's hash table, a row of the background, the lines being built) and the loader itself (`&6000`) |
 | SWRAM bank 4 | every sprite, as 5-pixel codes (14.3KB, see "Sprites"), including the platforms and ladders the backgrounds are unrolled from; 690 bytes free; then the code tables (`&BC00-&BFFF`) |
 | SWRAM bank 5 | the music and sound effects player and the tunes (4.3KB at `&8000`, see "Sound"); 8.2KB free; then the front end, packed (2.5KB, see below), then where shift 3 of each image is (`img_bank3`, `img_lo3`, `img_hi3`, 240 bytes at `&BB10`), then a save area for meanies flying off (the top 1KB) |
@@ -290,7 +290,10 @@ give each code's left and right 4 pixels as a screen byte and the mask for each 
 `CODE_LMASK`, `CODE_RPIX`, `CODE_RMASK`). `plot` sets the column routines' table operands for
 the shift (left half for an odd one, right for an even one), so drawing a byte costs the same
 as before: `lda (dp),y : tax : lda (ptr),y : and mask,x : ora pixels,x : sta (ptr),y`. Code 0
-is 5 transparent pixels, which is skipped. That takes the sprites from 23.8KB, pre-shifted, to
+is 5 transparent pixels, which is skipped; codes 128-255 are 5 solid pixels (about half of all
+sprite bytes), which need no mask, so the plain and raw-copying plotters test bit 7 first
+(`bmi`) and just store them: `tax : lda pixels,x : sta (ptr),y`, 8 cycles less. (Saving the
+background reads the screen anyway, so that plotter doesn't bother.) That takes the sprites from 23.8KB, pre-shifted, to
 14.3KB, all in bank 4 with the tables, which frees 8KB of bank 5. (The timer's image, made at run
 time, is screen bytes: its bank number doesn't have bit 7 set, and `plot` uses the plain mask
 table, as the font and the menus' icons do.) The background unroller decodes through the right

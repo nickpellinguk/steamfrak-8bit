@@ -1461,7 +1461,9 @@ savebuf1 = &0900
     lda (tblptr),y : sta bank
     \ Most images are 5-pixel codes (see tools/convert.py): the column routines look
     \ each one up in the tables for this shift's half (left 4 pixels for an odd
-    \ shift, right 4 for an even one); a raw image (the timer) is screen bytes
+    \ shift, right 4 for an even one); codes 128-255 are 5 solid pixels, which are
+    \ stored without masking; a raw image (the timer) is screen bytes, only ever
+    \ black (colour 1), so bit 7 is never set and nothing takes that path
     ldx #HI(identity) : ldy #HI(masktab)
     lda bank : bpl tables_set
     and #&7F : sta bank
@@ -1470,6 +1472,7 @@ savebuf1 = &0900
     ldx #HI(CODE_LPIX) : ldy #HI(CODE_LMASK)
 .tables_set
     stx cp_pix+2 : stx cr_pix+2 : stx cr_rawpix+2 : stx cs_pix+2
+    stx cp_full+2 : stx cr_full+2
     sty cp_mask+2 : sty cr_mask+2 : sty cs_mask+2
     \ dcol = data for the first column, from row r0
     lda dptr : clc : adc r0 : sta dcol : lda dptr+1 : adc #0 : sta dcol+1
@@ -1619,15 +1622,23 @@ ENDMACRO
 {
     COLUMN_SETUP
 .loop
-    lda (dp),y : beq clear              \ fully transparent: leave the screen alone
+    lda (dp),y : bmi solid              \ 5 solid pixels: just store them
+    beq next                            \ 5 transparent: leave the screen alone
     tax
     lda (ptr),y
 .^cp_mask
     and masktab,x                       \ (the tables are set by plot)
 .^cp_pix
     ora identity,x : sta (ptr),y
-.clear
+    iny : cpy yend : bne loop           \ (each path has its own loop end: no branch a byte)
+    bra cell_done
+.solid
+    tax
+.^cp_full
+    lda identity,x : sta (ptr),y
+.next
     iny : cpy yend : bne loop
+.cell_done
     dec cellsleft : beq done
     STEP_CELL
     bra loop
@@ -1644,14 +1655,21 @@ ENDMACRO
 .cell
     lsr rawcol : bcs raw
 .loop
-    lda (dp),y : beq clear
+    lda (dp),y : bmi solid
+    beq next
     tax
     lda (ptr),y
 .^cr_mask
     and masktab,x
 .^cr_pix
     ora identity,x : sta (ptr),y
-.clear
+    iny : cpy yend : bne loop
+    bra cell_done
+.solid
+    tax
+.^cr_full
+    lda identity,x : sta (ptr),y
+.next
     iny : cpy yend : bne loop
 .cell_done
     dec cellsleft : beq done
@@ -1673,8 +1691,8 @@ ENDMACRO
     COLUMN_SETUP
 .loop
     lda (dp),y : beq clear              \ fully transparent: just save the screen
-    tax
-    lda (ptr),y : sta (sp),y
+    tax                                 \ (saving reads the screen anyway, so solid pixels
+    lda (ptr),y : sta (sp),y            \ gain little from a path of their own)
 .^cs_mask
     and masktab,x
 .^cs_pix

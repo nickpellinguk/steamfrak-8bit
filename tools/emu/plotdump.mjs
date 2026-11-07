@@ -18,7 +18,11 @@ const nimg = +readFileSync(dir + '/src/gen/sprites.asm', 'utf8').match(/NUM_IMAG
 const s = new MachineSession('Master', { discImage: dir + '/build/frak.ssd' });
 await s.initialise(); await s.boot(30); await s.autoboot();
 const j = s._machine.processor;
-for (let t = 0; t < 100 && j.readmem(sym.snd_tune) !== 5; t++) await s.runFrames(20);
+// (until the game is running: its vertical sync counter counting, and the attract tune on)
+for (let t = 0, v = -1; t < 100; t++) {
+    if (j.readmem(sym.snd_tune) === 5 && j.readmem(sym.vsyncs) !== v && v >= 0) break;
+    v = j.readmem(sym.vsyncs); await s.runFrames(20);
+}
 const mem = new Uint8Array(65536);
 for (let a = 0; a < 0x8000; a++) mem[a] = j.readmem(a);
 for (let a = 0xC000; a < 0xFC00; a++) mem[a] = j.readmem(a);
@@ -47,6 +51,8 @@ for (let i = 0; i < nimg; i++) {
     const has = [0, 1, 2, 3].map(sh => dirs[sh][i]);
     for (const mode of [0, 1, 4]) for (let sh = 0; sh < 4; sh++) {
         if (!has[sh]) continue;
+        // (saving the background needs room for it, as the draw log checks: 1KB here)
+        if (mode === 1 && 6 + ((mem[sym.img_w + i] + sh + 3) >> 2) * (2 + mem[sym.img_h + i]) > 0x400) continue;
         for (let a = 0x3000; a < 0x8000; a++) mem[a] = 0;
         mem[sym.clip_l] = 0; mem[sym.clip_r] = 80; w16(sym.clip_t, 0); mem[sym.clip_h] = 0;
         mem[sym.p_mode] = mode; mem[sym.p_img] = i;
