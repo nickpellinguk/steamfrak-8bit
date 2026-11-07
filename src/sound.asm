@@ -101,7 +101,7 @@ INCLUDE "src/gen/music.asm"
     lda tune_total_lo,y : sta snd_total : lda tune_total_hi,y : sta snd_total+1
     lda tune_intro_lo,y : sta snd_intro : lda tune_intro_hi,y : sta snd_intro+1
     lda #&FF : sta snd_acc : sta snd_acc+1      \ (so the first tick starts a quarter beat)
-    lda #0 : sta snd_qb : sta snd_qb+1
+    stz snd_qb : stz snd_qb+1
     ldx #0
 .tracks
     txa : clc : adc tune_first,y : tay
@@ -120,7 +120,7 @@ INCLUDE "src/gen/music.asm"
 \ Voice X: silent, with nothing playing
 .snd_silence
 {
-    lda #0 : sta v_phase,x : sta v_ampl,x : sta v_amph,x : sta v_left,x
+    stz v_phase,x : stz v_ampl,x : stz v_amph,x : stz v_left,x
     lda #15 : sta v_att,x
     rts
 }
@@ -136,7 +136,7 @@ INCLUDE "src/gen/music.asm"
 \ Voice X: start its note (the attack)
 .snd_trigger
 {
-    lda #0 : sta v_epos,x : sta v_ampl,x : sta v_amph,x
+    stz v_epos,x : stz v_ampl,x : stz v_amph,x
     lda #1 : sta v_phase,x
     rts
 }
@@ -163,14 +163,14 @@ INCLUDE "src/gen/music.asm"
     lda sfx_semi,y : sta v_semi,x
     lda sfx_env,y : sta v_env,x
     lda sfx_len,y : sta v_left,x
-    jmp snd_trigger
+    bra snd_trigger
 .done
     rts
 }
 .snd_stop_sfx
 {
     ldx #SFX_TONE : jsr snd_silence
-    ldx #SFX_NOISE : jmp snd_silence
+    ldx #SFX_NOISE : bra snd_silence
 }
 
 \ A quarter beat: each track's next note, if its last one is over. At the end of
@@ -213,14 +213,14 @@ INCLUDE "src/gen/music.asm"
     ldy v_ord,x : inc v_ord,x
     lda (tblptr),y : tay
     lda pat_lo,y : sta v_patl,x : lda pat_hi,y : sta v_path,x
-    jmp fetch
+    bra fetch
 .token
     sta snd_semi
-    lda #0 : sta snd_env
+    stz snd_env
     lda snd_tok : and #&C0 : beq long
     asl a : rol a : rol a                   \ (its length, 1-3)
-    sec : sbc #1 : sta v_left,x
-    jmp decoded
+    dec a : sta v_left,x
+    bra decoded
 .long
     jsr snd_byte : pha
     and #&1F : sta v_left,x
@@ -268,9 +268,9 @@ INCLUDE "src/gen/music.asm"
     cmp ins_ala,y : bcc set
 .to_ala
     lda #2 : sta v_phase,x
-    lda #0 : sta v_ampl,x
+    stz v_ampl,x
     lda ins_ala,y
-    jmp set
+    bra set
 .decay
     \ decay, down to ald
     sec : lda v_ampl,x : sbc ins_dec_lo,y : sta v_ampl,x
@@ -278,9 +278,9 @@ INCLUDE "src/gen/music.asm"
     cmp ins_ald,y : beq to_ald : bcs set
 .to_ald
     lda #3 : sta v_phase,x
-    lda #0 : sta v_ampl,x
+    stz v_ampl,x
     lda ins_ald,y
-    jmp set
+    bra set
 .sustain
     cmp #3 : bne release
     \ sustain, down to nothing
@@ -305,12 +305,12 @@ INCLUDE "src/gen/music.asm"
     \ pitch envelope: this tick's offset, then on to the next (or back to its loop)
     ldy v_env,x
     lda env_start,y : clc : adc v_epos,x : sta snd_tmp
-    clc : adc #1 : cmp env_end,y : bcc advance
+    inc a : cmp env_end,y : bcc advance
     lda env_loop,y
 .advance
     sec : sbc env_start,y : sta v_epos,x
     \ p = semitone * 8 + offset (eighths of a semitone)
-    lda v_semi,x : sta snd_p : lda #0 : sta snd_p+1
+    lda v_semi,x : sta snd_p : stz snd_p+1
     asl snd_p : rol snd_p+1 : asl snd_p : rol snd_p+1 : asl snd_p : rol snd_p+1
     ldy snd_tmp : lda env_data,y : pha
     clc : adc snd_p : sta snd_p
@@ -321,7 +321,7 @@ INCLUDE "src/gen/music.asm"
 .off_hi
     adc snd_p+1 : sta snd_p+1
     bpl p_ok
-    lda #0 : sta snd_p : sta snd_p+1
+    stz snd_p : stz snd_p+1
 .p_ok
     \ octave (Y) and the eighth of a semitone in it (snd_p)
     ldy #0
@@ -377,7 +377,7 @@ INCLUDE "src/gen/music.asm"
     dex : bpl free_ch
     \ none free: the quietest channel (the highest attenuation)
     sty snd_y
-    lda #0 : sta snd_qa
+    stz snd_qa
     ldx #2
 .quiet
     ldy snd_owner,x : lda v_att,y : cmp snd_qa : bcc quiet_next
