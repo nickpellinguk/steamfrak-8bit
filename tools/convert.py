@@ -9,7 +9,7 @@ Reads (from the steamfrak repository):
     js/data/rooms.js, js/data/objects.js, js/data/sprites.js, assets/sprites/*.png
 
 Writes:
-    build/GFX4, GFX5            pre-shifted MODE 1 sprite data for sideways RAM banks 4 and 5
+    build/GFX4                  the sprites, coded (see below), and their tables, for sideways RAM bank 4
     build/SPANS                 collision spans: solid pixels per row of each image (bank 6)
     build/PACK                  every level, packed (copied into HAZEL and ANDY at boot)
     build/levels.json           what the level loader should build for each level (for tests)
@@ -22,9 +22,15 @@ Writes:
     src/gen/disc.asm, boot.txt  the disc's file list and !BOOT
 
 Sprites are MODE 1 (2 bits per pixel, 4 pixels per byte). Logical colour 0 is the level
-background and is always transparent, so masks are derived at run time from a 256-byte table.
-Each image is stored once per needed horizontal pixel shift (0-3), column by column (each byte
-column is "height" bytes, top to bottom), which is the order the plotter walks the screen.
+background and is always transparent. A sprite drawn at pixel offset s (0-3) within a byte
+needs, for each screen byte, 4 pixels that straddle two of its own bytes; rather than storing
+it four times, pre-shifted, each byte is stored as a code for 5 pixels: in stream A, pixels
+4k-1 to 4k+3 (the leftmost 4 are its byte k at shift 1, the rightmost 4 at shift 0); in stream
+B, pixels 4k-3 to 4k+1 (shifts 3 and 2). The graphics use fewer than 256 different 5-pixel
+values, so a code is a byte, and four tables (in bank 4, with all the sprites) give each
+code's left and right 4 pixels as a screen byte, and the mask for each (both bits set for a
+transparent pixel). Code 0 is 5 transparent pixels. The data is column by column (each byte
+column is "height" codes, top to bottom), the order the plotter walks the screen.
 """
 import json
 import math
@@ -37,6 +43,8 @@ from PIL import Image
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BANKS = [4, 5]                  # Master 128 sideways RAM banks for sprites (6 = spans, 7 = level cache)
 BANK_SIZE = 0x4000
+CODE_TABLES = 0xBC00            # in bank 4, after the sprites: left pixels, left mask, right pixels, right mask
+CODED = 0x80                    # (in an image's bank number: its data is 5-pixel codes, not screen bytes)
 
 # MODE 1 logical colours (palette set per level): 0 = background, 1 = black, 2 = magenta, 3 = yellow
 COLOURS = {(0, 0, 0): 1, (255, 0, 255): 2, (255, 255, 0): 3}
@@ -155,6 +163,35 @@ def shifted_columns(rows, shift):
                 px.append(rows[y][sx] if 0 <= sx < w else 0)
             out.append(mode1_byte(px))
     return bytes(out)
+
+
+# The 5-pixel values the graphics use, in the order they're met (code 0: all transparent)
+WINDOWS = {(0, 0, 0, 0, 0): 0}
+
+
+def coded_columns(rows, first, nb):
+    """Encode one frame as nb byte columns of 5-pixel codes, window k being pixels first + 4k to
+    first + 4k + 4 (see the module docstring), column by column"""
+    w = len(rows[0])
+    out = bytearray()
+    for col in range(nb):
+        for row in rows:
+            v = tuple(row[x] if 0 <= x < w else 0 for x in range(first + 4 * col, first + 4 * col + 5))
+            if v not in WINDOWS:
+                WINDOWS[v] = len(WINDOWS)
+            out.append(WINDOWS[v] & 0xFF)
+    return bytes(out)
+
+
+def code_tables():
+    """Each code's left 4 pixels as a screen byte, their mask, then the same for its right 4"""
+    if len(WINDOWS) > 256:
+        raise SystemExit('The graphics use %d different 5-pixel values; at most 256 can be coded' % len(WINDOWS))
+    mask = mask_table()
+    lpix, rpix = [0] * 256, [0] * 256
+    for v, c in WINDOWS.items():
+        lpix[c], rpix[c] = mode1_byte(v[:4]), mode1_byte(v[1:])
+    return bytes(lpix + [mask[b] for b in lpix] + rpix + [mask[b] for b in rpix])
 
 
 def row_spans(rows):
@@ -660,17 +697,21 @@ def main():
     banks = [bytearray() for _ in BANKS]
     stored = {}     # sprite data already stored (identical images share it)
     def store(entry, rows, shifts):
-        for shift in shifts:
-            blob = bytes(shifted_columns(rows, shift))
+        # (two streams of 5-pixel codes: A for shifts 0 and 1, B for 2 and 3; all in bank 4,
+        # where the code tables are)
+        w = len(rows[0])
+        for first, pair in ((-1, (0, 1)), (-3, (2, 3))):
+            used = [sh for sh in pair if sh in shifts]
+            if not used:
+                continue
+            blob = coded_columns(rows, first, max((sh + w + 3) // 4 for sh in used))
             if blob not in stored:
-                for bank_i in range(len(BANKS)):
-                    if len(banks[bank_i]) + len(blob) <= BANK_SIZE:
-                        break
-                else:
-                    raise SystemExit('Out of sideways RAM for sprites')
-                stored[blob] = (BANKS[bank_i], 0x8000 + len(banks[bank_i]))
-                banks[bank_i] += blob
-            entry['shift'][shift] = stored[blob]
+                if len(banks[0]) + len(blob) > CODE_TABLES - 0x8000:
+                    raise SystemExit('Out of room for sprites in bank %d' % BANKS[0])
+                stored[blob] = (BANKS[0] | CODED, 0x8000 + len(banks[0]))
+                banks[0] += blob
+            for sh in used:
+                entry['shift'][sh] = stored[blob]
     directory = []  # per image: dict
     frames_of = {}
     for spr in sorted(need):
@@ -712,6 +753,8 @@ def main():
                       'shift': {0: (6, 'hud_image')}, 'spans': None, 'parts': None})
     if len(directory) > 255:
         raise SystemExit('Too many images: %d' % len(directory))
+    sprite_bytes = len(banks[0])
+    banks[0] += bytes(CODE_TABLES - 0x8000 - len(banks[0])) + code_tables()
     for b, blob in zip(BANKS, banks):
         open(os.path.join(build, 'GFX%d' % b), 'wb').write(bytes(blob))
     # Collision spans (assembled at the start of bank 6): 2 bytes (left, right) per row of each
@@ -882,11 +925,14 @@ def main():
               'FRONT_BANK = %d' % BANKS[spare], 'SPRITES_END = &%04X' % (0x8000 + len(banks[spare])),
               'DIR_BANK = %d' % BANKS[spare], 'IMGDIR_ORG = &%04X' % imgdir_org,
               'SLOWSAVE1_SIZE = &%04X' % SLOWSAVE1_SIZE,
-              'SPANS_SIZE = %d' % len(spans_blob)]
+              'SPANS_SIZE = %d' % len(spans_blob),
+              'CODE_LPIX = &%04X' % CODE_TABLES, 'CODE_LMASK = &%04X' % (CODE_TABLES + 0x100),
+              'CODE_RPIX = &%04X' % (CODE_TABLES + 0x200), 'CODE_RMASK = &%04X' % (CODE_TABLES + 0x300),
+              'CODED = &%02X' % CODED]
     open(os.path.join(gen, 'consts.asm'), 'w').write('\n'.join(consts) + '\n')
 
     # Disc contents and !BOOT
-    boot = ['*SRLOAD GFX%d 8000 %d Q' % (b, b) for b in BANKS]
+    boot = ['*SRLOAD GFX%d 8000 %d Q' % (b, b) for b, blob in zip(BANKS, banks) if blob]
     boot += ['*SRLOAD BANK6 8000 6 Q', '*SRLOAD BANK7 %X 7 Q' % BG_TOP, '*SRLOAD LOADERZ OVERLAYZ_ORG 7 Q',
              '*SRLOAD IMGDIR %X %d Q' % (imgdir_org, BANKS[spare]),
              '*SRLOAD MUSIC %X %d Q' % (0x8000 + len(banks[spare]), BANKS[spare]),
@@ -895,13 +941,13 @@ def main():
     open(os.path.join(gen, 'boot.txt'), 'w').write('\n'.join(boot) + '\n')
     disc = ['\\ Disc contents - GENERATED by tools/convert.py, do not edit',
             'PUTTEXT "src/gen/boot.txt", "!BOOT", 0']
-    disc += ['PUTFILE "build/GFX%d", "GFX%d", &8000' % (b, b) for b in BANKS]
+    disc += ['PUTFILE "build/GFX%d", "GFX%d", &8000' % (b, b) for b, blob in zip(BANKS, banks) if blob]
     disc += ['PUTFILE "build/PACK", "PACK", &3000']
     open(os.path.join(gen, 'disc.asm'), 'w').write('\n'.join(disc) + '\n')
 
-    print('%d images, sprite banks %s bytes (%d free, less the 1KB save area), spans %d bytes, %d levels packed in %d bytes '
-          '(of %d), %d meanie settings' % (len(directory), [len(b) for b in banks],
-                                           2 * BANK_SIZE - sum(len(b) for b in banks), len(spans_blob),
+    print('%d images, %d bytes of sprites in bank %d (%d free), %d different 5-pixel values, spans %d bytes, '
+          '%d levels packed in %d bytes (of %d), %d meanie settings' % (len(directory), sprite_bytes, BANKS[0],
+                                           CODE_TABLES - 0x8000 - sprite_bytes, len(WINDOWS), len(spans_blob),
                                            len(LEVELS), pack_used, sum(v for _, v in PACK_SEGMENTS), len(params)))
     print('largest level: %s' % ', '.join('%s %d' % kv for kv in maxima.items()))
 

@@ -1459,6 +1459,18 @@ savebuf1 = &0900
     lda shift_bank_tab,y : sta tblptr : lda shift_bank_tab+4,y : sta tblptr+1
     ldy p_img
     lda (tblptr),y : sta bank
+    \ Most images are 5-pixel codes (see tools/convert.py): the column routines look
+    \ each one up in the tables for this shift's half (left 4 pixels for an odd
+    \ shift, right 4 for an even one); a raw image (the timer) is screen bytes
+    ldx #HI(identity) : ldy #HI(masktab)
+    lda bank : bpl tables_set
+    and #&7F : sta bank
+    ldx #HI(CODE_RPIX) : ldy #HI(CODE_RMASK)
+    lda shift : lsr a : bcc tables_set
+    ldx #HI(CODE_LPIX) : ldy #HI(CODE_LMASK)
+.tables_set
+    stx cp_pix+2 : stx cr_pix+2 : stx cr_rawpix+2 : stx cs_pix+2
+    sty cp_mask+2 : sty cr_mask+2 : sty cs_mask+2
     \ dcol = data for the first column, from row r0
     lda dptr : clc : adc r0 : sta dcol : lda dptr+1 : adc #0 : sta dcol+1
     \ ... skipping the columns left of the clip window
@@ -1607,9 +1619,13 @@ ENDMACRO
 {
     COLUMN_SETUP
 .loop
-    lda (dp),y : beq clear              \ fully transparent byte: leave the screen alone
+    lda (dp),y : beq clear              \ fully transparent: leave the screen alone
     tax
-    lda (ptr),y : and masktab,x : ora identity,x : sta (ptr),y
+    lda (ptr),y
+.^cp_mask
+    and masktab,x                       \ (the tables are set by plot)
+.^cp_pix
+    ora identity,x : sta (ptr),y
 .clear
     iny : cpy yend : bne loop
     dec cellsleft : beq done
@@ -1630,7 +1646,11 @@ ENDMACRO
 .loop
     lda (dp),y : beq clear
     tax
-    lda (ptr),y : and masktab,x : ora identity,x : sta (ptr),y
+    lda (ptr),y
+.^cr_mask
+    and masktab,x
+.^cr_pix
+    ora identity,x : sta (ptr),y
 .clear
     iny : cpy yend : bne loop
 .cell_done
@@ -1638,10 +1658,11 @@ ENDMACRO
     STEP_CELL
     bra cell
 .raw
-    \ a whole cell over empty background (so Y = 0): just copy it
-    FOR n, 1, 8
-    lda (dp),y : sta (ptr),y : iny
-    NEXT
+    \ a whole cell over empty background (so Y = 0): just copy its pixels in
+    lda (dp),y : tax
+.^cr_rawpix
+    lda identity,x : sta (ptr),y
+    iny : cpy #8 : bne raw
     bra cell_done
 .done
     rts
@@ -1651,10 +1672,13 @@ ENDMACRO
 {
     COLUMN_SETUP
 .loop
-    lda (dp),y : beq clear              \ fully transparent byte: just save the screen
+    lda (dp),y : beq clear              \ fully transparent: just save the screen
     tax
     lda (ptr),y : sta (sp),y
-    and masktab,x : ora identity,x : sta (ptr),y
+.^cs_mask
+    and masktab,x
+.^cs_pix
+    ora identity,x : sta (ptr),y
     iny : cpy yend : bne loop
     beq cell_done
 .clear
@@ -5513,7 +5537,7 @@ ASSERT MAX_BG <= &50
     stx u_prev
     lda #CACHE_BANK : sta ROMSEL_COPY : sta ROMSEL     \ (shift 0's address is in bank 7)
     lda img_lo0,y : sta dp : lda img_hi0,y : sta dp+1
-    lda img_bank0,y : sta u_bank
+    lda img_bank0,y : and #&7F : sta u_bank        \ (its data is 5-pixel codes)
     lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL
     ldx u_j : beq at_col
 .mul
@@ -5548,7 +5572,7 @@ ASSERT MAX_BG <= &50
 .row
     stz u_b
     lda u_cur : beq no_c
-    lda (dp),y
+    lda (dp),y : tax : lda CODE_RPIX,x              \ (shift 0: the code's right 4 pixels)
     ldx u_s : beq c_ok
 .c_shift
     lsr a : dex : bne c_shift
@@ -5557,7 +5581,7 @@ ASSERT MAX_BG <= &50
     sta u_b
 .no_c
     lda u_prev : beq no_p
-    lda (sp),y
+    lda (sp),y : tax : lda CODE_RPIX,x
     ldx u_s4
 .p_shift
     asl a : dex : bne p_shift
@@ -6578,4 +6602,4 @@ INCLUDE "src/gen/disc.asm"
 PRINT "Code from", ~code_start, "to", ~end, "(", end - code_start, "bytes ), free:", SCREEN - ram_top
 \ Addresses used by test scripts (profiling and poking variables)
 PRINT "TIMING", ~main_loop, ~t_restore, ~t_scroll, ~t_draw, ~t_vsync, ~t_after_vsync, ~t_logic, ~t_logic_done, ~t_slow, ~t_slow_done
-PRINT "SYMBOLS loops", ~loops, "view_row", ~view_row, "scrollrow", ~scrollrow, "brow", ~brow, "view_col", ~view_col, "scroll_dir", ~scroll_dir, "done_ticks", ~done_ticks, "done_restarts", ~done_restarts, "done_gems", ~done_gems, "snd_tick", ~snd_tick, "snd_sfx_req", ~snd_sfx_req, "MUSIC_BANK", ~MUSIC_BANK, "win_ticks", ~win_ticks, "bwon", ~bwon, "carry_on_yoyo", ~carry_on_yoyo, "tface", ~tface, "carry", ~carry, "dropped", ~dropped, "yo_x", ~yo_x, "trogg_standing", ~trogg_standing, "trogg_falling", ~trogg_falling, "trogg_climbing", ~trogg_climbing, "xmove", ~xmove, "ymove", ~ymove, "xvel", ~xvel, "tyf", ~tyf, "res_i", ~res_i, "res_found", ~res_found, "res_y", ~res_y, "res_yf", ~res_yf, "doyoyo", ~doyoyo, "tclimb", ~tclimb, "x_max", ~x_max, "level_h", ~level_h, "snd_tune", ~snd_tune, "snd_qb", ~snd_qb, "v_phase", ~v_phase, "v_left", ~v_left, "v_ord", ~v_ord, "v_on", ~v_on, "v_att", ~v_att, "snd_music_req", ~snd_music_req, "snd_cur", ~snd_cur, "snd_music_opt", ~snd_music_opt, "snd_sfx_opt", ~snd_sfx_opt, "snd_acc", ~snd_acc, "draw_kind", ~draw_kind, "num_keys", ~num_keys, "lvl_ticks", ~lvl_ticks, "done_valid", ~done_valid, "fe_sel", ~fe_sel, "cur_level", ~cur_level, "num_plats", ~num_plats, "num_ladders", ~num_ladders, "num_draw", ~num_draw, "num_slow", ~num_slow, "plat_w", ~plat_w, "plat_x0l", ~plat_x0l, "plat_x0h", ~plat_x0h, "plat_y0l", ~plat_y0l, "plat_y0h", ~plat_y0h, "plat_moving", ~plat_moving, "plat_bouncy", ~plat_bouncy, "lad_xl", ~lad_xl, "lad_xh", ~lad_xh, "lad_yl", ~lad_yl, "lad_yh", ~lad_yh, "lad_hl", ~lad_hl, "lad_hh", ~lad_hh, "lad_ext", ~lad_ext, "draw_img", ~draw_img, "draw_xl", ~draw_xl, "draw_xh", ~draw_xh, "draw_yl", ~draw_yl, "draw_yh", ~draw_yh, "sl_kind", ~sl_kind, "sl_img", ~sl_img, "sl_x0l", ~sl_x0l, "sl_x0h", ~sl_x0h, "sl_y0l", ~sl_y0l, "sl_y0h", ~sl_y0h, "sl_aminl", ~sl_aminl, "sl_aminh", ~sl_aminh, "sl_amaxl", ~sl_amaxl, "sl_amaxh", ~sl_amaxh, "sl_bminl", ~sl_bminl, "sl_bminh", ~sl_bminh, "sl_bmaxl", ~sl_bmaxl, "sl_bmaxh", ~sl_bmaxh, "sl_vf", ~sl_vf, "sl_vi", ~sl_vi, "sl_vy", ~sl_vy, "sl_plat", ~sl_plat, "sl_wait", ~sl_wait, "sl_simple", ~sl_simple, "plat_yh", ~plat_yh, "level_bg", ~level_bg, "trogg_x0", ~trogg_x0, "trogg_y0", ~trogg_y0, "dmg_n", ~dmg_n, "s_alive", ~s_alive, "s_xl", ~s_xl, "s_xh", ~s_xh, "s_yl", ~s_yl, "s_yh", ~s_yh, "cur_plat", ~cur_plat, "plat_xl", ~plat_xl, "plat_xh", ~plat_xh, "plat_yl", ~plat_yl, "mv_img", ~mv_img, "mv_vxi", ~mv_vxi, "mv_vyi", ~mv_vyi, "mv_vyf", ~mv_vyf, "mv_yl", ~mv_yl, "mv_yh", ~mv_yh, "mv_pause", ~mv_pause, "bal_timer", ~bal_timer, "dag_timer", ~dag_timer, "bscroll", ~bscroll, "front", ~front, "vsyncs", ~vsyncs, "yo_len", ~yo_len, "mv_active", ~mv_active, "mv_xl", ~mv_xl, "mv_xh", ~mv_xh, "tface", ~tface, "keys_found", ~keys_found, "gems_found", ~gems_found, "won", ~won, "have_cp", ~have_cp, "restarts", ~restarts, "alive", ~alive, "newcol", ~newcol, "dead", ~dead, "tx", ~tx, "ty", ~ty, "tstate", ~tstate, "tv", ~tv, "dead", ~dead, "anim", ~anim, "p_img", ~p_img, "bank", ~bank, "oldbank", ~oldbank, "dptr", ~dptr, "scrollcol", ~scrollcol
+PRINT "SYMBOLS loops", ~loops, "sbase", ~sbase, "rawbits", ~rawbits, "p_x", ~p_x, "p_y", ~p_y, "plot", ~plot, "p_mode", ~p_mode, "clip_l", ~clip_l, "clip_r", ~clip_r, "clip_t", ~clip_t, "clip_h", ~clip_h, "img_xo", ~img_xo, "img_yo", ~img_yo, "img_w", ~img_w, "img_h", ~img_h, "img_bank0", ~img_bank0, "img_bank3", ~img_bank3, "view_row", ~view_row, "scrollrow", ~scrollrow, "brow", ~brow, "view_col", ~view_col, "scroll_dir", ~scroll_dir, "done_ticks", ~done_ticks, "done_restarts", ~done_restarts, "done_gems", ~done_gems, "snd_tick", ~snd_tick, "snd_sfx_req", ~snd_sfx_req, "MUSIC_BANK", ~MUSIC_BANK, "win_ticks", ~win_ticks, "bwon", ~bwon, "carry_on_yoyo", ~carry_on_yoyo, "tface", ~tface, "carry", ~carry, "dropped", ~dropped, "yo_x", ~yo_x, "trogg_standing", ~trogg_standing, "trogg_falling", ~trogg_falling, "trogg_climbing", ~trogg_climbing, "xmove", ~xmove, "ymove", ~ymove, "xvel", ~xvel, "tyf", ~tyf, "res_i", ~res_i, "res_found", ~res_found, "res_y", ~res_y, "res_yf", ~res_yf, "doyoyo", ~doyoyo, "tclimb", ~tclimb, "x_max", ~x_max, "level_h", ~level_h, "snd_tune", ~snd_tune, "snd_qb", ~snd_qb, "v_phase", ~v_phase, "v_left", ~v_left, "v_ord", ~v_ord, "v_on", ~v_on, "v_att", ~v_att, "snd_music_req", ~snd_music_req, "snd_cur", ~snd_cur, "snd_music_opt", ~snd_music_opt, "snd_sfx_opt", ~snd_sfx_opt, "snd_acc", ~snd_acc, "draw_kind", ~draw_kind, "num_keys", ~num_keys, "lvl_ticks", ~lvl_ticks, "done_valid", ~done_valid, "fe_sel", ~fe_sel, "cur_level", ~cur_level, "num_plats", ~num_plats, "num_ladders", ~num_ladders, "num_draw", ~num_draw, "num_slow", ~num_slow, "plat_w", ~plat_w, "plat_x0l", ~plat_x0l, "plat_x0h", ~plat_x0h, "plat_y0l", ~plat_y0l, "plat_y0h", ~plat_y0h, "plat_moving", ~plat_moving, "plat_bouncy", ~plat_bouncy, "lad_xl", ~lad_xl, "lad_xh", ~lad_xh, "lad_yl", ~lad_yl, "lad_yh", ~lad_yh, "lad_hl", ~lad_hl, "lad_hh", ~lad_hh, "lad_ext", ~lad_ext, "draw_img", ~draw_img, "draw_xl", ~draw_xl, "draw_xh", ~draw_xh, "draw_yl", ~draw_yl, "draw_yh", ~draw_yh, "sl_kind", ~sl_kind, "sl_img", ~sl_img, "sl_x0l", ~sl_x0l, "sl_x0h", ~sl_x0h, "sl_y0l", ~sl_y0l, "sl_y0h", ~sl_y0h, "sl_aminl", ~sl_aminl, "sl_aminh", ~sl_aminh, "sl_amaxl", ~sl_amaxl, "sl_amaxh", ~sl_amaxh, "sl_bminl", ~sl_bminl, "sl_bminh", ~sl_bminh, "sl_bmaxl", ~sl_bmaxl, "sl_bmaxh", ~sl_bmaxh, "sl_vf", ~sl_vf, "sl_vi", ~sl_vi, "sl_vy", ~sl_vy, "sl_plat", ~sl_plat, "sl_wait", ~sl_wait, "sl_simple", ~sl_simple, "plat_yh", ~plat_yh, "level_bg", ~level_bg, "trogg_x0", ~trogg_x0, "trogg_y0", ~trogg_y0, "dmg_n", ~dmg_n, "s_alive", ~s_alive, "s_xl", ~s_xl, "s_xh", ~s_xh, "s_yl", ~s_yl, "s_yh", ~s_yh, "cur_plat", ~cur_plat, "plat_xl", ~plat_xl, "plat_xh", ~plat_xh, "plat_yl", ~plat_yl, "mv_img", ~mv_img, "mv_vxi", ~mv_vxi, "mv_vyi", ~mv_vyi, "mv_vyf", ~mv_vyf, "mv_yl", ~mv_yl, "mv_yh", ~mv_yh, "mv_pause", ~mv_pause, "bal_timer", ~bal_timer, "dag_timer", ~dag_timer, "bscroll", ~bscroll, "front", ~front, "vsyncs", ~vsyncs, "yo_len", ~yo_len, "mv_active", ~mv_active, "mv_xl", ~mv_xl, "mv_xh", ~mv_xh, "tface", ~tface, "keys_found", ~keys_found, "gems_found", ~gems_found, "won", ~won, "have_cp", ~have_cp, "restarts", ~restarts, "alive", ~alive, "newcol", ~newcol, "dead", ~dead, "tx", ~tx, "ty", ~ty, "tstate", ~tstate, "tv", ~tv, "dead", ~dead, "anim", ~anim, "p_img", ~p_img, "bank", ~bank, "oldbank", ~oldbank, "dptr", ~dptr, "scrollcol", ~scrollcol

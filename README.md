@@ -135,9 +135,10 @@ and is listed: Trogg can never get near it.)
 | `&0400-&07FF` | save area for the main-RAM screen buffer (BASIC's workspace, unused); while a level loads, the packed level |
 | `&0900-&0CFF` | save area for the shadow screen buffer (RS423/cassette buffers, soft keys, UDGs); while a level loads, a column of the background and the list of things in it |
 | `&0E00-&10FF` | other variables: object states, checkpoint, draw logs, moving objects |
-| `&1100-&2FFF` | drawing code and its tables, each image's size and origin, the sound player's variables, instruments and pitch and loudness tables (231 bytes free) |
+| `&1100-&2FFF` | drawing code and its tables, each image's size and origin, the sound player's variables, instruments and pitch and loudness tables (212 bytes free) |
 | `&3000-&7FFF` | MODE 1 screen, **double buffered**: main RAM and shadow RAM. While a level loads (with the screen blanked) it holds the loader's workspace (`&3000-&4FFF`: the dictionary's hash table, a row of the background, the lines being built) and the loader itself (`&6000`) |
-| SWRAM banks 4-5 | sprites, pre-shifted, including unshifted copies of the platforms and ladders to unroll backgrounds from (23.1KB); in bank 5 after the sprites, the music and sound effects player and the tunes (4.2KB at `&9F58`, see "Sound"), then the front end, packed (2.5KB, see below), then where shift 3 of each image is (`img_bank3`, `img_lo3`, `img_hi3`, 240 bytes at `&BB10`), then a save area for meanies flying off (the top 1KB); 184 bytes free |
+| SWRAM bank 4 | every sprite, as 5-pixel codes (14.3KB, see "Sprites"), including the platforms and ladders the backgrounds are unrolled from; 690 bytes free; then the code tables (`&BC00-&BFFF`) |
+| SWRAM bank 5 | the music and sound effects player and the tunes (4.3KB at `&8000`, see "Sound"); 8.2KB free; then the front end, packed (2.5KB, see below), then where shift 3 of each image is (`img_bank3`, `img_lo3`, `img_hi3`, 240 bytes at `&BB10`), then a save area for meanies flying off (the top 1KB) |
 | SWRAM bank 6 | collision spans and tables (from `&8000`), the **game logic** (to `&AE00`), then the current level's tables and the second save area for meanies flying off (368 bytes free). Stays paged in while playing |
 | SWRAM bank 7 | the current level's background, unrolled when it starts (`&8000-&A9FF`, see below), or, while the menus or the level-complete screen are up, the front end (unpacked to `&8000`); the front end's records and the unpacker (`&AA00`); the code that paints the background; where shifts 0-2 of each image are (`img_bank0-2`, `img_lo0-2`, `img_hi0-2`, 720 bytes: `plot` and the background unroller page bank 7 in to read them); the level loader, the code that starts a level and the boot code, packed (3.2KB at the top, unpacked to `&6000` when a level loads); 167 bytes free |
 | HAZEL (`&C000-&DFFF`) and ANDY (`&8000-&8FFF`) | **all 55 levels**, packed: 11.8KB, about 215 bytes each. `&8800-&88FF` of ANDY is left to the MOS |
@@ -279,14 +280,29 @@ to just after the dictionary once its size is known. Loading takes 1.9 seconds f
 
 ### Sprites
 
-A MODE 1 byte holds 4 pixels, so a sprite drawn at an arbitrary x needs one copy for each of the
-four pixel positions within a byte. The plotter picks the copy from the low two bits of x. The
-converter only stores the copies the game can use:
+A MODE 1 byte holds 4 pixels, so a sprite drawn at an arbitrary x needs, for each screen byte, 4
+pixels that straddle two of its own bytes. Rather than keep a pre-shifted copy for each of the
+four pixel positions within a byte, each byte of a sprite is stored as a code for **5 pixels**:
+in stream A, pixels 4k-1 to 4k+3, whose leftmost 4 are its byte k at shift 1 and rightmost 4 at
+shift 0; in stream B, pixels 4k-3 to 4k+1, for shifts 3 and 2. All the graphics together use
+only 206 different 5-pixel values, so a code fits in a byte, and four 256-byte tables in bank 4
+give each code's left and right 4 pixels as a screen byte and the mask for each (`CODE_LPIX`,
+`CODE_LMASK`, `CODE_RPIX`, `CODE_RMASK`). `plot` sets the column routines' table operands for
+the shift (left half for an odd one, right for an even one), so drawing a byte costs the same
+as before: `lda (dp),y : tax : lda (ptr),y : and mask,x : ora pixels,x : sta (ptr),y`. Code 0
+is 5 transparent pixels, which is skipped. That takes the sprites from 23.8KB, pre-shifted, to
+14.3KB, all in bank 4 with the tables, which frees 8KB of bank 5. (The timer's image, made at run
+time, is screen bytes: its bank number doesn't have bit 7 set, and `plot` uses the plain mask
+table, as the font and the menus' icons do.) The background unroller decodes through the right
+half table too. `tools/emu/plotdump.mjs` plots every image at every shift in each drawing mode
+on the 6502 interpreter, so two builds can be compared; this one draws exactly what the
+pre-shifted one did. The converter only stores the streams the game can use:
 
 * everything that moves (Trogg, meanies, balloons, daggers, the yoyo, moving or movable
-  platforms, springs) gets all four;
-* static keys, gems and meanies get only the pixel positions that some level places them at;
-* static platforms and ladders get just the unshifted copy, which the background is unrolled
+  platforms, springs) gets both;
+* static keys, gems and meanies get only the stream for the pixel positions that some level
+  places them at;
+* static platforms and ladders get just stream A, for shift 0, which the background is unrolled
   from.
 
 The build stops with an error if a level places something at a position with no stored copy.
