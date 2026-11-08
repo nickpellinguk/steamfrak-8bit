@@ -18,8 +18,9 @@ another, including the 19 that scroll vertically:
 * Balloons float up from the bottom and daggers fly down from the top, aimed ahead of Trogg,
   using the Steam version's timings, speeds and spreads for the chosen difficulty. Both are
   deadly; the yoyo pops balloons and knocks daggers away.
-* Collecting a key sets a checkpoint, as in the Steam version: dying returns Trogg there, and
-  gems collected since come back.
+* Collecting a key sets a checkpoint, as in the Steam version: once Trogg is next standing
+  safely on a platform (not a moving one, and not if he touched a meanie in the same tick),
+  that's where dying returns him, and gems collected since come back.
 * Moving meanies: Scrubblies patrol their platform, Poglets climb up and down their ladder, and
   Hooters jump. Their ranges, speeds and start directions come from the Steam version's object
   settings. The yoyo knocks them flying.
@@ -145,7 +146,7 @@ and is listed: Trogg can never get near it.)
 | `&3000-&7FFF` | MODE 1 screen, **double buffered**: main RAM and shadow RAM. While a level loads (with the screen blanked) it holds the loader's workspace (`&3000-&4FFF`: the dictionary's hash table, a row of the background, the lines being built) and the loader itself (`&6000`) |
 | SWRAM bank 4 | every sprite, as 5-pixel codes (14.3KB, see "Sprites"), including the platforms and ladders the backgrounds are unrolled from; 690 bytes free; then the code tables (`&BC00-&BFFF`) |
 | SWRAM bank 5 | the music and sound effects player and the tunes (4.3KB at `&8000`, see "Sound"), the typed commands (see "Typed commands") and the meanie compiler; then the level's moving meanie, compiled (up to 7.0KB; the largest, the Scrubbly, is 5.1KB); then the front end, packed (2.5KB, see below), then where shift 3 of each image is (`img_bank3`, `img_lo3`, `img_hi3`, 240 bytes at `&BB10`), then a save area for meanies flying off (the top 1KB) |
-| SWRAM bank 6 | collision spans and tables (from `&8000`), the **game logic** (to `&AE00`), then the current level's tables and the second save area for meanies flying off (54 bytes free). Stays paged in while playing |
+| SWRAM bank 6 | collision spans and tables (from `&8000`), the **game logic** (to `&AE00`), then the current level's tables and the second save area for meanies flying off (49 bytes free). Stays paged in while playing |
 | SWRAM bank 7 | the current level's background, unrolled when it starts (`&8000-&A9FF`, see below), or, while the menus or the level-complete screen are up, the front end (unpacked to `&8000`); the front end's records and the unpacker (`&AA00`); the code that paints the background; where shifts 0-2 of each image are (`img_bank0-2`, `img_lo0-2`, `img_hi0-2`, 720 bytes: `plot` and the background unroller page bank 7 in to read them); the level loader, the code that starts a level and the boot code, packed (3.2KB at the top, unpacked to `&6000` when a level loads); 0 bytes free |
 | HAZEL (`&C000-&DFFF`) and ANDY (`&8000-&8FFF`) | **all 55 levels**, packed: 11.8KB, about 215 bytes each. `&8800-&88FF` of ANDY is left to the MOS |
 
@@ -515,7 +516,8 @@ count being typed; a command holds keys down for it:
 * L and R: if Trogg is standing or walking the other way, he just turns round. Otherwise he
   walks that way, for the count's ticks (a pixel each), or without a count for 1000 ticks (L)
   or 1000000 (R, which here is 65535). A counted walk never takes him off a ledge or onto a
-  ladder: he stops at the end of the platform. L and R wait in the queue while he falls.
+  ladder: he stops at the end of the platform. L and R (and J, here) wait in the queue while
+  he falls.
 * U: standing or walking, a jump straight up, or onto a ladder if he's at one. Otherwise (on a
   ladder) up for the count, or until he reaches the top.
 * D: standing, down for 3 ticks (onto a ladder below him). Otherwise down for the count, or to
@@ -524,9 +526,19 @@ count being typed; a command holds keys down for it:
 * Y: the yoyo key, for the count. Without a count it's held until a real key is pressed (and,
   as in the Steam version, nothing else in the queue happens until then).
 
-Pressing a real key stops a command. Landing, catching a ladder, or getting off one ends a
-counted command too, and a counted command never leaves a debounce behind it. The queue is
-emptied when a level starts or restarts.
+Pressing a real key stops a command and empties the queue. Landing, catching a ladder, or
+getting off one ends a counted command too, and a counted command never leaves a debounce
+behind it. The queue is emptied when a level starts or restarts.
+
+Three things differ from the original, which could leave the commands looking dead:
+
+* A command's keys are pressed afresh, clearing the debounces. In the original, a U or J
+  typed just after landing (which sets the up/down debounce) held up without jumping, and
+  that blocked the queue until up itself was pressed.
+* A real key stops any command and empties the queue. The original only stopped a counted
+  command, and kept the queue.
+* J waits in the queue while Trogg falls. The original took it and did nothing, so a J typed
+  while he got off the top of a ladder (a moment's fall) was lost.
 
 The code is in bank 5 (`src/commands.asm`), called through `call5` from `read_keys`, which ORs
 the keys a command holds into the real ones, and either side of `trogg_move`: `cmd_pre` notes
