@@ -149,6 +149,7 @@ GUARD &90
 .bank       SKIP 1
 .p_sbank    SKIP 1          \ save bank for PM_SAVEONLY
 .oldbank    SKIP 1
+.cmd_live   SKIP 1          \ 0: the typed commands start afresh (see cmd_keys)
 
 \ Platform/ladder queries
 
@@ -516,7 +517,7 @@ INCLUDE "src/gen/tables.asm"
     jsr level_music
     lda #ST_STAND : sta tstate
     lda #0 : sta tclimb : sta xvel : sta anim : sta dead : sta won
-    sta ud_db : sta lr_db : sta yo_db : sta yo_len : sta yo_len+1
+    sta ud_db : sta lr_db : sta yo_db : sta yo_len : sta yo_len+1 : sta cmd_live
     jsr set_palette
     \ No moving objects (e.g. meanies flying off after being yoyoed)
     ldx #MAX_MOVERS - 1
@@ -2896,8 +2897,10 @@ VIEW_B = 176
     lda ty : clc : adc tmp : sta ty : lda ty+1 : adc tmp+1 : sta ty+1
     lda #255 : sta cur_plat
 .no_ride
+    lda #LO(cmd_pre) : ldy #HI(cmd_pre) : jsr call5
     lda tstate : pha
     jsr trogg_move
+    lda #LO(cmd_post) : ldy #HI(cmd_post) : jsr call5
     pla : cmp #ST_YOYO_OUT : bcs moved      \ (the yoyo states carry a platform themselves)
     pha : jsr carry_above : pla
     \ GameMaker puts him on whole pixels when he lands from a fall: rounded up onto
@@ -4275,6 +4278,10 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
     rts
 }
 
+\ Call routine YA in JIT_BANK
+.call5
+    sta jit_vec : sty jit_vec+1 : jmp jit_call
+
 .read_keys
 {
     lda #KEY_Z : jsr key_pressed : sta k_left
@@ -4287,6 +4294,8 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
     lda #KEY_DOWN : jsr key_pressed : ora k_down : sta k_down
     lda #KEY_P : jsr key_pressed : sta k_yoyo
     lda #KEY_SPACE : jsr key_pressed : ora k_yoyo : sta k_yoyo
+    \ the typed commands (L R U D J Y) hold keys down too
+    lda #LO(cmd_keys) : ldy #HI(cmd_keys) : jsr call5
 
     \ doyoyo, with debounce: after the yoyo comes back, the key must be released
     lda yo_db : beq yo_live
@@ -6777,6 +6786,7 @@ ORG SPRITES_END
 GUARD FRONTZ_ORG
 .music_start
 INCLUDE "src/sound.asm"
+INCLUDE "src/commands.asm"
 
 \ ------------------------------------------------------------------------------
 \ The level's moving meanie, compiled (by jit_build, from its coded data) into
@@ -6868,4 +6878,4 @@ INCLUDE "src/gen/disc.asm"
 PRINT "Code from", ~code_start, "to", ~end, "(", end - code_start, "bytes ), free:", SCREEN - ram_top
 \ Addresses used by test scripts (profiling and poking variables)
 PRINT "TIMING", ~main_loop, ~t_restore, ~t_scroll, ~t_draw, ~t_vsync, ~t_after_vsync, ~t_logic, ~t_logic_done, ~t_slow, ~t_slow_done
-PRINT "SYMBOLS loops", ~loops, "difficulty", ~difficulty, "rng", ~rng, "s_alive", ~s_alive, "sl_amaxl", ~sl_amaxl, "sl_amaxh", ~sl_amaxh, "plot_slow", ~plot_slow, "jit_img", ~jit_img, "jit_wb", ~jit_wb, "jit_h", ~jit_h, "sbase", ~sbase, "rawbits", ~rawbits, "p_x", ~p_x, "p_y", ~p_y, "plot", ~plot, "p_mode", ~p_mode, "clip_l", ~clip_l, "clip_r", ~clip_r, "clip_t", ~clip_t, "clip_h", ~clip_h, "img_xo", ~img_xo, "img_yo", ~img_yo, "img_w", ~img_w, "img_h", ~img_h, "img_bank0", ~img_bank0, "img_bank3", ~img_bank3, "view_row", ~view_row, "scrollrow", ~scrollrow, "brow", ~brow, "view_col", ~view_col, "scroll_dir", ~scroll_dir, "done_ticks", ~done_ticks, "done_restarts", ~done_restarts, "done_gems", ~done_gems, "snd_tick", ~snd_tick, "snd_sfx_req", ~snd_sfx_req, "MUSIC_BANK", ~MUSIC_BANK, "win_ticks", ~win_ticks, "bwon", ~bwon, "carry_on_yoyo", ~carry_on_yoyo, "tface", ~tface, "carry", ~carry, "dropped", ~dropped, "yo_x", ~yo_x, "trogg_standing", ~trogg_standing, "trogg_falling", ~trogg_falling, "trogg_climbing", ~trogg_climbing, "xmove", ~xmove, "ymove", ~ymove, "xvel", ~xvel, "tyf", ~tyf, "res_i", ~res_i, "res_found", ~res_found, "res_y", ~res_y, "res_yf", ~res_yf, "doyoyo", ~doyoyo, "tclimb", ~tclimb, "x_max", ~x_max, "level_h", ~level_h, "snd_tune", ~snd_tune, "snd_qb", ~snd_qb, "v_phase", ~v_phase, "v_left", ~v_left, "v_ord", ~v_ord, "v_on", ~v_on, "v_att", ~v_att, "snd_music_req", ~snd_music_req, "snd_cur", ~snd_cur, "snd_music_opt", ~snd_music_opt, "snd_sfx_opt", ~snd_sfx_opt, "snd_acc", ~snd_acc, "draw_kind", ~draw_kind, "num_keys", ~num_keys, "lvl_ticks", ~lvl_ticks, "done_valid", ~done_valid, "fe_sel", ~fe_sel, "cur_level", ~cur_level, "num_plats", ~num_plats, "num_ladders", ~num_ladders, "num_draw", ~num_draw, "num_slow", ~num_slow, "plat_w", ~plat_w, "plat_x0l", ~plat_x0l, "plat_x0h", ~plat_x0h, "plat_y0l", ~plat_y0l, "plat_y0h", ~plat_y0h, "plat_moving", ~plat_moving, "plat_bouncy", ~plat_bouncy, "lad_xl", ~lad_xl, "lad_xh", ~lad_xh, "lad_yl", ~lad_yl, "lad_yh", ~lad_yh, "lad_hl", ~lad_hl, "lad_hh", ~lad_hh, "lad_ext", ~lad_ext, "draw_img", ~draw_img, "draw_xl", ~draw_xl, "draw_xh", ~draw_xh, "draw_yl", ~draw_yl, "draw_yh", ~draw_yh, "sl_kind", ~sl_kind, "sl_img", ~sl_img, "sl_x0l", ~sl_x0l, "sl_x0h", ~sl_x0h, "sl_y0l", ~sl_y0l, "sl_y0h", ~sl_y0h, "sl_aminl", ~sl_aminl, "sl_aminh", ~sl_aminh, "sl_amaxl", ~sl_amaxl, "sl_amaxh", ~sl_amaxh, "sl_bminl", ~sl_bminl, "sl_bminh", ~sl_bminh, "sl_bmaxl", ~sl_bmaxl, "sl_bmaxh", ~sl_bmaxh, "sl_vf", ~sl_vf, "sl_vi", ~sl_vi, "sl_vy", ~sl_vy, "sl_plat", ~sl_plat, "sl_wait", ~sl_wait, "sl_simple", ~sl_simple, "plat_yh", ~plat_yh, "level_bg", ~level_bg, "trogg_x0", ~trogg_x0, "trogg_y0", ~trogg_y0, "dmg_n", ~dmg_n, "s_alive", ~s_alive, "s_xl", ~s_xl, "s_xh", ~s_xh, "s_yl", ~s_yl, "s_yh", ~s_yh, "cur_plat", ~cur_plat, "plat_xl", ~plat_xl, "plat_xh", ~plat_xh, "plat_yl", ~plat_yl, "mv_img", ~mv_img, "mv_vxi", ~mv_vxi, "mv_vyi", ~mv_vyi, "mv_vyf", ~mv_vyf, "mv_yl", ~mv_yl, "mv_yh", ~mv_yh, "mv_pause", ~mv_pause, "bal_timer", ~bal_timer, "dag_timer", ~dag_timer, "bscroll", ~bscroll, "front", ~front, "vsyncs", ~vsyncs, "yo_len", ~yo_len, "mv_active", ~mv_active, "mv_xl", ~mv_xl, "mv_xh", ~mv_xh, "tface", ~tface, "keys_found", ~keys_found, "gems_found", ~gems_found, "won", ~won, "have_cp", ~have_cp, "restarts", ~restarts, "alive", ~alive, "newcol", ~newcol, "dead", ~dead, "tx", ~tx, "ty", ~ty, "tstate", ~tstate, "tv", ~tv, "dead", ~dead, "anim", ~anim, "p_img", ~p_img, "bank", ~bank, "oldbank", ~oldbank, "dptr", ~dptr, "scrollcol", ~scrollcol
+PRINT "SYMBOLS loops", ~loops, "k_left", ~k_left, "lr_db", ~lr_db, "ud_db", ~ud_db, "o_keys", ~o_keys, "cmd_cl", ~cmd_cl, "cmd_ch", ~cmd_ch, "cmd_nl", ~cmd_nl, "cmd_nh", ~cmd_nh, "cmd_qh", ~cmd_qh, "cmd_qt", ~cmd_qt, "difficulty", ~difficulty, "rng", ~rng, "s_alive", ~s_alive, "sl_amaxl", ~sl_amaxl, "sl_amaxh", ~sl_amaxh, "plot_slow", ~plot_slow, "jit_img", ~jit_img, "jit_wb", ~jit_wb, "jit_h", ~jit_h, "sbase", ~sbase, "rawbits", ~rawbits, "p_x", ~p_x, "p_y", ~p_y, "plot", ~plot, "p_mode", ~p_mode, "clip_l", ~clip_l, "clip_r", ~clip_r, "clip_t", ~clip_t, "clip_h", ~clip_h, "img_xo", ~img_xo, "img_yo", ~img_yo, "img_w", ~img_w, "img_h", ~img_h, "img_bank0", ~img_bank0, "img_bank3", ~img_bank3, "view_row", ~view_row, "scrollrow", ~scrollrow, "brow", ~brow, "view_col", ~view_col, "scroll_dir", ~scroll_dir, "done_ticks", ~done_ticks, "done_restarts", ~done_restarts, "done_gems", ~done_gems, "snd_tick", ~snd_tick, "snd_sfx_req", ~snd_sfx_req, "MUSIC_BANK", ~MUSIC_BANK, "win_ticks", ~win_ticks, "bwon", ~bwon, "carry_on_yoyo", ~carry_on_yoyo, "tface", ~tface, "carry", ~carry, "dropped", ~dropped, "yo_x", ~yo_x, "trogg_standing", ~trogg_standing, "trogg_falling", ~trogg_falling, "trogg_climbing", ~trogg_climbing, "xmove", ~xmove, "ymove", ~ymove, "xvel", ~xvel, "tyf", ~tyf, "res_i", ~res_i, "res_found", ~res_found, "res_y", ~res_y, "res_yf", ~res_yf, "doyoyo", ~doyoyo, "tclimb", ~tclimb, "x_max", ~x_max, "level_h", ~level_h, "snd_tune", ~snd_tune, "snd_qb", ~snd_qb, "v_phase", ~v_phase, "v_left", ~v_left, "v_ord", ~v_ord, "v_on", ~v_on, "v_att", ~v_att, "snd_music_req", ~snd_music_req, "snd_cur", ~snd_cur, "snd_music_opt", ~snd_music_opt, "snd_sfx_opt", ~snd_sfx_opt, "snd_acc", ~snd_acc, "draw_kind", ~draw_kind, "num_keys", ~num_keys, "lvl_ticks", ~lvl_ticks, "done_valid", ~done_valid, "fe_sel", ~fe_sel, "cur_level", ~cur_level, "num_plats", ~num_plats, "num_ladders", ~num_ladders, "num_draw", ~num_draw, "num_slow", ~num_slow, "plat_w", ~plat_w, "plat_x0l", ~plat_x0l, "plat_x0h", ~plat_x0h, "plat_y0l", ~plat_y0l, "plat_y0h", ~plat_y0h, "plat_moving", ~plat_moving, "plat_bouncy", ~plat_bouncy, "lad_xl", ~lad_xl, "lad_xh", ~lad_xh, "lad_yl", ~lad_yl, "lad_yh", ~lad_yh, "lad_hl", ~lad_hl, "lad_hh", ~lad_hh, "lad_ext", ~lad_ext, "draw_img", ~draw_img, "draw_xl", ~draw_xl, "draw_xh", ~draw_xh, "draw_yl", ~draw_yl, "draw_yh", ~draw_yh, "sl_kind", ~sl_kind, "sl_img", ~sl_img, "sl_x0l", ~sl_x0l, "sl_x0h", ~sl_x0h, "sl_y0l", ~sl_y0l, "sl_y0h", ~sl_y0h, "sl_aminl", ~sl_aminl, "sl_aminh", ~sl_aminh, "sl_amaxl", ~sl_amaxl, "sl_amaxh", ~sl_amaxh, "sl_bminl", ~sl_bminl, "sl_bminh", ~sl_bminh, "sl_bmaxl", ~sl_bmaxl, "sl_bmaxh", ~sl_bmaxh, "sl_vf", ~sl_vf, "sl_vi", ~sl_vi, "sl_vy", ~sl_vy, "sl_plat", ~sl_plat, "sl_wait", ~sl_wait, "sl_simple", ~sl_simple, "plat_yh", ~plat_yh, "level_bg", ~level_bg, "trogg_x0", ~trogg_x0, "trogg_y0", ~trogg_y0, "dmg_n", ~dmg_n, "s_alive", ~s_alive, "s_xl", ~s_xl, "s_xh", ~s_xh, "s_yl", ~s_yl, "s_yh", ~s_yh, "cur_plat", ~cur_plat, "plat_xl", ~plat_xl, "plat_xh", ~plat_xh, "plat_yl", ~plat_yl, "mv_img", ~mv_img, "mv_vxi", ~mv_vxi, "mv_vyi", ~mv_vyi, "mv_vyf", ~mv_vyf, "mv_yl", ~mv_yl, "mv_yh", ~mv_yh, "mv_pause", ~mv_pause, "bal_timer", ~bal_timer, "dag_timer", ~dag_timer, "bscroll", ~bscroll, "front", ~front, "vsyncs", ~vsyncs, "yo_len", ~yo_len, "mv_active", ~mv_active, "mv_xl", ~mv_xl, "mv_xh", ~mv_xh, "tface", ~tface, "keys_found", ~keys_found, "gems_found", ~gems_found, "won", ~won, "have_cp", ~have_cp, "restarts", ~restarts, "alive", ~alive, "newcol", ~newcol, "dead", ~dead, "tx", ~tx, "ty", ~ty, "tstate", ~tstate, "tv", ~tv, "dead", ~dead, "anim", ~anim, "p_img", ~p_img, "bank", ~bank, "oldbank", ~oldbank, "dptr", ~dptr, "scrollcol", ~scrollcol
