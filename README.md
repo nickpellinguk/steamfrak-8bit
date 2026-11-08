@@ -46,6 +46,9 @@ another, including the 19 that scroll vertically:
   first (as the Steam version's "mono") and off; S switches the sound effects off and on.
   Footsteps are heard only when the music isn't playing all its tracks, as in the Steam version.
 
+* Typed movement commands, as in the Steam version: L R U D J Y (left, right, up, down, jump,
+  yoyo), with an optional count typed first, e.g. `12R` walks 12 pixels right, and `R` walks to
+  the end of the platform (see "Typed commands").
 * Bouncing platforms (the Bouncing levels), with their springs (see "Movement and physics").
 * Movable platforms (the Placing levels, with a yellow line under them): the yoyo picks one
   up, Trogg carries it above his head, and letting go of the yoyo key while the yoyo is
@@ -81,6 +84,9 @@ node run.mjs "wait:1500 shot:start down:KeyX wait:100 up:KeyX shot:walked" scree
 ```
 
 `INVINCIBLE=1 ./build.sh` builds a version where Trogg can't die, for testing.
+
+`node commands.mjs room_0 '@318,177,0:5 U:150 U:300 12L:60'` types commands on a level (after
+optionally putting Trogg somewhere) and prints what he does, tick by tick.
 
 `node check_levels.mjs` (in `tools/emu`, after `./build.sh`) checks the level loader: it visits
 every playable level and compares what the 6502 built (the platform, ladder, object and moving
@@ -135,11 +141,11 @@ and is listed: Trogg can never get near it.)
 | `&0400-&07FF` | save area for the main-RAM screen buffer (BASIC's workspace, unused); while a level loads, the packed level |
 | `&0900-&0CFF` | save area for the shadow screen buffer (RS423/cassette buffers, soft keys, UDGs); while a level loads, a column of the background and the list of things in it |
 | `&0E00-&10FF` | other variables: object states, checkpoint, draw logs, moving objects |
-| `&1100-&2FFF` | drawing code and its tables, each image's size and origin, the sound player's variables, instruments and pitch and loudness tables (16 bytes free) |
+| `&1100-&2FFF` | drawing code and its tables, each image's size and origin, the sound player's variables, instruments and pitch and loudness tables (14 bytes free) |
 | `&3000-&7FFF` | MODE 1 screen, **double buffered**: main RAM and shadow RAM. While a level loads (with the screen blanked) it holds the loader's workspace (`&3000-&4FFF`: the dictionary's hash table, a row of the background, the lines being built) and the loader itself (`&6000`) |
 | SWRAM bank 4 | every sprite, as 5-pixel codes (14.3KB, see "Sprites"), including the platforms and ladders the backgrounds are unrolled from; 690 bytes free; then the code tables (`&BC00-&BFFF`) |
-| SWRAM bank 5 | the music and sound effects player and the tunes (4.3KB at `&8000`, see "Sound"), and the meanie compiler; then the level's moving meanie, compiled (up to 7.9KB; the largest, the Scrubbly, is 5.1KB); then the front end, packed (2.5KB, see below), then where shift 3 of each image is (`img_bank3`, `img_lo3`, `img_hi3`, 240 bytes at `&BB10`), then a save area for meanies flying off (the top 1KB) |
-| SWRAM bank 6 | collision spans and tables (from `&8000`), the **game logic** (to `&AE00`), then the current level's tables and the second save area for meanies flying off (84 bytes free). Stays paged in while playing |
+| SWRAM bank 5 | the music and sound effects player and the tunes (4.3KB at `&8000`, see "Sound"), the typed commands (see "Typed commands") and the meanie compiler; then the level's moving meanie, compiled (up to 7.0KB; the largest, the Scrubbly, is 5.1KB); then the front end, packed (2.5KB, see below), then where shift 3 of each image is (`img_bank3`, `img_lo3`, `img_hi3`, 240 bytes at `&BB10`), then a save area for meanies flying off (the top 1KB) |
+| SWRAM bank 6 | collision spans and tables (from `&8000`), the **game logic** (to `&AE00`), then the current level's tables and the second save area for meanies flying off (54 bytes free). Stays paged in while playing |
 | SWRAM bank 7 | the current level's background, unrolled when it starts (`&8000-&A9FF`, see below), or, while the menus or the level-complete screen are up, the front end (unpacked to `&8000`); the front end's records and the unpacker (`&AA00`); the code that paints the background; where shifts 0-2 of each image are (`img_bank0-2`, `img_lo0-2`, `img_hi0-2`, 720 bytes: `plot` and the background unroller page bank 7 in to read them); the level loader, the code that starts a level and the boot code, packed (3.2KB at the top, unpacked to `&6000` when a level loads); 0 bytes free |
 | HAZEL (`&C000-&DFFF`) and ANDY (`&8000-&8FFF`) | **all 55 levels**, packed: 11.8KB, about 215 bytes each. `&8800-&88FF` of ANDY is left to the MOS |
 
@@ -498,6 +504,36 @@ each move costs about 36,000. On Easy, B_1 (16 Scrubblies) runs at 17-19fps, B_2
 16-18fps and B_3 (Hooters) at 12-15fps. D_3, with many moving platforms, runs at about 10fps.
 D_1 holds 23-25fps. Of the vertically scrolling levels, C_1 and C_4 run at 13-17fps and D_2
 at 9-13fps. The game speed stays right however slow the drawing gets.
+
+### Typed commands
+
+As in the Steam version (`troggProcessCommandQueue`, `UpdateKeyOverrides` and
+`StopKeyOverrides`), L R U D J Y and the digits are queued as they're pressed, and whenever no
+key is held, really or by a command, the next one is taken off the queue. A digit adds to the
+count being typed; a command holds keys down for it:
+
+* L and R: if Trogg is standing or walking the other way, he just turns round. Otherwise he
+  walks that way, for the count's ticks (a pixel each), or without a count for 1000 ticks (L)
+  or 1000000 (R, which here is 65535). A counted walk never takes him off a ledge or onto a
+  ladder: he stops at the end of the platform. L and R wait in the queue while he falls.
+* U: standing or walking, a jump straight up, or onto a ladder if he's at one. Otherwise (on a
+  ladder) up for the count, or until he reaches the top.
+* D: standing, down for 3 ticks (onto a ladder below him). Otherwise down for the count, or to
+  the bottom.
+* J: standing or walking, a jump the way he faces.
+* Y: the yoyo key, for the count. Without a count it's held until a real key is pressed (and,
+  as in the Steam version, nothing else in the queue happens until then).
+
+Pressing a real key stops a command. Landing, catching a ladder, or getting off one ends a
+counted command too, and a counted command never leaves a debounce behind it. The queue is
+emptied when a level starts or restarts.
+
+The code is in bank 5 (`src/commands.asm`), called through `call5` from `read_keys`, which ORs
+the keys a command holds into the real ones, and either side of `trogg_move`: `cmd_pre` notes
+where Trogg is, and `cmd_post` puts him back there if a counted command would have taken him
+off a ledge, onto a ladder, or nowhere at the top of a ladder (the Steam version doesn't move
+him then). The command keys are read straight from the keyboard each tick (`snd_key`), so a
+press is seen if it's held for a tick (1/50 s).
 
 ### Timing
 
