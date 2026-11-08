@@ -2784,6 +2784,11 @@ VIEW_L = 120
 VIEW_R = 200
 .band_scroll
 {
+    \ (not once he's dead: the two buffers are each drawn once more, with the
+    \ FRAK! bubble, then shown in turn, so they must be at the same place)
+    lda dead : beq alive
+    rts
+.alive
     lda is_vert : beq horizontal
     jmp band_scroll_v
 .horizontal

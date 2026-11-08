@@ -53,6 +53,23 @@ if (process.env.GEO) {
 }
 if (process.env.WATCH) cpu.debugWrite.add((addr, b) => { if (addr === sym[process.env.WATCH]) console.log('    write', process.env.WATCH, b, 'pc', cpu.pc.toString(16), 'ret', ((cpu.readmem(0x101 + cpu.s) | cpu.readmem(0x102 + cpu.s) << 8) + 1).toString(16), 'state', r8(sym.tstate)); return false; });
 if (process.env.AT) cpu.debugInstruction.add(addr => { if (addr === parseInt(process.env.AT, 16)) console.log('    at', process.env.AT, 'k', [0, 1, 2, 3, 4].map(i => r8(sym.k_left + i)).join(''), 'A', cpu.a, 'X', cpu.x, 'Y', cpu.y); return false; });
+function screenshot(name) {
+    const v = s._video, W = 1024, H = 625;
+    const l = v.leftBorder, t = v.topBorder, w = W - l - v.rightBorder, h = H - t - v.bottomBorder;
+    const fb = s._completeFb8, rgb = Buffer.alloc(w * h * 3);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const i = ((y + t) * W + x + l) * 4, o = (y * w + x) * 3;
+        rgb[o] = fb[i]; rgb[o + 1] = fb[i + 1]; rgb[o + 2] = fb[i + 2];
+    }
+    const crcT = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+    const crc = b => { let c = 0xffffffff; for (const x of b) c = crcT[(c ^ x) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+    const chunk = (ty, d) => { const n = Buffer.alloc(4); n.writeUInt32BE(d.length); const td = Buffer.concat([Buffer.from(ty), d]); const c = Buffer.alloc(4); c.writeUInt32BE(crc(td)); return Buffer.concat([n, td, c]); };
+    const raw = Buffer.alloc((w * 3 + 1) * h);
+    for (let y = 0; y < h; y++) rgb.copy(raw, y * (w * 3 + 1) + 1, y * w * 3, (y + 1) * w * 3);
+    const ih = Buffer.alloc(13); ih.writeUInt32BE(w, 0); ih.writeUInt32BE(h, 4); ih[8] = 8; ih[9] = 2;
+    writeFileSync(`${process.env.SHOTS || '.'}/${name}.png`, Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ih), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]));
+}
+
 const steps = (process.argv[3] || 'R:200').split(' ').map(t => t.split(':'));
 const name = c => /[0-9]/.test(c) ? 'Digit' + c : 'Key' + c.toUpperCase();
 for (const [keys, frames, note] of steps) {
@@ -63,6 +80,10 @@ for (const [keys, frames, note] of steps) {
         cpu.writemem(sym.tyf, 0); cpu.writemem(sym.tstate, 0); cpu.writemem(sym.tface, f || 0);
         await s.runFrames(+frames || 2);
         console.log(`@ ${state()}`);
+        continue;
+    }
+    if (keys.startsWith('=')) {          // =n: a screenshot after each of n frames
+        for (let f = 0; f < +keys.slice(1); f++) { await s.runFrames(1); screenshot(`${note || 'shot'}_${String(f).padStart(2, '0')}`); }
         continue;
     }
     if (keys.startsWith('!')) {          // !symbol=value: poke a variable
