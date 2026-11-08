@@ -135,12 +135,12 @@ and is listed: Trogg can never get near it.)
 | `&0400-&07FF` | save area for the main-RAM screen buffer (BASIC's workspace, unused); while a level loads, the packed level |
 | `&0900-&0CFF` | save area for the shadow screen buffer (RS423/cassette buffers, soft keys, UDGs); while a level loads, a column of the background and the list of things in it |
 | `&0E00-&10FF` | other variables: object states, checkpoint, draw logs, moving objects |
-| `&1100-&2FFF` | drawing code and its tables, each image's size and origin, the sound player's variables, instruments and pitch and loudness tables (176 bytes free) |
+| `&1100-&2FFF` | drawing code and its tables, each image's size and origin, the sound player's variables, instruments and pitch and loudness tables (126 bytes free) |
 | `&3000-&7FFF` | MODE 1 screen, **double buffered**: main RAM and shadow RAM. While a level loads (with the screen blanked) it holds the loader's workspace (`&3000-&4FFF`: the dictionary's hash table, a row of the background, the lines being built) and the loader itself (`&6000`) |
 | SWRAM bank 4 | every sprite, as 5-pixel codes (14.3KB, see "Sprites"), including the platforms and ladders the backgrounds are unrolled from; 690 bytes free; then the code tables (`&BC00-&BFFF`) |
-| SWRAM bank 5 | the music and sound effects player and the tunes (4.3KB at `&8000`, see "Sound"); 8.2KB free; then the front end, packed (2.5KB, see below), then where shift 3 of each image is (`img_bank3`, `img_lo3`, `img_hi3`, 240 bytes at `&BB10`), then a save area for meanies flying off (the top 1KB) |
-| SWRAM bank 6 | collision spans and tables (from `&8000`), the **game logic** (to `&AE00`), then the current level's tables and the second save area for meanies flying off (368 bytes free). Stays paged in while playing |
-| SWRAM bank 7 | the current level's background, unrolled when it starts (`&8000-&A9FF`, see below), or, while the menus or the level-complete screen are up, the front end (unpacked to `&8000`); the front end's records and the unpacker (`&AA00`); the code that paints the background; where shifts 0-2 of each image are (`img_bank0-2`, `img_lo0-2`, `img_hi0-2`, 720 bytes: `plot` and the background unroller page bank 7 in to read them); the level loader, the code that starts a level and the boot code, packed (3.2KB at the top, unpacked to `&6000` when a level loads); 167 bytes free |
+| SWRAM bank 5 | the music and sound effects player and the tunes (4.3KB at `&8000`, see "Sound"), and the meanie compiler; then the level's moving meanie, compiled (up to 7.9KB; the largest, the Scrubbly, is 5.1KB); then the front end, packed (2.5KB, see below), then where shift 3 of each image is (`img_bank3`, `img_lo3`, `img_hi3`, 240 bytes at `&BB10`), then a save area for meanies flying off (the top 1KB) |
+| SWRAM bank 6 | collision spans and tables (from `&8000`), the **game logic** (to `&AE00`), then the current level's tables and the second save area for meanies flying off (79 bytes free). Stays paged in while playing |
+| SWRAM bank 7 | the current level's background, unrolled when it starts (`&8000-&A9FF`, see below), or, while the menus or the level-complete screen are up, the front end (unpacked to `&8000`); the front end's records and the unpacker (`&AA00`); the code that paints the background; where shifts 0-2 of each image are (`img_bank0-2`, `img_lo0-2`, `img_hi0-2`, 720 bytes: `plot` and the background unroller page bank 7 in to read them); the level loader, the code that starts a level and the boot code, packed (3.2KB at the top, unpacked to `&6000` when a level loads); 68 bytes free |
 | HAZEL (`&C000-&DFFF`) and ANDY (`&8000-&8FFF`) | **all 55 levels**, packed: 11.8KB, about 215 bytes each. `&8800-&88FF` of ANDY is left to the MOS |
 
 ### The packed front end
@@ -363,6 +363,22 @@ sideways RAM instead (`LOG_SPRITE7`): the plotter pages in the save bank to save
 sprite bank to draw.
 
 ### Drawing moving meanies and platforms
+
+**Compiled meanies.** No level has more than one kind of moving meanie (Scrubbly, Poglet or
+Hooter), and each has one frame, so when a level loads, `jit_build` (in the loader) and
+`jit_compile` (in bank 5) compile it into code that draws it, one line after another, at two
+pixel offsets (0 and 2): for each byte of a line, a solid one is `LDY #col*8 : LDA #pixels :
+STA (ptr),Y`, a partly transparent one `LDY #col*8 : LDA (ptr),Y : AND #mask : ORA #pixels :
+STA (ptr),Y`, and a transparent one nothing; between lines, `DEX : BNE same : JSR jit_linestep
+: BRA next : .same INC ptr : .next` (`jit_linestep` moves on to the next character row). A
+meanie's drawn x is kept so its left edge is at an even pixel (`commit_one`: its movement is
+unchanged, it's just drawn up to a pixel to the side). `plot_slow` uses the compiled code when
+the meanie is wholly in the window and none of its character rows runs over the end of screen
+memory (where `(ptr),Y` would run on past `&7FFF`), else `plot`. It takes about a third of the
+instructions (a Scrubbly: 1,570 against 5,350), and the levels with meanies run 3-18% faster
+(C_1, a vertical Scrubbly level, from 15.0 to 17.7 frames a second). `tools/emu/jitcheck.mjs`
+draws each kind both ways at thousands of positions, across the window and beyond its edges,
+and compares the screens: they're the same.
 
 Moving meanies and platforms ("slow sprites") are not in the draw log. They stay drawn in each
 screen buffer, which remembers where it drew each one, and are only redrawn when they've moved

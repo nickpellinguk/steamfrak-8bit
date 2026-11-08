@@ -440,6 +440,16 @@ ASSERT MAX_DRAW <= MAX_OBJECTS
 .mv_vyf     SKIP MAX_MOVERS
 .mv_vyi     SKIP MAX_MOVERS
 .mv_pause   SKIP MAX_MOVERS         \ ticks to wait before moving
+\ The level's moving meanie, compiled (see jit_build)
+.jit_img    SKIP 1                  \ the image compiled (255: none)
+.jit_wb     SKIP 2                  \ its width in bytes at shift 0 and shift 2
+.jit_h      SKIP 1                  \ ... and its height
+.jit_lo     SKIP 2                  \ the code that draws it, at shift 0 and 2 (in JIT_BANK)
+.jit_hi     SKIP 2
+.jit_vec    SKIP 2                  \ (for jit_call)
+.jit_base   SKIP 4                  \ jit_build: its data at shift 0 and 2 (low bytes, then high)
+.jit_sbank  SKIP 1                  \ ... in this bank
+.jit_new    SKIP 1
 
 ASSERT P% <= &1100
 
@@ -1908,6 +1918,29 @@ FONT = &B900
     lda #CACHE_BANK : sta ROMSEL_COPY : sta ROMSEL
     jsr fe_win
     lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL
+    rts
+}
+
+\ Call the level's compiled meanie code (at jit_vec, in JIT_BANK), with X = the
+\ lines left in the first character cell and ptr = the first byte's address
+.jit_call
+{
+    lda #JIT_BANK : sta ROMSEL_COPY : sta ROMSEL
+    jsr go
+    lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL
+    rts
+.go
+    jmp (jit_vec)
+}
+
+\ For jit_compile (in JIT_BANK): A = the pixels, X = the mask, of the code at
+\ (src) in the sprite bank (its right 4 pixels: shift 0's or 2's). Y kept.
+.jit_peek
+{
+    lda jit_sbank : sta ROMSEL_COPY : sta ROMSEL    \ (ROMSEL_COPY too, for interrupts)
+    lda (src) : tax
+    lda CODE_RMASK,x : pha : lda CODE_RPIX,x : plx
+    pha : lda #JIT_BANK : sta ROMSEL_COPY : sta ROMSEL : pla
     rts
 }
 
@@ -3852,7 +3885,13 @@ DONE = &80                          \ n_chg: already redrawn this frame
 
 \ d = s for slow sprite X
 .commit_one
-    lda s_xl,x : sta d_xl,x : lda s_xh,x : sta d_xh,x
+    lda s_xl,x
+    ldy sl_kind,x : cpy #SL_PLATFORM : beq exact
+    \ (a meanie is drawn with its left edge at an even pixel, so the compiled code
+    \ for it only needs two pixel offsets: x takes the parity of the image's x origin)
+    ldy sl_img,x : eor img_xo,y : and #&FE : eor img_xo,y
+.exact
+    sta d_xl,x : lda s_xh,x : sta d_xh,x
     lda s_yl,x : sta d_yl,x : lda s_yh,x : sta d_yh,x
     rts
 
@@ -4052,7 +4091,7 @@ DONE = &80                          \ n_chg: already redrawn this frame
     lda sl_img,x : sta p_img
     lda d_xl,x : sta p_x : lda d_xh,x : sta p_x+1
     lda d_yl,x : sta p_y : lda d_yh,x : sta p_y+1
-    jsr plot
+    jsr plot_slow
     \ ... which is damage for the ones after it
     lda ds_base : clc : adc sl_i : tay
     lda dr_c0,y : sta dm_c0 : lda dr_c1,y : sta dm_c1
@@ -4060,6 +4099,70 @@ DONE = &80                          \ n_chg: already redrawn this frame
     jsr add_damage
 .p_next
     ldx sl_i : inx : cpx #MAX_SLOW : bne plot_loop
+    rts
+}
+
+\ Draw slow sprite X's image (p_img at p_x, p_y): the level's moving meanie with
+\ its compiled code (see jit_build) if it's wholly in the window and none of its
+\ character rows runs over the end of screen memory, else with plot
+.plot_slow
+{
+    lda p_img : cmp jit_img : beq try
+.generic
+    jmp plot
+.try
+    ldy p_img
+    \ left = p_x - xo (0-1023), at an even pixel (see commit_one); col = left / 4
+    lda p_x : sec : sbc img_xo,y : sta tmp : lda p_x+1 : sbc #0 : sta tmp+1
+    cmp #4 : bcs generic
+    lda tmp : and #1 : bne generic
+    lda tmp : and #2 : lsr a : tax                  \ (0: shift 0, 1: shift 2)
+    lda tmp+1 : lsr a : ror tmp : lsr a : ror tmp
+    lda tmp : sta colw
+    cmp clip_l : bcc generic
+    clc : adc jit_wb,x : bcs generic : cmp clip_r : beq h_ok : bcs generic
+.h_ok
+    \ top = p_y - yo; wholly in the window's rows: 0 <= top - clip_t <= 256 - h
+    lda p_y : sec : sbc img_yo,y : sta firsty : lda p_y+1 : sbc #0 : sta firsty+1
+    lda firsty : sec : sbc clip_t : sta tmp : lda firsty+1 : sbc clip_t+1 : bne generic
+    lda tmp : clc : adc jit_h : bcc v_ok : bne generic
+.v_ok
+    stx tmp+1
+    \ the character rows it covers (top / 8 to (top + h - 1) / 8, below 128)
+    lda firsty+1 : asl a : asl a : asl a : asl a : asl a : sta pl_i0
+    lda firsty : lsr a : lsr a : lsr a : ora pl_i0 : sta pl_i0
+    lda firsty : and #7 : clc : adc jit_h : sec : sbc #1
+    lsr a : lsr a : lsr a : clc : adc pl_i0 : sta pl_i1
+    \ ... none of them running past the end of screen memory (&7FFF)
+    ldy pl_i0
+.rows
+    jsr row_start                                   \ ptr = row Y's address at colw
+    lda jit_wb,x : asl a : asl a : asl a : clc : adc ptr : sta pl_line
+    lda ptr+1 : adc #0 : bpl row_ok
+    cmp #&80 : bne generic2 : lda pl_line : bne generic2   \ (ending at &7FFF is fine)
+.row_ok
+    cpy pl_i1 : beq rows_done : iny : bra rows
+.generic2
+    jmp plot
+.rows_done
+    ldy pl_i0 : jsr row_start
+    lda firsty : and #7 : tay : ora ptr : sta ptr   \ (its first line: cells are 8 aligned)
+    tya : eor #7 : clc : adc #1 : tay               \ Y = the lines left in that cell
+    ldx tmp+1
+    lda jit_lo,x : sta jit_vec : lda jit_hi,x : sta jit_vec+1
+    tya : tax
+    jmp jit_call
+}
+\ ptr = the screen address of character row Y (0-127) at byte column colw. X, Y kept.
+.row_start
+{
+    stz ptr+1
+    lda colw : asl a : rol ptr+1 : asl a : rol ptr+1 : asl a : rol ptr+1
+    clc : adc rowaddr_lo,y : sta ptr
+    lda ptr+1 : adc rowaddr_hi,y
+    cmp #&80 : bcc ok : sbc #&50
+.ok
+    sta ptr+1
     rts
 }
 
@@ -5034,7 +5137,40 @@ ROMSEL_ANDY = &80                   \ ROMSEL bit 7: ANDY at &8000-&8FFF
 
     jsr bg_items
     jsr unroll_bg
+    jsr jit_build
     clc
+    rts
+}
+
+\ Compile the level's moving meanie (no level has more than one kind) into code
+\ that draws it, at shifts 0 and 2 (see jit_compile, in JIT_BANK)
+.jit_build
+{
+    lda #255 : sta jit_img
+    ldx num_slow
+.find
+    dex : bpl look
+    rts
+.look
+    lda sl_kind,x : cmp #SL_PLATFORM : beq find
+    ldy sl_img,x : sty jit_new
+    lda img_h,y : sta jit_h
+    \ its data at shifts 0 and 2 (whose addresses are in bank 7), and its widths
+    lda #CACHE_BANK : sta ROMSEL_COPY : sta ROMSEL
+    lda img_lo0,y : sta jit_base : lda img_hi0,y : sta jit_base+2
+    lda img_lo2,y : sta jit_base+1 : lda img_hi2,y : sta jit_base+3
+    lda img_bank0,y : and img_bank2,y : sta jit_sbank
+    lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL
+    lda jit_sbank : bpl done                        \ (not coded at both)
+    and #&7F : sta jit_sbank
+    lda img_w,y : clc : adc #3 : lsr a : lsr a : sta jit_wb
+    lda img_w,y : clc : adc #5 : lsr a : lsr a : sta jit_wb+1
+    lda #JIT_BANK : sta ROMSEL_COPY : sta ROMSEL
+    jsr jit_compile                                 \ (carry set if there wasn't room)
+    lda #LEVEL_BANK : sta ROMSEL_COPY : sta ROMSEL
+    bcs done
+    lda jit_new : sta jit_img
+.done
     rts
 }
 
@@ -6611,13 +6747,95 @@ ORG SPRITES_END
 GUARD FRONTZ_ORG
 .music_start
 INCLUDE "src/sound.asm"
+
+\ ------------------------------------------------------------------------------
+\ The level's moving meanie, compiled (by jit_build, from its coded data) into
+\ code that draws it a byte at a time, one line after another, with ptr at its first byte
+\ and X the lines left in that character cell:
+\   a solid byte:    LDY #col*8 : LDA #pixels : STA (ptr),Y
+\   a partial one:   LDY #col*8 : LDA (ptr),Y : AND #mask : ORA #pixels : STA (ptr),Y
+\   (a transparent one: nothing)
+\   between lines:   DEX : BNE same : JSR jit_linestep : BRA next : .same INC ptr : .next
+\ and RTS at the end. Carry set if there wasn't room for it.
+\ ------------------------------------------------------------------------------
+JIT_BANK = MUSIC_BANK
+.jit_compile
+{
+    lda #LO(jit_code) : sta dp : lda #HI(jit_code) : sta dp+1
+    ldx #0
+.shift
+    stx u_prev
+    lda dp : sta jit_lo,x : lda dp+1 : sta jit_hi,x
+    lda jit_base,x : sta u_cl : lda jit_base+2,x : sta u_ch     \ (row 0's first byte)
+    lda jit_wb,x : sta u_i
+    lda jit_h : sta u_j
+.row
+    \ (room for another row: at most 10 bytes a byte, and the line step)
+    lda dp+1 : cmp #HI(JIT_END) - 1 : bcc room
+    rts                                             \ (carry set: no room)
+.room
+    lda u_cl : sta src : lda u_ch : sta src+1
+    stz u_s                                         \ (Y: the column * 8)
+    lda u_i : sta u_s4
+.col
+    jsr jit_peek : sta u_b : stx u_h                \ pixels, mask
+    lda src : clc : adc jit_h : sta src : bcc s_ok : inc src+1 : .s_ok   \ (the next column)
+    lda u_h : cmp #&FF : beq next_col               \ transparent: nothing
+    lda #&A0 : jsr emit : lda u_s : jsr emit        \ LDY #col*8
+    lda u_h : bne partial
+    lda #&A9 : jsr emit : lda u_b : jsr emit        \ LDA #pixels
+    bra store
+.partial
+    lda #&B1 : jsr emit : lda #ptr : jsr emit       \ LDA (ptr),Y
+    lda #&29 : jsr emit : lda u_h : jsr emit        \ AND #mask
+    lda #&09 : jsr emit : lda u_b : jsr emit        \ ORA #pixels
+.store
+    lda #&91 : jsr emit : lda #ptr : jsr emit       \ STA (ptr),Y
+.next_col
+    lda u_s : clc : adc #8 : sta u_s
+    dec u_s4 : beq row_end
+    jmp col
+.row_end
+    inc u_cl : bne r_ok : inc u_ch : .r_ok          \ (the next row)
+    dec u_j : beq rows_done
+    ldx #0
+.step
+    lda line_step,x : jsr emit : inx : cpx #10 : bne step
+    jmp row
+.rows_done
+    lda #&60 : jsr emit                             \ RTS
+    ldx u_prev : inx : cpx #2 : beq compiled
+    jmp shift
+.compiled
+    clc : rts
+.emit
+    sta (dp) : inc dp : bne e : inc dp+1 : .e
+    rts
+.line_step
+    EQUB &CA, &D0, 5, &20, LO(jit_linestep), HI(jit_linestep), &80, 2, &E6, ptr
+}
+
+\ Called at the end of a character cell: ptr (at its last line) to the first
+\ line of the cell below, wrapping round the screen, and X = 8 lines
+.jit_linestep
+{
+    lda ptr : clc : adc #LO(640 - 7) : sta ptr
+    lda ptr+1 : adc #HI(640 - 7)
+    cmp #&80 : bcc ok : sbc #&50
+.ok
+    sta ptr+1
+    ldx #8
+    rts
+}
+.jit_code
 .music_end
 SAVE "MUSIC", music_start, music_end
-PRINT "Music:", music_end - music_start, "bytes at", ~SPRITES_END, "in bank", MUSIC_BANK, "(", FRONTZ_ORG - music_end, "bytes free after it )"
+JIT_END = FRONTZ_ORG
+PRINT "Music:", music_end - music_start, "bytes at", ~SPRITES_END, "in bank", MUSIC_BANK, "(", FRONTZ_ORG - music_end, "bytes free after it, for the compiled meanie )"
 
 INCLUDE "src/gen/disc.asm"
 
 PRINT "Code from", ~code_start, "to", ~end, "(", end - code_start, "bytes ), free:", SCREEN - ram_top
 \ Addresses used by test scripts (profiling and poking variables)
 PRINT "TIMING", ~main_loop, ~t_restore, ~t_scroll, ~t_draw, ~t_vsync, ~t_after_vsync, ~t_logic, ~t_logic_done, ~t_slow, ~t_slow_done
-PRINT "SYMBOLS loops", ~loops, "sbase", ~sbase, "rawbits", ~rawbits, "p_x", ~p_x, "p_y", ~p_y, "plot", ~plot, "p_mode", ~p_mode, "clip_l", ~clip_l, "clip_r", ~clip_r, "clip_t", ~clip_t, "clip_h", ~clip_h, "img_xo", ~img_xo, "img_yo", ~img_yo, "img_w", ~img_w, "img_h", ~img_h, "img_bank0", ~img_bank0, "img_bank3", ~img_bank3, "view_row", ~view_row, "scrollrow", ~scrollrow, "brow", ~brow, "view_col", ~view_col, "scroll_dir", ~scroll_dir, "done_ticks", ~done_ticks, "done_restarts", ~done_restarts, "done_gems", ~done_gems, "snd_tick", ~snd_tick, "snd_sfx_req", ~snd_sfx_req, "MUSIC_BANK", ~MUSIC_BANK, "win_ticks", ~win_ticks, "bwon", ~bwon, "carry_on_yoyo", ~carry_on_yoyo, "tface", ~tface, "carry", ~carry, "dropped", ~dropped, "yo_x", ~yo_x, "trogg_standing", ~trogg_standing, "trogg_falling", ~trogg_falling, "trogg_climbing", ~trogg_climbing, "xmove", ~xmove, "ymove", ~ymove, "xvel", ~xvel, "tyf", ~tyf, "res_i", ~res_i, "res_found", ~res_found, "res_y", ~res_y, "res_yf", ~res_yf, "doyoyo", ~doyoyo, "tclimb", ~tclimb, "x_max", ~x_max, "level_h", ~level_h, "snd_tune", ~snd_tune, "snd_qb", ~snd_qb, "v_phase", ~v_phase, "v_left", ~v_left, "v_ord", ~v_ord, "v_on", ~v_on, "v_att", ~v_att, "snd_music_req", ~snd_music_req, "snd_cur", ~snd_cur, "snd_music_opt", ~snd_music_opt, "snd_sfx_opt", ~snd_sfx_opt, "snd_acc", ~snd_acc, "draw_kind", ~draw_kind, "num_keys", ~num_keys, "lvl_ticks", ~lvl_ticks, "done_valid", ~done_valid, "fe_sel", ~fe_sel, "cur_level", ~cur_level, "num_plats", ~num_plats, "num_ladders", ~num_ladders, "num_draw", ~num_draw, "num_slow", ~num_slow, "plat_w", ~plat_w, "plat_x0l", ~plat_x0l, "plat_x0h", ~plat_x0h, "plat_y0l", ~plat_y0l, "plat_y0h", ~plat_y0h, "plat_moving", ~plat_moving, "plat_bouncy", ~plat_bouncy, "lad_xl", ~lad_xl, "lad_xh", ~lad_xh, "lad_yl", ~lad_yl, "lad_yh", ~lad_yh, "lad_hl", ~lad_hl, "lad_hh", ~lad_hh, "lad_ext", ~lad_ext, "draw_img", ~draw_img, "draw_xl", ~draw_xl, "draw_xh", ~draw_xh, "draw_yl", ~draw_yl, "draw_yh", ~draw_yh, "sl_kind", ~sl_kind, "sl_img", ~sl_img, "sl_x0l", ~sl_x0l, "sl_x0h", ~sl_x0h, "sl_y0l", ~sl_y0l, "sl_y0h", ~sl_y0h, "sl_aminl", ~sl_aminl, "sl_aminh", ~sl_aminh, "sl_amaxl", ~sl_amaxl, "sl_amaxh", ~sl_amaxh, "sl_bminl", ~sl_bminl, "sl_bminh", ~sl_bminh, "sl_bmaxl", ~sl_bmaxl, "sl_bmaxh", ~sl_bmaxh, "sl_vf", ~sl_vf, "sl_vi", ~sl_vi, "sl_vy", ~sl_vy, "sl_plat", ~sl_plat, "sl_wait", ~sl_wait, "sl_simple", ~sl_simple, "plat_yh", ~plat_yh, "level_bg", ~level_bg, "trogg_x0", ~trogg_x0, "trogg_y0", ~trogg_y0, "dmg_n", ~dmg_n, "s_alive", ~s_alive, "s_xl", ~s_xl, "s_xh", ~s_xh, "s_yl", ~s_yl, "s_yh", ~s_yh, "cur_plat", ~cur_plat, "plat_xl", ~plat_xl, "plat_xh", ~plat_xh, "plat_yl", ~plat_yl, "mv_img", ~mv_img, "mv_vxi", ~mv_vxi, "mv_vyi", ~mv_vyi, "mv_vyf", ~mv_vyf, "mv_yl", ~mv_yl, "mv_yh", ~mv_yh, "mv_pause", ~mv_pause, "bal_timer", ~bal_timer, "dag_timer", ~dag_timer, "bscroll", ~bscroll, "front", ~front, "vsyncs", ~vsyncs, "yo_len", ~yo_len, "mv_active", ~mv_active, "mv_xl", ~mv_xl, "mv_xh", ~mv_xh, "tface", ~tface, "keys_found", ~keys_found, "gems_found", ~gems_found, "won", ~won, "have_cp", ~have_cp, "restarts", ~restarts, "alive", ~alive, "newcol", ~newcol, "dead", ~dead, "tx", ~tx, "ty", ~ty, "tstate", ~tstate, "tv", ~tv, "dead", ~dead, "anim", ~anim, "p_img", ~p_img, "bank", ~bank, "oldbank", ~oldbank, "dptr", ~dptr, "scrollcol", ~scrollcol
+PRINT "SYMBOLS loops", ~loops, "plot_slow", ~plot_slow, "jit_img", ~jit_img, "jit_wb", ~jit_wb, "jit_h", ~jit_h, "sbase", ~sbase, "rawbits", ~rawbits, "p_x", ~p_x, "p_y", ~p_y, "plot", ~plot, "p_mode", ~p_mode, "clip_l", ~clip_l, "clip_r", ~clip_r, "clip_t", ~clip_t, "clip_h", ~clip_h, "img_xo", ~img_xo, "img_yo", ~img_yo, "img_w", ~img_w, "img_h", ~img_h, "img_bank0", ~img_bank0, "img_bank3", ~img_bank3, "view_row", ~view_row, "scrollrow", ~scrollrow, "brow", ~brow, "view_col", ~view_col, "scroll_dir", ~scroll_dir, "done_ticks", ~done_ticks, "done_restarts", ~done_restarts, "done_gems", ~done_gems, "snd_tick", ~snd_tick, "snd_sfx_req", ~snd_sfx_req, "MUSIC_BANK", ~MUSIC_BANK, "win_ticks", ~win_ticks, "bwon", ~bwon, "carry_on_yoyo", ~carry_on_yoyo, "tface", ~tface, "carry", ~carry, "dropped", ~dropped, "yo_x", ~yo_x, "trogg_standing", ~trogg_standing, "trogg_falling", ~trogg_falling, "trogg_climbing", ~trogg_climbing, "xmove", ~xmove, "ymove", ~ymove, "xvel", ~xvel, "tyf", ~tyf, "res_i", ~res_i, "res_found", ~res_found, "res_y", ~res_y, "res_yf", ~res_yf, "doyoyo", ~doyoyo, "tclimb", ~tclimb, "x_max", ~x_max, "level_h", ~level_h, "snd_tune", ~snd_tune, "snd_qb", ~snd_qb, "v_phase", ~v_phase, "v_left", ~v_left, "v_ord", ~v_ord, "v_on", ~v_on, "v_att", ~v_att, "snd_music_req", ~snd_music_req, "snd_cur", ~snd_cur, "snd_music_opt", ~snd_music_opt, "snd_sfx_opt", ~snd_sfx_opt, "snd_acc", ~snd_acc, "draw_kind", ~draw_kind, "num_keys", ~num_keys, "lvl_ticks", ~lvl_ticks, "done_valid", ~done_valid, "fe_sel", ~fe_sel, "cur_level", ~cur_level, "num_plats", ~num_plats, "num_ladders", ~num_ladders, "num_draw", ~num_draw, "num_slow", ~num_slow, "plat_w", ~plat_w, "plat_x0l", ~plat_x0l, "plat_x0h", ~plat_x0h, "plat_y0l", ~plat_y0l, "plat_y0h", ~plat_y0h, "plat_moving", ~plat_moving, "plat_bouncy", ~plat_bouncy, "lad_xl", ~lad_xl, "lad_xh", ~lad_xh, "lad_yl", ~lad_yl, "lad_yh", ~lad_yh, "lad_hl", ~lad_hl, "lad_hh", ~lad_hh, "lad_ext", ~lad_ext, "draw_img", ~draw_img, "draw_xl", ~draw_xl, "draw_xh", ~draw_xh, "draw_yl", ~draw_yl, "draw_yh", ~draw_yh, "sl_kind", ~sl_kind, "sl_img", ~sl_img, "sl_x0l", ~sl_x0l, "sl_x0h", ~sl_x0h, "sl_y0l", ~sl_y0l, "sl_y0h", ~sl_y0h, "sl_aminl", ~sl_aminl, "sl_aminh", ~sl_aminh, "sl_amaxl", ~sl_amaxl, "sl_amaxh", ~sl_amaxh, "sl_bminl", ~sl_bminl, "sl_bminh", ~sl_bminh, "sl_bmaxl", ~sl_bmaxl, "sl_bmaxh", ~sl_bmaxh, "sl_vf", ~sl_vf, "sl_vi", ~sl_vi, "sl_vy", ~sl_vy, "sl_plat", ~sl_plat, "sl_wait", ~sl_wait, "sl_simple", ~sl_simple, "plat_yh", ~plat_yh, "level_bg", ~level_bg, "trogg_x0", ~trogg_x0, "trogg_y0", ~trogg_y0, "dmg_n", ~dmg_n, "s_alive", ~s_alive, "s_xl", ~s_xl, "s_xh", ~s_xh, "s_yl", ~s_yl, "s_yh", ~s_yh, "cur_plat", ~cur_plat, "plat_xl", ~plat_xl, "plat_xh", ~plat_xh, "plat_yl", ~plat_yl, "mv_img", ~mv_img, "mv_vxi", ~mv_vxi, "mv_vyi", ~mv_vyi, "mv_vyf", ~mv_vyf, "mv_yl", ~mv_yl, "mv_yh", ~mv_yh, "mv_pause", ~mv_pause, "bal_timer", ~bal_timer, "dag_timer", ~dag_timer, "bscroll", ~bscroll, "front", ~front, "vsyncs", ~vsyncs, "yo_len", ~yo_len, "mv_active", ~mv_active, "mv_xl", ~mv_xl, "mv_xh", ~mv_xh, "tface", ~tface, "keys_found", ~keys_found, "gems_found", ~gems_found, "won", ~won, "have_cp", ~have_cp, "restarts", ~restarts, "alive", ~alive, "newcol", ~newcol, "dead", ~dead, "tx", ~tx, "ty", ~ty, "tstate", ~tstate, "tv", ~tv, "dead", ~dead, "anim", ~anim, "p_img", ~p_img, "bank", ~bank, "oldbank", ~oldbank, "dptr", ~dptr, "scrollcol", ~scrollcol
