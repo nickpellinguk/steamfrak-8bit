@@ -3,7 +3,7 @@
 //   ./build.sh && cd tools/emu && node commands.mjs room_0 'R:200 12L:100 @300,100,0:5 U:200'
 //
 // Each step is: characters to type, frames to watch, and a note; or @x,y,face:frames to put Trogg
-// somewhere, standing; or a physical key held (+KeyX:frames).
+// somewhere, standing; or a physical key held (+KeyX:frames); or !symbol=value to poke a variable.
 import { MachineSession } from 'jsbeeb';
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { deflateSync } from 'zlib';
@@ -40,17 +40,36 @@ await s.runFrames(300);
 if (r8(sym.cur_level) !== li) throw new Error('level did not load');
 
 const b5 = a => cpu.ramRomOs[cpu.romOffset + 5 * 16384 + a - 0x8000];   // (the command variables are in bank 5)
-const state = () => `trogg ${r16(sym.tx)},${r16(sym.ty)}+${r8(sym.tyf)}/20 state ${r8(sym.tstate)} face ${r8(sym.tface)} ` +
+const state = () => `cp ${r8(sym.save_cp)}/${r8(sym.have_cp)}@${r16(sym.cp_tx)},${r16(sym.cp_ty)} keys ${r8(sym.keys_found)} trogg ${r16(sym.tx)},${r16(sym.ty)}+${r8(sym.tyf)}/20 state ${r8(sym.tstate)} face ${r8(sym.tface)} ` +
     `o ${b5(sym.o_keys)} count ${b5(sym.cmd_cl) | b5(sym.cmd_ch) << 8} next ${b5(sym.cmd_nl) | b5(sym.cmd_nh) << 8} q ${b5(sym.cmd_qh)}-${b5(sym.cmd_qt)} dead ${r8(sym.dead)}`;
 console.log(room, '|', state());
 if (process.env.GEO) {
     const bank6 = a => a >= 0x8000 && a < 0xC000 ? cpu.ramRomOs[cpu.romOffset + 6 * 16384 + a - 0x8000] : r8(a);
     const s16 = v => (v > 32767 ? v - 65536 : v);
     for (let i = 0; i < r8(sym.num_plats); i++) console.log('plat', i, s16(bank6(sym.plat_xl + i) | bank6(sym.plat_xh + i) << 8), s16(bank6(sym.plat_yl + i) | bank6(sym.plat_yh + i) << 8), 'w', bank6(sym.plat_w + i));
+    const bk = a => cpu.ramRomOs[cpu.romOffset + 6 * 16384 + a - 0x8000];
+    for (let i = 0; i < r8(sym.num_draw); i++) if (bk(sym.draw_kind + i) === 1) console.log('key', i, s16(bk(sym.draw_xl + i) | bk(sym.draw_xh + i) << 8), s16(bk(sym.draw_yl + i) | bk(sym.draw_yh + i) << 8));
     for (let i = 0; i < r8(sym.num_ladders); i++) console.log('ladder', i, bank6(sym.lad_xl + i) | bank6(sym.lad_xh + i) << 8, bank6(sym.lad_yl + i) | bank6(sym.lad_yh + i) << 8, 'h', bank6(sym.lad_hl + i) | bank6(sym.lad_hh + i) << 8);
 }
 if (process.env.WATCH) cpu.debugWrite.add((addr, b) => { if (addr === sym[process.env.WATCH]) console.log('    write', process.env.WATCH, b, 'pc', cpu.pc.toString(16), 'ret', ((cpu.readmem(0x101 + cpu.s) | cpu.readmem(0x102 + cpu.s) << 8) + 1).toString(16), 'state', r8(sym.tstate)); return false; });
 if (process.env.AT) cpu.debugInstruction.add(addr => { if (addr === parseInt(process.env.AT, 16)) console.log('    at', process.env.AT, 'k', [0, 1, 2, 3, 4].map(i => r8(sym.k_left + i)).join(''), 'A', cpu.a, 'X', cpu.x, 'Y', cpu.y); return false; });
+function screenshot(name) {
+    const v = s._video, W = 1024, H = 625;
+    const l = v.leftBorder, t = v.topBorder, w = W - l - v.rightBorder, h = H - t - v.bottomBorder;
+    const fb = s._completeFb8, rgb = Buffer.alloc(w * h * 3);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const i = ((y + t) * W + x + l) * 4, o = (y * w + x) * 3;
+        rgb[o] = fb[i]; rgb[o + 1] = fb[i + 1]; rgb[o + 2] = fb[i + 2];
+    }
+    const crcT = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+    const crc = b => { let c = 0xffffffff; for (const x of b) c = crcT[(c ^ x) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+    const chunk = (ty, d) => { const n = Buffer.alloc(4); n.writeUInt32BE(d.length); const td = Buffer.concat([Buffer.from(ty), d]); const c = Buffer.alloc(4); c.writeUInt32BE(crc(td)); return Buffer.concat([n, td, c]); };
+    const raw = Buffer.alloc((w * 3 + 1) * h);
+    for (let y = 0; y < h; y++) rgb.copy(raw, y * (w * 3 + 1) + 1, y * w * 3, (y + 1) * w * 3);
+    const ih = Buffer.alloc(13); ih.writeUInt32BE(w, 0); ih.writeUInt32BE(h, 4); ih[8] = 8; ih[9] = 2;
+    writeFileSync(`${process.env.SHOTS || '.'}/${name}.png`, Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ih), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]));
+}
+
 const steps = (process.argv[3] || 'R:200').split(' ').map(t => t.split(':'));
 const name = c => /[0-9]/.test(c) ? 'Digit' + c : 'Key' + c.toUpperCase();
 for (const [keys, frames, note] of steps) {
@@ -61,6 +80,15 @@ for (const [keys, frames, note] of steps) {
         cpu.writemem(sym.tyf, 0); cpu.writemem(sym.tstate, 0); cpu.writemem(sym.tface, f || 0);
         await s.runFrames(+frames || 2);
         console.log(`@ ${state()}`);
+        continue;
+    }
+    if (keys.startsWith('=')) {          // =n: a screenshot after each of n frames
+        for (let f = 0; f < +keys.slice(1); f++) { await s.runFrames(1); screenshot(`${note || 'shot'}_${String(f).padStart(2, '0')}`); }
+        continue;
+    }
+    if (keys.startsWith('!')) {          // !symbol=value: poke a variable
+        const [k, v] = keys.slice(1).split('=');
+        cpu.writemem(sym[k], +v);
         continue;
     }
     let held = [];

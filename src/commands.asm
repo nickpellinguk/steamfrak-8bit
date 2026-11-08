@@ -9,7 +9,7 @@
 \ going. Without a count, L and R walk to the end of the platform, U and D climb
 \ to the end of a ladder (U from standing jumps, or steps onto a ladder), J
 \ jumps the way he faces, and Y holds the yoyo key. L or R facing the other way
-\ just turns him round. Holding a real key stops a command.
+\ just turns him round. Holding a real key stops a command and empties the queue.
 \
 \ In JIT_BANK, called through call5: cmd_keys from read_keys, and cmd_pre and
 \ cmd_post either side of trogg_move.
@@ -45,15 +45,16 @@ ASSERT ty = tx + SV_TY AND tyf = tx + SV_TYF AND tstate = tx + SV_STATE
     sta cmd_held,x : dex : bpl held
     sta cmd_live
 .live
-    \ The real keys held (bits as o_keys). Pressing one stops a command, and
-    \ (as releasing it does in the Steam version) lets go of that key.
+    \ The real keys held. Pressing one stops any command, and empties the queue.
+    \ (The original only stops a counted command, so a jump the debounce after
+    \ landing stopped held up until up was pressed.)
     lda #0 : ldx #4
 .phys
     asl a : ora k_left,x : dex : bpl phys
-    tay : sta cmd_t
-    beq no_phys
-    jsr cmd_stop
-    lda cmd_t : eor #&FF : and o_keys : sta o_keys
+    sta cmd_t
+    tay : beq no_phys
+    stz cmd_cl : stz cmd_ch : stz o_keys : stz cmd_nl : stz cmd_nh
+    lda cmd_qt : sta cmd_qh
 .no_phys
     \ UpdateKeyOverrides: count down, letting go at 0
     lda cmd_cl : ora cmd_ch : beq counted
@@ -80,7 +81,9 @@ ASSERT ty = tx + SV_TY AND tyf = tx + SV_TYF AND tstate = tx + SV_STATE
     lda cmd_t : ora o_keys : bne hold
     ldx cmd_qh : cpx cmd_qt : beq hold
     lda cmd_q,x
-    cmp #2 : bcs take               \ (L and R wait while he falls)
+    cmp #2 : bcc wait               \ (L, R and J wait while he falls: the
+    cmp #4 : bne take               \ original drops a J then, so a J typed
+.wait                               \ while getting off a ladder was lost)
     ldy tstate : cpy #ST_FALL : beq hold
 .take
     pha
@@ -99,9 +102,11 @@ ASSERT ty = tx + SV_TY AND tyf = tx + SV_TYF AND tstate = tx + SV_STATE
     pla : clc : adc cmd_nl : sta cmd_nl : bcc hold : inc cmd_nh
     bra hold
 
-\ Each command ends here
+\ Each command ends here. Its keys are pressed afresh (typing it, they were let
+\ go), so no debounce holds them back.
 .^cmd_done
     lda #CMD_FIRST : tsb cmd_f
+    stz ud_db : stz lr_db : stz yo_db
 .^cmd_turned
     stz cmd_nl : stz cmd_nh
 .hold
