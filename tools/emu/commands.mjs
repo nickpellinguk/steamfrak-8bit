@@ -40,7 +40,7 @@ await s.runFrames(300);
 if (r8(sym.cur_level) !== li) throw new Error('level did not load');
 
 const b5 = a => cpu.ramRomOs[cpu.romOffset + 5 * 16384 + a - 0x8000];   // (the command variables are in bank 5)
-const state = () => `cp ${r8(sym.save_cp)}/${r8(sym.have_cp)}@${r16(sym.cp_tx)},${r16(sym.cp_ty)} keys ${r8(sym.keys_found)} trogg ${r16(sym.tx)},${r16(sym.ty)}+${r8(sym.tyf)}/20 state ${r8(sym.tstate)} face ${r8(sym.tface)} ` +
+const state = () => `won ${r8(sym.won)} cp ${r8(sym.save_cp)}/${r8(sym.have_cp)}@${r16(sym.cp_tx)},${r16(sym.cp_ty)} keys ${r8(sym.keys_found)} trogg ${r16(sym.tx)},${r16(sym.ty)}+${r8(sym.tyf)}/20 state ${r8(sym.tstate)} face ${r8(sym.tface)} ` +
     `o ${b5(sym.o_keys)} count ${b5(sym.cmd_cl) | b5(sym.cmd_ch) << 8} next ${b5(sym.cmd_nl) | b5(sym.cmd_nh) << 8} q ${b5(sym.cmd_qh)}-${b5(sym.cmd_qt)} dead ${r8(sym.dead)}`;
 console.log(room, '|', state());
 if (process.env.GEO) {
@@ -49,6 +49,7 @@ if (process.env.GEO) {
     for (let i = 0; i < r8(sym.num_plats); i++) console.log('plat', i, s16(bank6(sym.plat_xl + i) | bank6(sym.plat_xh + i) << 8), s16(bank6(sym.plat_yl + i) | bank6(sym.plat_yh + i) << 8), 'w', bank6(sym.plat_w + i));
     const bk = a => cpu.ramRomOs[cpu.romOffset + 6 * 16384 + a - 0x8000];
     for (let i = 0; i < r8(sym.num_draw); i++) if (bk(sym.draw_kind + i) === 1) console.log('key', i, s16(bk(sym.draw_xl + i) | bk(sym.draw_xh + i) << 8), s16(bk(sym.draw_yl + i) | bk(sym.draw_yh + i) << 8));
+    for (let i = 0; i < r8(sym.num_slow); i++) if (r8(sym.s_alive + i)) console.log('slow', i, s16(r8(sym.s_xl + i) | r8(sym.s_xh + i) << 8), s16(r8(sym.s_yl + i) | r8(sym.s_yh + i) << 8));
     for (let i = 0; i < r8(sym.num_ladders); i++) console.log('ladder', i, bank6(sym.lad_xl + i) | bank6(sym.lad_xh + i) << 8, bank6(sym.lad_yl + i) | bank6(sym.lad_yh + i) << 8, 'h', bank6(sym.lad_hl + i) | bank6(sym.lad_hh + i) << 8);
 }
 if (process.env.WATCH) cpu.debugWrite.add((addr, b) => { if (addr === sym[process.env.WATCH]) console.log('    write', process.env.WATCH, b, 'pc', cpu.pc.toString(16), 'ret', ((cpu.readmem(0x101 + cpu.s) | cpu.readmem(0x102 + cpu.s) << 8) + 1).toString(16), 'state', r8(sym.tstate)); return false; });
