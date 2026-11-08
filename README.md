@@ -135,12 +135,12 @@ and is listed: Trogg can never get near it.)
 | `&0400-&07FF` | save area for the main-RAM screen buffer (BASIC's workspace, unused); while a level loads, the packed level |
 | `&0900-&0CFF` | save area for the shadow screen buffer (RS423/cassette buffers, soft keys, UDGs); while a level loads, a column of the background and the list of things in it |
 | `&0E00-&10FF` | other variables: object states, checkpoint, draw logs, moving objects |
-| `&1100-&2FFF` | drawing code and its tables, each image's size and origin, the sound player's variables, instruments and pitch and loudness tables (212 bytes free) |
+| `&1100-&2FFF` | drawing code and its tables, each image's size and origin, the sound player's variables, instruments and pitch and loudness tables (16 bytes free) |
 | `&3000-&7FFF` | MODE 1 screen, **double buffered**: main RAM and shadow RAM. While a level loads (with the screen blanked) it holds the loader's workspace (`&3000-&4FFF`: the dictionary's hash table, a row of the background, the lines being built) and the loader itself (`&6000`) |
 | SWRAM bank 4 | every sprite, as 5-pixel codes (14.3KB, see "Sprites"), including the platforms and ladders the backgrounds are unrolled from; 690 bytes free; then the code tables (`&BC00-&BFFF`) |
-| SWRAM bank 5 | the music and sound effects player and the tunes (4.3KB at `&8000`, see "Sound"); 8.2KB free; then the front end, packed (2.5KB, see below), then where shift 3 of each image is (`img_bank3`, `img_lo3`, `img_hi3`, 240 bytes at `&BB10`), then a save area for meanies flying off (the top 1KB) |
-| SWRAM bank 6 | collision spans and tables (from `&8000`), the **game logic** (to `&AE00`), then the current level's tables and the second save area for meanies flying off (368 bytes free). Stays paged in while playing |
-| SWRAM bank 7 | the current level's background, unrolled when it starts (`&8000-&A9FF`, see below), or, while the menus or the level-complete screen are up, the front end (unpacked to `&8000`); the front end's records and the unpacker (`&AA00`); the code that paints the background; where shifts 0-2 of each image are (`img_bank0-2`, `img_lo0-2`, `img_hi0-2`, 720 bytes: `plot` and the background unroller page bank 7 in to read them); the level loader, the code that starts a level and the boot code, packed (3.2KB at the top, unpacked to `&6000` when a level loads); 167 bytes free |
+| SWRAM bank 5 | the music and sound effects player and the tunes (4.3KB at `&8000`, see "Sound"), and the meanie compiler; then the level's moving meanie, compiled (up to 7.9KB; the largest, the Scrubbly, is 5.1KB); then the front end, packed (2.5KB, see below), then where shift 3 of each image is (`img_bank3`, `img_lo3`, `img_hi3`, 240 bytes at `&BB10`), then a save area for meanies flying off (the top 1KB) |
+| SWRAM bank 6 | collision spans and tables (from `&8000`), the **game logic** (to `&AE00`), then the current level's tables and the second save area for meanies flying off (87 bytes free). Stays paged in while playing |
+| SWRAM bank 7 | the current level's background, unrolled when it starts (`&8000-&A9FF`, see below), or, while the menus or the level-complete screen are up, the front end (unpacked to `&8000`); the front end's records and the unpacker (`&AA00`); the code that paints the background; where shifts 0-2 of each image are (`img_bank0-2`, `img_lo0-2`, `img_hi0-2`, 720 bytes: `plot` and the background unroller page bank 7 in to read them); the level loader, the code that starts a level and the boot code, packed (3.2KB at the top, unpacked to `&6000` when a level loads); 73 bytes free |
 | HAZEL (`&C000-&DFFF`) and ANDY (`&8000-&8FFF`) | **all 55 levels**, packed: 11.8KB, about 215 bytes each. `&8800-&88FF` of ANDY is left to the MOS |
 
 ### The packed front end
@@ -290,7 +290,10 @@ give each code's left and right 4 pixels as a screen byte and the mask for each 
 `CODE_LMASK`, `CODE_RPIX`, `CODE_RMASK`). `plot` sets the column routines' table operands for
 the shift (left half for an odd one, right for an even one), so drawing a byte costs the same
 as before: `lda (dp),y : tax : lda (ptr),y : and mask,x : ora pixels,x : sta (ptr),y`. Code 0
-is 5 transparent pixels, which is skipped. That takes the sprites from 23.8KB, pre-shifted, to
+is 5 transparent pixels, which is skipped; codes 128-255 are 5 solid pixels (about half of all
+sprite bytes), which need no mask, so the plain and raw-copying plotters test bit 7 first
+(`bmi`) and just store them: `tax : lda pixels,x : sta (ptr),y`, 8 cycles less. (Saving the
+background reads the screen anyway, so that plotter doesn't bother.) That takes the sprites from 23.8KB, pre-shifted, to
 14.3KB, all in bank 4 with the tables, which frees 8KB of bank 5. (The timer's image, made at run
 time, is screen bytes: its bank number doesn't have bit 7 set, and `plot` uses the plain mask
 table, as the font and the menus' icons do.) The background unroller decodes through the right
@@ -361,6 +364,22 @@ sprite bank to draw.
 
 ### Drawing moving meanies and platforms
 
+**Compiled meanies.** No level has more than one kind of moving meanie (Scrubbly, Poglet or
+Hooter), and each has one frame, so when a level loads, `jit_build` (in the loader) and
+`jit_compile` (in bank 5) compile it into code that draws it, one line after another, at two
+pixel offsets (0 and 2): for each byte of a line, a solid one is `LDY #col*8 : LDA #pixels :
+STA (ptr),Y`, a partly transparent one `LDY #col*8 : LDA (ptr),Y : AND #mask : ORA #pixels :
+STA (ptr),Y`, and a transparent one nothing; between lines, `DEX : BNE same : JSR jit_linestep
+: BRA next : .same INC ptr : .next` (`jit_linestep` moves on to the next character row). A
+meanie's drawn x is kept so its left edge is at an even pixel (`commit_one`: its movement is
+unchanged, it's just drawn up to a pixel to the side). `plot_slow` uses the compiled code when
+the meanie is wholly in the window and none of its character rows runs over the end of screen
+memory (where `(ptr),Y` would run on past `&7FFF`), else `plot`. It takes about a third of the
+instructions (a Scrubbly: 1,570 against 5,350), and the levels with meanies run 3-18% faster
+(C_1, a vertical Scrubbly level, from 15.0 to 17.7 frames a second). `tools/emu/jitcheck.mjs`
+draws each kind both ways at thousands of positions, across the window and beyond its edges,
+and compares the screens: they're the same.
+
 Moving meanies and platforms ("slow sprites") are not in the draw log. They stay drawn in each
 screen buffer, which remembers where it drew each one, and are only redrawn when they've moved
 since that buffer last drew them, or something painted over them:
@@ -376,11 +395,15 @@ since that buffer last drew them, or something painted over them:
   ladders (the converter checks, in `slow_simple_flags`). When one of those moves, the character
   cells it will completely cover over empty background aren't erased first, and the sprite is
   copied into them without masking (`raw_setup`, `PM_RAWPLOT`).
-* What is drawn, and what Trogg and the yoyo collide with, is each sprite's display position.
-  Meanies near the screen take turns to catch up with where they really are, so they move in
-  steps of several pixels. Each drawn frame moves at most one Scrubbly, two Poglets and three
-  Hooters (`turn_quota`). Moving platforms, and Scrubblies riding them, are shown where they are
-  every frame.
+* What is drawn, and what Trogg and the yoyo collide with, is each sprite's display position,
+  brought up to date every frame (a meanie's x so its left edge is at an even pixel).
+* A moving meanie only moves while it's **relevant** to Trogg (`relevant`, in `update_slow`):
+  while the box it moves in (a Scrubbly's walk, a Poglet's climb, a Hooter's jump, at most
+  `HOOTER_PEAK` pixels, which the converter works out) is above or below him (within 12 pixels
+  of his middle across), or level with him (within his 34 rows) and within his yoyo's reach (95
+  pixels either side). The others stand still, and carry on from where they are once they're
+  relevant. (A Scrubbly riding a moving platform always moves, to keep up with it; moving
+  platforms always move.) So only the meanies that can matter to him cost time to move and draw.
 
 Moving objects have 16.8 fixed-point positions and
 8.8 velocities, so they move at the Steam version's fractional speeds. Spawn positions use a

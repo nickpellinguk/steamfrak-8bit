@@ -29,7 +29,8 @@ it four times, pre-shifted, each byte is stored as a code for 5 pixels: in strea
 B, pixels 4k-3 to 4k+1 (shifts 3 and 2). The graphics use fewer than 256 different 5-pixel
 values, so a code is a byte, and four tables (in bank 4, with all the sprites) give each
 code's left and right 4 pixels as a screen byte, and the mask for each (both bits set for a
-transparent pixel). Code 0 is 5 transparent pixels. The data is column by column (each byte
+transparent pixel). Code 0 is 5 transparent pixels, 1-127 have some transparent, and 128-255
+are 5 solid pixels, which the plotter stores without masking. The data is column by column (each byte
 column is "height" codes, top to bottom), the order the plotter walks the screen.
 """
 import json
@@ -165,28 +166,34 @@ def shifted_columns(rows, shift):
     return bytes(out)
 
 
-# The 5-pixel values the graphics use, in the order they're met (code 0: all transparent)
-WINDOWS = {(0, 0, 0, 0, 0): 0}
+# The code for each 5-pixel value the graphics use (see number_windows)
+WINDOWS = {}
 
 
-def coded_columns(rows, first, nb):
-    """Encode one frame as nb byte columns of 5-pixel codes, window k being pixels first + 4k to
+def window_columns(rows, first, nb):
+    """One frame as nb byte columns of 5-pixel values, window k being pixels first + 4k to
     first + 4k + 4 (see the module docstring), column by column"""
     w = len(rows[0])
-    out = bytearray()
-    for col in range(nb):
-        for row in rows:
-            v = tuple(row[x] if 0 <= x < w else 0 for x in range(first + 4 * col, first + 4 * col + 5))
-            if v not in WINDOWS:
-                WINDOWS[v] = len(WINDOWS)
-            out.append(WINDOWS[v] & 0xFF)
-    return bytes(out)
+    return [tuple(row[x] if 0 <= x < w else 0 for x in range(first + 4 * col, first + 4 * col + 5))
+            for col in range(nb) for row in rows]
+
+
+def number_windows(windows):
+    """Code 0 for 5 transparent pixels, 1-127 for those with some transparent, 128-255 for 5
+    solid pixels (which the plotter just stores, unmasked: it tests bit 7 first)"""
+    empty = (0, 0, 0, 0, 0)
+    some = [v for v in dict.fromkeys(windows) if v != empty and 0 in v]
+    solid = [v for v in dict.fromkeys(windows) if 0 not in v]
+    if len(some) > 127 or len(solid) > 128:
+        raise SystemExit('The graphics use %d partly transparent and %d solid 5-pixel values; '
+                         'at most 127 and 128 can be coded' % (len(some), len(solid)))
+    WINDOWS[empty] = 0
+    WINDOWS.update({v: 1 + i for i, v in enumerate(some)})
+    WINDOWS.update({v: 128 + i for i, v in enumerate(solid)})
 
 
 def code_tables():
     """Each code's left 4 pixels as a screen byte, their mask, then the same for its right 4"""
-    if len(WINDOWS) > 256:
-        raise SystemExit('The graphics use %d different 5-pixel values; at most 256 can be coded' % len(WINDOWS))
     mask = mask_table()
     lpix, rpix = [0] * 256, [0] * 256
     for v, c in WINDOWS.items():
@@ -696,22 +703,15 @@ def main():
         need.setdefault(spr, set()).add(0)          # the background is unrolled from these
     banks = [bytearray() for _ in BANKS]
     stored = {}     # sprite data already stored (identical images share it)
+    streams = []    # (entry, the shifts it's for, its 5-pixel values), coded once they're all known
     def store(entry, rows, shifts):
         # (two streams of 5-pixel codes: A for shifts 0 and 1, B for 2 and 3; all in bank 4,
         # where the code tables are)
         w = len(rows[0])
         for first, pair in ((-1, (0, 1)), (-3, (2, 3))):
             used = [sh for sh in pair if sh in shifts]
-            if not used:
-                continue
-            blob = coded_columns(rows, first, max((sh + w + 3) // 4 for sh in used))
-            if blob not in stored:
-                if len(banks[0]) + len(blob) > CODE_TABLES - 0x8000:
-                    raise SystemExit('Out of room for sprites in bank %d' % BANKS[0])
-                stored[blob] = (BANKS[0] | CODED, 0x8000 + len(banks[0]))
-                banks[0] += blob
-            for sh in used:
-                entry['shift'][sh] = stored[blob]
+            if used:
+                streams.append((entry, used, window_columns(rows, first, max((sh + w + 3) // 4 for sh in used))))
     directory = []  # per image: dict
     frames_of = {}
     for spr in sorted(need):
@@ -748,6 +748,16 @@ def main():
                 e['parts'] = (body_id, body_id + 1 + e['frame'])
             elif e['name'] == stand:
                 e['parts'] = (body_id, body_id + 1)
+    number_windows([v for _, _, wins in streams for v in wins])
+    for entry, used, wins in streams:
+        blob = bytes(WINDOWS[v] for v in wins)
+        if blob not in stored:
+            if len(banks[0]) + len(blob) > CODE_TABLES - 0x8000:
+                raise SystemExit('Out of room for sprites in bank %d' % BANKS[0])
+            stored[blob] = (BANKS[0] | CODED, 0x8000 + len(banks[0]))
+            banks[0] += blob
+        for sh in used:
+            entry['shift'][sh] = stored[blob]
     # The timer shown while playing: 4 characters (m:ss), drawn by the game into hud_image
     directory.append({'name': 'sHud_Beeb', 'frame': 0, 'frames': 1, 'w': 32, 'h': 8, 'xo': 0, 'yo': 0,
                       'shift': {0: (6, 'hud_image')}, 'spans': None, 'parts': None})
@@ -848,6 +858,11 @@ def main():
         (tables, cells, bgdata, start), _ = render_background(data, lev, lambda spr: sprite_pixels(data, spr))
         t['bg_tables'], t['bg_cells'], t['bg_data'], t['bg_start'] = tables.hex(), b''.join(cells).hex(), bgdata.hex(), start
         maxima['bg_cells'] = max(maxima.get('bg_cells', 0), len(cells))
+        # (how high any Hooter jumps, from its base: for working out which meanies can reach Trogg)
+        for v in lev['slow']:
+            if v['kind'] == SL_HOOTER:
+                info = data.sprites[v['spr']]
+                maxima['hooter_peak'] = max(maxima.get('hooter_peak', 0), v['y'] - info['yo'] - slow_swept(data, v)[1])
         maxima['bg_end'] = max(maxima.get('bg_end', 0), start + len(bgdata))
         expect[name] = t
         for k, n in (('plats', len(lev['plats'])), ('ladders', len(lev['ladders'])), ('slow', len(lev['slow'])),
@@ -912,7 +927,7 @@ def main():
               'NUM_LEVELS = %d' % len(LEVELS),
               'START_LEVEL = %d' % LEVELS.index(start_room),
               'MAX_PLATS = %d' % maxima['plats'], 'MAX_LADDERS = %d' % maxima['ladders'],
-              'MAX_SLOW = %d' % maxima['slow'], 'MAX_DRAW = %d' % maxima['draw'], 'MAX_BG = %d' % maxima['bg'],
+              'MAX_SLOW = %d' % maxima['slow'], 'HOOTER_PEAK = %d' % maxima.get('hooter_peak', 0), 'MAX_DRAW = %d' % maxima['draw'], 'MAX_BG = %d' % maxima['bg'],
               'MAX_PAL = %d' % MAX_PAL,
               'SL_SCRUBBLY = %d' % SL_SCRUBBLY, 'SL_POGLET = %d' % SL_POGLET,
               'SL_HOOTER = %d' % SL_HOOTER, 'SL_PLATFORM = %d' % SL_PLATFORM,

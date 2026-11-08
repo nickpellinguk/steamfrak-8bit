@@ -77,7 +77,11 @@ for (const [, k, v] of out.match(/SYMBOLS(.*)/)[1].matchAll(/(\w+)\s*&([0-9A-F]+
 const s = new MachineSession('Master', { discImage: REPO + '/build/frak.ssd' });
 await s.initialise(); await s.boot(30); await s.autoboot();
 const jcpu = s._machine.processor;
-for (let t = 0; t < 100 && jcpu.readmem(sym.snd_tune) !== 5; t++) await s.runFrames(20);
+// (until the game is running: its vertical sync counter counting, and the attract tune on)
+for (let t = 0, v = -1; t < 100; t++) {
+    if (jcpu.readmem(sym.snd_tune) === 5 && jcpu.readmem(sym.vsyncs) !== v && v >= 0) break;
+    v = jcpu.readmem(sym.vsyncs); await s.runFrames(20);
+}
 await s.runFrames(50);
 const base = new Uint8Array(65536);
 for (let a = 0; a < 0x8000; a++) base[a] = jcpu.readmem(a);
