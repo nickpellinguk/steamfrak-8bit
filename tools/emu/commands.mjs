@@ -3,7 +3,7 @@
 //   ./build.sh && cd tools/emu && node commands.mjs room_0 'R:200 12L:100 @300,100,0:5 U:200'
 //
 // Each step is: characters to type, frames to watch, and a note; or @x,y,face:frames to put Trogg
-// somewhere, standing; or a physical key held (+KeyX:frames); or !symbol=value to poke a variable.
+// somewhere, standing; or a physical key held (+KeyX:frames); or !symbol[+offset]=value to poke a variable.
 import { MachineSession } from 'jsbeeb';
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { deflateSync } from 'zlib';
@@ -53,7 +53,7 @@ if (process.env.GEO) {
     for (let i = 0; i < r8(sym.num_ladders); i++) console.log('ladder', i, bank6(sym.lad_xl + i) | bank6(sym.lad_xh + i) << 8, bank6(sym.lad_yl + i) | bank6(sym.lad_yh + i) << 8, 'h', bank6(sym.lad_hl + i) | bank6(sym.lad_hh + i) << 8);
 }
 if (process.env.WATCH) cpu.debugWrite.add((addr, b) => { if (addr === sym[process.env.WATCH]) console.log('    write', process.env.WATCH, b, 'pc', cpu.pc.toString(16), 'ret', ((cpu.readmem(0x101 + cpu.s) | cpu.readmem(0x102 + cpu.s) << 8) + 1).toString(16), 'state', r8(sym.tstate)); return false; });
-if (process.env.AT) cpu.debugInstruction.add(addr => { if (addr === parseInt(process.env.AT, 16)) console.log('    at', process.env.AT, 'k', [0, 1, 2, 3, 4].map(i => r8(sym.k_left + i)).join(''), 'A', cpu.a, 'X', cpu.x, 'Y', cpu.y); return false; });
+if (process.env.AT) cpu.debugInstruction.add(addr => { if (process.env.AT.split(',').map(x => parseInt(x, 16)).includes(addr)) console.log('    at', addr.toString(16), 'trogg', r16(sym.tx), r16(sym.ty), 'won', r8(sym.won), 'ret', ((cpu.readmem(0x101 + cpu.s) | cpu.readmem(0x102 + cpu.s) << 8) + 1).toString(16), 'k', [0, 1, 2, 3, 4].map(i => r8(sym.k_left + i)).join(''), 'A', cpu.a, 'X', cpu.x, 'Y', cpu.y); return false; });
 function screenshot(name) {
     const v = s._video, W = 1024, H = 625;
     const l = v.leftBorder, t = v.topBorder, w = W - l - v.rightBorder, h = H - t - v.bottomBorder;
@@ -89,7 +89,10 @@ for (const [keys, frames, note] of steps) {
     }
     if (keys.startsWith('!')) {          // !symbol=value: poke a variable
         const [k, v] = keys.slice(1).split('=');
-        cpu.writemem(sym[k], +v);
+        const [name, off] = k.split('+');
+        const a = sym[name] + (+off || 0);
+        if (a >= 0x8000 && a < 0xC000) cpu.ramRomOs[cpu.romOffset + 6 * 16384 + a - 0x8000] = +v;   // (bank 6's tables)
+        else cpu.writemem(a, +v);
         continue;
     }
     let held = [];

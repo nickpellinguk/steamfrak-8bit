@@ -1932,6 +1932,7 @@ FONT = &B900
 \ level's background isn't needed any more).
 .win_screen
 {
+    lda #LO(win_scroll) : ldy #HI(win_scroll) : jsr call5
     ldx back : lda #1 : sta bwon,x
     lda bwon : and bwon+1 : bne unpacked        \ (the first buffer unpacks it)
     lda #FRONT_BANK : sta ROMSEL_COPY : sta ROMSEL
@@ -6798,6 +6799,20 @@ GUARD FRONTZ_ORG
 .music_start
 INCLUDE "src/sound.asm"
 INCLUDE "src/commands.asm"
+
+\ The level-complete screen is drawn once in each buffer, and then they're shown
+\ in turn, so they must be at the same scroll position: the view's (a scroll may
+\ be under way, e.g. if he caught the last key falling sideways). The screen is
+\ cleared, so there's nothing to repaint. (In JIT_BANK, for room.)
+.win_scroll
+{
+    jsr calc_scroll
+    ldx back
+    lda newcol : sta scrollcol : sta bscroll,x
+    lda newrow : sta scrollrow : sta brow,x
+    jmp set_window_clip
+}
+
 
 \ ------------------------------------------------------------------------------
 \ The level's moving meanie, compiled (by jit_build, from its coded data) into
