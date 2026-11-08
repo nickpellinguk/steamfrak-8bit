@@ -28,7 +28,7 @@ another, including the 19 that scroll vertically:
 * The first attract screen ("The Cast", as in the Steam version), in the Master's own font,
   read straight from the MOS ROM (sideways ROM 15, `&B900`). Space, Return, P or Y goes on to:
 * The menus, simplified from the Steam version's 3x3 button grids: Replay (the last level),
-  Difficulty (Easy, Hard, Harder, Insane), Training and the six groups of levels, each a 3x3
+  Difficulty (Easy, Hard, Harder, Insane, and Zero: no balloons or daggers, for speed runs), Training and the six groups of levels, each a 3x3
   grid of levels with the column's meanie and the level's name. Z X O K (or the cursor keys)
   move, Space, Return, P or Y choose, Escape goes back (and, while playing, back to the menus).
 * The level timer (top left, while Trogg is alive) and his rating (bottom right: gold, silver,
@@ -37,7 +37,7 @@ another, including the 19 that scroll vertically:
   collected, the medal and a trophy over Trogg, for 4-7 seconds, then the next level starts.
 * Records: each level's best time, gem medal (completed with all the gems), and best rating at
   each difficulty. The level buttons show the level's target time, the best time, and the three
-  medals (rating, gems, stopwatch: beating the target time). There's nowhere to save them, so
+  medals (rating, gems, stopwatch: beating the target time). As in the Steam version, the best time is for the level at any difficulty, and the rating is per difficulty. There's nowhere to save them, so
   they last until the machine is switched off.
 * Music and sound effects, from the Steam version's own (see "Sound" below): the Frak! theme,
   "A Little Bag of Weed" (levels with Poglets) and "The Man Who Once Was I" (levels with
@@ -139,8 +139,8 @@ and is listed: Trogg can never get near it.)
 | `&3000-&7FFF` | MODE 1 screen, **double buffered**: main RAM and shadow RAM. While a level loads (with the screen blanked) it holds the loader's workspace (`&3000-&4FFF`: the dictionary's hash table, a row of the background, the lines being built) and the loader itself (`&6000`) |
 | SWRAM bank 4 | every sprite, as 5-pixel codes (14.3KB, see "Sprites"), including the platforms and ladders the backgrounds are unrolled from; 690 bytes free; then the code tables (`&BC00-&BFFF`) |
 | SWRAM bank 5 | the music and sound effects player and the tunes (4.3KB at `&8000`, see "Sound"), and the meanie compiler; then the level's moving meanie, compiled (up to 7.9KB; the largest, the Scrubbly, is 5.1KB); then the front end, packed (2.5KB, see below), then where shift 3 of each image is (`img_bank3`, `img_lo3`, `img_hi3`, 240 bytes at `&BB10`), then a save area for meanies flying off (the top 1KB) |
-| SWRAM bank 6 | collision spans and tables (from `&8000`), the **game logic** (to `&AE00`), then the current level's tables and the second save area for meanies flying off (87 bytes free). Stays paged in while playing |
-| SWRAM bank 7 | the current level's background, unrolled when it starts (`&8000-&A9FF`, see below), or, while the menus or the level-complete screen are up, the front end (unpacked to `&8000`); the front end's records and the unpacker (`&AA00`); the code that paints the background; where shifts 0-2 of each image are (`img_bank0-2`, `img_lo0-2`, `img_hi0-2`, 720 bytes: `plot` and the background unroller page bank 7 in to read them); the level loader, the code that starts a level and the boot code, packed (3.2KB at the top, unpacked to `&6000` when a level loads); 73 bytes free |
+| SWRAM bank 6 | collision spans and tables (from `&8000`), the **game logic** (to `&AE00`), then the current level's tables and the second save area for meanies flying off (84 bytes free). Stays paged in while playing |
+| SWRAM bank 7 | the current level's background, unrolled when it starts (`&8000-&A9FF`, see below), or, while the menus or the level-complete screen are up, the front end (unpacked to `&8000`); the front end's records and the unpacker (`&AA00`); the code that paints the background; where shifts 0-2 of each image are (`img_bank0-2`, `img_lo0-2`, `img_hi0-2`, 720 bytes: `plot` and the background unroller page bank 7 in to read them); the level loader, the code that starts a level and the boot code, packed (3.2KB at the top, unpacked to `&6000` when a level loads); 0 bytes free |
 | HAZEL (`&C000-&DFFF`) and ANDY (`&8000-&8FFF`) | **all 55 levels**, packed: 11.8KB, about 215 bytes each. `&8800-&88FF` of ANDY is left to the MOS |
 
 ### The packed front end
