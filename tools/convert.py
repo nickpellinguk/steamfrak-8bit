@@ -858,6 +858,11 @@ def main():
         (tables, cells, bgdata, start), _ = render_background(data, lev, lambda spr: sprite_pixels(data, spr))
         t['bg_tables'], t['bg_cells'], t['bg_data'], t['bg_start'] = tables.hex(), b''.join(cells).hex(), bgdata.hex(), start
         maxima['bg_cells'] = max(maxima.get('bg_cells', 0), len(cells))
+        # (how high any Hooter jumps, from its base: for working out which meanies can reach Trogg)
+        for v in lev['slow']:
+            if v['kind'] == SL_HOOTER:
+                info = data.sprites[v['spr']]
+                maxima['hooter_peak'] = max(maxima.get('hooter_peak', 0), v['y'] - info['yo'] - slow_swept(data, v)[1])
         maxima['bg_end'] = max(maxima.get('bg_end', 0), start + len(bgdata))
         expect[name] = t
         for k, n in (('plats', len(lev['plats'])), ('ladders', len(lev['ladders'])), ('slow', len(lev['slow'])),
@@ -922,7 +927,7 @@ def main():
               'NUM_LEVELS = %d' % len(LEVELS),
               'START_LEVEL = %d' % LEVELS.index(start_room),
               'MAX_PLATS = %d' % maxima['plats'], 'MAX_LADDERS = %d' % maxima['ladders'],
-              'MAX_SLOW = %d' % maxima['slow'], 'MAX_DRAW = %d' % maxima['draw'], 'MAX_BG = %d' % maxima['bg'],
+              'MAX_SLOW = %d' % maxima['slow'], 'HOOTER_PEAK = %d' % maxima.get('hooter_peak', 0), 'MAX_DRAW = %d' % maxima['draw'], 'MAX_BG = %d' % maxima['bg'],
               'MAX_PAL = %d' % MAX_PAL,
               'SL_SCRUBBLY = %d' % SL_SCRUBBLY, 'SL_POGLET = %d' % SL_POGLET,
               'SL_HOOTER = %d' % SL_HOOTER, 'SL_PLATFORM = %d' % SL_PLATFORM,
