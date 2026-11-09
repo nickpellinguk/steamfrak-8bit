@@ -57,6 +57,8 @@ another, including the 19 that scroll vertically:
 
 Not done yet: the Pugwash tune (an easter egg in a settings screen that isn't here).
 
+An Amstrad CPC 6128 version is in progress in [`cpc6128/`](cpc6128/README.md).
+
 ## Building
 
 You need BeebAsm and Python 3 with Pillow, and the `steamfrak` repository alongside this one:
