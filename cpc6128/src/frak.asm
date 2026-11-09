@@ -1,16 +1,35 @@
 ; Steam Frak for the Amstrad CPC 6128 - assembled with RASM (see ../build.sh)
 ;
-; Phase 2: the machine layer (src/machine.asm). For now the program checks the
-; extra 64K, counts game ticks (one a vertical sync, as the game logic will
-; run), reads the keyboard, and shows a test card in each screen buffer (each
-; in its own colour, outlined in white) in turn; the test harness (tools/emu)
-; pokes want_mode and flip_rate to try both modes and flip speeds.
+; Phase 3: the plotter (src/plot.asm). For now the program loads the graphics,
+; takes the machine over (src/machine.asm), and then does what the test harness
+; (tools/emu) asks: it pokes the plotter's parameters and a command into t_cmd,
+; and the program runs it and counts it in t_done. It also still shows a test
+; card in each screen buffer in turn (want_mode and flip_rate, for screens.mjs).
 ;
 ; Memory: the code from #0040 (below #4000, so it stays visible whichever extra
-; bank is paged in at #4000), the screen buffers at #8000 and #C000.
+; bank is paged in at #4000), the screen buffers at #8000 and #C000, the
+; graphics in extra bank 0 (GFX_BANK) and the compiled meanie in bank 1.
+
+GFX_BANK = 0
+JIT_TMP_SIZE = 2560                 ; bytes for jit_build's decoded image
 
         ORG #0040
 start
+        ; RUN"FRAK.BIN loads this with the firmware still running: use it to load
+        ; the graphics into extra bank 0, at #4000. (Running a program resets the
+        ; firmware to the cassette; KL INIT BACK starts the disc ROM, AMSDOS, again.)
+        ld c,7 : ld de,#0040 : ld hl,#ABFF
+        call #BCCE                              ; KL INIT BACK
+        ld hl,gfx_name : ld b,gfx_name_end - gfx_name
+        ld de,#9000                             ; (a 2K buffer for the firmware)
+        call #BC77                              ; CAS IN OPEN
+        jp nc,load_error
+        ld bc,#7F00 + RAM_BANK + GFX_BANK : out (c),c
+        ld hl,#4000 : call #BC83                ; CAS IN DIRECT
+        ld bc,#7F00 + RAM_BASE : out (c),c
+        jp nc,load_error
+        call #BC7A                              ; CAS IN CLOSE
+        ; then the machine is ours
         di
         ld sp,#4000
         call machine_init
@@ -18,25 +37,51 @@ start
         ld hl,palette : call set_palette
         ld a,(want_mode) : call setup_mode
         ld a,(vsyncs) : ld (last_vsync),a
+        ld a,#A5 : ld (ready),a                 ; (for the test harness)
         ei
 
 main_loop
-        call wait_vsync
-        ; run a game tick for each vertical sync since the last time round (for now,
-        ; just count them)
+        ; a command from the test harness?
+        ld a,(t_cmd) : or a : jr z,.no_cmd
+        call command
+        xor a : ld (t_cmd),a
+        ld hl,(t_done) : inc hl : ld (t_done),hl
+.no_cmd
+        ; count a game tick for each vertical sync since the last time round
         ld a,(last_vsync) : ld b,a
-        ld a,(vsyncs) : ld (last_vsync),a
+        ld a,(vsyncs) : cp b : jr z,main_loop
+        ld (last_vsync),a
         sub b : ld e,a : ld d,0
         ld hl,(ticks) : add hl,de : ld (ticks),hl
         ; a mode change asked for (by the test harness)?
         ld a,(want_mode) : ld hl,cur_mode : cp (hl)
         call nz,setup_mode
-        ; show the other buffer every flip_rate frames
+        ; show the other buffer every flip_rate frames (0: never)
+        ld a,(flip_rate) : or a : jr z,main_loop
         ld hl,flip_count : dec (hl) : jr nz,main_loop
-        ld a,(flip_rate) : ld (hl),a
+        ld (hl),a
         ld a,(front) : xor 1 : ld (front),a
         call show_front
         jr main_loop
+
+load_error
+        jr load_error                           ; (the disc is missing GFX.BIN)
+
+; Run test command t_cmd (see tools/emu/plot.mjs)
+command
+        dec a : jp z,plot                       ; 1
+        dec a : jp z,restore_saved              ; 2
+        dec a : jp z,hline                      ; 3
+        dec a : jr nz,.not4
+        ld a,(t_arg) : jp jit_build             ; 4
+.not4   dec a : jp z,plot_slow                  ; 5
+        dec a : jp z,log_sprite                 ; 6
+        dec a : jp z,log_line                   ; 7
+        dec a : jp z,restore_log                ; 8
+        dec a : jr nz,.not9
+        ld a,(t_arg) : jp set_mode              ; 9: just the mode (no test cards)
+.not9   dec a : jp z,log_sprite7                ; 10
+        ret
 
 ; A = 0 or 1: set that mode up and draw both buffers' test cards
 setup_mode
@@ -69,19 +114,25 @@ white_line
         ldir
         ret
 
-palette db #54, #4C, #56, #4B, #54                     ; black, red, green, white; black border
+palette  db #54, #4C, #56, #4B, #54                    ; black, red, green, white; black border
+gfx_name db "GFX.BIN"
+gfx_name_end
 
         INCLUDE "machine.asm"
+        INCLUDE "plot.asm"
+        INCLUDE "gen/images.asm"
 
 ; ------------------------------------------------------------------------------
 ; Variables
 ; ------------------------------------------------------------------------------
+ready       db 0                    ; #A5 once the program has the machine
 vsyncs      db 0                    ; counted by irq
 ga_ram      db RAM_BASE             ; the RAM configuration paged in
 keys        DEFS 10                 ; the keyboard: a bit set while a key is down
 bank_errors db #FF                  ; bank_test's result
 front       db 0                    ; buffer on show
-back_page   db #80                  ; the buffer being drawn (#80 or #C0)
+back        db 1                    ; buffer being drawn (0 or 1)
+back_page   db #C0                  ; ... its page (#80 or #C0)
 cur_mode    db 0
 g_w         db 64                   ; bytes a line
 g_last      db 255                  ; the last line
@@ -90,11 +141,91 @@ last_vsync  db 0
 want_mode   db 0                    ; (poked by the test harness)
 flip_rate   db 25                   ; frames between flips (poked by the test harness)
 flip_count  db 25
+t_cmd       db 0                    ; a command from the test harness
+t_arg       db 0
+t_done      dw 0                    ; commands done
+
+; the plotter's parameters
+p_img       db 0
+p_x         dw 0
+p_y         dw 0
+q_x         dw 0                    ; (hline's other end)
+p_mode      db 0
+p_sbank     db 0                    ; PM_SAVEONLY: the bank the save area is in
+clip_l      db 0                    ; the window, in level coordinates
+clip_r      db 64
+clip_t      dw 0
+clip_h      db 0
+sbase       dw 0                    ; the save record
+sptr        dw 0
+hl_yel      db 0                    ; hline: #F0 for yellow, 0 for black
+sfree       dw 0                    ; the back buffer's save area: free from sfree to send
+send        dw 0
+sfree7      dw 0                    ; ... and its slow save area (in bank p_sbank)
+send7       dw 0
+; ... and its workings
+p_left      dw 0
+p_top       dw 0
+p_shift     db 0
+p_col       dw 0
+p_wb        db 0
+p_hgt       db 0
+p_r0        db 0
+p_rows      db 0
+p_firsty    dw 0
+p_cidx      db 0
+p_cend      db 0
+p_dcol      dw 0
+p_y0        db 0
+p_row       db 0
+p_tab       db 0
+p_oldbank   db 0
+p_oldbank0  db 0
+hl_right    dw 0
+hl_p0       db 0
+hl_p1       db 0
+hl_c0       db 0
+hl_c1       db 0
+hl_line     db 0
+hl_row      db 0
+hl_col      db 0
+; the draw log, for each buffer (MAX_LOG entries each)
+log_n       db 0, 0
+log_kind    DEFS 2 * MAX_LOG
+log_img     DEFS 2 * MAX_LOG
+log_x       DEFS 4 * MAX_LOG
+log_y       DEFS 4 * MAX_LOG
+log_x1      DEFS 4 * MAX_LOG
+log_sb      DEFS 4 * MAX_LOG
+log_bank    DEFS 2 * MAX_LOG
+; the compiled meanie
+jit_img     db 255                  ; the image compiled (255: none)
+jit_new     db 0
+jit_h       db 0
+jit_wb      db 0, 0                 ; its width in bytes at shifts 0 and 2
+jit_w       db 0
+jit_s       db 0
+jit_r       db 0
+jit_emit    dw 0
+jit_vecs    dw 0, 0                 ; its code at shifts 0 and 2 (in JIT_BANK)
+jit_count   dw 0                    ; times plot_slow used it (for the tests)
 end_code
 
         ALIGN 256
 line_lo     DEFS 256
 line_hi     DEFS 256
+rowoff_lo   DEFS 256
+rowoff_hi   DEFS 256
+savebuf0    DEFS 1024               ; save areas for the draw log, one per buffer
+savebuf1    DEFS 1024
+jit_tmp     DEFS JIT_TMP_SIZE
+end_ram
+        ASSERT end_ram <= #3F00     ; (the stack is below #4000)
 
         SAVE 'FRAK.BIN',start,end_code-start,DSK,'build/frak.dsk'
-        PRINT "Code from ",{hex}start," to ",{hex}end_code
+        PRINT "Code from ",{hex}start," to ",{hex}end_code,", workspace to ",{hex}end_ram
+
+; The graphics, for extra bank 0
+        ORG #4000
+gfx     INCBIN "../build/GFX"
+        SAVE 'GFX.BIN',#4000,#4000,DSK,'build/frak.dsk'

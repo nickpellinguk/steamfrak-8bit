@@ -27,8 +27,10 @@ export function symbols(file = join(ROOT, 'build/frak.sym')) {
     return sym;
 }
 
-// Steps for the start: boot to BASIC, then RUN"FRAK.BIN and give it time to load and start
-export const boot = ['wait 100', 'type RUN"FRAK.BIN\\n', 'wait 300'];
+// Steps for the start: boot to BASIC, then RUN"FRAK.BIN, and wait until it has loaded and taken
+// the machine over (it sets `ready` to READY)
+export const READY = 0xA5;
+export const boot = ['wait 100', 'type RUN"FRAK.BIN\\n', `waitfor ${symbols().ready} ${READY} 3000`, 'wait 2'];
 
 // Run the steps (strings, as steps.lua takes them; a final "quit" is added). Returns
 // { peeks: {label: [bytes]}, snaps: {label: png file}, log }.
@@ -46,6 +48,14 @@ export function run(steps, { seconds = 120 } = {}) {
     const r = spawnSync(process.env.MAME || '/usr/games/mame', args,
         { env: { ...process.env, CPC_STEPS: stepsFile }, encoding: 'utf8', maxBuffer: 1 << 26 });
     const log = (r.stdout || '') + (r.stderr || '');
+    const timeout = log.match(/^OUT timeout (\d+) (\d+)/m);
+    if (timeout) {
+        const name = Object.entries(symbols()).find(([, v]) => v === Number(timeout[1]));
+        const at = Number(timeout[2]);
+        throw new Error(`Timed out waiting on ${name ? name[0] : timeout[1]}` +
+            (name && name[0] === 'ready' ? ' (the program never got going)' : '') +
+            `, at step ${at} (${(log.match(/^OUT stuck (.*)$/m) || [])[1]}); the steps before it:\n  ` + steps.slice(Math.max(0, at - 12), at + 1).join('\n  '));
+    }
     if (!/^OUT done/m.test(log)) throw new Error('MAME stopped before the steps finished:\n' + log);
     const peeks = {}, snaps = {}, times = {}, keys = [];
     const shots = (existsSync(join(dir, 'snap')) ? readdirSync(join(dir, 'snap'), { recursive: true }) : []).filter(f => f.endsWith('.png'))
@@ -58,7 +68,9 @@ export function run(steps, { seconds = 120 } = {}) {
         else if ((m = line.match(/^OUT key (\d+) (\d+) (.*)$/))) keys.push({ row: +m[1], mask: +m[2], name: m[3] });
         else if ((m = line.match(/^OUT snap (\S+)/))) snaps[m[1]] = join(dir, 'snap', shots[n++]);
     }
-    return { peeks, snaps, times, keys, log, dir };
+    // a dump step's bytes, as a Buffer
+    const dump = label => readFileSync(join(dir, label + '.bin'));
+    return { peeks, snaps, times, keys, dump, log, dir };
 }
 
 // A PNG (8-bit RGB or RGBA, as MAME writes them) as { w, h, px(x, y) -> [r, g, b] }

@@ -5,16 +5,16 @@ A port of the BBC Master version (in the rest of this repository) to an unmodifi
 and tests. Levels that scroll sideways use a 256x256 screen, levels that scroll up and down
 320x200, and both are double-buffered.
 
-**Status: phase 2 of 9** (the machine layer). The program so far takes the machine over from
-the firmware, checks the extra 64K, counts game ticks, reads the keyboard, sets up both screen
-modes, and shows a test card in each of the two screen buffers in turn, swapping them at
-vertical sync.
+**Status: phase 3 of 9** (the plotter). The program so far loads the graphics, takes the
+machine over from the firmware, and has the BBC version's plotter, draw log, yoyo string and
+compiled meanie, ported to the CPC's screen; the test harness drives them through a command
+mailbox and checks every byte they draw.
 
 | Phase | | Test that must pass |
 | --- | --- | --- |
 | 1 | Toolchain and harness | `screens.mjs`: both screen modes flip at vsync — **passes** |
 | 2 | Machine layer: interrupts and ticks, bank paging, keyboard, screen tables | `machine.mjs`: 50 ticks a second, every key, the extra banks — **passes** |
-| 3 | Plotter and drawing | every image matches byte for byte |
+| 3 | Plotter and drawing | `plot.mjs`: every image, clipped, saved and put back, the yoyo string, the compiled meanie, matching byte for byte — **passes** |
 | 4 | Levels and background | all 55 levels' tables and backgrounds match the converter |
 | 5 | Game logic | Trogg moves exactly as in GameMaker |
 | 6 | Main loop and scrolling | levels play, with no flicker |
@@ -25,15 +25,19 @@ vertical sync.
 ## Building
 
 You need [RASM](https://github.com/EdouardBERGE/rasm), built from its source (v3.3.1 is the
-version used):
+version used), and the BBC version built first: the CPC version uses its graphics.
 
 ```sh
 gcc -O2 -DNO_3RD_PARTIES -o rasm rasm.c -lm
+(cd .. && BEEBASM=/path/to/beebasm ./build.sh)
 RASM=/path/to/rasm ./build.sh
 ```
 
 This writes `build/frak.dsk` (and `build/frak.sym`, the symbols, for the tests). In an emulator,
 choose a CPC 6128, insert the disc and type `RUN"FRAK.BIN`.
+
+(RASM works out expressions in floating point and rounds them, so `label/256` of an address
+that isn't page-aligned can come out one too high: the source takes high bytes with `>>8`.)
 
 ## Testing headlessly
 
@@ -49,12 +53,24 @@ and `cpc6128/cpcados.rom` (AMSDOS, Caprice32's `amsdos.rom`).
 apt install mame
 CPC_ROMS=/path/to/roms node tools/emu/screens.mjs
 CPC_ROMS=/path/to/roms node tools/emu/machine.mjs
+CPC_ROMS=/path/to/roms node tools/emu/plot.mjs [seed]
 ```
 
-Steps a test can give (`steps.lua`): `wait` frames, `type` text, `poke` and `peek` the base
-64K, `bank` (read an extra bank, by paging it in and then back), `key` (press or let go of a
-key by its row and bit in the keyboard matrix), `time` (the emulated clock), and `snap` (a
-screenshot).
+Steps a test can give (`steps.lua`): `wait` frames, `waitfor` a byte to have a value, `type`
+text, `poke` and `peek` the base 64K, `load` a file into it and `dump` some of it to a file,
+`bank` and `bankpoke` (an extra bank, by paging it in and then back), `key` (press or let go of
+a key by its row and bit in the keyboard matrix), `time` (the emulated clock), `regs` (the
+Z80's PC and SP), and `snap` (a screenshot). Every test starts by waiting for the program to
+set `ready`, once it has loaded and taken the machine over.
+
+`plot.mjs` is phase 3's test, about 1,600 cases a run (`seed` picks them). Each loads the same
+random background into screen buffer 1, has the program draw something through its command
+mailbox (`t_cmd`), and compares all 16K with a reference renderer written from the data format
+(pixel by pixel, not from the Z80): every image at every shift, in both modes; random images,
+places and clip windows (all four edges, and the 2K wrap); `PM_SAVE` and `restore_saved`; the
+yoyo string, black and yellow; the compiled meanies drawn by `plot_slow` (and the compiled code
+used exactly where it should be); and a frame's worth of the draw log undone by `restore_log`.
+It also checks that nothing wrote over the program's code.
 
 `machine.mjs` is phase 2's test. It counts game ticks against the emulated clock over 20
 seconds (1,000 in 19.968 seconds: a CPC frame is 312 lines of 64µs, so 50.08 a second); checks
@@ -75,8 +91,10 @@ and checks that each frame shows one buffer whole and that they alternate.
 | Address | Contents |
 |---|---|
 | `&0000-&003F` | Z80 restart vectors; the interrupt handler's jump at `&0038` |
-| `&0040-&3FFF` | the code, its variables and tables, the stack (from `&4000` down) |
-| `&4000-&7FFF` | (later: the packed levels, and the window the extra 64K is paged into) |
+| `&0040-&15FF` | the code and its variables |
+| `&1600-&2BFF` | the line and row tables, the draw log's two save areas (1K each), `jit_build`'s workspace |
+| `&3F00-&3FFF` | the stack |
+| `&4000-&7FFF` | the window the extra banks are paged into: bank 0 the graphics (as the BBC's sideways RAM bank 4, sprites and code tables), bank 1 the compiled meanie; (later: the packed levels in the base RAM here) |
 | `&8000-&BFFF` | screen buffer 0 |
 | `&C000-&FFFF` | screen buffer 1 |
 
@@ -118,3 +136,52 @@ Both are 39 character rows of 8 lines a frame (R4 = 38: 312 lines, 50Hz) and fit
 Line y of a buffer is at `(y / 8) * width + (y MOD 8) * &800` (`make_lines` builds a table of
 them). A buffer is shown by setting CRTC R12/R13 just after vertical sync; the CRTC takes a new
 start address at the start of the next frame, so the swap is always a whole frame.
+
+### Graphics (`tools/gfx.py`)
+
+Every coded sprite, and the code tables, are in the BBC version's sideways RAM bank 4 (its
+converter's `build/GFX4`, 16K at `&8000`). That becomes the CPC's extra bank 0 at `&4000`,
+unchanged; `gfx.py` only rebases the image directory (`src/gen/images.asm`: each image's size,
+origin and, for each shift, where its data is) and writes `build/images.json` for the tests.
+Images and the 5-pixel codes are as in the BBC version: a byte column is the image's height in
+codes, each looked up in the code tables (`&7C00-&7FFF`) for its shift's half. The CPC's Mode 1
+packs pixels into bytes exactly as the BBC's MODE 1 does, so the tables' bytes are the screen's.
+
+The loader runs while the firmware still does: it restarts AMSDOS (`RUN"` resets the firmware
+to the cassette, so it calls `KL INIT BACK` for ROM 7), then loads `GFX.BIN` into bank 0 with the
+firmware's `CAS IN` routines, and only then takes the machine over.
+
+### The plotter (`src/plot.asm`)
+
+A port of the BBC version's `plot`, column routines, `restore_saved`, `hline` and draw log. A
+level's byte column `c` and line `y` are always at the same place in a screen buffer:
+
+    page + (y MOD 8) * &800 + ((y / 8) * width + c) MOD &800
+
+(`rowoff[y / 8]` holds the `(y / 8) * width MOD &800`). The CRTC wraps each line's 2K block the
+same way, so scrolling will just move the CRTC's start over it, as the BBC version scrolls over
+a screen that wraps at `&8000`. The plotter walks each byte column down: the next line is
+`&800` on; past a character row's 8th line, the next row's first line is `width` on from its
+first, wrapping within the 2K (`next_row`: back `&4000`, on `width`, and clear address bit 11).
+In the column routines BC is the screen address, DE the image data, H the code tables' page
+(`and (hl)` the mask, then `or (hl)` the pixels from the page before), IXL the lines left, and
+the save record goes through HL' in the other register set.
+
+A save record is the number of columns and rows, then each column's screen address and saved
+bytes, so `restore_saved` puts the background back without redoing the image's geometry.
+`log_sprite`, `log_line` and `log_sprite7` (whose record is in another bank, for big images such
+as meanies flying off) draw things and log them; `restore_log` undoes them, newest first.
+
+### The compiled meanie
+
+As in the BBC version, the level's moving meanie is compiled (`jit_build`, into bank 1) into
+code that draws it a line at a time, at shifts 0 and 2, with HL at its first byte and B the
+lines left in that character row:
+
+    a solid byte:     LD (HL),pixels
+    a partial one:    LD A,(HL) : AND mask : OR pixels : LD (HL),A
+    between bytes:    INC HL                      (a line can cross a 256-byte page)
+    between lines:    LD DE,&800 - n : ADD HL,DE : DJNZ same : CALL jit_row : .same
+
+and `RET` at the end. `plot_slow` uses it where the meanie is at an even pixel, wholly in the
+window, and none of its lines crosses the end of a 2K block, and `plot` everywhere else.
