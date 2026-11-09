@@ -5,11 +5,11 @@ A port of the BBC Master version (in the rest of this repository) to an unmodifi
 and tests. Levels that scroll sideways use a 256x256 screen, levels that scroll up and down
 320x200, and both are double-buffered.
 
-**Status: phase 4 of 9** (levels and the background). The program so far loads the graphics
-and the levels, takes the machine over from the firmware, and has the BBC version's plotter,
-draw log, yoyo string and compiled meanie, and its level loader, background unroller and
-repainting, ported to the CPC; the test harness drives them through a command mailbox and
-checks every byte.
+**Status: phase 5 of 9** (the game logic; Trogg's movement is done). The program so far loads
+the graphics and the levels, takes the machine over from the firmware, and has the BBC version's
+plotter, draw log, yoyo string and compiled meanie, its level loader, background unroller and
+repainting, and Trogg's movement, ported to the CPC; the test harness drives them through a
+command mailbox and checks every byte, and checks Trogg's movement against GameMaker's.
 
 | Phase | | Test that must pass |
 | --- | --- | --- |
@@ -17,7 +17,7 @@ checks every byte.
 | 2 | Machine layer: interrupts and ticks, bank paging, keyboard, screen tables | `machine.mjs`: 50 ticks a second, every key, the extra banks — **passes** |
 | 3 | Plotter and drawing | `plot.mjs`: every image, clipped, saved and put back, the yoyo string, the compiled meanie, matching byte for byte — **passes** |
 | 4 | Levels and background | `levels.mjs`: all 55 levels' tables, background caches and repainted windows match the converter — **passes** |
-| 5 | Game logic | Trogg moves exactly as in GameMaker |
+| 5 | Game logic | `connections.mjs`: Trogg moves as in GameMaker on all 55 levels — **passes** for his movement (5a); the yoyo, meanies and collisions to come |
 | 6 | Main loop and scrolling | levels play, with no flicker |
 | 7 | Sound (AY-3-8912) | the notes match the web version's player |
 | 8 | Front end | menus, a level, then the next level |
@@ -56,6 +56,7 @@ CPC_ROMS=/path/to/roms node tools/emu/screens.mjs
 CPC_ROMS=/path/to/roms node tools/emu/machine.mjs
 CPC_ROMS=/path/to/roms node tools/emu/plot.mjs [seed]
 CPC_ROMS=/path/to/roms node tools/emu/levels.mjs [room ...]
+CPC_ROMS=/path/to/roms node tools/emu/connections.mjs [room ...] [--detail]
 ```
 
 Steps a test can give (`steps.lua`): `wait` frames, `waitfor` a byte to have a value, `type`
@@ -64,6 +65,17 @@ text, `poke` and `peek` the base 64K, `load` a file into it and `dump` some of i
 a key by its row and bit in the keyboard matrix), `time` (the emulated clock), `regs` (the
 Z80's PC and SP), and `snap` (a screenshot). Every test starts by waiting for the program to
 set `ready`, once it has loaded and taken the machine over.
+
+`connections.mjs` is phase 5's test, the CPC version of the BBC version's `connections8.mjs`.
+It needs the steamfrak repository alongside this one (`STEAMFRAK` names it otherwise), for
+its `tools/connections.js`: a port of the original's GraphFind search, and a transcription of
+the original's TroggStanding, TroggFalling, TroggClimbing, PlatformFind and LadderFind run on
+the GameMaker project's rooms. The program loads each level on MAME and the memory below
+`&8000` is copied; then the Z80's `trogg_standing`, `trogg_falling` and `trogg_climbing` run on
+a small Z80 interpreter (`cpuz80.mjs`) against that copy, from every start the search asks
+about, and every way Trogg can get from one platform or ladder to another is compared with
+GameMaker's. All 55 levels match, but for D_9's ladder at x = 48.5, which the converter rounds
+down a pixel, as it does for the BBC version.
 
 `levels.mjs` is phase 4's test. For every level it has the program load it, then compares,
 with what the BBC version's converter expects (`../build/levels.json`, as its
@@ -102,13 +114,16 @@ and checks that each frame shows one buffer whole and that they alternate.
 | `&0040-&28FF` | the code and its variables |
 | `&2900-&3C3F` | the line and row tables, the draw log's two save areas (1K each, the first also where a level is unpacked from), the level tables |
 | `&3F00-&3FFF` | the stack |
-| `&4000-&7FFF` | the base RAM here: the levels, packed (12K, the BBC version's `PACK` as it is). The window the extra banks are paged into: bank 0 the graphics (as the BBC's sideways RAM bank 4, sprites and code tables), bank 1 the compiled meanie, bank 3 the background cache (as the BBC's bank 7) |
+| `&4000-&7FFF` | the base RAM here: the levels, packed (12K, the BBC version's `PACK` as it is), then from `&7000` the game's logic (code that only runs with the base RAM paged in, loaded with the levels). The window the extra banks are paged into: bank 0 the graphics (as the BBC's sideways RAM bank 4, sprites and code tables), bank 1 the compiled meanie, bank 3 the background cache (as the BBC's bank 7) |
 | `&8000-&BFFF` | while a level loads, the unroller's and the meanie compiler's workings |
 | `&8000-&BFFF` | screen buffer 0 |
 | `&C000-&FFFF` | screen buffer 1 |
 
 The code sits below `&4000` so that it stays visible whichever extra bank is paged in at
-`&4000-&7FFF`, as the BBC version's sits in main RAM below its sideways RAM.
+`&4000-&7FFF`, as the BBC version's sits in main RAM below its sideways RAM. That's full, so
+the game's logic (Trogg's movement, so far) goes after the levels in the base RAM, from
+`&7000`: code that never pages a bank in, nor calls anything that does, so the base RAM is
+always paged in while it runs.
 
 ### The machine (`src/machine.asm`)
 
@@ -204,6 +219,15 @@ two) as it is, so `gfx.py` only rebases each level's address. A level is copied 
 area 0) and unpacked into tables of records (platforms, ladders, things to draw, slow sprites):
 IX points at one and `(ix+PLT_YL)` and so on are its fields, which suits the Z80 better than the
 BBC version's separate arrays per field.
+
+### Trogg's movement (`src/trogg.asm`)
+
+A port of the BBC version's `trogg_standing`, `trogg_falling` and `trogg_climbing`, with
+`ladder_find` (and level.asm's `platform_find`): ports of GameMaker's TroggStanding,
+TroggFalling, TroggClimbing, LadderFind and PlatformFind. Trogg's y is in pixels and twentieths
+of a pixel, and his y velocity in twentieths of a pixel a tick, as in the BBC version: all the
+values the original's y and velocity can take (gravity 0.05, a jump 1.25), as whole numbers. The
+comparisons are unsigned where the BBC version's are, so the two always move him the same.
 
 ### The background (`src/bg.asm`)
 
