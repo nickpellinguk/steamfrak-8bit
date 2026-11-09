@@ -5,17 +5,18 @@ A port of the BBC Master version (in the rest of this repository) to an unmodifi
 and tests. Levels that scroll sideways use a 256x256 screen, levels that scroll up and down
 320x200, and both are double-buffered.
 
-**Status: phase 3 of 9** (the plotter). The program so far loads the graphics, takes the
-machine over from the firmware, and has the BBC version's plotter, draw log, yoyo string and
-compiled meanie, ported to the CPC's screen; the test harness drives them through a command
-mailbox and checks every byte they draw.
+**Status: phase 4 of 9** (levels and the background). The program so far loads the graphics
+and the levels, takes the machine over from the firmware, and has the BBC version's plotter,
+draw log, yoyo string and compiled meanie, and its level loader, background unroller and
+repainting, ported to the CPC; the test harness drives them through a command mailbox and
+checks every byte.
 
 | Phase | | Test that must pass |
 | --- | --- | --- |
 | 1 | Toolchain and harness | `screens.mjs`: both screen modes flip at vsync — **passes** |
 | 2 | Machine layer: interrupts and ticks, bank paging, keyboard, screen tables | `machine.mjs`: 50 ticks a second, every key, the extra banks — **passes** |
 | 3 | Plotter and drawing | `plot.mjs`: every image, clipped, saved and put back, the yoyo string, the compiled meanie, matching byte for byte — **passes** |
-| 4 | Levels and background | all 55 levels' tables and backgrounds match the converter |
+| 4 | Levels and background | `levels.mjs`: all 55 levels' tables, background caches and repainted windows match the converter — **passes** |
 | 5 | Game logic | Trogg moves exactly as in GameMaker |
 | 6 | Main loop and scrolling | levels play, with no flicker |
 | 7 | Sound (AY-3-8912) | the notes match the web version's player |
@@ -54,6 +55,7 @@ apt install mame
 CPC_ROMS=/path/to/roms node tools/emu/screens.mjs
 CPC_ROMS=/path/to/roms node tools/emu/machine.mjs
 CPC_ROMS=/path/to/roms node tools/emu/plot.mjs [seed]
+CPC_ROMS=/path/to/roms node tools/emu/levels.mjs [room ...]
 ```
 
 Steps a test can give (`steps.lua`): `wait` frames, `waitfor` a byte to have a value, `type`
@@ -62,6 +64,12 @@ text, `poke` and `peek` the base 64K, `load` a file into it and `dump` some of i
 a key by its row and bit in the keyboard matrix), `time` (the emulated clock), `regs` (the
 Z80's PC and SP), and `snap` (a screenshot). Every test starts by waiting for the program to
 set `ready`, once it has loaded and taken the machine over.
+
+`levels.mjs` is phase 4's test. For every level it has the program load it, then compares,
+with what the BBC version's converter expects (`../build/levels.json`, as its
+`check_levels.mjs` does): every table the loader built; the background cache (line tables,
+cell dictionary and lines, read out of bank 3); and the whole window repainted from the cache,
+byte for byte, against the screen the converter's background bytes describe.
 
 `plot.mjs` is phase 3's test, about 1,600 cases a run (`seed` picks them). Each loads the same
 random background into screen buffer 1, has the program draw something through its command
@@ -91,10 +99,11 @@ and checks that each frame shows one buffer whole and that they alternate.
 | Address | Contents |
 |---|---|
 | `&0000-&003F` | Z80 restart vectors; the interrupt handler's jump at `&0038` |
-| `&0040-&15FF` | the code and its variables |
-| `&1600-&2BFF` | the line and row tables, the draw log's two save areas (1K each), `jit_build`'s workspace |
+| `&0040-&28FF` | the code and its variables |
+| `&2900-&3C3F` | the line and row tables, the draw log's two save areas (1K each, the first also where a level is unpacked from), the level tables |
 | `&3F00-&3FFF` | the stack |
-| `&4000-&7FFF` | the window the extra banks are paged into: bank 0 the graphics (as the BBC's sideways RAM bank 4, sprites and code tables), bank 1 the compiled meanie; (later: the packed levels in the base RAM here) |
+| `&4000-&7FFF` | the base RAM here: the levels, packed (12K, the BBC version's `PACK` as it is). The window the extra banks are paged into: bank 0 the graphics (as the BBC's sideways RAM bank 4, sprites and code tables), bank 1 the compiled meanie, bank 3 the background cache (as the BBC's bank 7) |
+| `&8000-&BFFF` | while a level loads, the unroller's and the meanie compiler's workings |
 | `&8000-&BFFF` | screen buffer 0 |
 | `&C000-&FFFF` | screen buffer 1 |
 
@@ -185,3 +194,26 @@ lines left in that character row:
 
 and `RET` at the end. `plot_slow` uses it where the meanie is at an even pixel, wholly in the
 window, and none of its lines crosses the end of a 2K block, and `plot` everywhere else.
+
+### Levels (`src/level.asm`)
+
+A port of the BBC version's `fetch_level` and `load_level` with `platform_find`,
+`ladder_below`, `meanie_settings`, `moving_platform` and its four scans. All the levels are
+kept packed in the base RAM at `&4000`: the BBC version's `PACK` (its HAZEL segment, then ANDY's
+two) as it is, so `gfx.py` only rebases each level's address. A level is copied to `STAGE` (save
+area 0) and unpacked into tables of records (platforms, ladders, things to draw, slow sprites):
+IX points at one and `(ix+PLT_YL)` and so on are its fields, which suits the Z80 better than the
+BBC version's separate arrays per field.
+
+### The background (`src/bg.asm`)
+
+A port of the BBC version's unroller and repainting. The cache in extra bank 3 is in the same
+format, at the same offsets, as the BBC version's bank 7: a dictionary of the level's different
+character cells (8 lines of one byte column each, so the format doesn't depend on the screen's
+layout), and for each line of the level (a byte column of a sideways level, a character row of
+an up-and-down one) three bit-masks and the low byte of each non-empty cell's number. While a
+level loads, the unroller's hash table, chains and buffers are in screen buffer 0; it pages the
+graphics bank in to read the images and the cache bank in to build the dictionary, as the BBC
+version pages its banks 4 and 7 in turn. `repaint_column` and `repaint_row` paint from it: down
+a column the next cell is a line width on, along a row one byte on, each wrapping within its
+line's 2K block.

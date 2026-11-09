@@ -12,6 +12,8 @@
 
 GFX_BANK = 0
 JIT_TMP_SIZE = 2560                 ; bytes for jit_build's decoded image
+jit_tmp = #8000                     ; (in screen buffer 0: it's only used while a level
+                                    ; loads, after the background is unrolled)
 
         ORG #0040
 start
@@ -20,15 +22,11 @@ start
         ; firmware to the cassette; KL INIT BACK starts the disc ROM, AMSDOS, again.)
         ld c,7 : ld de,#0040 : ld hl,#ABFF
         call #BCCE                              ; KL INIT BACK
-        ld hl,gfx_name : ld b,gfx_name_end - gfx_name
-        ld de,#9000                             ; (a 2K buffer for the firmware)
-        call #BC77                              ; CAS IN OPEN
-        jp nc,load_error
-        ld bc,#7F00 + RAM_BANK + GFX_BANK : out (c),c
-        ld hl,#4000 : call #BC83                ; CAS IN DIRECT
-        ld bc,#7F00 + RAM_BASE : out (c),c
-        jp nc,load_error
-        call #BC7A                              ; CAS IN CLOSE
+        ld hl,gfx_name : ld b,gfx_name_end - gfx_name : ld c,RAM_BANK + GFX_BANK
+        call load_file
+        ; and the levels, packed, into the base RAM at #4000
+        ld hl,pack_name : ld b,pack_name_end - pack_name : ld c,RAM_BASE
+        call load_file
         ; then the machine is ours
         di
         ld sp,#4000
@@ -64,8 +62,20 @@ main_loop
         call show_front
         jr main_loop
 
+; Load the file named at HL (B characters) to #4000, with RAM configuration C paged in
+load_file
+        push bc
+        ld de,#9000                             ; (a 2K buffer for the firmware)
+        call #BC77                              ; CAS IN OPEN
+        jp nc,load_error
+        pop bc : ld b,GA : out (c),c
+        ld hl,#4000 : call #BC83                ; CAS IN DIRECT
+        ld bc,#7F00 + RAM_BASE : out (c),c
+        jp nc,load_error
+        jp #BC7A                                ; CAS IN CLOSE
+
 load_error
-        jr load_error                           ; (the disc is missing GFX.BIN)
+        jr load_error                           ; (the disc is missing a file)
 
 ; Run test command t_cmd (see tools/emu/plot.mjs)
 command
@@ -81,6 +91,17 @@ command
         dec a : jr nz,.not9
         ld a,(t_arg) : jp set_mode              ; 9: just the mode (no test cards)
 .not9   dec a : jp z,log_sprite7                ; 10
+        dec a : jr nz,.not11
+        ld a,(t_arg) : jp load_level            ; 11
+.not11  dec a : ret nz                          ; 12: repaint the window from the cache
+        ld a,(is_vert) : or a : jr nz,.rows
+        xor a
+.cols   push af : call repaint_column : pop af
+        inc a : cp 64 : jr nz,.cols
+        ret
+.rows   xor a
+.row    push af : call repaint_row : pop af
+        inc a : cp 25 : jr nz,.row
         ret
 
 ; A = 0 or 1: set that mode up and draw both buffers' test cards
@@ -117,10 +138,15 @@ white_line
 palette  db #54, #4C, #56, #4B, #54                    ; black, red, green, white; black border
 gfx_name db "GFX.BIN"
 gfx_name_end
+pack_name db "PACK.BIN"
+pack_name_end
 
         INCLUDE "machine.asm"
         INCLUDE "plot.asm"
         INCLUDE "gen/images.asm"
+        INCLUDE "gen/levels.asm"
+        INCLUDE "level.asm"
+        INCLUDE "bg.asm"
 
 ; ------------------------------------------------------------------------------
 ; Variables
@@ -209,6 +235,90 @@ jit_r       db 0
 jit_emit    dw 0
 jit_vecs    dw 0, 0                 ; its code at shifts 0 and 2 (in JIT_BANK)
 jit_count   dw 0                    ; times plot_slow used it (for the tests)
+; the level (see level.asm)
+cur_level   db 0
+level_rows  db 0                    ; its height, in character rows
+level_h     dw 0                    ; ... and pixels
+is_vert     db 0                    ; it scrolls up and down
+row_max     db 0                    ; level_rows - the window's
+level_cols  db 0                    ; its width, in byte columns
+scroll_max  dw 0                    ; its width - the window's
+x_max       dw 0                    ; its width - 10
+level_bg    db 0                    ; its background colour
+trogg_x0    dw 0                    ; where Trogg starts
+trogg_y0    dw 0
+num_plats   db 0
+num_ladders db 0
+num_draw    db 0
+num_slow    db 0
+num_keys    db 0
+num_gems    db 0
+; ... and the loader's workings
+q_y1        dw 0                    ; platform_find's question (and q_x)
+q_y2        dw 0
+res_found   db 0                    ; ... and answer
+res_y       dw 0
+res_i       db 0
+rx          dw 0                    ; a record
+ry          dw 0
+rimg        db 0
+rec         dw 0                    ; the next record
+ld_i        db 0
+ld_j        db 0
+ld_p        db 0
+ld_f        db 0
+pf_i        db 0
+pf_bottom   dw 0
+px          dw 0                    ; a moving platform's edges
+py          dw 0
+pw          db 0
+ph          db 0
+pr          dw 0
+pl          dw 0
+pb          dw 0
+found       db 0
+best        dw 0
+; the background (see bg.asm)
+num_bg      db 0
+mb          db 0                    ; bytes in each of a line's masks (4 or 10)
+pages1      db 0                    ; dictionary pages - 1
+po          dw 0
+u_cnt       dw 0                    ; cells in the dictionary
+u_line      db 0
+u_bl        dw 0
+u_bh        dw 0
+u_i         db 0
+u_j         db 0
+u_tb        dw 0
+u_src       dw 0
+u_cells     db 0
+u_s         db 0
+u_s4        db 0
+u_h         db 0
+u_cur       db 0
+u_prev      db 0
+u_dp        dw 0
+u_sp        dw 0
+u_r0        db 0
+u_r1        db 0
+u_pt        dw 0
+u_y         db 0
+u_start     dw 0
+u_np        dw 0
+u_x         db 0
+u_nl        db 0                    ; a cell's number (u_nh follows u_nl)
+u_nh        db 0
+u_h8        db 0
+u_cellp     dw 0
+cmask       DEFS 30                 ; a line's masks
+pl_line     db 0                    ; painting: the line, its cells [pl_i0, pl_i1]
+pl_i0       db 0
+pl_i1       db 0
+pl_src      dw 0
+pl_x        db 0
+curbit      db 0
+cellk       db 0
+pl_ptr      dw 0
 end_code
 
         ALIGN 256
@@ -216,9 +326,13 @@ line_lo     DEFS 256
 line_hi     DEFS 256
 rowoff_lo   DEFS 256
 rowoff_hi   DEFS 256
-savebuf0    DEFS 1024               ; save areas for the draw log, one per buffer
+savebuf0                            ; save areas for the draw log, one per buffer
+STAGE       DEFS 1024               ; (the first is also where a level is unpacked from)
 savebuf1    DEFS 1024
-jit_tmp     DEFS JIT_TMP_SIZE
+plats       DEFS MAX_PLATS * PLT_SIZE     ; the level tables (see level.asm)
+ladders     DEFS MAX_LADDERS * L_SIZE
+draws       DEFS MAX_DRAW * D_SIZE
+slows       DEFS MAX_SLOW * S_SIZE
 end_ram
         ASSERT end_ram <= #3F00     ; (the stack is below #4000)
 
@@ -226,6 +340,13 @@ end_ram
         PRINT "Code from ",{hex}start," to ",{hex}end_code,", workspace to ",{hex}end_ram
 
 ; The graphics, for extra bank 0
+        BANK
         ORG #4000
 gfx     INCBIN "../build/GFX"
         SAVE 'GFX.BIN',#4000,#4000,DSK,'build/frak.dsk'
+
+; The levels, packed, for the base RAM at #4000
+        BANK
+        ORG #4000
+pack    INCBIN "../build/PACK"
+        SAVE 'PACK.BIN',#4000,PACK_SIZE,DSK,'build/frak.dsk'
