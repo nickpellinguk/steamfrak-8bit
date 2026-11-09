@@ -5,14 +5,15 @@ A port of the BBC Master version (in the rest of this repository) to an unmodifi
 and tests. Levels that scroll sideways use a 256x256 screen, levels that scroll up and down
 320x200, and both are double-buffered.
 
-**Status: phase 1 of 9** (the toolchain and the test harness). The program so far takes the
-machine over from the firmware, sets up both screen modes, and shows a test card in each of the
-two screen buffers in turn, swapping them at vertical sync.
+**Status: phase 2 of 9** (the machine layer). The program so far takes the machine over from
+the firmware, checks the extra 64K, counts game ticks, reads the keyboard, sets up both screen
+modes, and shows a test card in each of the two screen buffers in turn, swapping them at
+vertical sync.
 
 | Phase | | Test that must pass |
 | --- | --- | --- |
 | 1 | Toolchain and harness | `screens.mjs`: both screen modes flip at vsync — **passes** |
-| 2 | Machine layer: interrupts and ticks, bank paging, keyboard, screen tables | 50 ticks a second, every key, both modes |
+| 2 | Machine layer: interrupts and ticks, bank paging, keyboard, screen tables | `machine.mjs`: 50 ticks a second, every key, the extra banks — **passes** |
 | 3 | Plotter and drawing | every image matches byte for byte |
 | 4 | Levels and background | all 55 levels' tables and backgrounds match the converter |
 | 5 | Game logic | Trogg moves exactly as in GameMaker |
@@ -47,7 +48,20 @@ and `cpc6128/cpcados.rom` (AMSDOS, Caprice32's `amsdos.rom`).
 ```sh
 apt install mame
 CPC_ROMS=/path/to/roms node tools/emu/screens.mjs
+CPC_ROMS=/path/to/roms node tools/emu/machine.mjs
 ```
+
+Steps a test can give (`steps.lua`): `wait` frames, `type` text, `poke` and `peek` the base
+64K, `bank` (read an extra bank, by paging it in and then back), `key` (press or let go of a
+key by its row and bit in the keyboard matrix), `time` (the emulated clock), and `snap` (a
+screenshot).
+
+`machine.mjs` is phase 2's test. It counts game ticks against the emulated clock over 20
+seconds (1,000 in 19.968 seconds: a CPC frame is 312 lines of 64µs, so 50.08 a second); checks
+the program's own test of the extra 64K and reads each bank back itself (a different signature
+at `&4000` and `&7FFF` in the base RAM and each of the four extra banks); and presses each of
+the keyboard's 79 keys in turn, checking that the program sees that key and no other, and that
+the `KEY_` constants agree with what MAME calls each key.
 
 `screens.mjs` is phase 1's test. For each mode it measures the test card's white outline in
 the screenshots (MAME draws a Mode 1 pixel 2 pixels wide, so 256x256 is 512x256 there and
@@ -69,12 +83,27 @@ and checks that each frame shows one buffer whole and that they alternate.
 The code sits below `&4000` so that it stays visible whichever extra bank is paged in at
 `&4000-&7FFF`, as the BBC version's sits in main RAM below its sideways RAM.
 
-### The machine
+### The machine (`src/machine.asm`)
 
-The program disables interrupts, turns both ROMs off (so `&0000-&3FFF` and `&C000-&FFFF` read
-RAM), and puts a jump to its own interrupt handler at `&0038` (interrupt mode 1). The gate array
-interrupts 300 times a second; the one 2 lines into vertical sync is the one that sees PPI port
-B's bit 0 set, so the handler counts vertical syncs (`vsyncs`).
+`machine_init` turns both ROMs off (so `&0000-&3FFF` and `&C000-&FFFF` read RAM), pages in the
+base 64K, and puts a jump to the program's own interrupt handler at `&0038` (interrupt mode 1).
+
+**Interrupts and ticks.** The gate array interrupts 300 times a second; the one 2 lines into
+vertical sync is the only one that sees PPI port B's bit 0 set. At that one the handler counts
+the vertical sync (`vsyncs`) and reads the keyboard. The main loop runs a game tick for each
+vertical sync since it last looked, so the game runs at 50 ticks a second however long a frame
+takes to draw, as the BBC version does.
+
+**Bank paging.** `bank_select` pages a RAM configuration in: `RAM_BASE`, or `RAM_BANK + n` for
+extra bank n (0-3) at `&4000-&7FFF`. It keeps a copy in `ga_ram`, as the BBC version keeps
+`ROMSEL_COPY`, so that anything that pages another bank in (the music player, later) can put
+the right one back. `bank_test` checks all five configurations at start-up (`bank_errors`).
+
+**The keyboard.** The CPC reads its keyboard matrix (10 rows of 8 keys) through the sound
+chip's port A, with the row on PPI port C. Because the music player will drive the sound chip
+from the interrupt handler too, the handler reads all 10 rows there, once a frame, into
+`keys[]` (a bit set while a key is down). `key_pressed` takes a key as `row * 8 + bit`, the
+`KEY_` constants, like the BBC version's INKEY numbers, and returns 1 if it's down.
 
 ### The two screen modes
 

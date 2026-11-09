@@ -8,7 +8,7 @@
 // and cpc6128/cpcados.rom (AMSDOS, 16K), named by CPC_ROMS (MAME checks them against its own
 // checksums). MAME itself is found as MAME, else /usr/games/mame.
 import { spawnSync } from 'child_process';
-import { readFileSync, writeFileSync, mkdtempSync, readdirSync } from 'fs';
+import { readFileSync, writeFileSync, mkdtempSync, readdirSync, existsSync } from 'fs';
 import { inflateSync } from 'zlib';
 import { tmpdir } from 'os';
 import { join, resolve, dirname } from 'path';
@@ -47,16 +47,18 @@ export function run(steps, { seconds = 120 } = {}) {
         { env: { ...process.env, CPC_STEPS: stepsFile }, encoding: 'utf8', maxBuffer: 1 << 26 });
     const log = (r.stdout || '') + (r.stderr || '');
     if (!/^OUT done/m.test(log)) throw new Error('MAME stopped before the steps finished:\n' + log);
-    const peeks = {}, snaps = {};
-    const shots = readdirSync(join(dir, 'snap'), { recursive: true }).filter(f => f.endsWith('.png'))
+    const peeks = {}, snaps = {}, times = {}, keys = [];
+    const shots = (existsSync(join(dir, 'snap')) ? readdirSync(join(dir, 'snap'), { recursive: true }) : []).filter(f => f.endsWith('.png'))
         .sort((a, b) => parseInt(a.match(/(\d+)\.png$/)[1]) - parseInt(b.match(/(\d+)\.png$/)[1]));
     let n = 0;
     for (const line of log.split('\n')) {
         let m;
-        if ((m = line.match(/^OUT peek (\S+) ?(.*)$/))) peeks[m[1]] = m[2].split(' ').filter(x => x).map(Number);
+        if ((m = line.match(/^OUT (?:peek|bank) (\S+) ?(.*)$/))) peeks[m[1]] = m[2].split(' ').filter(x => x).map(Number);
+        else if ((m = line.match(/^OUT time (\S+) (\S+)/))) times[m[1]] = Number(m[2]);
+        else if ((m = line.match(/^OUT key (\d+) (\d+) (.*)$/))) keys.push({ row: +m[1], mask: +m[2], name: m[3] });
         else if ((m = line.match(/^OUT snap (\S+)/))) snaps[m[1]] = join(dir, 'snap', shots[n++]);
     }
-    return { peeks, snaps, log, dir };
+    return { peeks, snaps, times, keys, log, dir };
 }
 
 // A PNG (8-bit RGB or RGBA, as MAME writes them) as { w, h, px(x, y) -> [r, g, b] }
