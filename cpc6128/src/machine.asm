@@ -77,12 +77,15 @@ bank_select                         ; A = RAM_BASE, or RAM_BANK + n
         ret
 
 ; Check the extra 64K: a different byte at the start and end of each bank and
-; of the base RAM at #4000, then read back. bank_errors = how many were wrong.
+; of the base RAM at #4000, then read back, then what was there put back (the
+; graphics are already loaded). bank_errors = how many were wrong.
 bank_test
-        ld hl,bank_configs
+        ld hl,bank_configs : ld de,bank_kept
 .write  ld a,(hl) : or a : jr z,.check
         call bank_select
-        ld (#4000),a : cpl : ld (#7FFF),a
+        ld a,(#4000) : ld (de),a : inc de
+        ld a,(#7FFF) : ld (de),a : inc de
+        ld a,(hl) : ld (#4000),a : cpl : ld (#7FFF),a
         inc hl : jr .write
 .check  ld hl,bank_configs : ld c,0
 .read   ld a,(hl) : or a : jr z,.done
@@ -92,8 +95,15 @@ bank_test
 .ok1    ld a,(#7FFF) : cpl : cp b : jr z,.ok2 : inc c
 .ok2    inc hl : jr .read
 .done   ld a,c : ld (bank_errors),a
-        ld a,RAM_BASE : jr bank_select
+        ld hl,bank_configs : ld de,bank_kept
+.put    ld a,(hl) : or a : jr z,.base
+        call bank_select
+        ld a,(de) : ld (#4000),a : inc de
+        ld a,(de) : ld (#7FFF),a : inc de
+        inc hl : jr .put
+.base   ld a,RAM_BASE : jr bank_select
 bank_configs db RAM_BASE, RAM_BANK, RAM_BANK + 1, RAM_BANK + 2, RAM_BANK + 3, 0
+bank_kept    DEFS 10
 
 ; ------------------------------------------------------------------------------
 ; The keyboard: 10 rows of 8 keys, read through the sound chip's port A (its
@@ -148,6 +158,7 @@ set_mode
         ld hl,crtc_v : ld a,80 : ld c,199
 .got    ld (g_w),a : ld a,c : ld (g_last),a
         call crtc_set
+        call make_rowoff
         jr make_lines
 
 ; CRTC registers from a table of (register, value) pairs, ending with #FF
@@ -181,9 +192,22 @@ make_lines
 .nc     dec c : jr nz,.row
         ret
 
+; rowoff_lo/rowoff_hi[r] = (r * g_w) MOD #800: where character row r of a level is
+; in each line's 2K block (see plot.asm)
+make_rowoff
+        ld hl,0
+        ld de,rowoff_lo
+.row    ld a,l : ld (de),a
+        inc d : ld a,h : ld (de),a : dec d
+        ld a,(g_w) : add a,l : ld l,a
+        jr nc,.nc : inc h
+.nc     ld a,h : and 7 : ld h,a
+        inc e : jr nz,.row
+        ret
+
 ; HL = the address of line A in the buffer whose page (#80 or #C0) is in back_page
 line_ptr
-        ld l,a : ld h,line_lo/256
+        ld l,a : ld h,line_lo>>8
         ld a,(hl) : inc h : ld h,(hl) : ld l,a
         ld a,(back_page) : add a,h : ld h,a
         ret

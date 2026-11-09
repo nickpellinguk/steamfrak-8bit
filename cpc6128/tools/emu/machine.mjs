@@ -1,16 +1,19 @@
 // Phase 2's test: the machine layer.
 //   ticks  game ticks counted against MAME's emulated clock: 50 a second (one a frame; a CPC
 //          frame is 312 lines of 64us, so 50.08 a second)
-//   banks  the program's own check of the extra 64K (bank_errors), and the harness reading each
-//          bank back itself: a different signature at #4000 and #7FFF of the base RAM and of
-//          each of the four extra banks
+//   banks  the program's own check of the extra 64K (bank_errors, which leaves the banks as it
+//          found them); the graphics loaded into bank 0, all 16K as on the disc; and the
+//          harness's own check that the banks are separate (a different signature written at
+//          #4000 and #7FFF of the base RAM and each extra bank, then all read back)
 //   keys   every key of the keyboard matrix pressed in turn (through MAME's keyboard rows): the
 //          program's keys[] shows that key and no other, and the KEY_ constants agree with what
 //          MAME calls each key
 // Then the screen modes are screens.mjs's to check.
 //
 //   ./build.sh && CPC_ROMS=... node tools/emu/machine.mjs
-import { symbols, run, boot } from './mame.mjs';
+import { symbols, run, boot, ROOT } from './mame.mjs';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 
 const sym = symbols();
 const steps = [...boot];
@@ -18,7 +21,8 @@ const steps = [...boot];
 steps.push('time t0', `peek k0 ${sym.ticks} 2`, 'wait 1000', 'time t1', `peek k1 ${sym.ticks} 2`);
 // banks
 const configs = [sym.ram_base, sym.ram_bank, sym.ram_bank + 1, sym.ram_bank + 2, sym.ram_bank + 3];
-steps.push(`peek bank_errors ${sym.bank_errors} 1`);
+steps.push(`peek bank_errors ${sym.bank_errors} 1`, `bank gfx ${sym.ram_bank} 16384 16384 ${sym.ga_ram}`);
+for (const c of configs) steps.push(`bankpoke ${c} 16384 ${c} ${sym.ga_ram}`, `bankpoke ${c} 32767 ${~c & 255} ${sym.ga_ram}`);
 for (const c of configs) steps.push(`bank first_${c} ${c} 16384 1 ${sym.ga_ram}`, `bank last_${c} ${c} 32767 1 ${sym.ga_ram}`);
 // keys
 steps.push(`peek none ${sym.keys} 10`);
@@ -41,6 +45,10 @@ if (Math.abs(rate - 50.08) > 0.1) fail(`${rate.toFixed(2)} ticks a second, not 5
 
 console.log('banks:');
 if (r.peeks.bank_errors[0] !== 0) fail(`bank_errors = ${r.peeks.bank_errors[0]}`);
+const gfx = readFileSync(join(ROOT, 'build/GFX'));
+const wrong = r.peeks.gfx.findIndex((b, i) => b !== gfx[i]);
+console.log(`  the graphics in bank 0: ${wrong < 0 ? 'all 16K as on the disc' : 'wrong at #' + (0x4000 + wrong).toString(16)}`);
+if (wrong >= 0) fail('the graphics in bank 0 differ from build/GFX');
 for (const c of configs) {
     const first = r.peeks[`first_${c}`][0], last = r.peeks[`last_${c}`][0];
     console.log(`  config #${c.toString(16).toUpperCase()}: #4000 = #${first.toString(16).toUpperCase()}, #7FFF = #${last.toString(16).toUpperCase()}`);
