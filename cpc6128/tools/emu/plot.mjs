@@ -63,7 +63,7 @@ function refLine(buf, mode, clip, x0, x1, y, yellow) {
         if (c === c0) mask = LEFT[a & 3];
         if (c === c1) mask &= RIGHT[b & 3];
         const i = at(mode, c, y);
-        buf[i] = (~mask & buf[i]) | ((yellow ? 0xFF : 0x0F) & mask);
+        buf[i] = (~mask & buf[i]) | ((yellow ? 0x0F : 0xFF) & mask);     // (black is colour 3, yellow 1)
     }
 }
 
