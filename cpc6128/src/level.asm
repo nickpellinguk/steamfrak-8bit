@@ -252,6 +252,9 @@ load_level
         jr .unused
 .unused_done
 
+        ; its background, into the cache
+        call bg_items
+        call unroll_bg
         ; compile the level's moving meanie (no level has more than one kind): the
         ; last slow sprite that isn't a platform
         ld a,255 : ld (jit_img),a

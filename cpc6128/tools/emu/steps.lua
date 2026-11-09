@@ -18,6 +18,9 @@
 --                          print LEN bytes from ADDR with RAM configuration CONFIG
 --                          paged in (an extra bank at #4000), then page back in the
 --                          configuration the program has, the byte at COPY (ga_ram)
+--   bankdump LABEL CONFIG ADDR LEN COPY
+--                          write LEN bytes from ADDR with RAM configuration CONFIG
+--                          paged in to LABEL.bin, likewise
 --   bankpoke CONFIG ADDR VALUE COPY
 --                          write a byte with RAM configuration CONFIG paged in, likewise
 --   quit                   stop
@@ -105,6 +108,15 @@ local function step()
       for k = 0, tonumber(n) - 1 do out[#out + 1] = mem:read_u8(tonumber(a) + k) end
       io:write_u8(0x7F00, mem:read_u8(tonumber(copy)))
       print("OUT bank " .. label .. " " .. table.concat(out, " "))
+    elseif op == "bankdump" then
+      local label, config, a, n, copy = rest:match("(%S+)%s+(%d+)%s+(%d+)%s+(%d+)%s+(%d+)")
+      io:write_u8(0x7F00, tonumber(config))
+      local out = {}
+      for k = 0, tonumber(n) - 1 do out[#out + 1] = string.char(mem:read_u8(tonumber(a) + k)) end
+      io:write_u8(0x7F00, mem:read_u8(tonumber(copy)))
+      local f = emu.file(dir, 0x0E)
+      assert(f:open(label .. ".bin") == nil, "can't write " .. label .. ".bin")
+      f:write(table.concat(out))
     elseif op == "bankpoke" then
       local config, a, v, copy = rest:match("(%d+)%s+(%d+)%s+(%d+)%s+(%d+)")
       io:write_u8(0x7F00, tonumber(config))

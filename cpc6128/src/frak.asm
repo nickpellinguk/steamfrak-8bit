@@ -12,6 +12,8 @@
 
 GFX_BANK = 0
 JIT_TMP_SIZE = 2560                 ; bytes for jit_build's decoded image
+jit_tmp = #8000                     ; (in screen buffer 0: it's only used while a level
+                                    ; loads, after the background is unrolled)
 
         ORG #0040
 start
@@ -89,8 +91,18 @@ command
         dec a : jr nz,.not9
         ld a,(t_arg) : jp set_mode              ; 9: just the mode (no test cards)
 .not9   dec a : jp z,log_sprite7                ; 10
-        dec a : ret nz
+        dec a : jr nz,.not11
         ld a,(t_arg) : jp load_level            ; 11
+.not11  dec a : ret nz                          ; 12: repaint the window from the cache
+        ld a,(is_vert) : or a : jr nz,.rows
+        xor a
+.cols   push af : call repaint_column : pop af
+        inc a : cp 64 : jr nz,.cols
+        ret
+.rows   xor a
+.row    push af : call repaint_row : pop af
+        inc a : cp 25 : jr nz,.row
+        ret
 
 ; A = 0 or 1: set that mode up and draw both buffers' test cards
 setup_mode
@@ -132,8 +144,9 @@ pack_name_end
         INCLUDE "machine.asm"
         INCLUDE "plot.asm"
         INCLUDE "gen/images.asm"
-        INCLUDE "level.asm"
         INCLUDE "gen/levels.asm"
+        INCLUDE "level.asm"
+        INCLUDE "bg.asm"
 
 ; ------------------------------------------------------------------------------
 ; Variables
@@ -265,6 +278,47 @@ pl          dw 0
 pb          dw 0
 found       db 0
 best        dw 0
+; the background (see bg.asm)
+num_bg      db 0
+mb          db 0                    ; bytes in each of a line's masks (4 or 10)
+pages1      db 0                    ; dictionary pages - 1
+po          dw 0
+u_cnt       dw 0                    ; cells in the dictionary
+u_line      db 0
+u_bl        dw 0
+u_bh        dw 0
+u_i         db 0
+u_j         db 0
+u_tb        dw 0
+u_src       dw 0
+u_cells     db 0
+u_s         db 0
+u_s4        db 0
+u_h         db 0
+u_cur       db 0
+u_prev      db 0
+u_dp        dw 0
+u_sp        dw 0
+u_r0        db 0
+u_r1        db 0
+u_pt        dw 0
+u_y         db 0
+u_start     dw 0
+u_np        dw 0
+u_x         db 0
+u_nl        db 0                    ; a cell's number (u_nh follows u_nl)
+u_nh        db 0
+u_h8        db 0
+u_cellp     dw 0
+cmask       DEFS 30                 ; a line's masks
+pl_line     db 0                    ; painting: the line, its cells [pl_i0, pl_i1]
+pl_i0       db 0
+pl_i1       db 0
+pl_src      dw 0
+pl_x        db 0
+curbit      db 0
+cellk       db 0
+pl_ptr      dw 0
 end_code
 
         ALIGN 256
@@ -275,7 +329,6 @@ rowoff_hi   DEFS 256
 savebuf0                            ; save areas for the draw log, one per buffer
 STAGE       DEFS 1024               ; (the first is also where a level is unpacked from)
 savebuf1    DEFS 1024
-jit_tmp     DEFS JIT_TMP_SIZE
 plats       DEFS MAX_PLATS * PLT_SIZE     ; the level tables (see level.asm)
 ladders     DEFS MAX_LADDERS * L_SIZE
 draws       DEFS MAX_DRAW * D_SIZE
