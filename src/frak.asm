@@ -3665,9 +3665,10 @@ ENDMACRO
     cmp #SL_PLATFORM : bne not_plat
     jsr move_platform : bra next
 .not_plat
-    jsr relevant : bcc next             \ (a meanie moves only while it's relevant to Trogg)
-    lda sl_kind,x
     cmp #SL_SCRUBBLY : bne not_scrub
+    \ (a Scrubbly moves only while it's relevant to Trogg; Poglets and Hooters always
+    \ move, as levels' timing puzzles depend on them)
+    jsr relevant : bcc next
     jsr move_scrubbly : bra next
 .not_scrub
     cmp #SL_POGLET : bne not_pog
@@ -3679,9 +3680,10 @@ ENDMACRO
     rts
 }
 
-\ Carry set if moving meanie X is relevant to Trogg: the box it moves in is above
-\ or below him, or level with him and within his yoyo's reach (95 pixels either
-\ side). (One riding a moving platform always is: it keeps up with it.) X kept.
+\ Carry set if Scrubbly X is relevant to Trogg: the box it walks in (amin to amax,
+\ at y) is above or below him, or level with him and within his yoyo's reach (95
+\ pixels either side). (One riding a moving platform always is: it keeps up with
+\ it.) X kept.
 REACH = 95
 .relevant
 {
@@ -3690,15 +3692,9 @@ REACH = 95
     sec : rts
 .look
     ldy sl_img,x
-    \ across: a Scrubbly walks from amin to amax, the others stay at x0
-    lda sl_kind,x : cmp #SL_SCRUBBLY : bne fixed
+    \ across: it walks from amin to amax
     lda sl_aminl,x : sta rl_l : lda sl_aminh,x : sta rl_l+1
-    lda sl_amaxl,x : sta rl_r : lda sl_amaxh,x
-    bra across
-.fixed
-    lda sl_x0l,x : sta rl_l : sta rl_r : lda sl_x0h,x : sta rl_l+1
-.across
-    sta rl_r+1
+    lda sl_amaxl,x : sta rl_r : lda sl_amaxh,x : sta rl_r+1
     \ its edges, from tx: left = l - xo - tx, right = r - xo + w - 1 - tx
     lda img_w,y : dec a : sta rl_a
     lda tx : clc : adc img_xo,y : sta tmp : lda tx+1 : adc #0 : sta tmp+1
@@ -3706,21 +3702,8 @@ REACH = 95
     \ above or below him (within 12 pixels of his middle)?
     lda #12 : jsr within : bcs yes
     lda #REACH : jsr within : bcc no
-    \ level with him? Down: a Poglet climbs from amin to amax, a Hooter jumps up from
-    \ y0 (at most HOOTER_PEAK), a Scrubbly is at y
-    lda sl_kind,x : cmp #SL_POGLET : bne not_pog
-    lda sl_aminl,x : sta rl_l : lda sl_aminh,x : sta rl_l+1
-    lda sl_amaxl,x : sta rl_r : lda sl_amaxh,x
-    bra down
-.not_pog
-    cmp #SL_HOOTER : bne at_y
-    lda sl_y0l,x : sta rl_r : sec : sbc #LO(HOOTER_PEAK) : sta rl_l
-    lda sl_y0h,x : sbc #HI(HOOTER_PEAK) : sta rl_l+1 : lda sl_y0h,x
-    bra down
-.at_y
-    lda s_yl,x : sta rl_l : sta rl_r : lda s_yh,x : sta rl_l+1
-.down
-    sta rl_r+1
+    \ level with him? Down: it's at y
+    lda s_yl,x : sta rl_l : sta rl_r : lda s_yh,x : sta rl_l+1 : sta rl_r+1
     \ edges from his middle (17 pixels above his feet): top = t - yo - (ty - 17) ...
     lda img_h,y : dec a : sta rl_a
     lda ty : sec : sbc #17 : sta tmp : lda ty+1 : sbc #0 : sta tmp+1
@@ -4770,7 +4753,7 @@ GUARD OVERLAYZ_ORG
 .fe_rate_index
 {
     ldx difficulty : beq zero
-    lda fe_diff_index,x : sta tmp
+    txa : lsr a : sta tmp                           \ (Easy 1, Hard 2, Harder 4, Insane 6: 0-3)
     lda #LO(rec_rate) : sta pt : lda #HI(rec_rate) : sta pt+1
     lda fe_lev : asl a : asl a : clc : adc tmp : tay
     rts
@@ -4779,7 +4762,6 @@ GUARD OVERLAYZ_ORG
     ldy fe_lev
     rts
 }
-.fe_diff_index EQUB 0, 0, 1, 1, 2, 2, 3
 
 \ Unpack the front end from SCREEN (put there by fe_stage, in whichever screen
 \ buffer the CPU is using) to &8000. See tools/pack.py for the format.
@@ -4947,8 +4929,8 @@ UBITS = p_x
     lda pl_i1 : sec : sbc cellk                     \ this cell
     cmp m_kf0 : bcc clear
     cmp m_kf1 : bcs clear
-    sec : sbc m_nk0 : stx tmp : tax
-    lda bitpos_lo,x : ora rawbits,y : sta rawbits,y
+    sec : sbc m_nk0 : eor #7 : stx tmp : tax        \ (bit n for cell n: bitpos's 7 - n)
+    lda bitpos,x : ora rawbits,y : sta rawbits,y
     ldx tmp
     bra next
 .clear
@@ -4980,7 +4962,6 @@ FOR n, 0, 255
 NEXT
 .topbits EQUB &00, &80, &C0, &E0, &F0, &F8, &FC, &FE
 .bitpos  EQUB &80, &40, &20, &10, &08, &04, &02, &01
-.bitpos_lo EQUB &01, &02, &04, &08, &10, &20, &40, &80
 
 \ Where shifts 0-2 of each image are (plot pages this bank in to look them up)
 INCLUDE "src/gen/imgdir.asm"
@@ -6820,8 +6801,11 @@ INCLUDE "src/commands.asm"
 \ and X the lines left in that character cell:
 \   a solid byte:    LDY #col*8 : LDA #pixels : STA (ptr),Y
 \   a partial one:   LDY #col*8 : LDA (ptr),Y : AND #mask : ORA #pixels : STA (ptr),Y
+\   (in column 0 no LDY, and (ptr) instead of (ptr),Y)
 \   (a transparent one: nothing)
 \   between lines:   DEX : BNE same : JSR jit_linestep : BRA next : .same INC ptr : .next
+\ (for a Poglet or a Hooter, jit_linestep's code in place of the JSR: faster, and
+\ with fewer rows their code is still smaller than a Scrubbly's)
 \ and RTS at the end. Carry set if there wasn't room for it.
 \ ------------------------------------------------------------------------------
 JIT_BANK = MUSIC_BANK
@@ -6847,16 +6831,20 @@ JIT_BANK = MUSIC_BANK
     jsr jit_peek : sta u_b : stx u_h                \ pixels, mask
     lda src : clc : adc jit_h : sta src : bcc s_ok : inc src+1 : .s_ok   \ (the next column)
     lda u_h : cmp #&FF : beq next_col               \ transparent: nothing
+    \ (column 0: (ptr) needs no Y: &B2 and &92 for &B1 and &91)
+    ldy #0 : lda u_s : beq col0
     lda #&A0 : jsr emit : lda u_s : jsr emit        \ LDY #col*8
+    dey
+.col0
     lda u_h : bne partial
     lda #&A9 : jsr emit : lda u_b : jsr emit        \ LDA #pixels
     bra store
 .partial
-    lda #&B1 : jsr emit : lda #ptr : jsr emit       \ LDA (ptr),Y
+    lda #&B2 : jsr emit_y : lda #ptr : jsr emit     \ LDA (ptr),Y or LDA (ptr)
     lda #&29 : jsr emit : lda u_h : jsr emit        \ AND #mask
     lda #&09 : jsr emit : lda u_b : jsr emit        \ ORA #pixels
 .store
-    lda #&91 : jsr emit : lda #ptr : jsr emit       \ STA (ptr),Y
+    lda #&92 : jsr emit_y : lda #ptr : jsr emit     \ STA (ptr),Y or STA (ptr)
 .next_col
     lda u_s : clc : adc #8 : sta u_s
     dec u_s4 : beq row_end
@@ -6864,9 +6852,12 @@ JIT_BANK = MUSIC_BANK
 .row_end
     inc u_cl : bne r_ok : inc u_ch : .r_ok          \ (the next row)
     dec u_j : beq rows_done
-    ldx #0
+    \ the line step: with JSR jit_linestep for a Scrubbly, its code in place otherwise
+    ldx #0 : ldy #10
+    lda jit_new : cmp #IMG_Scrubbly : beq step
+    ldx #10 : ldy #28                               \ (the second version: 28 bytes)
 .step
-    lda line_step,x : jsr emit : inx : cpx #10 : bne step
+    lda line_step,x : jsr emit : inx : dey : bne step
     jmp row
 .rows_done
     lda #&60 : jsr emit                             \ RTS
@@ -6874,11 +6865,23 @@ JIT_BANK = MUSIC_BANK
     jmp shift
 .compiled
     clc : rts
+.emit_y
+    \ A, less 1 unless Y is 0 (column 0): &B2 to &B1, &92 to &91, the (ptr),Y forms
+    cpy #0 : beq emit
+    dec a
 .emit
     sta (dp) : inc dp : bne e : inc dp+1 : .e
     rts
 .line_step
+    \ DEX : BNE same : JSR jit_linestep : BRA next : .same INC ptr : .next
     EQUB &CA, &D0, 5, &20, LO(jit_linestep), HI(jit_linestep), &80, 2, &E6, ptr
+    \ DEX : BNE same : (jit_linestep's code) : BRA next : .same INC ptr : .next
+    EQUB &CA, &D0, 23
+    EQUB &A5, ptr, &18, &69, LO(640 - 7), &85, ptr  \ LDA ptr : CLC : ADC #LO(633) : STA ptr
+    EQUB &A5, ptr + 1, &69, HI(640 - 7)             \ LDA ptr+1 : ADC #HI(633)
+    EQUB &C9, &80, &90, 2, &E9, &50                 \ CMP #&80 : BCC ok : SBC #&50
+    EQUB &85, ptr + 1, &A2, 8                       \ .ok STA ptr+1 : LDX #8
+    EQUB &80, 2, &E6, ptr
 }
 
 \ Called at the end of a character cell: ptr (at its last line) to the first
