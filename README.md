@@ -148,8 +148,8 @@ and is listed: Trogg can never get near it.)
 | `&3000-&7FFF` | MODE 1 screen, **double buffered**: main RAM and shadow RAM. While a level loads (with the screen blanked) it holds the loader's workspace (`&3000-&4FFF`: the dictionary's hash table, a row of the background, the lines being built) and the loader itself (`&6000`) |
 | SWRAM bank 4 | every sprite, as 5-pixel codes (14.3KB, see "Sprites"), including the platforms and ladders the backgrounds are unrolled from; 690 bytes free; then the code tables (`&BC00-&BFFF`) |
 | SWRAM bank 5 | the music and sound effects player and the tunes (4.3KB at `&8000`, see "Sound"), the typed commands (see "Typed commands") and the meanie compiler; then the level's moving meanie, compiled (up to 7.0KB; the largest, the Scrubbly, is 5.1KB); then the front end, packed (2.5KB, see below), then where shift 3 of each image is (`img_bank3`, `img_lo3`, `img_hi3`, 240 bytes at `&BB10`), then a save area for meanies flying off (the top 1KB) |
-| SWRAM bank 6 | collision spans and tables (from `&8000`), the **game logic** (to `&AE00`), then the current level's tables and the second save area for meanies flying off (120 bytes free). Stays paged in while playing |
-| SWRAM bank 7 | the current level's background, unrolled when it starts (`&8000-&A9FF`, see below), or, while the menus or the level-complete screen are up, the front end (unpacked to `&8000`); the front end's records and the unpacker (`&AA00`); the code that paints the background; where shifts 0-2 of each image are (`img_bank0-2`, `img_lo0-2`, `img_hi0-2`, 720 bytes: `plot` and the background unroller page bank 7 in to read them); the level loader, the code that starts a level and the boot code, packed (3.2KB at the top, unpacked to `&6000` when a level loads); 10 bytes free (fewer in test builds) |
+| SWRAM bank 6 | collision spans and tables (from `&8000`), the **game logic** (to `&AE00`), then the current level's tables and the second save area for meanies flying off (102 bytes free). Stays paged in while playing |
+| SWRAM bank 7 | the current level's background, unrolled when it starts (`&8000-&A9FF`, see below), or, while the menus or the level-complete screen are up, the front end (unpacked to `&8000`); the front end's records and the unpacker (`&AA00`); the code that paints the background; where shifts 0-2 of each image are (`img_bank0-2`, `img_lo0-2`, `img_hi0-2`, 720 bytes: `plot` and the background unroller page bank 7 in to read them); the level loader, the code that starts a level and the boot code, packed (3.2KB at the top, unpacked to `&6000` when a level loads); 14 bytes free (fewer in test builds) |
 | HAZEL (`&C000-&DFFF`) and ANDY (`&8000-&8FFF`) | **all 55 levels**, packed: 11.8KB, about 215 bytes each. `&8800-&88FF` of ANDY is left to the MOS |
 
 ### The packed front end
@@ -289,6 +289,14 @@ to just after the dictionary once its size is known. Loading takes 1.9 seconds f
 
 ### Sprites
 
+The logical colours are 0 the level's background (always transparent in sprites), 1 yellow,
+2 magenta and 3 black. Black, the outlines, is the colour with both bits set, so where every
+pixel a compiled meanie draws in a byte is black, `ORA` alone sets them and the `AND` can go
+(see "Compiled meanies"). The HUD timer is the one image that isn't coded: it's drawn into
+`hud_image` as nibbles (4 pixels in colour 1's bits, so bit 7, which the column routines take
+to mean "store without masking", is never set), which `plot` looks up as black in `hud_pix`, 16
+bytes at the start of bank 6 (and their masks in the first 16 of `masktab`).
+
 A MODE 1 byte holds 4 pixels, so a sprite drawn at an arbitrary x needs, for each screen byte, 4
 pixels that straddle two of its own bytes. Rather than keep a pre-shifted copy for each of the
 four pixel positions within a byte, each byte of a sprite is stored as a code for **5 pixels**:
@@ -359,7 +367,7 @@ Everything that moves is drawn after the scenery, in the screen buffer that is n
 and recorded in that buffer's **draw log**. This covers meanies flying off, the yoyo and its
 string, Trogg, and the FRAK! bubble. The background under each is saved in the buffer's 1KB
 save area. Next time the buffer is drawn, the log is played back in reverse to erase them.
-Sprites and lines (the yoyo string is a run of black pixels, colour 1) share the same
+Sprites and lines (the yoyo string is a run of black pixels, colour 3) share the same
 mechanism.
 
 Each sprite's save record is self-describing: a header with the row layout, then each byte
@@ -386,7 +394,8 @@ Hooter), and each has one frame, so when a level loads, `jit_build` (in the load
 pixel offsets (0 and 2): for each byte of a line, a solid one is `LDY #col*8 : LDA #pixels :
 STA (ptr),Y`, a partly transparent one `LDY #col*8 : LDA (ptr),Y : AND #mask : ORA #pixels :
 STA (ptr),Y`, and a transparent one nothing (in column 0, no `LDY #0`: `(ptr)` in place of
-`(ptr),Y`); between lines, `DEX : BNE same : JSR jit_linestep : BRA next : .same INC ptr :
+`(ptr),Y`; and no `AND #mask` where every pixel drawn is black, colour 3, both of whose bits
+`ORA` sets: about two thirds of the partly transparent bytes, the outlines); between lines, `DEX : BNE same : JSR jit_linestep : BRA next : .same INC ptr :
 .next` (`jit_linestep` moves on to the next character row). For a Poglet or a Hooter,
 `jit_linestep`'s code goes in place of the `JSR`, saving the call and return at each character
 row: their compiled code is still smaller than a Scrubbly's (about 4.0KB and 2.8KB against

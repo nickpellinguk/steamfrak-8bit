@@ -295,9 +295,10 @@ hline
         ld de,(sptr)
         ld a,(p_mode) : cp PM_RESTORE : jr z,.restore
         ld a,(hl) : ld (de),a
-        ; black is logical colour 1: low bit set, high bit clear, in each masked pixel
+        ; black is logical colour 3, both bits set in each masked pixel; yellow is
+        ; colour 1, the low bit set and the high bit clear
         ld a,c : cpl : and (hl) : ld b,a
-        ld a,(hl_yel) : or #0F : and c : or b   ; (yellow, colour 3, has both bits)
+        ld a,(hl_yel) : xor #F0 : or #0F : and c : or b
         ld (hl),a
         jr .advance
 .restore ld a,(de) : ld (hl),a
@@ -426,6 +427,8 @@ restore_log
 ; lines left in that character cell:
 ;   a solid byte:    LD (HL),pixels
 ;   a partial one:   LD A,(HL) : AND mask : OR pixels : LD (HL),A
+;                    (no AND where every pixel drawn is black, colour 3, both
+;                    of whose bits OR sets)
 ;   (a transparent one: nothing)
 ;   between bytes:   INC HL (a line can cross a 256-byte page)
 ;   between lines:   LD DE,#800 - bytes : ADD HL,DE : DJNZ same : CALL jit_row : .same
@@ -507,7 +510,9 @@ jit_compile
         ld (hl),#36 : inc hl : ld a,(ix+0) : ld (hl),a : inc hl     ; LD (HL),pixels
         jr .skip
 .partial ld (hl),#7E : inc hl                           ; LD A,(HL)
-        ld (hl),#E6 : inc hl : ld a,(ix+1) : ld (hl),a : inc hl     ; AND mask
+        ld a,(ix+0) : or (ix+1) : inc a : jr z,.no_and  ; (no AND if every pixel drawn is
+        ld (hl),#E6 : inc hl : ld a,(ix+1) : ld (hl),a : inc hl     ; black: AND mask)
+.no_and
         ld (hl),#F6 : inc hl : ld a,(ix+0) : ld (hl),a : inc hl     ; OR pixels
         ld (hl),#77 : inc hl                            ; LD (HL),A
 .skip   inc ix : inc ix
@@ -522,7 +527,7 @@ jit_compile
         ld (hl),#10 : inc hl : ld (hl),3 : inc hl       ; DJNZ same
         ld (hl),#CD : inc hl                            ; CALL jit_row
         ld (hl),jit_row AND 255 : inc hl : ld (hl),jit_row>>8 : inc hl
-        jr .row
+        jp .row
 .last   ld (hl),#C9 : inc hl                            ; RET
         ld (jit_emit),hl
         ld a,(p_oldbank0) : call bank_select

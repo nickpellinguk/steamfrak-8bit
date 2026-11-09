@@ -47,8 +47,9 @@ BANK_SIZE = 0x4000
 CODE_TABLES = 0xBC00            # in bank 4, after the sprites: left pixels, left mask, right pixels, right mask
 CODED = 0x80                    # (in an image's bank number: its data is 5-pixel codes, not screen bytes)
 
-# MODE 1 logical colours (palette set per level): 0 = background, 1 = black, 2 = magenta, 3 = yellow
-COLOURS = {(0, 0, 0): 1, (255, 0, 255): 2, (255, 255, 0): 3}
+# MODE 1 logical colours (palette set per level): 0 = background, 1 = yellow, 2 = magenta, 3 = black
+# (black, the outlines, has both bits: a partly transparent byte that's all black needs no AND)
+COLOURS = {(0, 0, 0): 3, (255, 0, 255): 2, (255, 255, 0): 1}
 # Level background colours -> BBC physical colours
 BG_PHYSICAL = {'#00f0f0': 6, '#00f000': 2, '#00e000': 2, '#be1f13': 1}
 
@@ -71,6 +72,7 @@ MOVING_OBJECTS = {'oScrubbly', 'oPoglet', 'oHooter'}
 DEPTH = {'oPlatform': 11, 'oLadder': 10, 'oBulb': 8, 'oKey': 7, 'oGem': 6, 'oMeanie': 5}
 
 MAX_HEIGHT = 1024
+SPANS_ORG = 0x8010              # (bank 6 starts with hud_pix, 16 bytes: see frak.asm)
 LADDER_EXTRA_LENGTH = 16
 
 
@@ -131,11 +133,11 @@ def sprite_pixels(data, name):
                 elif (r, g, b) in COLOURS:
                     row.append(COLOURS[(r, g, b)])
                 elif r > 150 and g > 150 and b < 80:
-                    row.append(3)       # yellowish
+                    row.append(1)       # yellowish
                 elif r > 150 and b > 150:
                     row.append(2)       # magentaish
                 else:
-                    row.append(1)
+                    row.append(3)       # (dark: black)
             rows.append(row)
         frames.append(rows)
     return frames
@@ -771,7 +773,7 @@ def main():
     # image that can be collided with
     spans_blob = bytearray()
     for e in directory:
-        e['span_addr'] = 0x8000 + len(spans_blob)
+        e['span_addr'] = SPANS_ORG + len(spans_blob)
         for l, r in (e['spans'] or []):
             spans_blob += bytes((l, r))
     open(os.path.join(build, 'SPANS'), 'wb').write(bytes(spans_blob))

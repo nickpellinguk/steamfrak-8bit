@@ -5,7 +5,7 @@
 \ with hardware horizontal scrolling. Ported from the HTML5 version (steamfrak repo).
 \
 \ Screen: MODE 1, 320x256, 4 colours. Logical colour 0 = level background,
-\ 1 = black, 2 = magenta, 3 = yellow.
+\ 1 = yellow, 2 = magenta, 3 = black.
 \
 \ Screen memory is addressed in *level* coordinates: the CRTC start address is
 \ set so that level byte-column C, character row R always lives at
@@ -1057,9 +1057,9 @@ savebuf1 = &0900
     EQUB 22, 1                              \ MODE 1
     EQUB 23, 1, 0, 0, 0, 0, 0, 0, 0, 0      \ cursor off
 .vdu_colours
-    EQUB 19, 1, 0, 0, 0, 0                  \ colour 1 = black
+    EQUB 19, 1, 3, 0, 0, 0                  \ colour 1 = yellow
     EQUB 19, 2, 5, 0, 0, 0                  \ colour 2 = magenta
-    EQUB 19, 3, 3, 0, 0, 0                  \ colour 3 = yellow
+    EQUB 19, 3, 0, 0, 0, 0                  \ colour 3 = black (both bits: see jit_compile)
 .vdu_init_end
 
 \ ------------------------------------------------------------------------------
@@ -1472,9 +1472,10 @@ savebuf1 = &0900
     \ Most images are 5-pixel codes (see tools/convert.py): the column routines look
     \ each one up in the tables for this shift's half (left 4 pixels for an odd
     \ shift, right 4 for an even one); codes 128-255 are 5 solid pixels, which are
-    \ stored without masking; a raw image (the timer) is screen bytes, only ever
-    \ black (colour 1), so bit 7 is never set and nothing takes that path
-    ldx #HI(identity) : ldy #HI(masktab)
+    \ stored without masking; a raw image (the timer, in bank 6) is nibbles, looked
+    \ up in hud_pix (as black, colour 3) and masktab, so bit 7 is never set and
+    \ nothing takes that path
+    ldx #HI(hud_pix) : ldy #HI(masktab)
     lda bank : bpl tables_set
     and #&7F : sta bank
     ldx #HI(CODE_RPIX) : ldy #HI(CODE_RMASK)
@@ -2072,6 +2073,15 @@ CLEAR &8000, &C000
 ORG &8000
 GUARD &C000
 .bank6_start
+\ The HUD timer's pixels (see plot): it's drawn into hud_image as nibbles, 4 pixels in
+\ colour 1's bits, which plot looks up here as colour 3, black (and in masktab, whose
+\ first 16 are their masks). (Raw images' bytes must never have bit 7 set: the column
+\ routines store a byte with bit 7 set without masking.)
+.hud_pix
+FOR n, 0, 15
+    EQUB n * 17
+NEXT
+ASSERT P% = &8010                   \ (SPANS_ORG in the converter)
 INCBIN "build/SPANS"
 INCLUDE "src/gen/collide.asm"
 .logic_start
@@ -4450,9 +4460,10 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
     ldx #0
     lda p_mode : cmp #PM_RESTORE : beq restore
     lda (ptr),y : sta (sptr,x)
-    \ black is logical colour 1: low bit set, high bit clear, in each masked pixel
+    \ black is logical colour 3, both bits set in each masked pixel; yellow is colour 1,
+    \ the low bit set and the high bit clear
     lda hl_mask : eor #&FF : and (ptr),y : sta tmp
-    lda hl_yel : ora #&0F : and hl_mask : ora tmp   \ (yellow, colour 3, has both bits)
+    lda hl_yel : eor #&F0 : ora #&0F : and hl_mask : ora tmp
     sta (ptr),y
     bra advance
 .restore
@@ -4494,7 +4505,7 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
     lda hud_k : asl a : asl a : asl a : asl a : tax     \ 2 byte columns of 8 rows each
     ldy #0
 .rows
-    lda txt_glyph,y : lsr a : lsr a : lsr a : lsr a : sta hud_image,x     \ black: colour 1
+    lda txt_glyph,y : lsr a : lsr a : lsr a : lsr a : sta hud_image,x     \ (nibbles: black, via hud_pix)
     lda txt_glyph,y : and #15 : sta hud_image + 8,x
     inx : iny : cpy #8 : bne rows
     ldx hud_k : inx : cpx #4 : bne chars
@@ -6093,7 +6104,7 @@ GUARD BG_TOP
     lda vdu_colours,x : jsr OSWRCH : inx : cpx #vdu_init_end - vdu_colours : bne colours
     pla : jsr set_bg
     lda #PM_PLOT : sta p_mode
-    lda #1 : sta txt_colour                         \ black text
+    lda #3 : sta txt_colour                         \ black text
     lda #0 : sta txt_yh
     rts
 }
@@ -6213,13 +6224,13 @@ ENDMACRO
     lda #8 : sta fe_i
 .buttons
     lda fe_i : jsr fe_button
-    lda #1 : ldx fe_i : jsr fe_frame
+    lda #3 : ldx fe_i : jsr fe_frame
     dec fe_i : bpl buttons
     lda #255 : sta fe_flash
     jsr fe_release
 .loop
     \ the selected button's border flashes yellow and magenta
-    lda vsyncs : and #16 : beq yellow : lda #2 : bne colour : .yellow : lda #3 : .colour
+    lda vsyncs : and #16 : beq yellow : lda #2 : bne colour : .yellow : lda #1 : .colour
     cmp fe_flash : beq keys
     sta fe_flash : ldx fe_sel : jsr fe_frame
 .keys
@@ -6250,7 +6261,7 @@ ENDMACRO
 .down
     lda fe_i : cmp #6 : bcs loop2 : adc #3 : sta fe_i
 .moved
-    lda #1 : ldx fe_sel : jsr fe_frame              \ (the old one back to black)
+    lda #3 : ldx fe_sel : jsr fe_frame              \ (the old one back to black)
     lda fe_i : sta fe_sel
     lda #255 : sta fe_flash
     jsr fe_release
@@ -6626,7 +6637,7 @@ MACRO FE_WIN_TEXT dy, text
 ENDMACRO
 .fe_win
 {
-    lda #1 : sta txt_colour
+    lda #3 : sta txt_colour                         \ (black)
     lda #88 : ldx done_restarts : cpx #3 : bcs base : lda #68 : .base : sta fe_wy
     FE_WIN_TEXT 0, "We've done it!"
     \ the time, to a thousandth of a second (m:ss.mmm)
@@ -6801,7 +6812,8 @@ INCLUDE "src/commands.asm"
 \ and X the lines left in that character cell:
 \   a solid byte:    LDY #col*8 : LDA #pixels : STA (ptr),Y
 \   a partial one:   LDY #col*8 : LDA (ptr),Y : AND #mask : ORA #pixels : STA (ptr),Y
-\   (in column 0 no LDY, and (ptr) instead of (ptr),Y)
+\   (in column 0 no LDY, and (ptr) instead of (ptr),Y; no AND where every pixel
+\   drawn is black, colour 3, both of whose bits ORA sets)
 \   (a transparent one: nothing)
 \   between lines:   DEX : BNE same : JSR jit_linestep : BRA next : .same INC ptr : .next
 \ (for a Poglet or a Hooter, jit_linestep's code in place of the JSR: faster, and
@@ -6841,7 +6853,10 @@ JIT_BANK = MUSIC_BANK
     bra store
 .partial
     lda #&B2 : jsr emit_y : lda #ptr : jsr emit     \ LDA (ptr),Y or LDA (ptr)
+    \ (no AND if every pixel drawn is black, colour 3: ORA sets both its bits anyway)
+    lda u_b : ora u_h : inc a : beq no_and
     lda #&29 : jsr emit : lda u_h : jsr emit        \ AND #mask
+.no_and
     lda #&09 : jsr emit : lda u_b : jsr emit        \ ORA #pixels
 .store
     lda #&92 : jsr emit_y : lda #ptr : jsr emit     \ STA (ptr),Y or STA (ptr)
