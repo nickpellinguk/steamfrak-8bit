@@ -91,6 +91,10 @@ node run.mjs "wait:1500 shot:start down:KeyX wait:100 up:KeyX shot:walked" scree
 `node commands.mjs room_0 '@318,177,0:5 U:150 U:300 12L:60'` types commands on a level (after
 optionally putting Trogg somewhere) and prints what he does, tick by tick.
 
+`node tidy8.mjs` (in `tools/emu`) plays levels with keys pressed at random and checks every
+tidy leaves its buffer exactly as it was before that buffer's draw log was drawn; it counts the
+tidies done while the other buffer was waiting to be shown (chasing the raster).
+
 `node check_levels.mjs` (in `tools/emu`, after `./build.sh`) checks the level loader: it visits
 every playable level and compares what the 6502 built (the platform, ladder, object and moving
 sprite tables, and every byte of the unrolled background) with what the converter expects.
@@ -352,9 +356,15 @@ one).
   sprites are drawn and erased in level coordinates.
 * Since column C and C+80 (or row R and R+32) share screen memory, everything is clipped to the
   window: the plotter clips to its columns and rows (or to the band being repainted).
-* The game draws into whichever of main and shadow RAM is not on display, then flips them at
-  vertical sync, so there is no flicker or tearing. Each buffer remembers its own scroll
-  position and the background saved under Trogg.
+* The game draws into whichever of main and shadow RAM is not on display, then asks for them
+  to be flipped (`flip_pending`), and the vertical sync event flips them (the CRTC start and
+  ACCCON's display bit together, in `vs_flip`), so there is no flicker or tearing. Meanwhile
+  the game logic runs, and then the buffer still on show is tidied for the next frame (`tidy`):
+  its draw log is erased chasing the raster down the screen, an entry once the raster has
+  passed its last row for the last time and once anything drawn after it on the same rows has
+  gone. The user VIA's timer 1, restarted at each vertical sync, says where the raster is;
+  `chase_pick` (in bank 5, with `vs_flip`) says which entry can go next. Each buffer remembers
+  its own scroll position and the background saved under Trogg.
 * Repainting a column or row copies its cells from the unrolled background in bank 7 (see "The
   background" above). Keys, gems and meanies are then plotted on top.
 * In vertically scrolling levels, as in the Steam version, balloons still start at the bottom
@@ -513,9 +523,9 @@ under it (`draw_springs`, with `hline` in yellow). As in the original:
   movable platforms are and what Trogg is carrying.
 
 The game logic runs at 50 ticks a second (5/6 of the Steam version's 60): one tick per
-vertical sync. The screen is redrawn at 25 frames a second (`FRAMES_PER_DRAW`), so normally
-two ticks run per drawn frame. A vertical-sync event handler counts syncs. If drawing a busy
-frame overruns, that frame simply runs three ticks, so the game speed never changes. Timers
+vertical sync. The screen is redrawn at up to 25 frames a second (`FRAMES_PER_DRAW`), so
+normally two ticks run per drawn frame. A vertical-sync event handler counts syncs. If drawing
+a busy frame overruns, the next runs three ticks, so the game speed never changes. Timers
 such as the death pause count game ticks, not drawn frames.
 
 Measured frame rates on Read&Weep: Easy holds 25fps. Hard dips to 24 and Harder to 21 at their busiest,

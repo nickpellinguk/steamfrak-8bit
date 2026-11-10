@@ -6,7 +6,7 @@
 //   const cpu = new CpuZ80(mem);        // mem: a Uint8Array(65536)
 //   cpu.call(addr, { a, hl, ... });     // CALL addr; returns when it returns
 //
-// IN reads #FF and OUT does nothing: the routines it runs don't page banks in. The flags' bits 3
+// IN reads #FF (unless a subclass says otherwise) and OUT does nothing: the routines it runs don't page banks in. The flags' bits 3
 // and 5 aren't kept.
 
 const C = 1, N = 2, PV = 4, H = 16, Z = 64, S = 128;
@@ -28,6 +28,7 @@ export class CpuZ80 {
     get af() { return this.a << 8 | this.f; } set af(v) { this.a = v >> 8 & 255; this.f = v & 255; }
 
     out(port, v) {}                     // (OUT: nothing, unless a subclass wants it)
+    in(port) { return 0xFF; }           // (IN r,(C): #FF, unless a subclass wants otherwise)
     rd(a) { return this.m[a & 0xFFFF]; }
     wr(a, v) { this.m[a & 0xFFFF] = v; }
     rd16(a) { return this.rd(a) | this.rd(a + 1) << 8; }
@@ -185,7 +186,10 @@ export class CpuZ80 {
         const y = op >> 3 & 7, z = op & 7, p = y >> 1, q = y & 1;
         switch (op >> 6) {
             case 1: {                                           // LD r,r' (and HALT)
-                if (op === 0x76) throw new Error('HALT at #' + ((this.pc - 1) & 0xFFFF).toString(16));
+                if (op === 0x76) {                              // (HALT: only if a subclass says it waits)
+                    if (!this.haltWaits) throw new Error('HALT at #' + ((this.pc - 1) & 0xFFFF).toString(16));
+                    this.pc = (this.pc - 1) & 0xFFFF; this.halted = true; return;
+                }
                 if (y === 6 || z === 6) { const ea = this.ea(x); this.setReg(y, 0, ea, this.reg(z, 0, ea)); }
                 else this.setReg(y, x, 0, this.reg(z, x, 0));
                 return;
@@ -294,7 +298,7 @@ export class CpuZ80 {
         const op = this.fetch(), y = op >> 3 & 7, z = op & 7, p = y >> 1, q = y & 1;
         if (op >> 6 === 1) {
             switch (z) {
-                case 0: { const v = 0xFF; if (y !== 6) this.setReg(y, 0, 0, v); this.f = (this.f & C) | SZP[v]; return; }
+                case 0: { const v = this.in(this.bc) & 0xFF; if (y !== 6) this.setReg(y, 0, 0, v); this.f = (this.f & C) | SZP[v]; return; }
                 case 1: this.out(this.bc, y === 6 ? 0 : this.reg(y, 0, 0)); return;    // OUT (C),r
                 case 2: {
                     const hl = this.hl, v = this.rp(p, 0), c = this.f & C;

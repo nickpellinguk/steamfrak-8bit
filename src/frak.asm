@@ -43,7 +43,7 @@ ENDIF
 FRAMES_PER_DRAW = 2             \ vertical syncs (1/50 s) per drawn frame
 MAX_TICKS_PER_FRAME = 4         \ game logic runs one tick per vertical sync, up to this many per frame
 
-MAX_LOG = 48                    \ draw-log entries per screen buffer
+MAX_LOG = 40                    \ draw-log entries per screen buffer
 LOG_SPRITE7 = 2                 \ (draw log kinds: 0 sprite, 1 line, 2 sprite saved in another bank)
 MAX_MOVERS = 12                 \ moving objects: balloons, daggers, meanies flying off
 
@@ -228,6 +228,11 @@ ORG &0E00
 .c_rows     SKIP 1
 .c_tl       SKIP 1
 .loops      SKIP 1          \ main loop counter (for timing checks)
+.flip_pending SKIP 1        \ the main loop's finished drawing flip_buf: vsync_event shows it
+.flip_buf   SKIP 1
+.flip_r12   SKIP 1          \ ... at this CRTC start
+.flip_r13   SKIP 1
+.tick_vs    SKIP 1          \ vsyncs the game logic has been run for
 .ticks_left SKIP 1
 .q_x        SKIP 2
 .q_y1       SKIP 2
@@ -514,6 +519,7 @@ INCLUDE "src/gen/tables.asm"
 \ Reset Trogg's movement state and redraw both screen buffers from scratch
 .redraw_all
 {
+    stz flip_pending
     jsr level_music
     lda #ST_STAND : sta tstate
     lda #0 : sta tclimb : sta xvel : sta anim : sta dead : sta won
@@ -568,12 +574,11 @@ INCLUDE "src/gen/tables.asm"
 \ then show it at the next 25Hz frame, and run two ticks of game logic.
 .main_loop
 {
+.wait
+    lda flip_pending : bne wait     \ (the buffer to draw in mustn't be on show)
     lda front : eor #1 : sta back
-    jsr select_back
+    jsr back_setup
     ldx back
-    lda bscroll,x : sta scrollcol
-    lda brow,x : sta scrollrow
-    jsr set_window_clip
 
     \ Once Trogg is dead and this buffer already shows the FRAK! bubble, nothing
     \ changes until the restart, so don't redraw
@@ -589,7 +594,7 @@ INCLUDE "src/gen/tables.asm"
 .redraw
     lda #0 : sta dmg_n : sta dmg_all       \ nothing repainted yet this frame
 .^t_restore
-    jsr restore_log
+    jsr restore_log                 \ (tidy has normally done it)
 
 .^t_scroll
     jsr band_scroll
@@ -691,31 +696,29 @@ INCLUDE "src/gen/tables.asm"
     jsr log_sprite
 
 .^show
-    \ Show it once FRAMES_PER_DRAW vertical syncs have passed since the last flip
+    \ It's drawn: shown at the next vertical sync (vsync_event does it)
     inc loops
+    jsr crtc_regs
+    lda back : sta flip_buf
+    inc flip_pending
 .^t_vsync
-.wait
-    lda vsyncs : sec : sbc last_flip
-    cmp #FRAMES_PER_DRAW : bcc wait
 .^t_after_vsync
-    jsr set_crtc_start
-    jsr show_back
-    lda back : sta front
 
-    \ Run one tick of game logic per vertical sync since the last flip: normally
-    \ two, but more if drawing overran, so the game speed stays at 50 ticks a
-    \ second (capped, so a long pause such as a full redraw doesn't jump ahead)
-    lda vsyncs : sec : sbc last_flip
+    \ Meanwhile, one tick of game logic per vertical sync since the last ticks
+    \ (capped, so a long pause such as a full redraw doesn't jump ahead)
+    lda vsyncs : sec : sbc tick_vs
     cmp #MAX_TICKS_PER_FRAME + 1 : bcc ticks_ok
     lda #MAX_TICKS_PER_FRAME
 .ticks_ok
     sta ticks_left : sta frame_ticks
-    lda vsyncs : sta last_flip
+    lda vsyncs : sta tick_vs
+    lda ticks_left : beq tidy_up
 .tick
 .^t_logic
     jsr game_tick
 .^t_logic_done
     beq next_tick
+    stz flip_pending                \ (not to be shown now)
     cmp #TICK_WON : beq next_level
     cmp #TICK_QUIT : beq to_menu
     jmp restore_checkpoint          \ TICK_DIED: back to the checkpoint (or the level's start)
@@ -730,7 +733,45 @@ INCLUDE "src/gen/tables.asm"
     jmp redraw_all
 .next_tick
     dec ticks_left : bne tick
+.tidy_up
+    \ ... and then the other buffer, still on show, tidied for the next frame
+    jsr tidy
     jmp main_loop
+}
+
+\ Erase what's drawn in the buffer on show (the next frame's drawn in it): chasing
+\ the raster while the one just drawn waits to be shown (chase_pick, in JIT_BANK,
+\ says which entry can go next); not if the next frame won't be drawn there (as
+\ main_loop decides: once Trogg has won, or is dead and it shows the FRAK! bubble)
+.tidy
+{
+    lda won : bne done
+    lda back : eor #1 : sta back : tax
+    lda dead : beq go
+    lda bfrak,x : bne done
+.go
+    jsr back_setup
+    lda flip_pending : bne chase
+    jmp restore_log                 \ (shown already: no need)
+.chase
+    lda #LO(chase_init) : ldy #HI(chase_init) : jsr call5
+.loop
+    lda #LO(chase_pick) : ldy #HI(chase_pick) : jsr call5
+    cpx #&FE : beq done : bcs loop          \ (&FE: all done; &FF: none yet)
+    jsr restore_entry
+    bra loop
+.done
+    rts
+}
+
+\ The back buffer selected, with its scroll position and window
+.back_setup
+{
+    jsr select_back
+    ldx back
+    lda bscroll,x : sta scrollcol
+    lda brow,x : sta scrollrow
+    jmp set_window_clip
 }
 
 \ One tick of game logic. Returns A (and Z) = TICK_OK, TICK_DIED or TICK_WON.
@@ -799,6 +840,7 @@ EVNTV = &0220
     pha : phx : phy
     lda tblptr : pha : lda tblptr+1 : pha
     lda #MUSIC_BANK : sta ROMSEL
+    jsr vs_flip
     jsr snd_tick
     lda ROMSEL_COPY : sta ROMSEL
     pla : sta tblptr+1 : pla : sta tblptr
@@ -981,6 +1023,15 @@ LINE_SAVE = 24                      \ bytes: the longest line is about 82 pixels
 .loop
     ldx back : dec log_n,x
     ldy back : lda log_base,y : clc : adc log_n,x : tax
+    jsr restore_entry
+    ldx back : lda log_n,x : bne loop
+.done
+    rts
+}
+
+\ Erase log entry X
+.restore_entry
+{
     lda log_img,x : sta p_img
     lda log_xl,x : sta p_x : lda log_xh,x : sta p_x+1
     lda log_yl,x : sta p_y : lda log_yh,x : sta p_y+1
@@ -994,16 +1045,11 @@ LINE_SAVE = 24                      \ bytes: the longest line is about 82 pixels
     lda log_bank,x : sta ROMSEL_COPY : sta ROMSEL
     jsr restore_saved
     pla : sta ROMSEL_COPY : sta ROMSEL
-    bra next
-.sprite
-    jsr restore_saved
-    bra next
-.line
-    jsr hline
-.next
-    ldx back : lda log_n,x : bne loop
-.done
     rts
+.sprite
+    jmp restore_saved
+.line
+    jmp hline
 }
 
 
@@ -1012,11 +1058,13 @@ ACCCON = &FE34                      \ Master: bit 0 = display shadow, bit 2 = CP
 \ Make &3000-&7FFF refer to the back buffer
 .select_back
 {
+    php : sei                       \ (vsync_event may change ACCCON's display bit)
     lda ACCCON : and #&FB
     ldx back : beq main
     ora #4
 .main
     sta ACCCON
+    plp
     rts
 }
 
@@ -1156,17 +1204,24 @@ savebuf1 = &0900
 
 .set_crtc_start
 {
+    jsr crtc_regs
+    lda #13 : sta CRTC_REG : lda flip_r13 : sta CRTC_DATA
+    lda #12 : sta CRTC_REG : lda flip_r12 : sta CRTC_DATA
+    rts
+}
+
+\ The CRTC start (flip_r12, flip_r13) for the back buffer's scroll position
+.crtc_regs
+{
     \ start = (&3000 / 8) + (scrollrow MOD 32) * 80 + scrollcol
     lda scrollrow : and #31 : sta tmp : stz tmp+1
     asl tmp : asl tmp : asl tmp : asl tmp : rol tmp+1        \ * 16
     lda tmp : sta left : lda tmp+1 : sta left+1
     asl tmp : rol tmp+1 : asl tmp : rol tmp+1                \ * 64
     lda tmp : clc : adc left : sta tmp : lda tmp+1 : adc left+1 : sta tmp+1
-    lda #13 : sta CRTC_REG
     lda tmp : clc : adc scrollcol : sta tmp : lda tmp+1 : adc #0 : sta tmp+1
-    lda tmp : clc : adc #LO(SCREEN DIV 8) : sta CRTC_DATA
-    lda #12 : sta CRTC_REG
-    lda tmp+1 : adc #HI(SCREEN DIV 8) : sta CRTC_DATA
+    lda tmp : clc : adc #LO(SCREEN DIV 8) : sta flip_r13
+    lda tmp+1 : adc #HI(SCREEN DIV 8) : sta flip_r12
     rts
 }
 
@@ -6810,6 +6865,158 @@ INCLUDE "src/commands.asm"
     lda newrow : sta scrollrow : sta brow,x
     jmp set_window_clip
 }
+
+\ ------------------------------------------------------------------------------
+\ Showing a drawn buffer, and tidying the other while it waits (in JIT_BANK, for
+\ room). The main loop, once it's drawn a buffer, asks for it to be shown
+\ (flip_pending); vsync_event shows it at the next vertical sync, so the switch
+\ is never part-way down the screen. Meanwhile the main loop runs the game logic
+\ and then erases the draw log of the buffer still on show, chasing the raster:
+\ an entry goes once the raster has passed its last row for the last time, and
+\ once everything drawn after it on the same rows has gone (chase_pick says which).
+\ ------------------------------------------------------------------------------
+USR_T1CL = &FE64 : USR_T1CH = &FE65 : USR_ACR = &FE6B : USR_IER = &FE6E
+
+\ At each vertical sync (from vsync_event): the user VIA's timer 1 from &FFFF, for
+\ the time since (it isn't otherwise used); and the flip, if one is asked for, no
+\ sooner than FRAMES_PER_DRAW vertical syncs since the last
+.vs_flip
+{
+    lda USR_ACR : and #&3F : sta USR_ACR            \ (timer 1 one-shot, no PB7)
+    lda #&40 : sta USR_IER                          \ (and no interrupt from it)
+    lda #&FF : sta USR_T1CL : sta USR_T1CH
+    lda flip_pending : beq done
+    lda vsyncs : sec : sbc last_flip
+    cmp #FRAMES_PER_DRAW : bcc done
+    lda vsyncs : sta last_flip
+    lda #13 : sta CRTC_REG : lda flip_r13 : sta CRTC_DATA
+    lda #12 : sta CRTC_REG : lda flip_r12 : sta CRTC_DATA
+    lda ACCCON : and #&FE : ora flip_buf : sta ACCCON
+    lda flip_buf : sta front
+    stz flip_pending
+.done
+    rts
+}
+
+\ The back buffer's log entries: each one's rows in the window (clamped to 0-255),
+\ none erased yet
+.chase_init
+{
+    ldx back
+    lda log_n,x : sta ch_n
+    lda log_base,x : sta ch_first
+    clc : adc ch_n : sta ch_last : dec ch_last
+    ldx ch_first
+    ldy ch_n : bne rows
+    rts
+.rows
+    stz ch_done,x
+    lda log_yl,x : sec : sbc clip_t : sta ch_t
+    lda log_yh,x : sbc clip_t+1 : sta ch_t+1        \ (its y in the window)
+    lda log_kind,x : beq sprite
+    cmp #LOG_LINE : beq line
+    stz ch_r0,x : lda #255 : sta ch_r1,x            \ (a meanie flying off: its y isn't
+    bra next                                        \ logged, so every row)
+.line
+    lda ch_t : sta ch_b : lda ch_t+1 : sta ch_b+1
+    bra clamp
+.sprite
+    phy : ldy log_img,x
+    lda ch_t : sec : sbc img_yo,y : sta ch_t
+    lda ch_t+1 : sbc #0 : sta ch_t+1                \ its top
+    lda img_h,y : clc : adc ch_t : sta ch_b
+    lda ch_t+1 : adc #0 : sta ch_b+1
+    lda ch_b : bne nb : dec ch_b+1
+.nb
+    dec ch_b                                        \ ... and bottom
+    ply
+.clamp
+    lda ch_t+1 : beq t_ok : bmi t_neg
+    lda #255 : bra t_set
+.t_neg
+    lda #0 : bra t_set
+.t_ok
+    lda ch_t
+.t_set
+    sta ch_r0,x
+    lda ch_b+1 : beq b_ok : bmi b_neg
+    lda #255 : bra b_set
+.b_neg
+    lda #0 : bra b_set
+.b_ok
+    lda ch_b
+.b_set
+    sta ch_r1,x
+.next
+    inx : dey : beq done
+    jmp rows
+.done
+    rts
+}
+
+\ X = the next log entry that can be erased (marked done), &FF if none can yet,
+\ or &FE if they all have been (and the log's emptied)
+.chase_pick
+{
+    lda ch_n : bne some
+    jmp finished
+.some
+    lda flip_pending : beq any                      \ (shown: any, last first)
+    \ the window's lines the raster has passed for the last time: none unless the
+    \ flip comes at the next vertical sync. Timer 1's high byte counts down every
+    \ 256 us (4 lines) from the sync; the window starts 40 lines after it.
+    lda vsyncs : cmp last_flip : beq none
+    lda USR_T1CH : eor #&FF
+    cmp #(40 + 256 + 4) DIV 4 : bcs any             \ (past the window's last line)
+    sec : sbc #(40 + 4) DIV 4 : bcc none            \ (less 4 lines to spare)
+    asl a : asl a : sta ch_safe
+    stz ch_ns
+    ldx ch_last
+.walk
+    lda ch_done,x : bne next
+    lda ch_r1,x : cmp ch_safe : bcs skip            \ (its last row not passed yet)
+    lda ch_ns : sta ch_k                            \ on the rows of one passed over?
+.over
+    dec ch_k : bmi take
+    ldy ch_k : lda ch_skip,y : tay
+    lda ch_r1,y : cmp ch_r0,x : bcc over
+    lda ch_r1,x : cmp ch_r0,y : bcc over
+.skip
+    ldy ch_ns : txa : sta ch_skip,y : inc ch_ns
+.next
+    cpx ch_first : beq walked
+    dex : bra walk
+.walked
+    lda ch_ns : beq finished
+.none
+    ldx #&FF
+    rts
+.any
+    ldx ch_last
+.a
+    lda ch_done,x : beq take
+    cpx ch_first : beq finished
+    dex : bra a
+.take
+    lda #1 : sta ch_done,x
+    rts
+.finished
+    ldx back : stz log_n,x
+    ldx #&FE
+    rts
+}
+.ch_n       SKIP 1
+.ch_first   SKIP 1
+.ch_last    SKIP 1
+.ch_t       SKIP 2
+.ch_b       SKIP 2
+.ch_safe    SKIP 1
+.ch_ns      SKIP 1
+.ch_k       SKIP 1
+.ch_r0      SKIP 2 * MAX_LOG
+.ch_r1      SKIP 2 * MAX_LOG
+.ch_done    SKIP 2 * MAX_LOG
+.ch_skip    SKIP 2 * MAX_LOG
 
 
 \ ------------------------------------------------------------------------------

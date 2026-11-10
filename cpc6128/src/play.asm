@@ -3,14 +3,18 @@
 ; draw_slow and the rest), in the logic bank with game_tick.
 ;
 ; Each frame, in the buffer that isn't on show:
-;   1. erase everything drawn there last time (restore_log), and repaint what's
-;      changed under it: columns (or rows) scrolled into view, collected things
+;   1. bring its scroll position up to date, and repaint what's changed: columns
+;      (or rows) scrolled into view, collected things
 ;   2. bring the moving platforms and meanies up to date (draw_slow)
 ;   3. draw the moving things - balloons, daggers and meanies flying off, the
 ;      yoyo and its string, Trogg, and his FRAK! bubble - saving the background
 ;      under each (the draw log)
-; then show it once two vertical syncs have passed since the last flip, and run
-; a tick of game logic for each vertical sync since then.
+; then ask for it to be shown (flag_flip): irq shows it at the next vertical
+; sync (no sooner than FRAMES_PER_DRAW since the last), so the switch is never
+; part-way down the screen. Meanwhile, run a tick of game logic for each vertical
+; sync since the last ticks, and then tidy the buffer still on show for the next
+; frame - erase its draw log (restore_chase), chasing the raster down the screen
+; until it's been replaced - then wait for the flip, and round again.
 ;
 ; The CPC's window is 256x256 for a level that scrolls sideways (64 byte columns,
 ; 32 character rows) and 320x200 for one that scrolls up and down (80 columns,
@@ -35,11 +39,9 @@ DR_SIZE = 9
 ; Play, from level A (the test harness's command 13). Never returns.
 play    call begin_level
 frame_loop
+        call wait_flip                          ; (the buffer to draw in mustn't be on show)
         ld a,(front) : xor 1 : ld (back),a
-        call set_back_page
-        ld a,(back) : ld hl,bscroll : call look : ld (scrollcol),a
-        ld a,(back) : ld hl,brow : call look : ld (scrollrow),a
-        call set_window_clip
+        call back_setup
         ; Once Trogg has won, or is dead and this buffer already shows the FRAK!
         ; bubble, nothing changes, so don't redraw
         ld a,(won) : or a : jr z,.not_won
@@ -49,7 +51,7 @@ frame_loop
         ld a,(dead) : or a : jr z,.redraw
         ld a,(back) : ld hl,bfrak : call look : or a : jp nz,.show
 .redraw xor a : ld (dmg_n),a : ld (dmg_all),a  ; nothing repainted yet this frame
-        call restore_log
+        call restore_log                        ; (restore_chase has normally done it)
         call band_scroll
         call do_scroll
         ld a,(back) : ld e,a : ld d,0
@@ -69,6 +71,7 @@ frame_loop
         ; moved (or were painted over) are drawn again
         call commit_all
         call draw_slow
+.slow_done                                      ; (tidy.mjs: nothing logged yet)
         ; moving objects (drawn behind Trogg, as meanies were in GameMaker), keeping
         ; enough of the save area for Trogg, the yoyo and the FRAK! bubble
         ld hl,(send) : ld de,SAVE_RESERVE_ALIVE
@@ -110,23 +113,23 @@ frame_loop
 .show   ld hl,(frames_drawn) : inc hl : ld (frames_drawn),hl
         ; (the test harness can hold each frame to look at it, and then the game
         ; runs two ticks a frame)
-        ld a,(t_lock) : or a : jr z,.wait
+        ld a,(t_lock) : or a : jr z,.flag
         ld a,1 : ld (t_frame),a
 .hold   ld a,(t_frame) : or a : jr nz,.hold
-        call flip
-        ld a,(vsyncs) : ld (last_flip),a
-        ld a,FRAMES_PER_DRAW : jr .ticks
-.wait   ; show it once FRAMES_PER_DRAW vertical syncs have passed since the last flip
-        ld a,(last_flip) : ld b,a
-        ld a,(vsyncs) : sub b : cp FRAMES_PER_DRAW : jr c,.wait
-        call flip
-        ; run a tick of game logic for each vertical sync since the last flip (at most
-        ; MAX_TICKS_PER_FRAME, so a long pause such as a full redraw doesn't jump ahead)
-        ld a,(last_flip) : ld b,a
-        ld a,(vsyncs) : ld (last_flip),a
-        sub b : cp MAX_TICKS_PER_FRAME + 1 : jr c,.ticks
+.flag   ; it's drawn: shown at the next vertical sync (irq does it)
+        call flag_flip
+        ; meanwhile, a tick of game logic for each vertical sync since the last ticks
+        ; (at most MAX_TICKS_PER_FRAME, so a long pause such as a full redraw doesn't
+        ; jump ahead)...
+        ld a,(tick_vs) : ld b,a
+        ld a,(vsyncs) : ld (tick_vs),a
+        sub b : cp MAX_TICKS_PER_FRAME + 1 : jr c,.owed
         ld a,MAX_TICKS_PER_FRAME
+.owed   ld c,a
+        ld a,(t_lock) : or a : ld a,c : jr z,.ticks
+        ld a,FRAMES_PER_DRAW
 .ticks  ld (ticks_left),a : ld (frame_ticks),a
+        or a : jr z,.tidy
 .tick   call game_tick
         jr z,.next_tick
         cp TICK_WON : jr z,.next_level
@@ -141,14 +144,57 @@ frame_loop
         jp frame_loop
 .next_tick
         ld hl,ticks_left : dec (hl) : jr nz,.tick
+.tidy   ; ... and then the other buffer, still on show, tidied for the next frame
+        call tidy
         jp frame_loop
 
-; Show the back buffer, scrolled to its position, at the next frame
-flip    ld a,(scrollrow) : ld l,a : ld h,rowoff_lo >> 8 : ld e,(hl) : inc h : ld d,(hl)
-        ld a,(scrollcol) : ld l,a : ld h,0 : add hl,de
-        ld a,h : and 7 : ld h,a
+; Erase what's drawn in the buffer on show (which the next frame is drawn in),
+; chasing the raster while the one just drawn waits to be shown; not if the next
+; frame won't be drawn there (as frame_loop decides: once Trogg has won, or is
+; dead and it already shows the FRAK! bubble)
+tidy    ld a,(won) : or a : ret nz
+        ld a,(back) : xor 1 : ld (back),a
+        ld a,(dead) : or a : jr z,.tidy
+        ld a,(back) : ld hl,bfrak : call look : or a : ret nz
+.tidy   call back_setup
+        jp restore_chase
+
+; The back buffer's page, scroll position and window
+back_setup
+        call set_back_page
+        ld a,(back) : ld hl,bscroll : call look : ld (scrollcol),a
+        ld a,(back) : ld hl,brow : call look : ld (scrollrow),a
+        jp set_window_clip
+
+; The back buffer, scrolled to its position, to be shown at the next vertical
+; sync (irq shows it, setting front)
+flag_flip
+        call start_offset
+        ld a,(back) : call start_regs
+        ld (flip_r12),a : ld a,l : ld (flip_r13),a
+        ld a,(back) : ld (flip_buf),a
+        ld a,1 : ld (flip_pending),a
+        ret
+; ... or no longer
+cancel_flip
+        xor a : ld (flip_pending),a
+        ret
+; Wait until it's been shown
+wait_flip
+        ld a,(flip_pending) : or a : ret z
+        halt
+        jr wait_flip
+
+; Show the back buffer, scrolled to its position, at the next frame (now)
+flip    call start_offset
         ld a,(back) : call show_at
         ld a,(back) : ld (front),a
+        ret
+; HL = the back buffer's scroll position (a byte offset in it)
+start_offset
+        ld a,(scrollrow) : ld l,a : ld h,rowoff_lo >> 8 : ld e,(hl) : inc h : ld d,(hl)
+        ld a,(scrollcol) : ld l,a : ld h,0 : add hl,de
+        ld a,h : and 7 : ld h,a
         ret
 
 set_back_page
@@ -163,6 +209,7 @@ set_back_page
 
 ; Load level A (the first if it's past the last), and start it
 begin_level
+        push af : call cancel_flip : pop af
         cp NUM_LEVELS : jr c,.in_range
         xor a
 .in_range
@@ -180,6 +227,7 @@ begin_level
 ; Draw both buffers from scratch, centred on Trogg (the state part of the BBC
 ; version's redraw_all is reset_play, which restore_checkpoint and level_init end with)
 redraw
+        call cancel_flip
         call set_level_palette
         ld hl,#FFFF : ld (hud_secs),hl          ; (the timer to be drawn afresh)
         ; nothing drawn in either buffer
@@ -207,7 +255,8 @@ redraw
         ld hl,pend_hi : add hl,de : ld (hl),0
         ld hl,pend_lo : add hl,de : ld (hl),#FF
         ld a,(back) : dec a : jp p,.buffer
-        ld a,1 : ld (front),a                   ; buffer 0 is drawn first
+        ld a,1 : ld (back),a : call flip        ; (buffer 1 on show: buffer 0 is drawn first)
+        ld a,(vsyncs) : ld (last_flip),a : ld (tick_vs),a
         ret
 
 ; The level's palette: the BBC version's (its background colour, yellow, magenta

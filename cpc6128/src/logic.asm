@@ -1387,7 +1387,6 @@ scroll_dir  db 0
 bs_n        db 0
 frame_ticks db 2
 ticks_left  db 0
-last_flip   db 0
 bscroll     db 0, 0                 ; each buffer's scroll position
 brow        db 0, 0
 bfrak       db 0, 0                 ; each buffer shows the FRAK! bubble
