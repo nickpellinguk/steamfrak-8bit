@@ -1,8 +1,9 @@
 ; Steam Frak for the Amstrad CPC 6128 - assembled with RASM (see ../build.sh)
 ;
 ; So far (phase 5): the plotter (src/plot.asm), the level loader and background
-; (src/level.asm, src/bg.asm) and Trogg's movement (src/trogg.asm). For now the
-; program loads the graphics and the levels, takes the machine over
+; (src/level.asm, src/bg.asm) and the game's logic (src/logic.asm, in extra bank
+; 2, with src/trogg.asm). For now the program loads the graphics, the levels and
+; the logic, takes the machine over
 ; (src/machine.asm), and then does what the test harness
 ; (tools/emu) asks: it pokes the plotter's parameters and a command into t_cmd,
 ; and the program runs it and counts it in t_done. It also still shows a test
@@ -10,9 +11,9 @@
 ;
 ; Memory: the code from #0040 (below #4000, so it stays visible whichever extra
 ; bank is paged in at #4000), the screen buffers at #8000 and #C000, the
-; graphics in extra bank 0 (GFX_BANK), the compiled meanie in bank 1 and the
-; background cache in bank 3. The levels are in the base RAM at #4000, and the
-; game's logic after them, from #7000 (it runs with the base RAM paged in).
+; graphics in extra bank 0 (GFX_BANK), the compiled meanie in bank 1, the
+; game's logic in bank 2 and the background cache in bank 3. The levels are in
+; the base RAM at #4000.
 
 GFX_BANK = 0
 JIT_TMP_SIZE = 2560                 ; bytes for jit_build's decoded image
@@ -30,6 +31,9 @@ start
         call load_file
         ; and the levels, packed, into the base RAM at #4000
         ld hl,pack_name : ld b,pack_name_end - pack_name : ld c,RAM_BASE
+        call load_file
+        ; and the game's logic into extra bank 2
+        ld hl,logic_name : ld b,logic_name_end - logic_name : ld c,RAM_BANK + LOGIC_BANK
         call load_file
         ; then the machine is ours
         di
@@ -144,11 +148,14 @@ gfx_name db "GFX.BIN"
 gfx_name_end
 pack_name db "PACK.BIN"
 pack_name_end
+logic_name db "LOGIC.BIN"
+logic_name_end
 
         INCLUDE "machine.asm"
         INCLUDE "plot.asm"
         INCLUDE "gen/images.asm"
         INCLUDE "gen/levels.asm"
+        INCLUDE "gen/sounds.asm"
         INCLUDE "level.asm"
         INCLUDE "bg.asm"
 
@@ -387,12 +394,12 @@ gfx     INCBIN "../build/GFX"
         BANK
         ORG #4000
 pack    INCBIN "../build/PACK"
-; ... and after them, the game's logic: code that only runs with the base RAM
-; paged in (it never pages a bank in itself, nor calls anything that does)
-        ALIGN 256
-logic
-        INCLUDE "trogg.asm"
-end_logic
-        ASSERT end_logic <= #8000
-        SAVE 'PACK.BIN',#4000,end_logic-#4000,DSK,'build/frak.dsk'
-        PRINT "Logic from ",{hex}logic," to ",{hex}end_logic
+        SAVE 'PACK.BIN',#4000,PACK_SIZE,DSK,'build/frak.dsk'
+
+; The game's logic, for extra bank 2 (see logic.asm)
+        BANK
+        ORG #4000
+        INCLUDE "logic.asm"
+        ASSERT end_logic_bank <= #8000
+        SAVE 'LOGIC.BIN',#4000,logic_vars-#4000,DSK,'build/frak.dsk'
+        PRINT "Logic from ",{hex}#4000," to ",{hex}logic_vars,", its variables to ",{hex}end_logic_bank

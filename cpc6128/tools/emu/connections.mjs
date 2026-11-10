@@ -10,7 +10,7 @@
 // project (../gamemakerstudio-frak alongside that).
 //
 // The Z80 side is the game's own code: MAME runs the program, which loads each level
-// (load_level, through the command mailbox), and the memory below #8000 is copied; then
+// (load_level, through the command mailbox), and the low RAM and the logic bank are copied; then
 // trogg_standing, trogg_falling and trogg_climbing are run on a small Z80 interpreter
 // (cpuz80.mjs) against that copy, from every start, as the search asks. Moving platforms are
 // put back where they start (as the search has them).
@@ -35,19 +35,20 @@ const expect = JSON.parse(readFileSync(join(ROOT, '../build/levels.json'), 'utf8
 // ---- Load the levels asked for, on MAME, and copy the memory each plays from
 const only = args.filter(a => a.startsWith('room'));
 const rooms = opt('trace') ? [opt('trace').split(',')[0]] : (only.length ? only : NAMES);
-const steps = [...boot, `poke ${sym.flip_rate} 0`];
+const steps = [...boot, `poke ${sym.flip_rate} 0`, `bankdump logic ${sym.ram_bank + sym.logic_bank} 16384 16384 ${sym.ga_ram}`];
 let mode = 0;
 const command = (cmd, arg) => steps.push(`poke ${sym.t_arg} ${arg}`, `poke ${sym.t_cmd} ${cmd}`, `waitfor ${sym.t_cmd} 0 3000`);
 for (const room of rooms) {
     const li = NAMES.indexOf(room), m = expect[room].h > 256 ? 1 : 0;
     if (m !== mode) { steps.push(`poke ${sym.want_mode} ${m}`); command(9, m); mode = m; }
     command(11, li);
-    steps.push(`dump m${li} 0 32768`);
+    steps.push(`dump m${li} 0 16384`);
 }
 const r = run(steps, { seconds: 1200 });
 function levelMemory(li) {
     const m = new Uint8Array(65536);
     m.set(r.dump(`m${li}`), 0);
+    m.set(r.dump('logic'), 0x4000);           // (the logic bank, where Trogg's routines are)
     // moving platforms back where they start
     for (let i = 0; i < m[sym.num_plats]; i++) {
         const p = sym.plats + i * sym.plt_size;

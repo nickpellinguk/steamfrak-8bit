@@ -5,11 +5,13 @@ A port of the BBC Master version (in the rest of this repository) to an unmodifi
 and tests. Levels that scroll sideways use a 256x256 screen, levels that scroll up and down
 320x200, and both are double-buffered.
 
-**Status: phase 5 of 9** (the game logic; Trogg's movement is done). The program so far loads
-the graphics and the levels, takes the machine over from the firmware, and has the BBC version's
-plotter, draw log, yoyo string and compiled meanie, its level loader, background unroller and
-repainting, and Trogg's movement, ported to the CPC; the test harness drives them through a
-command mailbox and checks every byte, and checks Trogg's movement against GameMaker's.
+**Status: phase 5 of 9** (the game logic, all but the typed commands). The program so far
+loads the graphics, the levels and the game's logic, takes the machine over from the firmware,
+and has the BBC version's plotter, draw log, yoyo string and compiled meanie, its level loader,
+background unroller and repainting, and its game logic (Trogg, the yoyo, the moving platforms
+and meanies, balloons and daggers, collisions and checkpoints), ported to the CPC. The tests
+check every byte drawn, Trogg's movement against GameMaker's, and the game logic against the
+BBC version's, tick for tick.
 
 | Phase | | Test that must pass |
 | --- | --- | --- |
@@ -17,7 +19,7 @@ command mailbox and checks every byte, and checks Trogg's movement against GameM
 | 2 | Machine layer: interrupts and ticks, bank paging, keyboard, screen tables | `machine.mjs`: 50 ticks a second, every key, the extra banks — **passes** |
 | 3 | Plotter and drawing | `plot.mjs`: every image, clipped, saved and put back, the yoyo string, the compiled meanie, matching byte for byte — **passes** |
 | 4 | Levels and background | `levels.mjs`: all 55 levels' tables, background caches and repainted windows match the converter — **passes** |
-| 5 | Game logic | `connections.mjs`: Trogg moves as in GameMaker on all 55 levels — **passes** for his movement (5a); the yoyo, meanies and collisions to come |
+| 5 | Game logic | `connections.mjs`: Trogg moves as in GameMaker on all 55 levels; `logic.mjs`: the game logic does what the BBC version's does, tick for tick — **both pass** (the typed commands to come) |
 | 6 | Main loop and scrolling | levels play, with no flicker |
 | 7 | Sound (AY-3-8912) | the notes match the web version's player |
 | 8 | Front end | menus, a level, then the next level |
@@ -57,6 +59,7 @@ CPC_ROMS=/path/to/roms node tools/emu/machine.mjs
 CPC_ROMS=/path/to/roms node tools/emu/plot.mjs [seed]
 CPC_ROMS=/path/to/roms node tools/emu/levels.mjs [room ...]
 CPC_ROMS=/path/to/roms node tools/emu/connections.mjs [room ...] [--detail]
+CPC_ROMS=/path/to/roms node tools/emu/logic.mjs [room ...] [--ticks=N] [--seed=N]
 ```
 
 Steps a test can give (`steps.lua`): `wait` frames, `waitfor` a byte to have a value, `type`
@@ -70,12 +73,26 @@ set `ready`, once it has loaded and taken the machine over.
 It needs the steamfrak repository alongside this one (`STEAMFRAK` names it otherwise), for
 its `tools/connections.js`: a port of the original's GraphFind search, and a transcription of
 the original's TroggStanding, TroggFalling, TroggClimbing, PlatformFind and LadderFind run on
-the GameMaker project's rooms. The program loads each level on MAME and the memory below
-`&8000` is copied; then the Z80's `trogg_standing`, `trogg_falling` and `trogg_climbing` run on
+the GameMaker project's rooms. The program loads each level on MAME and the low RAM and the
+logic bank are copied; then the Z80's `trogg_standing`, `trogg_falling` and `trogg_climbing` run on
 a small Z80 interpreter (`cpuz80.mjs`) against that copy, from every start the search asks
 about, and every way Trogg can get from one platform or ladder to another is compared with
 GameMaker's. All 55 levels match, but for D_9's ladder at x = 48.5, which the converter rounds
 down a pixel, as it does for the BBC version.
+
+`logic.mjs` is phase 5's other test: the game logic against the BBC version's, tick for tick.
+It needs the BBC version built (`../build.sh` writes its symbols to `build/labels.txt`). For
+each level, both versions' memory is copied once the level has loaded (the BBC version's from
+jsbeeb), both start the level, and both run `game_tick` on the two interpreters (`cpu6502.mjs`
+and `cpuz80.mjs`) with the same keys held, random but mostly purposeful (walking on, jumping,
+climbing, throwing the yoyo), the same difficulty and the same random seed. After every tick
+everything the logic keeps must be the same: Trogg, the yoyo, the platforms, the slow sprites,
+the balloons, daggers and meanies flying off, what's been collected, the timers, the random
+number and the checkpoint; a death goes back to the checkpoint, and finishing the level starts
+it again. Each level is run twice, the second time with Trogg unable to die and two keys short
+of finishing, so that he gets about. The whole run (5,000 ticks a run, about 6 minutes) covers
+about 1,600 deaths, 70 keys, 35 meanies knocked off and 25 platforms carried, checkpoints and
+finished levels: all 110 runs match.
 
 `levels.mjs` is phase 4's test. For every level it has the program load it, then compares,
 with what the BBC version's converter expects (`../build/levels.json`, as its
@@ -114,16 +131,16 @@ and checks that each frame shows one buffer whole and that they alternate.
 | `&0040-&28FF` | the code and its variables |
 | `&2900-&3C3F` | the line and row tables, the draw log's two save areas (1K each, the first also where a level is unpacked from), the level tables |
 | `&3F00-&3FFF` | the stack |
-| `&4000-&7FFF` | the base RAM here: the levels, packed (12K, the BBC version's `PACK` as it is), then from `&7000` the game's logic (code that only runs with the base RAM paged in, loaded with the levels). The window the extra banks are paged into: bank 0 the graphics (as the BBC's sideways RAM bank 4, sprites and code tables), bank 1 the compiled meanie, bank 3 the background cache (as the BBC's bank 7) |
+| `&4000-&7FFF` | the base RAM here: the levels, packed (12K, the BBC version's `PACK` as it is). The window the extra banks are paged into: bank 0 the graphics (as the BBC's sideways RAM bank 4, sprites and code tables), bank 1 the compiled meanie, bank 2 the game's logic and its variables (as the BBC's bank 6), bank 3 the background cache (as the BBC's bank 7), with the slow save areas above it from `&6A00` |
 | `&8000-&BFFF` | while a level loads, the unroller's and the meanie compiler's workings |
 | `&8000-&BFFF` | screen buffer 0 |
 | `&C000-&FFFF` | screen buffer 1 |
 
 The code sits below `&4000` so that it stays visible whichever extra bank is paged in at
-`&4000-&7FFF`, as the BBC version's sits in main RAM below its sideways RAM. That's full, so
-the game's logic (Trogg's movement, so far) goes after the levels in the base RAM, from
-`&7000`: code that never pages a bank in, nor calls anything that does, so the base RAM is
-always paged in while it runs.
+`&4000-&7FFF`, as the BBC version's sits in main RAM below its sideways RAM. The game's logic
+is in extra bank 2 (`LOGIC.BIN`), as the BBC version's is in its bank 6, and runs with that
+bank paged in: whatever it calls in the low RAM that pages another bank in (the plotter, say)
+puts bank 2 back before it returns.
 
 ### The machine (`src/machine.asm`)
 
@@ -219,6 +236,18 @@ two) as it is, so `gfx.py` only rebases each level's address. A level is copied 
 area 0) and unpacked into tables of records (platforms, ladders, things to draw, slow sprites):
 IX points at one and `(ix+PLT_YL)` and so on are its fields, which suits the Z80 better than the
 BBC version's separate arrays per field.
+
+### The game's logic (`src/logic.asm`)
+
+A port of the BBC version's `game_tick` and everything it does, but for the keyboard (phase 6)
+and the typed commands: Trogg's movement (below) and riding platforms, the yoyo and the
+platforms it moves, the moving platforms, Scrubblies (only while they're relevant to Trogg),
+Poglets and Hooters, balloons and daggers, meanies knocked flying, collisions by the BBC
+version's spans, checkpoints, and the start and end of a level. The bank starts with the
+collision spans (`gfx.py` rebases the BBC version's tables to them), then the code and its
+variables. The slow sprites' state while the level plays is in records of their own (IY), one
+for each of the level's slow sprite records (IX); the moving objects are records too. The sound
+it asks for goes in the BBC version's request bytes, for phase 7's player.
 
 ### Trogg's movement (`src/trogg.asm`)
 
