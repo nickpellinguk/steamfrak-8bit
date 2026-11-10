@@ -9,7 +9,6 @@
 ; multiples of 0.05), as whole numbers. Comparisons are unsigned where the BBC
 ; version's are, so that the two move him the same.
 
-ST_STAND = 0 : ST_WALK = 1 : ST_FALL = 2 : ST_CLIMB = 3 : ST_YOYO_OUT = 4 : ST_YOYO_BACK = 5
 JUMP_SPEED = 25                     ; twentieths of a pixel a tick (gravity is 1)
 TERMINAL_SPEED = 80
 
@@ -361,9 +360,3 @@ maybe_step_off
         ld a,(xmove) : ld (xvel),a
         xor a : call climb_to_fall
         scf : ret
-
-; (phase 5b: the yoyo, and phase 7: the sound)
-start_yoyo
-        ret
-stop_sounds
-        ret

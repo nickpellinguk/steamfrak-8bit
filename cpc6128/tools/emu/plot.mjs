@@ -175,9 +175,9 @@ for (let n = 0; n < 40; n++) {
     const m = rnd(2);
     setMode(m); freshScreen(); setClip(full);
     poke16('sfree', sym.savebuf1); poke16('send', sym.savebuf1 + 1024);
-    poke16('sfree7', 0x4000); poke16('send7', 0x8000); steps.push(`poke ${sym.p_sbank} ${sym.ram_bank + 2}`);
+    poke16('sfree7', sym.bg_top); poke16('send7', 0x8000); steps.push(`poke ${sym.p_sbank} ${sym.ram_bank + sym.cache_bank}`);
     for (let k = 0; k < 6; k++) {
-        if (rnd(4) === 0) {                     // (a big one: its background saved in bank 2)
+        if (rnd(4) === 0) {                     // (a big one: its background saved in bank 3, above the cache)
             steps.push(`poke ${sym.p_img} ${coded[rnd(coded.length)]}`);
             poke16('p_x', rnd(300)); poke16('p_y', rnd(250));
             command(10);

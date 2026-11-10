@@ -19,7 +19,7 @@ python3 tools/music.py "$STEAMFRAK" src/gen
 "$BEEBASM" -D PASS=1 -D DIFFICULTY="$DIFFICULTY" -D INVINCIBLE="$INVINCIBLE" -i src/frak.asm -do build/pass1.ssd \
     > build/pass1.txt
 python3 tools/pack.py build/pass1.ssd
-"$BEEBASM" -D PASS=2 -D DIFFICULTY="$DIFFICULTY" -D INVINCIBLE="$INVINCIBLE" -i src/frak.asm -do build/frak.ssd -opt 3 -title FRAK \
+"$BEEBASM" -D PASS=2 -D DIFFICULTY="$DIFFICULTY" -D INVINCIBLE="$INVINCIBLE" -i src/frak.asm -do build/frak.ssd -opt 3 -title FRAK -d -labels build/labels.txt \
     > build/assembler.txt
 grep -v "^TIMING\|^SYMBOLS" build/assembler.txt     # (those two lines are for the test scripts)
 echo "Built build/frak.ssd"
