@@ -3,8 +3,9 @@
 // the Classic group, Space its first level (Read&Weep), which must start; then the level is won
 // (as level_complete leaves things: a time, all the gems, no restarts), so the level-complete
 // screen must be drawn, with its text, and then the next level must start. Escape goes back to
-// the menus, where the level's button now shows its best time and medals. Each step is a
-// screenshot (build/shots/front_*.png).
+// the menus, where the level's button now shows its best time and medals, and the joystick
+// moves around them. Each step is a screenshot (build/shots/front_*.png).
+// (CPC_COLD=1: from memory filled with garbage first, as a real machine's might be.)
 //
 //   ./build.sh && CPC_ROMS=... node tools/emu/front.mjs
 import { symbols, run, bootGame, ROOT } from './mame.mjs';
@@ -35,7 +36,9 @@ const steps = [...bootGame, 'wait 150', `peek attract_mode ${sym.cur_mode} 1`, '
     ...press(sym.key_space), 'wait 60', 'snap front_records',     // (the menus remember Classic)
     `bank best ${sym.ram_bank + sym.front_bank} ${sym.rec_best_lo + 1} 1 ${sym.ga_ram}`,
     `bank best_hi ${sym.ram_bank + sym.front_bank} ${sym.rec_best_hi + 1} 1 ${sym.ga_ram}`,
-    `bank gem ${sym.ram_bank + sym.front_bank} ${sym.rec_gem + 1} 1 ${sym.ga_ram}`];
+    `bank gem ${sym.ram_bank + sym.front_bank} ${sym.rec_gem + 1} 1 ${sym.ga_ram}`,
+    // ... and the joystick moves around the menus (back to the top menu, then right)
+    ...press(sym.key_esc), 'wait 60', ...press(sym.key_joy_right), `peek joy_sel ${sym.fe_sel} 1`];
 const r = run(steps, { seconds: 600 });
 for (const [k, f] of Object.entries(r.snaps)) copyFileSync(f, join(shots, k + '.png'));
 
@@ -51,6 +54,7 @@ check(pk('menu_kind')?.[0] === 0, 'Escape went back to the menus');
 const best = (pk('best')?.[0] ?? 0) | (pk('best_hi')?.[0] ?? 0) << 8;
 check(best === 4173, `the records: level 1's best time is the one won (${best} ticks)`);
 check(pk('gem')?.[0] === 1, '... with all the gems');
+check(pk('joy_sel')?.[0] === 4, `the joystick moved the selection from Classic to Moving (${pk('joy_sel')?.[0]})`);
 console.log(`screenshots: ${['attract', 'menus', 'classic', 'level', 'won', 'next', 'records'].map(n => `front_${n}.png`).join(', ')} in build/shots`);
 console.log(failed ? `${failed} failed` : 'all passed');
 process.exit(failed ? 1 : 0);

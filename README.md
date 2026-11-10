@@ -57,7 +57,8 @@ another, including the 19 that scroll vertically:
 
 Not done yet: the Pugwash tune (an easter egg in a settings screen that isn't here).
 
-An Amstrad CPC 6128 version is in progress in [`cpc6128/`](cpc6128/README.md).
+An Amstrad CPC 6128 version, the whole game ported to the Z80, is in [`cpc6128/`](cpc6128/README.md)
+(its disc image: `cpc6128/build/frak.dsk`).
 
 ## Building
 

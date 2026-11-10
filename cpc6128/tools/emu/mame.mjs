@@ -30,9 +30,13 @@ export function symbols(file = join(ROOT, 'build/frak.sym')) {
 // Steps for the start: boot to BASIC, then RUN"FRAK.BIN, and wait until it has loaded and taken
 // the machine over (it sets `ready` to READY)
 export const READY = 0xA5;
-export const boot = ['wait 100', 'type RUN"FRAK.BIN\\n', `waitfor ${symbols().ready} ${READY} 3000`, `poke ${symbols().t_harness} 1`, 'wait 2'];
+// (CPC_COLD=1: as a real machine might be, the memory the program doesn't load filled with
+// garbage first: the low RAM above its code, the base RAM's window and the four extra banks)
+const COLD = process.env.CPC_COLD ? [`192 ${symbols().end_code} ${0x3F00 - symbols().end_code} 1`,
+    ...[192, 196, 197, 198, 199].map((c, i) => `${c} 16384 16384 ${i + 2}`)].map(f => 'fill ' + f) : [];
+export const boot = ['wait 100', ...COLD, 'type RUN"FRAK.BIN\\n', `waitfor ${symbols().ready} ${READY} 3000`, `poke ${symbols().t_harness} 1`, 'wait 2'];
 // (... without the harness saying it's there: the game starts by itself, at the attract screen)
-export const bootGame = ['wait 100', 'type RUN"FRAK.BIN\\n', `waitfor ${symbols().ready} ${READY} 3000`];
+export const bootGame = ['wait 100', ...COLD, 'type RUN"FRAK.BIN\\n', `waitfor ${symbols().ready} ${READY} 3000`];
 
 // Run the steps (strings, as steps.lua takes them; a final "quit" is added). Returns
 // { peeks: {label: [bytes]}, snaps: {label: png file}, log }.
