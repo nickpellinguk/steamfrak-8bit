@@ -401,7 +401,15 @@ gfx     INCBIN "../build/GFX"
         BANK
         ORG #4000
 pack    INCBIN "../build/PACK"
-        SAVE 'PACK.BIN',#4000,PACK_SIZE,DSK,'build/frak.dsk'
+; ... and after them, the level loader, to run in screen buffer 1 (see load_level)
+        ASSERT PACK_ORG + PACK_SIZE <= LOADER_STORE
+        ORG LOADER_RUN, LOADER_STORE
+loader_start
+        INCLUDE "loader.asm"
+loader_end
+        ASSERT LOADER_STORE + loader_end - loader_start <= #8000
+        SAVE 'PACK.BIN',#4000,LOADER_STORE + loader_end - loader_start - #4000,DSK,'build/frak.dsk'
+        PRINT "Loader: ",loader_end - loader_start," bytes, at ",{hex}LOADER_STORE," (run at ",{hex}LOADER_RUN,")"
 
 ; The game's logic, for extra bank 2 (see logic.asm)
         BANK

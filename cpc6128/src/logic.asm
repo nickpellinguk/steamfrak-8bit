@@ -335,7 +335,7 @@ yoyo_collide
         ld a,SFX_POP
 .sfx    call play_sfx
         ld (iy+M_ACTIVE),0
-.mnext  call mover_prev : ld hl,mvc_i : dec (hl) : jp p,.mloop
+.mnext  ld de,-M_SIZE : add iy,de : ld hl,mvc_i : dec (hl) : jp p,.mloop
         call yoyo_slow
         call pick_up
         ld a,(yo_hit) : cp 1 : ccf              ; (carry set if hit)
@@ -381,6 +381,7 @@ yoyo_slow
         ld a,SFX_SQUEAL : call play_sfx
         ld a,1 : ld (yo_hit),a
         ld (iy+SR_ALIVE),0
+        ld a,1 : ld (clist_dirty),a             ; (one less to collide with)
         ld l,(iy+SR_DXL) : ld h,(iy+SR_DXH) : ld (lm_x),hl
         ld l,(iy+SR_DYL) : ld h,(iy+SR_DYH) : ld (lm_y),hl
         ld a,(ix+S_IMG) : ld (lm_img),a
@@ -394,7 +395,7 @@ yoyo_slow
         ld a,256 - YOYO_HIT_SPEED
 .right  ld (iy+M_VXI),a
 .none   pop iy
-.next   call slow_prev : ld hl,mvc_i : dec (hl) : jp p,.loop
+.next   ld de,-S_SIZE : add ix,de : ld de,-SR_SIZE : add iy,de : ld hl,mvc_i : dec (hl) : jp p,.loop
         ret
 
 ; Nothing hit: pick up a movable platform the yoyo is in (the first), unless
@@ -429,7 +430,7 @@ plat_move_to
         ld a,MAX_SLOW - 1 : ld (pm_j),a : call slow_last
 .find   ld a,(ix+S_KIND) : cp SL_PLATFORM : jr nz,.next
         ld a,(pm_i) : cp (ix+S_PLAT) : jr z,.found
-.next   call slow_prev : ld hl,pm_j : dec (hl) : jp p,.find
+.next   ld de,-S_SIZE : add ix,de : ld de,-SR_SIZE : add iy,de : ld hl,pm_j : dec (hl) : jp p,.find
         ret
 .found  ld hl,(p_x) : ld (iy+SR_XL),l : ld (iy+SR_XH),h
         ld hl,(p_y) : ld (iy+SR_YL),l : ld (iy+SR_YH),h
@@ -534,7 +535,7 @@ update_movers
         ld l,(iy+M_XL) : ld h,(iy+M_XH) : ld de,-10 : call signed_less : jr c,.gone
         jr .next
 .gone   ld (iy+M_ACTIVE),0
-.next   call mover_prev : ld hl,mv_i : dec (hl) : jp p,.loop
+.next   ld de,-M_SIZE : add iy,de : ld hl,mv_i : dec (hl) : jp p,.loop
         ret
 
 ; ------------------------------------------------------------------------------
@@ -689,7 +690,7 @@ update_slow
         cp SL_POGLET : jr nz,.hooter
         call move_poglet : jr .next
 .hooter call move_hooter
-.next   call slow_prev : ld hl,sl_i : dec (hl) : jp p,.loop
+.next   ld de,-S_SIZE : add ix,de : ld de,-SR_SIZE : add iy,de : ld hl,sl_i : dec (hl) : jp p,.loop
         ret
 
 ; Carry set if Scrubbly IX/IY is relevant to Trogg: the box it walks in (amin to
@@ -820,14 +821,14 @@ move_hooter
         ld a,(iy+SR_WAIT) : or a : jr z,.go
         dec (iy+SR_WAIT) : ret
 .go     ; v -= gravity; y -= v
-        ld a,(iy+SR_VF) : sub HOOTER_GRAVITY : ld (iy+SR_VF),a
-        ld a,(iy+SR_VI) : sbc a,0 : ld (iy+SR_VI),a
-        ld c,a : add a,a : sbc a,a : ld b,a
-        ld a,(iy+SR_YF) : sub (iy+SR_VF) : ld (iy+SR_YF),a
-        ld a,(iy+SR_YL) : sbc a,c : ld (iy+SR_YL),a
-        ld a,(iy+SR_YH) : sbc a,b : ld (iy+SR_YH),a
+        ld l,(iy+SR_VF) : ld h,(iy+SR_VI) : ld de,-HOOTER_GRAVITY : add hl,de
+        ld (iy+SR_VF),l : ld (iy+SR_VI),h
+        ld a,h : rla : sbc a,a : ld c,a                 ; (v's sign)
+        ld a,(iy+SR_YF) : sub l : ld (iy+SR_YF),a
+        ld a,(iy+SR_YL) : sbc a,h : ld (iy+SR_YL),a : ld l,a
+        ld a,(iy+SR_YH) : sbc a,c : ld (iy+SR_YH),a : ld h,a
         ; below its base? land and jump again
-        ld l,(iy+SR_YL) : ld h,(iy+SR_YH) : ld e,(ix+S_Y0L) : ld d,(ix+S_Y0H)
+        ld e,(ix+S_Y0L) : ld d,(ix+S_Y0H)
         or a : sbc hl,de : ret c : jr nz,.land
         ld a,(iy+SR_YF) : or a : ret z
 .land   ld (iy+SR_YL),e : ld (iy+SR_YH),d : ld (iy+SR_YF),0
@@ -849,9 +850,9 @@ commit_one
 ; ... for all of them
 commit_all
         call slow_last : ld b,MAX_SLOW
-.loop   push bc : call commit_one : call slow_prev : pop bc
+.loop   push bc : call commit_one : ld de,-S_SIZE : add ix,de : ld de,-SR_SIZE : add iy,de : pop bc
         djnz .loop
-        ret
+        jp build_clist
 
 ; ------------------------------------------------------------------------------
 ; Collisions between Trogg and keys, gems and meanies
@@ -871,11 +872,19 @@ check_collisions
         srl h : rr l : srl h : rr l : ld a,l
 .have_c0
         ld (ct_c0),a : add a,8 : ld (ct_c1),a
-        xor a : ld (co_i),a
-        ld ix,draws
-.loop   ld a,(co_i) : call alive_hl : ld a,(hl) : or a : jr z,.next
-        ld a,(ct_c0) : ld b,a : ld a,(ix+D_C1) : cp b : jr c,.next : jr z,.next   ; ends left of him
-        ld a,(ct_c1) : ld b,a : ld a,(ix+D_C0) : cp b : jr nc,.next               ; starts right of him
+        ; the things drawn: a quick pass over their byte columns (dcols, which
+        ; level_init makes), and the full test for those in Trogg's
+        ld a,(ct_c1) : ld (.c1 + 1),a
+        ld a,(ct_c0) : ld (.c0 + 1),a
+        ld a,(num_draw) : or a : jr z,.movers
+        ld b,a : ld hl,alive : ld de,dcols
+.loop   ld a,(hl) : inc hl : or a : jr z,.dead
+        ld a,(de) : inc de                      ; its first column
+.c1     cp 0 : jr nc,.far                       ; (starts right of him: cp ct_c1)
+        ld a,(de)                               ; ... and the column after its last
+.c0     cp 0 : jr c,.far : jr z,.far            ; (ends left of him: cp ct_c0)
+        push bc : push de : push hl
+        ld a,(num_draw) : sub b : ld (co_i),a : call draw_ix
         ld l,(ix+D_LL) : ld h,(ix+D_LH) : ld de,(ct_l) : or a : sbc hl,de
         call in_range_64 : jr nc,.next : ld (c_dx),a
         ld l,(ix+D_TL) : ld h,(ix+D_TH) : ld de,(ct_t) : or a : sbc hl,de
@@ -883,9 +892,11 @@ check_collisions
         ld a,(ix+D_IMG) : ld (c_oimg),a
         call hit_test : jr nc,.next
         call collide
-.next   ld de,D_SIZE : add ix,de                ; (the next record)
-        ld a,(num_draw) : ld b,a
-        ld a,(co_i) : inc a : ld (co_i),a : cp b : jr c,.loop
+.next   pop hl : pop de : pop bc
+.far    inc de : djnz .loop
+        jr .movers
+.dead   inc de : inc de : djnz .loop
+.movers
 
         ; Moving objects (balloons, daggers, meanies flying off) are all deadly
         ld a,MAX_MOVERS - 1 : ld (mvc_i),a : call mover_last
@@ -893,20 +904,60 @@ check_collisions
         ld a,(iy+M_IMG) : ld (c_oimg),a
         ld l,(iy+M_XL) : ld h,(iy+M_XH) : ld e,(iy+M_YL) : ld d,(iy+M_YH)
         call trogg_overlap : call c,trogg_dies
-.mnext  call mover_prev : ld hl,mvc_i : dec (hl) : jp p,.mloop
+.mnext  ld de,-M_SIZE : add iy,de : ld hl,mvc_i : dec (hl) : jp p,.mloop
 
-        ; ... and so are the moving meanies
-        ld a,MAX_SLOW - 1 : ld (mvc_i),a : call slow_last
-.sloop  ld a,(iy+SR_ALIVE) : or a : jr z,.snext
-        ld a,(ix+S_KIND) : cp SL_PLATFORM : jr z,.snext
-        ld a,(ix+S_IMG) : ld (c_oimg),a
-        ld l,(iy+SR_DXL) : ld h,(iy+SR_DXH) : ld e,(iy+SR_DYL) : ld d,(iy+SR_DYH)
-        call trogg_overlap : call c,trogg_dies
-.snext  call slow_prev : ld hl,mvc_i : dec (hl) : jp p,.sloop
+        ; ... and so are the moving meanies (the list of them where they're shown)
+        ld a,(clist_dirty) : or a : call nz,build_clist
+        ld a,(clist_n) : or a : ret z
+        ld b,a : ld hl,clist
+.sloop  push bc
+        ld a,(hl) : ld (c_oimg),a : inc hl
+        ld e,(hl) : inc hl : ld d,(hl) : inc hl         ; DE = its left
+        ld c,(hl) : inc hl : ld b,(hl) : inc hl         ; BC = its top
+        push hl
+        ex de,hl : ld de,(ct_l) : or a : sbc hl,de
+        call in_range_64 : jr nc,.snext
+        ld (c_dx),a
+        ld h,b : ld l,c : ld de,(ct_t) : or a : sbc hl,de
+        call in_range_64 : jr nc,.snext
+        ld (c_dy),a
+        call hit_test : call c,trogg_dies
+.snext  pop hl : pop bc : djnz .sloop
+        ret
+
+; The moving meanies where they're shown, for check_collisions: for each one alive
+; (clist_n of them), its image, then its left and top (from its origin), made each
+; time they're shown somewhere new (commit_all), or one's knocked off by the yoyo
+build_clist
+        xor a : ld (clist_n),a : ld (clist_dirty),a
+        ld hl,clist : ld (cl_ptr),hl
+        call slow_last : ld b,MAX_SLOW
+.loop   ld a,(iy+SR_ALIVE) : or a : jr z,.next
+        ld a,(ix+S_KIND) : cp SL_PLATFORM : jr z,.next
+        push bc
+        ld a,(ix+S_IMG) : ld c,a
+        ld l,(iy+SR_DXL) : ld h,(iy+SR_DXH) : call box_from_x : ex de,hl      ; DE = left
+        push de
+        ld a,c : ld l,(iy+SR_DYL) : ld h,(iy+SR_DYH) : call box_from_y       ; HL = top
+        pop de
+        ld b,h : ld a,l : ld hl,(cl_ptr)
+        ld (hl),c : inc hl : ld (hl),e : inc hl : ld (hl),d : inc hl : ld (hl),a : inc hl : ld (hl),b : inc hl
+        ld (cl_ptr),hl
+        ld hl,clist_n : inc (hl)
+        pop bc
+.next   ld de,-S_SIZE : add ix,de : ld de,-SR_SIZE : add iy,de
+        djnz .loop
         ret
 
 ; Does image c_oimg at (HL, DE) overlap Trogg? Carry set if so.
 trogg_overlap
+        ; (more than 127 pixels from Trogg either way: no. Every image's origin is less
+        ; than 64 pixels from its edges, and the offsets between them must be -64..63)
+        push hl
+        ld bc,(tx) : or a : sbc hl,bc : ld bc,128 : add hl,bc : ld a,h
+        ld h,d : ld l,e : ld bc,(ty) : or a : sbc hl,bc : ld bc,128 : add hl,bc : or h
+        pop hl
+        ret nz
         ld (to_y),de
         push hl : ld a,(c_oimg) : ld hl,img_xo : call look : pop hl
         ld e,a : ld d,0 : or a : sbc hl,de
@@ -1115,6 +1166,13 @@ level_init
         inc a
 .gone   ld (hl),a : inc hl
         inc b : ld a,b : cp MAX_OBJECTS : jr nz,.obj
+        ; each thing's byte columns, for check_collisions' quick pass
+        ld a,(num_draw) : or a : jr z,.no_draws
+        ld b,a : ld ix,draws : ld hl,dcols : ld de,D_SIZE
+.dcols  ld a,(ix+D_C0) : ld (hl),a : inc hl
+        ld a,(ix+D_C1) : ld (hl),a : inc hl
+        add ix,de : djnz .dcols
+.no_draws
         xor a
         ld (keys_found),a : ld (gems_found),a : ld (have_cp),a : ld (save_cp),a : ld (restarts),a
         ld (bal_timer),a : ld (dag_timer),a
@@ -1141,7 +1199,7 @@ slow_init
         xor a : ld (iy+SR_VF),a : ld (iy+SR_VI),a       ; Hooters start still, then jump
 .vel_ok ld a,(ix+S_VY) : ld (iy+SR_VY),a
         ld a,(ix+S_WAIT) : ld (iy+SR_WAIT),a
-        call slow_prev : ld hl,sl_i : dec (hl) : jp p,.loop
+        ld de,-S_SIZE : add ix,de : ld de,-SR_SIZE : add iy,de : ld hl,sl_i : dec (hl) : jp p,.loop
         ld ix,plats : ld b,MAX_PLATS : ld de,PLT_SIZE
 .plat   ld a,(ix+PLT_X0L) : ld (ix+PLT_XL),a : ld a,(ix+PLT_X0H) : ld (ix+PLT_XH),a
         ld a,(ix+PLT_Y0L) : ld (ix+PLT_YL),a : ld a,(ix+PLT_Y0H) : ld (ix+PLT_YH),a
@@ -1200,6 +1258,8 @@ cmd_f       db 0
 cmd_t       db 0
 cmd_i       db 0
 cmd_kp      dw 0
+cmd_rescan  db 1
+keys_last   DEFS 10                 ; the keyboard last tick
 cmd_sv      DEFS 8                  ; cmd_pre: where Trogg was (SV_)
 cmd_ud      db 0                    ; ... and his debounces
 cmd_lr      db 0
@@ -1337,6 +1397,11 @@ cp_face     db 0
 cp_alive    DEFS MAX_OBJECTS
 cp_srecs    DEFS MAX_SLOW * SR_SIZE
 cp_plats    DEFS MAX_PLATS * 4
+clist       DEFS MAX_SLOW * 5           ; the moving meanies to collide with (build_clist)
+clist_n     db 0
+clist_dirty db 1
+cl_ptr      dw 0
+dcols       DEFS MAX_DRAW * 2       ; each thing drawn's byte columns: c0, c1 (level_init)
 dmg_list    DEFS MAX_DMG * 4        ; damage this frame: byte columns c0, c1, 4-line rows y0, y1
 n_vis       DEFS MAX_SLOW           ; draw_slow's: each slow sprite in the window
 n_chg       DEFS MAX_SLOW           ; ... and moved

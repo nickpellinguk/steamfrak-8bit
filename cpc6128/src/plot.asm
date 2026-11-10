@@ -187,16 +187,21 @@ col_routines dw col_plot, col_save, col_restore, col_saveonly
 ; the lines to do; save records via HL' (in the other register set).
 ; ------------------------------------------------------------------------------
 
-; The next line down: #800 on, or past a character row's 8th line, the next row
-; (the cell's first line, #4000 back, then g_w on, wrapping within its 2K)
-MACRO NEXT_LINE loop
-        dec ixl : ret z
-        ld a,b : add a,8 : ld b,a
-        and #38 : jr nz,{loop}
-        call next_row
-        jr {loop}
-MEND
+; Each does the column's first character cell's lines (those left in it) in a
+; loop, then whole cells (8 lines unrolled, no counting), then what's left. Each
+; line is the same whatever the byte: every code goes through the masks (code 0's
+; leaves the screen alone; a solid code's mask is 0), so there are no branches.
 
+; IXH = the lines in the column's first cell (at most IXL), IXL = those after it
+col_start
+        ld a,b : rrca : rrca : rrca : and 7 : neg : add a,8     ; (lines left in the cell)
+        ld ixh,a : ld a,ixl : sub ixh : jr nc,.more
+        ld a,ixl : ld ixh,a : xor a                             ; (all in the first)
+.more   ld ixl,a
+        ret
+
+; The next character row: #4000 back (past a cell's 8th line), then g_w on,
+; wrapping within its 2K
 next_row
         ld a,b : sub #40 : ld b,a
         ld a,(g_w) : add a,c : ld c,a
@@ -204,31 +209,62 @@ next_row
 .nc     res 3,b                                 ; (wrapping within the 2K)
         ret
 
-col_plot
-.loop   ld a,(de) : inc de
-        or a : jp m,.solid                      ; 5 solid pixels: just store them
-        jr z,.next                              ; 5 transparent: leave the screen alone
-        ld l,a
+MACRO STEP                                      ; the next line down: #800 on
+        ld a,b : add a,8 : ld b,a
+MEND
+MACRO PLOT_LINE                                 ; plot a byte
+        ld a,(de) : inc de : ld l,a
         ld a,(bc) : and (hl) : dec h : or (hl) : inc h : ld (bc),a
-.next   NEXT_LINE .loop
-.solid  ld l,a : dec h : ld a,(hl) : inc h : ld (bc),a
-        jr .next
+        STEP
+MEND
+MACRO SAVE_LINE                                 ; save it first
+        ld a,(bc) : exx : ld (hl),a : inc hl : exx
+        PLOT_LINE
+MEND
+MACRO SAVEONLY_LINE
+        ld a,(bc) : exx : ld (hl),a : inc hl : exx
+        STEP
+MEND
+MACRO RESTORE_LINE
+        exx : ld a,(hl) : inc hl : exx : ld (bc),a
+        STEP
+MEND
+MACRO FAST_RESTORE_LINE                         ; (from HL itself)
+        ld a,(hl) : inc hl : ld (bc),a
+        STEP
+MEND
 
-col_save
-.loop   ld a,(bc) : exx : ld (hl),a : inc hl : exx
-        ld a,(de) : inc de
-        or a : jr z,.next
-        ld l,a
-        ld a,(bc) : and (hl) : dec h : or (hl) : inc h : ld (bc),a
-.next   NEXT_LINE .loop
+; A column routine doing line L (one of the macros above) for each line
+MACRO COLUMN_ROUTINE line
+        call col_start
+@first  {line}
+        dec ixh : jp nz,@first
+        ld a,ixl : or a : ret z
+        call next_row
+@cells  ld a,ixl : sub 8 : jp c,@last
+        ld ixl,a
+        {line}
+        {line}
+        {line}
+        {line}
+        {line}
+        {line}
+        {line}
+        {line}
+        call next_row
+        jp @cells
+@last   ld a,ixl : or a : ret z
+        ld ixh,a
+@rest   {line}
+        dec ixh : jp nz,@rest
+        ret
+MEND
 
-col_saveonly
-.loop   ld a,(bc) : exx : ld (hl),a : inc hl : exx
-        NEXT_LINE .loop
-
-col_restore
-.loop   exx : ld a,(hl) : inc hl : exx : ld (bc),a
-        NEXT_LINE .loop
+col_plot     COLUMN_ROUTINE PLOT_LINE
+col_save     COLUMN_ROUTINE SAVE_LINE
+col_saveonly COLUMN_ROUTINE SAVEONLY_LINE
+col_restore  COLUMN_ROUTINE RESTORE_LINE
+col_restore_fast COLUMN_ROUTINE FAST_RESTORE_LINE
 
 ; Put back the background saved when an image was drawn with PM_SAVE (or
 ; PM_SAVEONLY), straight from its save record at sbase
@@ -238,10 +274,8 @@ restore_saved
         ld (p_cidx),a
         inc hl : ld a,(hl) : ld (p_rows),a : inc hl
 .column ld c,(hl) : inc hl : ld b,(hl) : inc hl
-        push hl : exx : pop hl : exx
         ld a,(p_rows) : ld ixl,a
-        call col_restore
-        exx : push hl : exx : pop hl
+        call col_restore_fast
         ld a,(p_cidx) : dec a : ld (p_cidx),a
         jr nz,.column
         ret

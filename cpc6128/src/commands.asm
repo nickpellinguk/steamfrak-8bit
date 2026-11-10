@@ -95,7 +95,7 @@ cmd_keys
         ld hl,0 : ld (cmd_cl),hl : ld (cmd_nl),hl
         ld hl,cmd_held : ld b,16 : ld a,1
 .held   ld (hl),a : inc hl : djnz .held
-        ld (cmd_live),a
+        ld (cmd_live),a : ld (cmd_rescan),a     ; (and look at every key)
 .live   ; The real keys held. Pressing one stops any command, and empties the queue.
         ld hl,k_yoyo : ld b,5 : xor a
 .phys   add a,a : or (hl) : dec hl : djnz .phys
@@ -111,7 +111,15 @@ cmd_keys
         ld a,h : or l : jr nz,.counted
         ld (o_keys),a
 .counted
-        ; Queue the command keys just pressed
+        ; Queue the command keys just pressed (if the keyboard has changed since last tick)
+        ld a,(cmd_rescan) : or a : jr nz,.scan_all
+        ld hl,keys : ld de,keys_last : ld b,10
+.same   ld a,(de) : cp (hl) : jr nz,.scan_all
+        inc hl : inc de : djnz .same
+        jp .scanned
+.scan_all
+        ld hl,keys : ld de,keys_last : ld bc,10 : ldir
+        xor a : ld (cmd_rescan),a
         ld a,15 : ld (cmd_i),a
         ld hl,cmd_keytab + 15 * 2 : ld (cmd_kp),hl
 .scan   ld hl,(cmd_kp) : ld e,(hl) : inc hl : ld b,(hl)
@@ -131,6 +139,7 @@ cmd_keys
 .nc2    ld a,(cmd_i) : ld (hl),a
 .next   ld a,(cmd_i) : dec a : ld (cmd_i),a : jp p,.scan
 
+.scanned
         ; The next command, if no key is held
         ld a,(o_keys) : ld hl,cmd_t : or (hl) : jr nz,cmd_apply
         ld a,(cmd_qt) : ld b,a : ld a,(cmd_qh) : cp b : jr z,cmd_apply
