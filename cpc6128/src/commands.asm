@@ -22,11 +22,22 @@ SV_TX = 0 : SV_TY = 2 : SV_TYF = 4 : SV_STATE = 5 : SV_FACE = 6 : SV_CLIMB = 7  
 
 ; The keys held this tick -> xmove, ymove and doyoyo, with their debounces
 read_keys
-        ld a,KEY_Z : ld b,KEY_LEFT : call either : ld (k_left),a
-        ld a,KEY_X : ld b,KEY_RIGHT : call either : ld (k_right),a
-        ld a,KEY_O : ld b,KEY_UP : call either : ld (k_up),a
-        ld a,KEY_K : ld b,KEY_DOWN : call either : ld (k_down),a
-        ld a,KEY_P : ld b,KEY_SPACE : call either : ld (k_yoyo),a
+        ; (each key's bit in keys[], tested directly: these are read every tick)
+        ld a,(keys + (KEY_Z >> 3)) : and 1 << (KEY_Z & 7) : ld b,a
+        ld a,(keys + (KEY_LEFT >> 3)) : and 1 << (KEY_LEFT & 7) : or b
+        add a,255 : sbc a,a : and 1 : ld (k_left),a     ; (1 if either is down)
+        ld a,(keys + (KEY_X >> 3)) : and 1 << (KEY_X & 7) : ld b,a
+        ld a,(keys + (KEY_RIGHT >> 3)) : and 1 << (KEY_RIGHT & 7) : or b
+        add a,255 : sbc a,a : and 1 : ld (k_right),a
+        ld a,(keys + (KEY_O >> 3)) : and 1 << (KEY_O & 7) : ld b,a
+        ld a,(keys + (KEY_UP >> 3)) : and 1 << (KEY_UP & 7) : or b
+        add a,255 : sbc a,a : and 1 : ld (k_up),a
+        ld a,(keys + (KEY_K >> 3)) : and 1 << (KEY_K & 7) : ld b,a
+        ld a,(keys + (KEY_DOWN >> 3)) : and 1 << (KEY_DOWN & 7) : or b
+        add a,255 : sbc a,a : and 1 : ld (k_down),a
+        ld a,(keys + (KEY_P >> 3)) : and 1 << (KEY_P & 7) : ld b,a
+        ld a,(keys + (KEY_SPACE >> 3)) : and 1 << (KEY_SPACE & 7) : or b
+        add a,255 : sbc a,a : and 1 : ld (k_yoyo),a
         ; the typed commands (L R U D J Y) hold keys down too
         call cmd_keys
         ; doyoyo, with debounce: after the yoyo comes back, the key must be released
@@ -52,14 +63,27 @@ read_keys
 .lr_live
         ld a,(k_left) : ld b,a : ld a,(k_right) : sub b : ld (xmove),a
         ret
-; A = 1 if key A or key B is down, else 0
-either  push bc : call key_pressed : pop bc
-        ld c,a : ld a,b : call key_pressed
-        or c : ret
-
-; Internal key numbers of L R U D J Y, then 0-9
-cmd_codes db KEY_L, KEY_R, KEY_U, KEY_D, KEY_J, KEY_Y
-          db KEY_0, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9
+; The command keys, L R U D J Y then 0-9: each one's row in keys[], and its bit
+MACRO CMD_KEY key
+        db {key} >> 3, 1 << ({key} & 7)
+MEND
+cmd_keytab
+        CMD_KEY KEY_L
+        CMD_KEY KEY_R
+        CMD_KEY KEY_U
+        CMD_KEY KEY_D
+        CMD_KEY KEY_J
+        CMD_KEY KEY_Y
+        CMD_KEY KEY_0
+        CMD_KEY KEY_1
+        CMD_KEY KEY_2
+        CMD_KEY KEY_3
+        CMD_KEY KEY_4
+        CMD_KEY KEY_5
+        CMD_KEY KEY_6
+        CMD_KEY KEY_7
+        CMD_KEY KEY_8
+        CMD_KEY KEY_9
 cmd_vecs  dw cmd_left, cmd_right, cmd_up, cmd_down, cmd_jumpk, cmd_yoyo
 
 cmd_keys
@@ -89,7 +113,11 @@ cmd_keys
 .counted
         ; Queue the command keys just pressed
         ld a,15 : ld (cmd_i),a
-.scan   ld hl,cmd_codes : call look : call key_pressed : ld c,a
+        ld hl,cmd_keytab + 15 * 2 : ld (cmd_kp),hl
+.scan   ld hl,(cmd_kp) : ld e,(hl) : inc hl : ld b,(hl)
+        dec hl : dec hl : dec hl : ld (cmd_kp),hl
+        ld d,0 : ld hl,keys : add hl,de
+        ld a,(hl) : and b : add a,255 : sbc a,a : and 1 : ld c,a   ; (1 if it's down)
         ld a,(cmd_i) : ld hl,cmd_held : add a,l : ld l,a : jr nc,.nc1
         inc h
 .nc1    ld a,c : cp (hl) : jr z,.next

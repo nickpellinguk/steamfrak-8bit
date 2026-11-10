@@ -342,7 +342,7 @@ for (const { room, immortal } of runs) {
         console.log(`${room}${immortal ? ' (immortal)' : ''}: FAIL`);
         for (const l of log.slice(-5)) console.log('    ' + l);
         for (const l of bad.slice(0, 20)) console.log('    ' + l);
-    } else console.log(`${room}${immortal ? ' (immortal)' : ''}: ${t} ticks the same (difficulty ${difficulty})`);
+    } else console.log(`${room}${immortal ? ' (immortal)' : ''}: ${t} ticks the same (difficulty ${difficulty}; ${Math.round(C.cpu.count / t)} Z80 instructions a tick, ${Math.round(B.cpu.count / t)} 6502)`);
 }
 console.log(`\n${runs.length - failed} of ${runs.length} runs the same for ${TICKS} ticks; ${totalTicks} ticks in all, ` +
             Object.entries(events).map(([k, v]) => `${v} ${k}`).join(', '));

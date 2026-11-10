@@ -2,6 +2,9 @@
 ; the BBC version's plot, log_sprite/log_line/restore_log, hline, plot_slow and
 ; jit_build/jit_compile, for the CPC's screen.
 ;
+; The timer (IMG_Hud) is a raw image instead: its bytes, in hud_image, are
+; nibbles, 4 black pixels each, looked up in HUD_PIX and HUD_MASK (as codes 1-15).
+;
 ; Images are 5-pixel codes (see tools/convert.py): a byte column of an image is
 ; its height in codes, top to bottom, each looked up in the code tables (in the
 ; graphics bank, after the sprites) for this shift's half: its left 4 pixels for
@@ -113,7 +116,8 @@ plot
         ld bc,NUM_IMAGES
         ld a,(hl) : add hl,bc : ld (p_dcol),a       ; lo
         ld a,(hl) : add hl,bc : ld (p_dcol+1),a     ; hi (img_hi<shift> follows img_lo)
-        ld a,(hl) : and CODED : jp z,.exit          ; (img_bank<shift> follows that: none here?)
+        ld a,(hl) : and CODED + RAW : jp z,.exit    ; (img_bank<shift> follows that: none here?)
+        and RAW : ld a,HUD_MASK >> 8 : jr nz,.tables    ; (a raw image: the timer's nibbles)
         ld a,(p_shift) : rrca
         ld a,CODE_RMASK>>8 : jr nc,.tables
         ld a,CODE_LMASK>>8

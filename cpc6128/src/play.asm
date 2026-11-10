@@ -18,7 +18,8 @@
 ; pixels (2 byte columns) at a time, where the BBC version's moves 4.
 
 FRAMES_PER_DRAW = 2                 ; vertical syncs per drawn frame
-MAX_TICKS_PER_FRAME = 4
+MAX_TICKS_PER_FRAME = 8             ; (the BBC version has 4: the CPC draws more slowly, so 8 keeps
+                                    ; the game at its speed down to 6.25 frames a second)
 VIEW_L = 96 : VIEW_R = 160          ; the band Trogg moves in without the view scrolling,
 VIEW_T = 72 : VIEW_B = 136          ; across a 256-pixel window, down a 200-line one
 STEP_X = 8                          ; (pixels a sideways scroll step moves)
@@ -42,7 +43,10 @@ frame_loop
         call set_window_clip
         ; Once Trogg has won, or is dead and this buffer already shows the FRAK!
         ; bubble, nothing changes, so don't redraw
-        ld a,(won) : or a : jp nz,.show         ; (phase 6b: the level-complete screen)
+        ld a,(won) : or a : jr z,.not_won
+        ld a,(back) : ld hl,bwon : call look : or a : call z,win_screen   ; (once in each buffer)
+        jp .show
+.not_won
         ld a,(dead) : or a : jr z,.redraw
         ld a,(back) : ld hl,bfrak : call look : or a : jp nz,.show
 .redraw xor a : ld (dmg_n),a : ld (dmg_all),a  ; nothing repainted yet this frame
@@ -83,6 +87,7 @@ frame_loop
         ld hl,(yo_x) : ld (p_x),hl : ld hl,(yo_y) : ld (p_y),hl
         call log_sprite
 .no_yoyo
+        call draw_springs                       ; (moving bouncy platforms' springs)
         ; Trogg (standing or walking, he's two images: his body and his legs)
         call trogg_image : ld e,a : ld d,0
         ld hl,img_part_b : add hl,de : ld a,(hl) : ld (t_part_b),a
@@ -94,6 +99,7 @@ frame_loop
         ld hl,(tx) : ld (p_x),hl : ld hl,(ty) : ld (p_y),hl
         call log_sprite
 .one_part
+        call draw_hud                           ; the timer and rating
         ; ... and "FRAK!" at (x + 12, y - 26) if he's dead
         ld a,(back) : ld e,a : ld d,0 : ld hl,bfrak : add hl,de
         ld a,(dead) : ld (hl),a : or a : jr z,.show
@@ -102,7 +108,8 @@ frame_loop
         ld hl,(ty) : ld de,-26 : add hl,de : ld (p_y),hl
         call log_sprite
 
-.show   ; (the test harness can hold each frame to look at it, and then the game
+.show   ld hl,(frames_drawn) : inc hl : ld (frames_drawn),hl
+        ; (the test harness can hold each frame to look at it, and then the game
         ; runs two ticks a frame)
         ld a,(t_lock) : or a : jr z,.wait
         ld a,1 : ld (t_frame),a
@@ -175,6 +182,7 @@ begin_level
 ; version's redraw_all is reset_play, which restore_checkpoint and level_init end with)
 redraw
         call set_level_palette
+        ld hl,#FFFF : ld (hud_secs),hl          ; (the timer to be drawn afresh)
         ; nothing drawn in either buffer
         ld hl,drecs : ld de,drecs + 1 : ld bc,2 * MAX_SLOW * DR_SIZE - 1 : ld (hl),0 : ldir
         call centre_scroll
@@ -658,6 +666,114 @@ damaged ld a,(dmg_n) : or a : ret z
 .n3     inc hl
         djnz .loop
         or a : ret
+
+; ------------------------------------------------------------------------------
+; The HUD, springs, and the level-complete screen
+; ------------------------------------------------------------------------------
+
+; The timer at the top left of the window, and the rating at the bottom right.
+; The timer is an image (IMG_Hud, raw: see plot) made from the font each second.
+draw_hud
+        ld hl,(lvl_ticks) : ld a,50 : call div16        ; (seconds)
+        ld de,(hud_secs) : or a : sbc hl,de : add hl,de : jr z,.same
+        ld (hud_secs),hl
+        call time_digits
+        ; each character two byte columns of 8 rows: the glyph's left and right nibbles
+        ld hl,hud_image : ld ix,time_text : ld b,4
+.char   ld a,(ix+0) : sub '0' : add a,a : add a,a : add a,a
+        ld e,a : ld d,0 : push hl : ld hl,font_digits : add hl,de : ex de,hl : pop hl
+        ld c,8
+.row    ld a,(de) : rrca : rrca : rrca : rrca : and 15 : ld (hl),a
+        push hl : ld a,l : add a,8 : ld l,a : jr nc,.nc
+        inc h
+.nc     ld a,(de) : and 15 : ld (hl),a : pop hl
+        inc hl : inc de : dec c : jr nz,.row
+        ld de,8 : add hl,de
+        inc ix : djnz .char
+.same   ld a,IMG_Hud : ld (p_img),a
+        ld a,(scrollcol) : ld l,a : ld h,0 : add hl,hl : add hl,hl
+        ld de,4 : add hl,de : ld (p_x),hl
+        ld hl,(clip_t) : inc hl : inc hl : ld (p_y),hl
+        call log_sprite
+        ld a,(restarts) : cp 3 : jr c,.r_ok
+        ld a,3
+.r_ok   add a,IMG_Rating_1 : ld (p_img),a
+        ld hl,(p_x) : ld de,(win_w128) : add hl,de : ld de,-128 - 12 : add hl,de : ld (p_x),hl
+        ld a,(win_lines) : dec a : ld e,a : ld d,0      ; (the window's last line: 255 or 199)
+        ld hl,(clip_t) : add hl,de : ld (p_y),hl
+        jp log_sprite
+
+; HL = HL / A, the remainder in A
+div16   ld c,a : xor a : ld b,16
+.loop   add hl,hl : rla : cp c : jr c,.no
+        sub c : inc l
+.no     djnz .loop
+        ret
+
+; time_text = "m:ss" for HL seconds (at most 9:59)
+time_digits
+        ld de,600 : push hl : or a : sbc hl,de : pop hl : jr c,.ok
+        ld hl,599
+.ok     ld a,60 : call div16 : ld b,a                   ; (HL = minutes, B = seconds)
+        ld a,l : add a,'0' : ld (time_text),a
+        ld a,':' : ld (time_text + 1),a
+        ld a,b : ld c,'0' - 1
+.tens   inc c : sub 10 : jr nc,.tens
+        add a,10 + '0' : ld (time_text + 3),a
+        ld a,c : ld (time_text + 2),a
+        ret
+
+; The springs of the bouncy platforms that move (they can't be in the background
+; like the others), and the yellow line under a platform Trogg can move
+draw_springs
+        ld a,(num_plats) : ld (spr_i),a
+.loop   ld hl,spr_i : dec (hl) : ret m
+        ld a,(hl) : call plat_ix : push ix : pop iy
+        ld a,(iy+PLT_MOVING) : or a : jr z,.loop
+        cp 2 : jr nz,.spring
+        ; the line, from x to x + w - 1, on the row under it
+        ld l,(iy+PLT_XL) : ld h,(iy+PLT_XH) : ld (p_x),hl
+        ld e,(iy+PLT_W) : ld d,0 : add hl,de : dec hl : ld (q_x),hl
+        ld a,(iy+PLT_IMG) : ld hl,img_h : call look : ld e,a : ld d,0
+        ld l,(iy+PLT_YL) : ld h,(iy+PLT_YH) : add hl,de : ld (p_y),hl
+        ld a,#F0 : ld (hl_yel),a
+        call log_line
+        xor a : ld (hl_yel),a
+.spring ld a,(iy+PLT_BOUNCY) : or a : jr z,.loop
+        call spring_pos
+        ld a,IMG_Spring : ld (p_img),a
+        call log_sprite
+        jr .loop
+
+; The level-complete screen, drawn once into each buffer: just Trogg (and his
+; trophy if there's a medal) on the background colour. (The time, the gems and
+; the medal's text come with the front end, in phase 8.) Both buffers are put at
+; the view's scroll position first, as they're then shown in turn.
+win_screen
+        call calc_scroll
+        ld a,(back) : ld e,a : ld d,0
+        ld a,(newcol) : ld (scrollcol),a : ld hl,bscroll : add hl,de : ld (hl),a
+        ld a,(newrow) : ld (scrollrow),a : ld hl,brow : add hl,de : ld (hl),a
+        ld hl,bwon : add hl,de : ld (hl),1
+        ld hl,log_n : add hl,de : ld (hl),0     ; (nothing to erase from it now)
+        call set_window_clip
+        xor a : call fill_back
+        ld a,PM_PLOT : ld (p_mode),a
+        call trogg_image : ld e,a : ld d,0
+        ld hl,img_part_b : add hl,de : ld a,(hl) : ld (t_part_b),a
+        ld hl,img_part_a : add hl,de : ld a,(hl) : ld (p_img),a
+        ld hl,(tx) : ld (p_x),hl : ld hl,(ty) : ld (p_y),hl
+        call plot
+        ld a,(t_part_b) : cp 255 : jr z,.one_part
+        ld (p_img),a : call plot
+.one_part
+        ld a,(done_restarts) : cp 3 : ret nc
+        add a,IMG_Rating_1 : ld (p_img),a
+        ld hl,(tx) : ld de,21 : add hl,de : ld (p_x),hl
+        ld hl,(ty) : ld de,-23 : add hl,de : ld (p_y),hl
+        call plot
+        ld a,IMG_TrophyStand : ld (p_img),a
+        jp plot
 
 ; ------------------------------------------------------------------------------
 ; The moving objects, the yoyo

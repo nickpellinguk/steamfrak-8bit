@@ -40,6 +40,7 @@ start
         ld sp,#4000
         call machine_init
         call bank_test
+        call copy_font
         ld hl,palette : call set_palette
         ld a,(want_mode) : call setup_mode
         ld a,(vsyncs) : ld (last_vsync),a
@@ -383,6 +384,7 @@ plats       DEFS MAX_PLATS * PLT_SIZE     ; the level tables (see level.asm)
 ladders     DEFS MAX_LADDERS * L_SIZE
 draws       DEFS MAX_DRAW * D_SIZE
 slows       DEFS MAX_SLOW * S_SIZE
+hud_image   DEFS 64                 ; the timer, as a raw image: 8 byte columns of 8 rows (see plot)
 end_ram
         ASSERT end_ram <= #3F00     ; (the stack is below #4000)
 

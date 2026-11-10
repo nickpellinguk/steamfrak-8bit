@@ -129,17 +129,17 @@ scan_keys
 ; A = a key (KEY_...): returns A = 1 if it's down, else 0 (and Z set if up)
 key_pressed
         push bc : push hl
-        ld c,a : and 7 : ld b,a                 ; the bit
+        ld c,a : and 7 : ld hl,bit_masks : add a,l : ld l,a
+        jr nc,.nc1 : inc h
+.nc1    ld b,(hl)                               ; the bit
         ld a,c : rrca : rrca : rrca : and 15    ; the row
         ld hl,keys : add a,l : ld l,a
-        jr nc,.nc : inc h
-.nc     ld a,(hl)
-        inc b
-.shift  dec b : jr z,.got
-        rrca : jr .shift
-.got    and 1
+        jr nc,.nc2 : inc h
+.nc2    ld a,(hl) : and b
         pop hl : pop bc
-        ret
+        ret z
+        ld a,1 : ret
+bit_masks db 1, 2, 4, 8, 16, 32, 64, 128
 
 ; ------------------------------------------------------------------------------
 ; The screen. Two modes, both 39 character rows of 8 lines a frame (312 lines,
@@ -222,6 +222,23 @@ show_front
         ld bc,CRTC_SEL*256+13 : out (c),c
         ld bc,CRTC_DAT*256+0 : out (c),c
         ret
+
+; Copy the font's digits and colon from the lower ROM (its characters are at #3800,
+; 8 bytes each, top row first) to font_digits in the logic bank. The lower ROM
+; overlays #0000-#3FFF, where this code is, so a copier in screen buffer 0 does it.
+FONT_TMP = #9800 : FONT_COPIER = #9F00
+copy_font
+        ld hl,.copier : ld de,FONT_COPIER : ld bc,.copier_end - .copier : ldir
+        call FONT_COPIER
+        ld a,(ga_ram) : push af
+        ld a,RAM_BANK + LOGIC_BANK : call bank_select
+        ld hl,FONT_TMP : ld de,font_digits : ld bc,11 * 8 : ldir
+        pop af : jp bank_select
+.copier ld bc,GA*256 + (GA_MODE1 AND #FB) : out (c),c     ; (the lower ROM in)
+        ld hl,#3800 + '0' * 8 : ld de,FONT_TMP : ld bc,11 * 8 : ldir
+        ld bc,GA*256 + GA_MODE1 : out (c),c                ; (and out)
+        ret
+.copier_end
 
 ; Show buffer A (0 or 1) from byte offset HL (even, 0-#7FE) in it, at the next frame
 show_at

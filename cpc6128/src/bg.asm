@@ -30,9 +30,11 @@ DSTAGE  = #9400                     ; the lines, until the dictionary is complet
 B_IMG = 0 : B_XL = 1 : B_XH = 2 : B_YL = 3 : B_YH = 4 : B_WB = 5 : B_C0L = 6 : B_C0H = 7
 B_SIZE = 8
 ASSERT BGREC + MAX_BG * B_SIZE <= DSTAGE
+ASSERT B_SIZE == 8                   ; (bg_ix multiplies by it with shifts)
 
 ; IX = background item A
-bg_ix   ld hl,BGREC : ld c,B_SIZE : jp rec_ix
+bg_ix   ld l,a : ld h,0 : add hl,hl : add hl,hl : add hl,hl   ; (* B_SIZE)
+        ld de,BGREC : jp rec_ix
 
 ; The background: static platforms (and bouncy ones' springs), then ladders
 ; (GameMaker's drawing order), with their image, left and top

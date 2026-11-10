@@ -34,18 +34,19 @@ H_NPAL = 8 : H_NPLAT = 9 : H_NLAD = 10 : H_NDRAW = 11 : H_NMEAN = 12 : H_NMPLAT 
 H_SIZE = 14
 STAGE_SIZE = 1024                   ; (more than any level needs)
 
-; IX = record A of the table at HL, of C bytes each
-rec_ix
-        ld e,c : ld d,0
-        or a : jr z,.done
-        ld b,a
-.add    add hl,de : djnz .add
-.done   push hl : pop ix
+; IX = record A of a table (by shifts and adds: the record sizes are 12, 8, 12 and
+; 20 bytes). B and C kept; DE and HL lost.
+plat_ix ld l,a : ld h,0 : add hl,hl : add hl,hl : ld d,h : ld e,l   ; IX = platform A (* 12)
+        add hl,hl : add hl,de : ld de,plats : jr rec_ix
+lad_ix  ld l,a : ld h,0 : add hl,hl : add hl,hl : add hl,hl         ; IX = ladder A (* 8)
+        ld de,ladders : jr rec_ix
+draw_ix ld l,a : ld h,0 : add hl,hl : add hl,hl : ld d,h : ld e,l   ; IX = drawn thing A (* 12)
+        add hl,hl : add hl,de : ld de,draws : jr rec_ix
+slow_ix ld l,a : ld h,0 : add hl,hl : add hl,hl : ld d,h : ld e,l   ; IX = slow sprite A (* 20)
+        add hl,hl : add hl,hl : add hl,de : ld de,slows
+rec_ix  add hl,de : push hl : pop ix
         ret
-plat_ix ld hl,plats : ld c,PLT_SIZE : jr rec_ix       ; IX = platform A
-lad_ix  ld hl,ladders : ld c,L_SIZE : jr rec_ix     ; IX = ladder A
-draw_ix ld hl,draws : ld c,D_SIZE : jr rec_ix       ; IX = drawn thing A
-slow_ix ld hl,slows : ld c,S_SIZE : jr rec_ix       ; IX = slow sprite A
+        ASSERT PLT_SIZE == 12 && L_SIZE == 8 && D_SIZE == 12 && S_SIZE == 20
 
 ; A = the byte at HL + A (a table lookup)
 look    add a,l : ld l,a : ld a,h : adc a,0 : ld h,a
