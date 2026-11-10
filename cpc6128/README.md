@@ -5,12 +5,13 @@ A port of the BBC Master version (in the rest of this repository) to an unmodifi
 and tests. Levels that scroll sideways use a 256x256 screen, levels that scroll up and down
 320x200, and both are double-buffered.
 
-**Status: phase 5 of 9 done** (the game logic). The program so far loads the graphics, the
-levels and the game's logic, takes the machine over from the firmware, and has the BBC
-version's plotter, draw log, yoyo string and compiled meanie, its level loader, background
-unroller and repainting, and its game logic (the keys and typed commands, Trogg, the yoyo, the
-moving platforms and meanies, balloons and daggers, collisions and checkpoints), ported to the
-CPC. The tests
+**Status: phase 6 of 9** (the game plays: everything but the HUD and the level-complete
+screen). The program loads the graphics, the levels and the game's logic, takes the machine
+over from the firmware, and has the BBC version's plotter, draw log and compiled meanie, its
+level loader and background, its game logic (the keys and typed commands, Trogg, the yoyo, the
+moving platforms and meanies, balloons and daggers, collisions and checkpoints), and its frame
+loop, scrolling and drawing, ported to the CPC. The test harness's command 13 plays from a
+level; there's no front end yet. The tests
 check every byte drawn, Trogg's movement against GameMaker's, and the game logic against the
 BBC version's, tick for tick.
 
@@ -21,7 +22,7 @@ BBC version's, tick for tick.
 | 3 | Plotter and drawing | `plot.mjs`: every image, clipped, saved and put back, the yoyo string, the compiled meanie, matching byte for byte — **passes** |
 | 4 | Levels and background | `levels.mjs`: all 55 levels' tables, background caches and repainted windows match the converter — **passes** |
 | 5 | Game logic | `connections.mjs`: Trogg moves as in GameMaker on all 55 levels; `logic.mjs`: the game logic does what the BBC version's does, tick for tick — **both pass** |
-| 6 | Main loop and scrolling | levels play, with no flicker |
+| 6 | Main loop and scrolling | `frames.mjs`: every frame drawn is what the game's state says it should be — **passes** (6a; the HUD, the level-complete screen and a frame-rate table to come) |
 | 7 | Sound (AY-3-8912) | the notes match the web version's player |
 | 8 | Front end | menus, a level, then the next level |
 | 9 | Release | plays on a real 6128 |
@@ -61,6 +62,7 @@ CPC_ROMS=/path/to/roms node tools/emu/plot.mjs [seed]
 CPC_ROMS=/path/to/roms node tools/emu/levels.mjs [room ...]
 CPC_ROMS=/path/to/roms node tools/emu/connections.mjs [room ...] [--detail]
 CPC_ROMS=/path/to/roms node tools/emu/logic.mjs [room ...] [--ticks=N] [--seed=N]
+CPC_ROMS=/path/to/roms node tools/emu/frames.mjs [room ...] [--frames=N] [--seed=N]
 ```
 
 Steps a test can give (`steps.lua`): `wait` frames, `waitfor` a byte to have a value, `type`
@@ -69,6 +71,20 @@ text, `poke` and `peek` the base 64K, `load` a file into it and `dump` some of i
 a key by its row and bit in the keyboard matrix), `time` (the emulated clock), `regs` (the
 Z80's PC and SP), and `snap` (a screenshot). Every test starts by waiting for the program to
 set `ready`, once it has loaded and taken the machine over.
+
+`frames.mjs` is phase 6's test: every frame the game draws is what it should be. The program
+plays levels with `t_lock` set, so it holds each frame once it's drawn, before showing it: the
+buffer is copied with the low RAM and the logic bank, keys are pressed (random but purposeful,
+as in `logic.mjs`), and the game goes on, two ticks a frame. Each frame must be, byte for byte,
+what a reference renderer (`render.mjs`, written from the data formats, not from the Z80) makes
+of the game's state: the window's background from the converter's background data, the scenery
+not yet collected, each moving platform and meanie where the buffer says it drew it, then the
+buffer's draw log in order (balloons, daggers, meanies flying off, the yoyo and its string,
+Trogg, the FRAK! bubble). So anything left behind, erased wrongly, drawn in the wrong place or
+not repainted shows up. Eleven levels, both kinds, are each played twice for 300 frames, the
+second time with Trogg unable to die so that he gets about: all 6,600 frames are right, with
+the view scrolling, the yoyo out, moving platforms and meanies, balloons and daggers, things
+collected and deaths among them.
 
 `connections.mjs` is phase 5's test, the CPC version of the BBC version's `connections8.mjs`.
 It needs the steamfrak repository alongside this one (`STEAMFRAK` names it otherwise), for
@@ -133,10 +149,10 @@ and checks that each frame shows one buffer whole and that they alternate.
 | Address | Contents |
 |---|---|
 | `&0000-&003F` | Z80 restart vectors; the interrupt handler's jump at `&0038` |
-| `&0040-&28FF` | the code and its variables |
-| `&2900-&3C3F` | the line and row tables, the draw log's two save areas (1K each, the first also where a level is unpacked from), the level tables |
+| `&0040-&29FF` | the code and its variables |
+| `&2A00-&3D3F` | the line and row tables, the draw log's two save areas (1K each, the first also where a level is unpacked from), the level tables |
 | `&3F00-&3FFF` | the stack |
-| `&4000-&7FFF` | the base RAM here: the levels, packed (12K, the BBC version's `PACK` as it is). The window the extra banks are paged into: bank 0 the graphics (as the BBC's sideways RAM bank 4, sprites and code tables), bank 1 the compiled meanie, bank 2 the game's logic and its variables (as the BBC's bank 6), bank 3 the background cache (as the BBC's bank 7), with the slow save areas above it from `&6A00` |
+| `&4000-&7FFF` | the base RAM here: the levels, packed (12K, the BBC version's `PACK` as it is). The window the extra banks are paged into: bank 0 the graphics (as the BBC's sideways RAM bank 4, sprites and code tables), bank 1 the compiled meanie, bank 2 the game's logic, frame loop and their variables (as the BBC's bank 6), bank 3 the background cache (as the BBC's bank 7), with the two buffers' slow save areas above it, from `&6A00` and `&7500` |
 | `&8000-&BFFF` | while a level loads, the unroller's and the meanie compiler's workings |
 | `&8000-&BFFF` | screen buffer 0 |
 | `&C000-&FFFF` | screen buffer 1 |
@@ -254,6 +270,29 @@ collision spans (`gfx.py` rebases the BBC version's tables to them), then the co
 variables. The slow sprites' state while the level plays is in records of their own (IY), one
 for each of the level's slow sprite records (IX); the moving objects are records too. The sound
 it asks for goes in the BBC version's request bytes, for phase 7's player.
+
+### Playing (`src/play.asm`)
+
+A port of the BBC version's frame loop, in the logic bank. Each frame, in the buffer that isn't
+on show: erase everything drawn there last time (`restore_log`); scroll, repainting the columns
+(or rows) that come into view, and repaint collected things' columns (`do_pending`); bring the
+moving platforms and meanies up to date (`draw_slow`: each buffer remembers where it drew each
+one, erases only those that moved, from the background cache, and draws again those that moved
+or were painted over, in order); then draw the moving things into the draw log. Then show it
+once two vertical syncs have passed since the last flip (the CRTC's start address, R12 and R13:
+the buffer and the scroll position), and run a tick of game logic for each vertical sync since.
+A death goes back to the checkpoint and redraws both buffers; finishing a level loads the next.
+
+The CRTC starts the screen on a word (2 bytes), so sideways the view moves 8 pixels at a time
+where the BBC version's moves 4, scrolling in bands as the BBC version does (it stays put while
+Trogg is between 96 and 160 pixels across the 256-pixel window; up and down, while his feet are
+between 72 and 136 lines down the 200-line one). For the same reason the view's sideways
+position is always even, so on a level whose width in byte columns is odd, the last 4 pixels on
+the right never come into view.
+
+The yoyo string's ends are compared signed: at the left edge of a level the yoyo can be a
+pixel or two left of it, which made the BBC version's `hline`, comparing them unsigned, draw
+the string right across the window for a frame. The BBC version still does that.
 
 ### Trogg's movement (`src/trogg.asm`)
 

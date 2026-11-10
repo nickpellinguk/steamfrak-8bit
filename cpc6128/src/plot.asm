@@ -254,12 +254,18 @@ hline
         ld a,h : or a : ret nz
         ld a,(clip_h) : or a : jr z,.row_ok
         ld b,a : ld a,l : cp b : ret nc
-.row_ok ; order the ends: left in p_left, right in hl_right
-        ld hl,(q_x) : ld de,(p_x) : or a : sbc hl,de
+.row_ok ; order the ends (signed: the yoyo can be a pixel or two left of the level):
+        ; left in p_left, right in hl_right, the left clipped to the level's edge
+        ld hl,(q_x) : ld de,(p_x) : call signed_less
         ld hl,(p_x) : ld de,(q_x)
         jr nc,.ordered
         ex de,hl
-.ordered ld (p_left),hl : ld (hl_right),de
+.ordered
+        bit 7,d : ret nz                        ; (wholly left of the level)
+        bit 7,h : jr z,.left_ok
+        ld hl,0
+.left_ok
+        ld (p_left),hl : ld (hl_right),de
         ld a,l : and 3 : ld (hl_p0),a
         ld a,e : and 3 : ld (hl_p1),a
         ld a,h : cp 4 : ret nc                  ; off the level (beyond 1024, or negative)?

@@ -174,6 +174,7 @@ trogg_move
 
         INCLUDE "trogg.asm"
         INCLUDE "commands.asm"
+        INCLUDE "play.asm"
 
 ; ------------------------------------------------------------------------------
 ; The yoyo (port of the Yoyoing states of oTrogg and YoyoCollide)
@@ -1246,6 +1247,52 @@ ht_t        db 0
 ht_u        db 0
 to_y        dw 0
 lvl_ticks   dw 0
+; the frame loop's (see play.asm)
+scrollcol   db 0                    ; the back buffer's scroll position
+scrollrow   db 0
+view_col    db 0                    ; where the view is (going)
+view_row    db 0
+col_max     db 0
+newcol      db 0
+newrow      db 0
+scroll_dir  db 0
+bs_n        db 0
+frame_ticks db 2
+ticks_left  db 0
+last_flip   db 0
+bscroll     db 0, 0                 ; each buffer's scroll position
+brow        db 0, 0
+bfrak       db 0, 0                 ; each buffer shows the FRAK! bubble
+win_cols    db 64                   ; the window: byte columns, lines (0: 256), rows
+win_lines   db 0
+win_rows    db 32
+win_w128    dw 256 + 128            ; (its width in pixels + 128)
+mv_left     dw 0
+save_end    dw 0
+t_part_b    db 0
+rd_i        db 0
+ds_i        db 0
+dm_i        db 0
+pc_c        db 0
+pc_col      db 0
+pc_end      db 0
+rr_c0       db 0                    ; repaint_rect's cells
+rr_c1       db 0
+rr_k0       db 0
+rr_k1       db 0
+rr_i        db 0
+dm_c0       db 0                    ; damage to note
+dm_c1       db 0
+dm_y0       db 0
+dm_y1       db 0
+dmg_n       db 0
+dmg_all     db 0
+nr_c0       db 0                    ; slow_rect's answer
+nr_c1       db 0
+nr_y0       db 0
+nr_y1       db 0
+sr_top      dw 0
+sr_bot      dw 0
 win_ticks   dw 0
 have_cp     db 0
 save_cp     db 0
@@ -1278,4 +1325,8 @@ cp_face     db 0
 cp_alive    DEFS MAX_OBJECTS
 cp_srecs    DEFS MAX_SLOW * SR_SIZE
 cp_plats    DEFS MAX_PLATS * 4
+dmg_list    DEFS MAX_DMG * 4        ; damage this frame: byte columns c0, c1, 4-line rows y0, y1
+n_vis       DEFS MAX_SLOW           ; draw_slow's: each slow sprite in the window
+n_chg       DEFS MAX_SLOW           ; ... and moved
+drecs       DEFS 2 * MAX_SLOW * DR_SIZE     ; where each buffer drew each slow sprite
 end_logic_bank
