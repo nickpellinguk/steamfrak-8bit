@@ -38,6 +38,10 @@ DR_SIZE = 9
 
 ; Play, from level A (the test harness's command 13). Never returns.
 play    call begin_level
+        jr frame_loop
+; The game, from the start: the attract screen and the menus, then the level chosen
+game    xor a : call front_end
+        call begin_level
 frame_loop
         call wait_flip                          ; (the buffer to draw in mustn't be on show)
         ld a,(front) : xor 1 : ld (back),a
@@ -138,15 +142,44 @@ frame_loop
         call redraw
         jp frame_loop
 .next_level
+        call record_result
         ld a,(cur_level) : inc a : call begin_level
         jp frame_loop
-.quit   ld a,(cur_level) : call begin_level     ; (phase 8: back to the menus)
+.quit   ld a,1 : call front_end                 ; (Escape: back to the menus)
+        call begin_level
         jp frame_loop
+
 .next_tick
         ld hl,ticks_left : dec (hl) : jr nz,.tick
 .tidy   ; ... and then the other buffer, still on show, tidied for the next frame
         call tidy
         jp frame_loop
+
+; The front end (in bank 1: see front.asm): A = 0 for the attract screen and then
+; the menus, 1 for just the menus; A = the level chosen
+front_end
+        push af
+        call cancel_flip
+        ld a,(difficulty) : ld (fe_diff),a
+        ld a,(last_level) : ld (fe_last),a
+        pop af
+        ld hl,fe_main : call front_call
+        ld (last_level),a
+        push af : ld a,(fe_diff) : ld (difficulty),a : pop af
+        ret
+; Give the result of the level just finished (done_*) to the front end's records
+record_result
+        ld a,(done_valid) : or a : ret z
+        xor a : ld (done_valid),a
+        call fe_done
+        ld hl,fe_record : jp front_call
+; ... the result, and the difficulty, for the front end
+fe_done ld a,(difficulty) : ld (fe_diff),a
+        ld a,(done_level) : ld (fe_done_level),a
+        ld hl,(done_ticks) : ld (fe_done_ticks),hl
+        ld a,(done_restarts) : ld (fe_done_restarts),a
+        ld a,(done_gems) : ld (fe_done_gems),a
+        ret
 
 ; Erase what's drawn in the buffer on show (which the next frame is drawn in),
 ; chasing the raster while the one just drawn waits to be shown; not if the next
@@ -854,13 +887,16 @@ win_screen
         ld a,(t_part_b) : cp 255 : jr z,.one_part
         ld (p_img),a : call plot
 .one_part
-        ld a,(done_restarts) : cp 3 : ret nc
+        ld a,(done_restarts) : cp 3 : jr nc,.text
         add a,IMG_Rating_1 : ld (p_img),a
         ld hl,(tx) : ld de,21 : add hl,de : ld (p_x),hl
         ld hl,(ty) : ld de,-23 : add hl,de : ld (p_y),hl
         call plot
         ld a,IMG_TrophyStand : ld (p_img),a
-        jp plot
+        call plot
+.text   ; then the time, the gems and the medal (the front end's fe_win)
+        call fe_done
+        ld hl,fe_win : jp front_call
 
 ; ------------------------------------------------------------------------------
 ; The moving objects, the yoyo

@@ -5,14 +5,14 @@ A port of the BBC Master version (in the rest of this repository) to an unmodifi
 and tests. Levels that scroll sideways use a 256x256 screen, levels that scroll up and down
 320x200, and both are double-buffered.
 
-**Status: phase 7 of 9 done** (the game plays, with its HUD, level-complete screen, music and
-sound effects; the level-complete screen's text comes with the front end). The program loads the
-graphics, the levels, the game's logic and the music player, takes the machine
+**Status: phase 8 of 9 done** (the whole game: the attract screen, the menus and records, the
+levels with their HUD, music and sound effects, and the level-complete screen). The program
+loads the graphics, the levels, the game's logic, the music player and the front end, takes the machine
 over from the firmware, and has the BBC version's plotter, draw log and compiled meanie, its
 level loader and background, its game logic (the keys and typed commands, Trogg, the yoyo, the
 moving platforms and meanies, balloons and daggers, collisions and checkpoints), its frame
-loop, scrolling and drawing, and its music and sound effects player, ported to the CPC. The test harness's command 13 plays from a
-level; there's no front end yet. The tests
+loop, scrolling and drawing, its music and sound effects player, and its front end, ported to
+the CPC. The tests
 check every byte drawn, Trogg's movement against GameMaker's, and the game logic against the
 BBC version's, tick for tick.
 
@@ -25,7 +25,7 @@ BBC version's, tick for tick.
 | 5 | Game logic | `connections.mjs`: Trogg moves as in GameMaker on all 55 levels; `logic.mjs`: the game logic does what the BBC version's does, tick for tick — **both pass** |
 | 6 | Main loop and scrolling | `frames.mjs`: every frame drawn is what the game's state says it should be — **passes**; `fps.mjs`: the frame rates below |
 | 7 | Sound (AY-3-8912) | `music.mjs`: every note of every tune's tracks is played as the web version's player plays it, and the drums as the BBC version's — **passes** |
-| 8 | Front end | menus, a level, then the next level |
+| 8 | Front end | `front.mjs`: from the attract screen through the menus into a level, won, then the next level, and back to the menus with its record — **passes** |
 | 9 | Release | plays on a real 6128 |
 
 ## Building
@@ -40,7 +40,11 @@ RASM=/path/to/rasm ./build.sh
 ```
 
 This writes `build/frak.dsk` (and `build/frak.sym`, the symbols, for the tests). In an emulator,
-choose a CPC 6128, insert the disc and type `RUN"FRAK.BIN`.
+choose a CPC 6128, insert the disc and type `RUN"FRAK.BIN`. The attract screen comes up; Space,
+Return, P or Y goes on to the menus, where Z X O K (or the cursor keys) move, Space, Return, P or
+Y choose, and Escape goes back (and, while playing, back to the menus). In a level: Z and X (or
+the cursor keys) walk, O and K climb, P or Space throw the yoyo; M and S change the music and the
+sound effects.
 
 (RASM works out expressions in floating point and rounds them, so `label/256` of an address
 that isn't page-aligned can come out one too high: the source takes high bytes with `>>8`.)
@@ -66,6 +70,7 @@ CPC_ROMS=/path/to/roms node tools/emu/logic.mjs [room ...] [--ticks=N] [--seed=N
 CPC_ROMS=/path/to/roms node tools/emu/frames.mjs [room ...] [--frames=N] [--seed=N]
 CPC_ROMS=/path/to/roms node tools/emu/fps.mjs [room ...]
 CPC_ROMS=/path/to/roms node tools/emu/music.mjs [tune ...] [--detail] [--sfx]
+CPC_ROMS=/path/to/roms node tools/emu/front.mjs
 ```
 
 Steps a test can give (`steps.lua`): `wait` frames, `waitfor` a byte to have a value, `type`
@@ -100,6 +105,15 @@ tone track must be heard on one of the AY's channels while it starts to sound, a
 and each drum hit must be a new attack of the noise: every note of every tune's 27 tracks is
 (3,104 notes), and the drums are heard as in the BBC version (all but one hit in the game's
 tunes; the front end's tunes leave some out on both).
+
+`front.mjs` is phase 8's test. The game starts by itself unless the test harness says it's there
+within a second of starting (every other test does: `boot` in `mame.mjs` sets `t_harness`), so
+MAME boots the disc without that and checks that the attract screen comes up; Space, Down and
+Space choose the Classic group, and Space its first level, which must start and play; the level
+is then won (its state as `level_complete` leaves it: a time, all the gems, no restarts), so the
+level-complete screen with its text must come up and then the next level start; Escape goes back
+to the menus, and the records must have the level's time and gems. Each step is a screenshot
+(`build/shots/front_*.png`).
 
 `fps.mjs` measures the frame rate on every level, with Trogg unable to die: standing still for
 10 seconds (the meanies, balloons and daggers still moving), then walking right for 10.
@@ -160,7 +174,7 @@ the screenshots (MAME draws a Mode 1 pixel 2 pixels wide, so 256x256 is 512x256 
 320x200 is 640x200, centred and all on show), then swaps the buffers every frame for 10 frames
 and checks that each frame shows one buffer whole and that they alternate.
 
-## How it works (so far)
+## How it works
 
 ### Memory map
 
@@ -170,7 +184,7 @@ and checks that each frame shows one buffer whole and that they alternate.
 | `&0040-&29FF` | the code and its variables |
 | `&2A00-&3D3F` | the line and row tables, the draw log's two save areas (1K each, the first also where a level is unpacked from), the level tables |
 | `&3F00-&3FFF` | the stack |
-| `&4000-&7FFF` | the base RAM here: the levels, packed (12K, the BBC version's `PACK` as it is). The window the extra banks are paged into: bank 0 the graphics (as the BBC's sideways RAM bank 4, sprites and code tables), bank 1 the compiled meanie, bank 2 the game's logic, frame loop and their variables (as the BBC's bank 6), bank 3 the background cache (as the BBC's bank 7), with the two buffers' slow save areas above it, from `&6A00` and `&7500` |
+| `&4000-&7FFF` | the base RAM here: the levels, packed (12K, the BBC version's `PACK` as it is). The window the extra banks are paged into: bank 0 the graphics (as the BBC's sideways RAM bank 4, sprites and code tables), bank 1 the music player and tunes, the compiled meanie (from about `&5740`) and the front end with its records and font (from `&6400`), bank 2 the game's logic, frame loop and their variables (as the BBC's bank 6), bank 3 the background cache (as the BBC's bank 7), with the two buffers' slow save areas above it, from `&6A00` and `&7500` |
 | `&8000-&BFFF` | while a level loads, the unroller's and the meanie compiler's workings |
 | `&8000-&BFFF` | screen buffer 0 |
 | `&C000-&FFFF` | screen buffer 1 |
@@ -299,7 +313,8 @@ one, erases only those that moved, from the background cache, and draws again th
 or were painted over, in order); then draw the moving things into the draw log. Then show it
 once two vertical syncs have passed since the last flip (the CRTC's start address, R12 and R13:
 the buffer and the scroll position), and run a tick of game logic for each vertical sync since.
-A death goes back to the checkpoint and redraws both buffers; finishing a level loads the next.
+A death goes back to the checkpoint and redraws both buffers; finishing a level adds its result
+to the records and loads the next; Escape goes back to the menus.
 
 The CRTC starts the screen on a word (2 bytes), so sideways the view moves 8 pixels at a time
 where the BBC version's moves 4, scrolling in bands as the BBC version does (it stays put while
@@ -342,6 +357,21 @@ up (its chip's lowest note is about 122Hz) are played at their own pitch. The BB
 loudness, in 2dB steps, becomes the AY's nearest level. M and S change the music (all the
 tracks, the first only, off) and the sound effects (on, off), as in the BBC version; with only
 the first track, or none, Trogg's footsteps are heard.
+
+**The front end** (`src/front.asm`) is the BBC version's, ported routine for routine: the
+attract screen ("The Cast"), the menus (Replay, Difficulty, Training and the six groups of
+levels, each a 3x3 grid of levels with the column's meanie, the level's name, its target time,
+the best so far and its medals), the records (each level's best time, gems, and fewest restarts
+at each difficulty, kept until the machine is switched off), and the level-complete screen's
+text (the time to a thousandth of a second, the gems and the medal). It's drawn in the 256x256
+mode, so the BBC version's layout, a 256-pixel-wide screen as the Steam version's, fits as it
+is (the BBC's 320-pixel screen centred it, 32 pixels in), with the plotter and the CPC's own
+font (characters 32-127, which `copy_font` copies from the lower ROM at the start). It stays in
+extra bank 1, above the compiled meanie and the music player (the biggest compiled meanie, the
+Scrubbly's, is 2.9K), unpacked, so nothing has to be unpacked or staged when the menus come up
+as in the BBC version; the logic bank calls it through `front_call` (in the low RAM), which pages
+it in and back out, with what it needs of the game's state (the difficulty, the last level, the
+level just finished) in `fe_args`.
 
 **Speed.** The game logic runs at 50 ticks a second, a tick for each vertical sync, up to 4 a
 frame, as in the BBC version (below 12.5 frames a second, the game slows). Measured the same

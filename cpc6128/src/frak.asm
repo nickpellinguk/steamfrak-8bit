@@ -67,6 +67,12 @@ main_loop
         ld (last_vsync),a
         sub b : ld e,a : ld d,0
         ld hl,(ticks) : add hl,de : ld (ticks),hl
+        ; (no word from the test harness a second after the start: the game itself)
+        ld a,(t_harness) : or a : jr nz,.harness
+        ld hl,auto_wait : dec (hl) : jr nz,.harness
+        ld a,RAM_BANK + LOGIC_BANK : call bank_select
+        jp game
+.harness
         ; a mode change asked for (by the test harness)?
         ld a,(want_mode) : ld hl,cur_mode : cp (hl)
         call nz,setup_mode
@@ -92,6 +98,20 @@ load_file
 
 load_error
         jr load_error                           ; (the disc is missing a file)
+
+; Call routine HL in the front end (extra bank 1), A in and out; then whatever was
+; paged in, in again
+front_call
+        ld (.go + 1),hl
+        ld (.a + 1),a
+        ld a,(ga_ram) : ld (.back + 1),a
+        ld a,RAM_BANK + FRONT_BANK : call bank_select
+.a      ld a,0
+.go     call 0
+        push af
+.back   ld a,0 : call bank_select
+        pop af
+        ret
 
 ; Run test command t_cmd (see tools/emu/plot.mjs)
 command
@@ -180,6 +200,15 @@ vsyncs      db 0                    ; counted by irq
 ga_ram      db RAM_BASE             ; the RAM configuration paged in
 keys        DEFS 10                 ; the keyboard: a bit set while a key is down
 keys_changed db 1                   ; ... set when it changes
+t_harness   db 0                    ; the test harness says it's here (else the game starts by itself)
+auto_wait   db 50                   ; ... after this many vertical syncs
+fe_args                             ; for the front end (in bank 1; see front_call), from the logic bank:
+fe_diff     db 1                    ; ... the difficulty (and back)
+fe_last     db 1                    ; ... the last level played
+fe_done_level db 0                  ; ... the level just finished: which, its time (game ticks),
+fe_done_ticks dw 0                  ; ... the restarts, and whether all the gems were collected
+fe_done_restarts db 0
+fe_done_gems db 0
 snd_music_req db #FF                ; sound (see sound.asm): a tune to start (#FF: none)
 snd_sfx_req db #FF                  ; ... sound effects to start (#FF: none)
 snd_sfx_req2 db #FF
@@ -442,13 +471,17 @@ loader_end
         SAVE 'LOGIC.BIN',#4000,end_logic_bank-#4000,DSK,'build/frak.dsk'   ; (with its variables' starting values)
         PRINT "Logic from ",{hex}#4000," to ",{hex}logic_vars,", its variables to ",{hex}end_logic_bank
 
-; The music player, its tunes and variables, for extra bank 1 (the compiled meanie
-; goes after them: JIT_START)
+; The music player, its tunes and variables, for extra bank 1; then the compiled
+; meanie (from end_sound_bank to FRONT_ORG), then the front end
         BANK
         ORG #4000
         INCLUDE "sound.asm"
         INCLUDE "gen/music.asm"
 end_sound_bank
-        ASSERT end_sound_bank <= #6000
-        SAVE 'SOUND.BIN',#4000,end_sound_bank-#4000,DSK,'build/frak.dsk'
-        PRINT "Sound from ",{hex}#4000," to ",{hex}end_sound_bank
+        ASSERT FRONT_ORG - end_sound_bank >= #B80     ; (the biggest compiled meanie, the Scrubbly's: #B6F)
+        ORG FRONT_ORG
+        INCLUDE "front.asm"
+end_bank1
+        ASSERT end_bank1 <= #8000
+        SAVE 'SOUND.BIN',#4000,end_bank1-#4000,DSK,'build/frak.dsk'
+        PRINT "Sound from ",{hex}#4000," to ",{hex}end_sound_bank,", the front end from ",{hex}FRONT_ORG," to ",{hex}end_bank1
