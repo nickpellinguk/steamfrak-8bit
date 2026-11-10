@@ -41,8 +41,9 @@ V_INS = 9 * NV - VOFF : V_SEMI = 10 * NV - VOFF : V_ENV = 11 * NV - VOFF
 V_EPOS = 12 * NV - VOFF : V_AMPL = 13 * NV - VOFF : V_AMPH = 14 * NV - VOFF
 V_PHASE = 15 * NV - VOFF : V_ATT = 16 * NV - VOFF                ; (phase: 0 off, 1 attack,
 V_NL = 17 * NV - VOFF : V_NH = 18 * NV - VOFF                    ; 2 decay, 3 sustain, 4 release)
-V_FIELDS = 19
-ASSERT V_NH < 128
+V_PL = 19 * NV - VOFF : V_PH = 20 * NV - VOFF                    ; (the pitch V_NL/V_NH are for)
+V_FIELDS = 21
+ASSERT V_PH < 128
 
 ; A = table HL's entry E (D = 0)
 MACRO TLOOK table
@@ -65,17 +66,16 @@ snd_tick
         call snd_start_sfx
 .no_sfx2
         ; sound effects are released after their length
-        ld a,SFX_TONE : call voice_ix : call .sfx_len
-        ld a,SFX_NOISE : call voice_ix : call .sfx_len
+        ld ix,vtab + VOFF + SFX_TONE : call .sfx_len
+        ld ix,vtab + VOFF + SFX_NOISE : call .sfx_len
         ; quarter beats
         ld a,(snd_tune) : or a : jr z,.no_qb
         ld hl,(snd_acc) : ld de,(snd_k) : add hl,de : ld (snd_acc),hl
         call c,snd_quarter_beat
 .no_qb
-        ld b,NV - 1
-.voices ld a,b : call voice_ix
-        push bc : call snd_voice : pop bc
-        dec b : jp p,.voices
+        ld ix,vtab + VOFF + NV - 1 : ld b,NV
+.voices push bc : call snd_voice : pop bc
+        dec ix : djnz .voices
         jp snd_output
 .sfx_len
         ld a,(ix+V_LEFT) : or a : ret z
@@ -96,6 +96,7 @@ snd_keys
         ld a,(snd_music_opt) : inc a : cp 3 : jr c,.m_ok
         xor a
 .m_ok   ld (snd_music_opt),a
+        push bc : call snd_masks : pop bc
 .m_up   ld a,b : ld (snd_m_last),a
         ld a,(keys + (KEY_S >> 3)) : and 1 << (KEY_S & 7) : ld b,a
         jr z,.s_up
@@ -112,7 +113,7 @@ snd_start_tune
 .off    ld a,b : call voice_ix
         call snd_silence : ld (ix+V_ON),0
         dec b : jp p,.off
-        ld a,(snd_tune) : or a : ret z
+        ld a,(snd_tune) : or a : jp z,snd_masks
         ld e,a : ld d,0
         TLOOK tune_k_lo : ld (snd_k),a
         TLOOK tune_k_hi : ld (snd_k + 1),a
@@ -136,7 +137,7 @@ snd_start_tune
         inc b
         ld a,(snd_tune) : ld e,a : TLOOK tune_ntracks
         cp b : jr nz,.tracks
-        ret
+        jp snd_masks
 
 ; E = the row of the tune's track B (D = 0)
 track_row
@@ -188,8 +189,8 @@ snd_start_sfx
         TLOOK sfx_len : ld (ix+V_LEFT),a
         jp snd_trigger
 snd_stop_sfx
-        ld a,SFX_TONE : call voice_ix : call snd_silence
-        ld a,SFX_NOISE : call voice_ix : jp snd_silence
+        ld ix,vtab + VOFF + SFX_TONE : call snd_silence
+        ld ix,vtab + VOFF + SFX_NOISE : jp snd_silence
 
 ; A quarter beat: each track's next note, if its last one is over. At the end of
 ; the tune it goes round again, from the end of its introduction.
@@ -205,10 +206,9 @@ snd_quarter_beat
 .again_next
         inc b : ld a,b : cp MAX_TRACKS : jr nz,.again
 .go     ld hl,(snd_qb) : inc hl : ld (snd_qb),hl
-        ld b,MAX_TRACKS - 1
-.tracks ld a,b : call voice_ix
-        ld a,(ix+V_ON) : or a : call nz,snd_track_step
-        dec b : jp p,.tracks
+        ld ix,vtab + VOFF + MAX_TRACKS - 1 : ld b,MAX_TRACKS
+.tracks ld a,(ix+V_ON) : or a : call nz,snd_track_step
+        dec ix : djnz .tracks
         ret
 
 ; Track IX, at a quarter beat (B kept)
@@ -314,7 +314,11 @@ snd_voice
         bit 7,(ix+V_CHAN) : jr z,.p_down
         ld de,96 : or a : sbc hl,de : jr nc,.p_down
         add hl,de
-.p_down ; its octave (B) and the eighth of a semitone in it (L)
+.p_down ; (the same as last tick: the same divider)
+        ld a,l : cp (ix+V_PL) : jr nz,.new_p
+        ld a,h : cp (ix+V_PH) : ret z
+.new_p  ld (ix+V_PL),l : ld (ix+V_PH),h
+        ; its octave (B) and the eighth of a semitone in it (L)
         ld b,0 : ld de,96
 .octave or a : sbc hl,de : jr c,.in_octave
         inc b : jr .octave
@@ -338,19 +342,43 @@ snd_voice
 ; least 8dB quieter (the tail of a note, say); the tone sound effect takes a free
 ; channel, else the quietest.
 snd_output
-        ; the noise voice
-        ld a,SFX_NOISE : ld c,a : call voice_ix
-        ld a,(ix+V_ATT) : cp 15 : jr c,.n_got
-        ld c,#FF
-        ld a,(snd_music_opt) : or a : jr nz,.n_got
-        ld c,0
-.n_find ld a,c : call voice_ix
-        ld a,(ix+V_ON) : or a : jr z,.n_next
-        ld a,(ix+V_CHAN) : cp 3 : jr nz,.n_next
-        ld a,(ix+V_ATT) : cp 15 : jr c,.n_got
-.n_next inc c : ld a,c : cp MAX_TRACKS : jr nz,.n_find
-        ld c,#FF
-.n_got  ld a,c : ld (snd_nv),a
+        ; which voices are sounding (a bit each, voice 0 the lowest)
+        ASSERT NV == 9
+        ld ix,vtab + VOFF : ld hl,0
+        ld a,(ix+V_ATT+8) : sub 15 : adc hl,hl
+        ld a,(ix+V_ATT+7) : sub 15 : adc hl,hl
+        ld a,(ix+V_ATT+6) : sub 15 : adc hl,hl
+        ld a,(ix+V_ATT+5) : sub 15 : adc hl,hl
+        ld a,(ix+V_ATT+4) : sub 15 : adc hl,hl
+        ld a,(ix+V_ATT+3) : sub 15 : adc hl,hl
+        ld a,(ix+V_ATT+2) : sub 15 : adc hl,hl
+        ld a,(ix+V_ATT+1) : sub 15 : adc hl,hl
+        ld a,(ix+V_ATT+0) : sub 15 : adc hl,hl
+        ld (snd_on),hl
+        ; the noise voice: the noise sound effect if it's sounding, else (with all the
+        ; tracks) the first drum that is
+        ld a,SFX_NOISE : bit SFX_NOISE - 8,h : jr nz,.n_got
+        ld a,#FF
+        ld bc,(snd_drums) : ld a,l : and c : ld c,a : ld a,h : and b : or c
+        ld a,#FF : jr z,.n_got
+        ld a,(snd_music_opt) : or a : ld a,#FF : jr nz,.n_got
+        ld a,c : ld c,0                         ; (the lowest bit of the drums: none above 7)
+.lowest rrca : jr c,.n_low
+        inc c : jr .lowest
+.n_low  ld a,c
+.n_got  ld (snd_nv),a
+        ; those that want a tone channel: sounding, and allowed one (snd_allow)
+        ld bc,(snd_allow) : ld a,l : and c : ld l,a : ld a,h : and b : ld h,a
+        ; the channels as last tick, if neither that nor the noise voice has changed
+        ld de,(snd_want) : or a : sbc hl,de : add hl,de : jr nz,.changed
+        ld a,(snd_nv) : ld b,a : ld a,(snd_lastnv) : cp b : jr nz,.changed
+        ld a,(snd_pend) : or a : jp z,.output   ; (and no voice was left waiting)
+.changed
+        xor a : ld (snd_pend),a
+        ld (snd_want),hl
+        ld a,(snd_nv) : ld (snd_lastnv),a
+        ld de,want : ld b,NV                    ; (as a byte each)
+.bits   xor a : srl h : rr l : rla : ld (de),a : inc de : djnz .bits
         ; 1. the channels of voices that have stopped (or aren't wanted) are free: the
         ; noise voice's if there isn't one now (else it's the new one's)
         ld b,2
@@ -361,7 +389,7 @@ snd_output
         ld (snd_nch),a
         jr .free_next
 .free_tone
-        ld a,(hl) : call snd_wanted : jr c,.free_next
+        push hl : call want_a : pop hl : or a : jr nz,.free_next
         ld (hl),#FF
 .free_next
         dec b : jp p,.free
@@ -375,7 +403,7 @@ snd_output
 .place_tones
         ; 3. each tone voice that's wanted but has no channel: the sound effect, then the tracks
         ld c,SFX_TONE
-.place  ld a,c : call snd_wanted : jr nc,.place_next
+.place  ld a,c : call want_a : or a : jr z,.place_next
         ld b,2                                  ; (has it one?)
 .has    ld a,(snd_nch) : cp b : jr z,.has_next
         call owner_hl : ld a,(hl) : cp c : jr z,.place_next
@@ -385,15 +413,17 @@ snd_output
         call quietest                           ; B = the quietest channel, A its attenuation
         ld e,a
         ld a,c : cp SFX_TONE : jr z,.take
-        call voice_ix : ld a,(ix+V_ATT) : add a,4 : cp e : jr z,.take : jr nc,.place_next
+        call voice_ix : ld a,(ix+V_ATT) : add a,4 : cp e : jr z,.take : jr nc,.wait
 .take   call owner_hl : ld (hl),c
+        jr .place_next
+.wait   ld a,1 : ld (snd_pend),a                ; (it waits for a channel: look again next tick)
 .place_next
         ld a,c : cp SFX_TONE : jr nz,.next_track
         ld c,#FF
 .next_track
         inc c : ld a,c : cp MAX_TRACKS : jr nz,.place
         ; 4. each channel: its voice's pitch (or the noise's period), its loudness, and the mixer
-        ld a,#3F : ld (snd_mix),a               ; (nothing mixed in: and port A, the keyboard, input)
+.output ld a,#3F : ld (snd_mix),a               ; (nothing mixed in: and port A, the keyboard, input)
         ld b,0
 .channel
         call owner_hl : ld a,(hl) : cp #FF : ld a,15 : jr z,.set_att
@@ -470,22 +500,31 @@ quietest
         ld a,(snd_qa)
         ret
 
-; Carry set if voice A should be heard on a tone channel now: sounding, and the
-; tone sound effect or a tone track that the music option lets play (BC, DE, HL kept)
-snd_wanted
-        push ix : push de
-        push af : call voice_ix : pop af
-        ld d,a                                  ; (D: the voice, put back below)
-        ld a,(ix+V_ATT) : cp 15 : jr nc,.no
-        ld a,d : cp SFX_TONE : jr z,.yes
-        ld a,(ix+V_ON) : or a : jr z,.no
-        ld a,(ix+V_CHAN) : cp 3 : jr z,.no
-        ld a,(snd_music_opt) : or a : jr z,.yes
-        cp 2 : jr z,.no
-        ld a,d : or a : jr nz,.no               ; (just the first track)
-.yes    pop de : pop ix : scf
+; snd_allow: the voices that may have a tone channel (the tone sound effect, and the
+; tone tracks that the music option lets play); snd_drums: the drum tracks. (When a
+; tune starts or the option changes.)
+snd_masks
+        ld hl,1 << SFX_TONE : ld de,0           ; (HL: allowed, DE: the drums)
+        ld ix,vtab + VOFF
+        ld bc,1                                 ; (BC: this track's bit)
+        xor a : ld (snd_mb),a                   ; (the track)
+.track  ld a,(ix+V_ON) : or a : jr z,.next
+        ld a,(ix+V_CHAN) : and #7F : cp 3 : jr nz,.tone
+        ld a,e : or c : ld e,a : ld a,d : or b : ld d,a
+        jr .next
+.tone   ld a,(snd_music_opt) : or a : jr z,.allow
+        cp 2 : jr z,.next
+        ld a,(snd_mb) : or a : jr nz,.next      ; (just the first track)
+.allow  ld a,l : or c : ld l,a : ld a,h : or b : ld h,a
+.next   inc ix : sla c : rl b
+        ld a,(snd_mb) : inc a : ld (snd_mb),a
+        cp MAX_TRACKS : jr nz,.track
+        ld (snd_allow),hl : ld (snd_drums),de
         ret
-.no     pop de : pop ix : or a
+
+; A = want for voice A (BC, DE kept)
+want_a  ld hl,want : add a,l : ld l,a : adc a,h : sub l : ld h,a
+        ld a,(hl)
         ret
 
 ; Write A to the AY's register E (through the PPI: port A the data, port C bits 6
@@ -509,6 +548,7 @@ snd_init
         ld hl,vtab : ld de,vtab + 1 : ld bc,V_FIELDS * NV - 1 : ld (hl),0 : ldir
         ld b,NV - 1
 .voices ld a,b : call voice_ix : call snd_silence
+        ld (ix+V_PH),#FF                        ; (no pitch worked out yet)
         dec b : jp p,.voices
         ld hl,snd_owner : ld (hl),#FF : inc hl : ld (hl),#FF : inc hl : ld (hl),#FF
         ld a,#FF : ld (snd_nch),a
@@ -518,7 +558,7 @@ snd_init
         ld hl,last_tp : ld b,6
 .tp     ld (hl),#FF : inc hl : djnz .tp
         ld a,#FF : ld (last_np),a
-        ret
+        jp snd_masks
 
 ; The player's variables
 snd_tune   db 0
@@ -539,6 +579,14 @@ snd_nch    db #FF                   ; ... its channel (#FF: none)
 snd_qa     db 0
 snd_qc     db 0
 snd_mix    db 0
+want       DEFS NV                  ; each voice wants a tone channel (see snd_output)
+snd_on     dw 0                     ; the voices sounding (a bit each)
+snd_want   dw #FFFF                 ; ... wanting a tone channel, last tick
+snd_lastnv db #FE                   ; ... and the noise voice then
+snd_allow  dw 1 << SFX_TONE         ; (see snd_masks)
+snd_drums  dw 0
+snd_mb     db 0
+snd_pend   db 0                     ; a voice was left waiting for a channel
 last_tp    DEFS 6                   ; what was last written: each channel's divider,
 last_vol   DEFS 3                   ; ... its volume,
 last_np    db 0                     ; ... the noise period,
