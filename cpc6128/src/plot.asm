@@ -160,41 +160,42 @@ plot
         ld a,(p_y0) : add a,a : add a,a : add a,a : ld b,a
         ld a,h : and 7 : add a,b : ld b,a
         ld a,(back_page) : add a,b : ld b,a : ld c,l
-        ld (p_scr),bc
+        ld (.scr+1),bc
         ; (saving: each column's address goes in the save record)
-        ld a,(p_mode) : cp PM_SAVE : ld a,1 : jr z,.notes
-        ld a,(p_mode) : cp PM_SAVEONLY : ld a,1 : jr z,.notes
-        xor a
-.notes  ld (p_notes),a
+        ld a,(p_mode) : cp PM_SAVE : jr z,.noting : cp PM_SAVEONLY : jr z,.noting
+        ld a,.no_address - .notes_jr - 2 : jr .notes
+.noting xor a
+.notes  ld (.notes_jr+1),a
+        ld hl,(p_dcol) : ld (.dat+1),hl
+        ld a,(p_cidx) : ld b,a : ld a,(p_cend) : sub b : ld (.ncols+1),a
         ld a,(p_tab) : ld (.col_tab),a          ; (the column loop's constants, in its code)
         ld a,(p_rows) : ld (.col_rows),a
         ld a,(p_hgt) : ld (.col_hgt),a
         exx : ld hl,(sptr) : exx                ; (HL' is the save record's pointer throughout)
 .col_loop
-        ld bc,(p_scr)
-        ld a,(p_notes) : or a : jr z,.no_address
+.scr    ld bc,0                                 ; (the column's screen address)
+.notes_jr jr .no_address                        ; (jr $+2 when saving)
         ld a,c : exx : ld (hl),a : inc hl : exx
         ld a,b : exx : ld (hl),a : inc hl : exx
 .no_address
-        ld de,(p_dcol)
+.dat    ld de,0                                 ; (its data)
         ld h,0                                  ; (ld h,p_tab: set above)
 .col_tab equ $ - 1
         ld ixl,0                                ; (ld ixl,p_rows)
 .col_rows equ $ - 1
 .do_col call 0                                  ; (the column routine for this mode)
         ; the next column: its data, and the next byte on the screen (within the 2K)
-        ld hl,(p_dcol)
+        ld hl,(.dat+1)
         ld a,0                                  ; (ld a,p_hgt)
 .col_hgt equ $ - 1
         add a,l : ld l,a : jr nc,.data_ok
         inc h
 .data_ok
-        ld (p_dcol),hl
-        ld hl,(p_scr) : inc l : jr nz,.scr_ok
+        ld (.dat+1),hl
+        ld hl,(.scr+1) : inc l : jr nz,.scr_ok
         ld a,h : and #F8 : ld b,a : ld a,h : inc a : and 7 : or b : ld h,a
-.scr_ok ld (p_scr),hl
-        ld hl,p_cidx : inc (hl)
-        ld a,(p_cend) : cp (hl) : jr nz,.col_loop
+.scr_ok ld (.scr+1),hl
+.ncols  ld a,0 : dec a : ld (.ncols+1),a : jr nz,.col_loop
         exx : ld (sptr),hl : exx
 .exit   ld a,(p_oldbank) : jp bank_select
 
@@ -338,44 +339,59 @@ hline
         ld b,h : ld a,b : cp 4 : ld a,255 : jr nc,.c1_ok
         srl h : rr l : srl h : rr l : ld a,l
 .c1_ok  ld (hl_c1),a
-        ; the line's row and line in it
-        ld hl,(p_y) : ld a,l : and 7 : add a,a : add a,a : add a,a : ld (hl_line),a
-        srl h : rr l : srl h : rr l : srl h : rr l : ld a,l : ld (hl_row),a
-        ld a,(hl_c0) : ld (hl_col),a
-.col    ld a,(hl_col) : ld b,a
-        ld a,(clip_l) : ld c,a : ld a,b : cp c : jr c,.next_col
-        ld a,(clip_r) : ld c,a : ld a,b : cp c : jr nc,.next_col
-        ; which pixels of this byte are on the line?
+        ; the columns in the window: cs = max(c0, clip_l), ce = min(c1, clip_r - 1)
+        ld a,(clip_r) : dec a : ld b,a : ld a,(hl_c1) : cp b : jr c,.ce_ok
+        ld a,b
+.ce_ok  ld e,a                                  ; E = ce
+        ld a,(clip_l) : ld b,a : ld a,(hl_c0) : cp b : jr nc,.cs_ok
+        ld a,b
+.cs_ok  ld d,a                                  ; D = cs
+        ld a,e : sub d : ret c
+        inc a : ld (.count+1),a                 ; bytes
+        ; the masks of its first and last bytes (all of a byte between)
         ld c,#FF
-        ld a,(hl_c0) : cp b : jr nz,.not_first
-        ld a,(hl_p0) : ld e,a : ld d,0 : ld hl,left_pixels : add hl,de : ld c,(hl)
-.not_first
-        ld a,(hl_c1) : cp b : jr nz,.not_last
-        ld a,(hl_p1) : ld e,a : ld d,0 : ld hl,right_pixels : add hl,de : ld a,(hl) : and c : ld c,a
-.not_last
-        ; HL = its address: back_page + line * #800 + (rowoff[row] + col) MOD #800
-        ld e,b : ld d,0
-        ld a,(hl_row) : ld l,a : ld h,rowoff_lo>>8
+        ld a,(hl_c0) : cp d : jr nz,.m0_ok
+        ld a,(hl_p0) : ld hl,left_pixels : add a,l : ld l,a : ld a,h : adc a,0 : ld h,a : ld c,(hl)
+.m0_ok  ld b,#FF
+        ld a,(hl_c1) : cp e : jr nz,.m1_ok
+        ld a,(hl_p1) : ld hl,right_pixels : add a,l : ld l,a : ld a,h : adc a,0 : ld h,a : ld b,(hl)
+.m1_ok  ld a,b : ld (.last+1),a
+        ; HL = the first byte's address: back_page + line * #800 + (rowoff[row] + cs) MOD #800
+        ld a,c : push af                        ; (the first byte's mask)
+        ld e,d : ld d,0
+        ld hl,(p_y) : ld a,l : and 7 : add a,a : add a,a : add a,a : ld b,a
+        srl h : rr l : srl h : rr l : srl h : rr l
+        ld h,rowoff_lo>>8
         ld a,(hl) : inc h : ld h,(hl) : ld l,a
         add hl,de
-        ld a,h : and 7 : ld h,a
-        ld a,(hl_line) : add a,h : ld h,a
-        ld a,(back_page) : add a,h : ld h,a
+        ld a,h : and 7 : add a,b : ld b,a
+        ld a,(back_page) : add a,b : ld h,a
         ld de,(sptr)
+.count  ld b,0
         ld a,(p_mode) : cp PM_RESTORE : jr z,.restore
-        ld a,(hl) : ld (de),a
         ; black is logical colour 3, both bits set in each masked pixel; yellow is
-        ; colour 1, the low bit set and the high bit clear
-        ld a,c : cpl : and (hl) : ld b,a
-        ld a,(hl_yel) : xor #F0 : or #0F : and c : or b
-        ld (hl),a
-        jr .advance
-.restore ld a,(de) : ld (hl),a
-.advance inc de : ld (sptr),de
-.next_col
-        ld a,(hl_col) : ld b,a : ld a,(hl_c1) : cp b : ret z
-        ld hl,hl_col : inc (hl)
-        jp .col
+        ; colour 1, the low bit set and the high bit clear: new = old ^ ((old ^ col) & mask)
+        ld a,(hl_yel) : xor #F0 : or #0F : ld (.col+1),a
+        pop af                                  ; (A = the first byte's mask)
+        ld c,a
+.draw   djnz .not_last
+.last   ld a,0 : and c : ld c,a                 ; (the last byte's mask too)
+.not_last
+        ld a,(hl) : ld (de),a : inc de
+.col    xor 0 : and c : xor (hl) : ld (hl),a
+        ld c,#FF
+        inc b : dec b : jr z,.done
+        inc l : jr nz,.draw
+        inc h : ld a,h : and 7 : jr nz,.draw
+        ld a,h : sub 8 : ld h,a : jr .draw
+.restore pop af
+.rloop  ld a,(de) : ld (hl),a : inc de
+        dec b : jr z,.done
+        inc l : jr nz,.rloop
+        inc h : ld a,h : and 7 : jr nz,.rloop
+        ld a,h : sub 8 : ld h,a : jr .rloop
+.done   ld (sptr),de
+        ret
 
 ; pixel masks (both bits of each pixel) for "pixel p and to its right" / "up to pixel p"
 left_pixels  db #FF, #77, #33, #11
@@ -388,29 +404,39 @@ right_pixels db #88, #CC, #EE, #FF
 MAX_LOG     = 40
 LOGK_SPRITE = 0
 LOGK_LINE   = 1
-LOGK_SPRITE7 = 2                    ; saved in another bank (log_bank)
+LOGK_SPRITE7 = 2                    ; saved in another bank (its LG_BANK)
 LINE_SAVE   = 24                    ; bytes: the longest line is about 82 pixels
 
-; HL = the log slot for a new entry in the back buffer (or carry set if it's full)
+; a log record: kind, image, x, y, x1 (a line's other end), the save area, its bank
+LG_KIND = 0 : LG_IMG = 1 : LG_X = 2 : LG_Y = 4 : LG_X1 = 6 : LG_SB = 8 : LG_BANK = 10
+LG_SIZE = 12
+ASSERT 2 * MAX_LOG * LG_SIZE == 2 * 40 * 12
+
+; HL = the log record for a new entry in the back buffer (or carry set if it's full)
 log_slot
         ld a,(back) : ld e,a : ld d,0 : ld hl,log_n : add hl,de
         ld a,(hl) : cp MAX_LOG : ccf : ret c
-        ld b,a
-        ld a,e : or a : ld a,b : jr z,.got : add a,MAX_LOG
-.got    ld l,a : ld h,0                         ; (the slot's index; carry clear)
+; HL = record A of buffer E (carry clear)
+log_addr
+        dec e : jr nz,.got : add a,MAX_LOG
+.got    ld l,a : ld h,0
+        add hl,hl : add hl,hl : ld d,h : ld e,l : add hl,hl : add hl,de    ; (x 12)
+        ld de,log_recs : add hl,de
         ret
 
-; Record slot HL (an index) with kind A, the current p_* and the save area (sfree)
+; Record HL with kind A, the current p_* and the save area (sfree); HL is left at
+; its LG_BANK
 log_record
-        push hl
-        ld de,log_kind : add hl,de : ld (hl),a
-        pop hl : push hl : ld de,log_img : add hl,de : ld a,(p_img) : ld (hl),a
-        pop hl : push hl : add hl,hl : ld de,log_x : add hl,de : ld de,(p_x) : ld (hl),e : inc hl : ld (hl),d
-        pop hl : push hl : add hl,hl : ld de,log_y : add hl,de : ld de,(p_y) : ld (hl),e : inc hl : ld (hl),d
-        pop hl : push hl : add hl,hl : ld de,log_x1 : add hl,de : ld de,(q_x) : ld (hl),e : inc hl : ld (hl),d
-        pop hl : add hl,hl : ld de,log_sb : add hl,de : ld de,(sfree) : ld (hl),e : inc hl : ld (hl),d
+        ld (hl),a : inc hl
+        ld a,(p_img) : ld (hl),a : inc hl
+        ld de,(p_x) : ld (hl),e : inc hl : ld (hl),d : inc hl
+        ld de,(p_y) : ld (hl),e : inc hl : ld (hl),d : inc hl
+        ld de,(q_x) : ld (hl),e : inc hl : ld (hl),d : inc hl
+        ld de,(sfree) : ld (hl),e : inc hl : ld (hl),d : inc hl
         ld (sbase),de
-        ld a,(back) : ld e,a : ld d,0 : ld hl,log_n : add hl,de : inc (hl)
+        ex de,hl
+        ld a,(back) : ld c,a : ld b,0 : ld hl,log_n : add hl,bc : inc (hl)
+        ex de,hl
         ld a,PM_SAVE : ld (p_mode),a
         ret
 
@@ -448,12 +474,11 @@ log_sprite7
         ld hl,(sfree7) : add hl,bc : ex de,hl
         ld hl,(send7) : or a : sbc hl,de : ret c
         call log_slot : ret c
-        push hl
         ld de,(sfree) : push de
         ld de,(sfree7) : ld (sfree),de
         ld a,LOGK_SPRITE7 : call log_record
+        ld a,(p_sbank) : ld (hl),a
         pop de : ld (sfree),de
-        pop hl : ld de,log_bank : add hl,de : ld a,(p_sbank) : ld (hl),a
         ld a,PM_SAVEONLY : ld (p_mode),a
         call plot
         ld hl,(sptr) : ld (sfree7),hl
@@ -465,23 +490,20 @@ restore_log
         ld a,(back) : ld e,a : ld d,0 : ld hl,log_n : add hl,de
         ld a,(hl) : or a : ret z
         dec (hl)
-        ld b,(hl)
-        ld a,e : or a : ld a,b : jr z,.got : add a,MAX_LOG
-.got    ld l,a : ld h,0
-        push hl : ld de,log_img : add hl,de : ld a,(hl) : ld (p_img),a
-        pop hl : push hl : add hl,hl : ld de,log_x : add hl,de : ld e,(hl) : inc hl : ld d,(hl) : ld (p_x),de
-        pop hl : push hl : add hl,hl : ld de,log_y : add hl,de : ld e,(hl) : inc hl : ld d,(hl) : ld (p_y),de
-        pop hl : push hl : add hl,hl : ld de,log_x1 : add hl,de : ld e,(hl) : inc hl : ld d,(hl) : ld (q_x),de
-        pop hl : push hl : add hl,hl : ld de,log_sb : add hl,de : ld e,(hl) : inc hl : ld d,(hl) : ld (sbase),de
-        pop hl : push hl : ld de,log_kind : add hl,de
+        ld a,(hl) : call log_addr
+        ld c,(hl) : inc hl                      ; C = its kind
+        ld a,(hl) : inc hl : ld (p_img),a
+        ld e,(hl) : inc hl : ld d,(hl) : inc hl : ld (p_x),de
+        ld e,(hl) : inc hl : ld d,(hl) : inc hl : ld (p_y),de
+        ld e,(hl) : inc hl : ld d,(hl) : inc hl : ld (q_x),de
+        ld e,(hl) : inc hl : ld d,(hl) : inc hl : ld (sbase),de
         ld a,PM_RESTORE : ld (p_mode),a
-        ld a,(hl) : pop hl
+        ld a,c
         cp LOGK_LINE : jr z,.line
         cp LOGK_SPRITE7 : jr z,.other_bank
         call restore_saved
         jr restore_log
 .other_bank                                     ; saved in another bank: page it in
-        ld de,log_bank : add hl,de
         ld a,(ga_ram) : push af
         ld a,(hl) : call bank_select
         call restore_saved

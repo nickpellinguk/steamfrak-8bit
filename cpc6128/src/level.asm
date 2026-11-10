@@ -77,26 +77,28 @@ platform_find
         ld a,l : ld (.span + 1),a
         ld a,b : dec a : call plat_ix
         push ix : pop hl : inc hl : inc hl      ; HL = the last one's y (going down the list)
-        ld a,b : ld ixl,a                       ; (IXL: the platforms left)
-        ld bc,(q_y1)
-.loop   ld a,(hl) : sub c : ld e,a : inc hl
-        ld a,(hl) : sbc a,b : jr nz,.next       ; (y - q_y1, the high byte)
-        ld a,e
-.span   cp 0 : call c,.candidate                ; (cp q_y2 - q_y1)
-.next   ld de,-PLT_SIZE - 1 : add hl,de         ; (the one before's y)
-        dec ixl : jr nz,.loop
+        ld a,(q_y1) : ld c,a
+        ld de,-PLT_SIZE
+        ; (y - q_y1 < the span, under 256, only if its low byte is: that first)
+.loop   ld a,(hl) : sub c
+.span   cp 0 : jr c,.near                       ; (cp q_y2 - q_y1)
+.next   add hl,de : djnz .loop
         ret
+.near   ld a,(hl) : sub c : inc hl : ld a,(hl) : dec hl
+        push hl : ld hl,q_y1 + 1 : sbc a,(hl) : pop hl
+        jr nz,.next                             ; (the high byte of y - q_y1)
+        call .candidate
+        jr .next
 ; ... a top in range: under q_x? x <= q_x < x + w
 .candidate
-        push hl : push bc
-        ld a,ixl : ld (pf_left),a               ; (the count: IX is the record now)
-        push hl : pop ix : dec ix : dec ix : dec ix     ; IX = its record (HL is at its y's high byte)
+        push hl : push de : push bc
+        ld a,b : ld (pf_left),a                 ; (the count)
+        push hl : pop ix : dec ix : dec ix      ; IX = its record (HL is at its y)
         ld hl,(q_x) : ld e,(ix+PLT_XL) : ld d,(ix+PLT_XH) : or a : sbc hl,de : jr c,.no
         ld a,(ix+PLT_W) : add a,e : ld e,a : jr nc,.nc : inc d
 .nc     ld hl,(q_x) : or a : sbc hl,de : jr nc,.no
         call .best
-.no     ld a,(pf_left) : ld ixl,a
-        pop bc : pop hl
+.no     pop bc : pop de : pop hl
         ret
 ; ... keep the highest (smallest y), and of those the first (going down the list)
 .best   ld a,(res_found) : or a : jr z,.take

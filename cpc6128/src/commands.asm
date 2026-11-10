@@ -112,14 +112,9 @@ cmd_keys
         ld (o_keys),a
 .counted
         ; Queue the command keys just pressed (if the keyboard has changed since last tick)
-        ld a,(cmd_rescan) : or a : jr nz,.scan_all
-        ld hl,keys : ld de,keys_last : ld b,10
-.same   ld a,(de) : cp (hl) : jr nz,.scan_all
-        inc hl : inc de : djnz .same
-        jp .scanned
+        ld a,(cmd_rescan) : ld hl,keys_changed : or (hl) : jp z,.scanned
 .scan_all
-        ld hl,keys : ld de,keys_last : ld bc,10 : ldir
-        xor a : ld (cmd_rescan),a
+        xor a : ld (cmd_rescan),a : ld (hl),a
         ld a,15 : ld (cmd_i),a
         ld hl,cmd_keytab + 15 * 2 : ld (cmd_kp),hl
 .scan   ld hl,(cmd_kp) : ld e,(hl) : inc hl : ld b,(hl)

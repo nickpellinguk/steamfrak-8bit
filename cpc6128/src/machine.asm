@@ -119,7 +119,9 @@ scan_keys
         ld a,#40                                ; read, row 0
 .row    ld b,PPI_C : out (c),a
         ld b,PPI_A : in e,(c)
-        ld d,a : ld a,e : cpl : ld (hl),a : ld a,d
+        ld d,a : ld a,e : cpl : cp (hl) : jr z,.same
+        ld (hl),a : ld a,1 : ld (keys_changed),a  ; (cmd_keys looks again)
+.same   ld a,d
         inc hl : inc a
         cp #4A : jr nz,.row
         ld bc,PPI_CTRL*256+#82 : out (c),c      ; port A an output again

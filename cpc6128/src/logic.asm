@@ -294,31 +294,53 @@ yoyo_collide
         ld hl,(yo_x) : ld de,-3 : add hl,de : ld (yb_l),hl
         ld de,6 : add hl,de : ld (yb_r),hl
         ld hl,(yo_y) : ld de,-7 : add hl,de : ld (yb_t),hl
-        ld a,MAX_OBJECTS - 1 : ld (co_i),a
-        ld ix,draws + (MAX_OBJECTS - 1) * D_SIZE
-.loop   ld a,(co_i) : call alive_hl : ld a,(hl) : or a : jp z,.next
-        ld a,(ix+D_KIND) : cp KIND_MEANIE : jp nz,.next
+        ; a quick pass over the things drawn by their byte columns (dcols), with a
+        ; column to spare each side: [yc0, yc1)
+        ld hl,(yb_r) : bit 7,h : jp nz,.movers          ; (left of the level: nothing to hit)
+        srl h : rr l : srl h : rr l : ld a,l : add a,2 : jr nc,.yc1
+        ld a,255
+.yc1    ld (.c1 + 1),a
+        ld hl,(yb_l) : xor a : bit 7,h : jr nz,.yc0
+        srl h : rr l : srl h : rr l : ld a,l : sub 1 : jr nc,.yc0
+        xor a
+.yc0    ld (.c0 + 1),a
+        ld a,(num_draw) : or a : jp z,.movers
+        ld b,a : dec a
+        ld e,a : ld d,0 : ld hl,alive : add hl,de
+        ex de,hl : add hl,hl : ld bc,dcols : add hl,bc : ex de,hl
+        ld b,a : inc b                                  ; (the last first, as the BBC version)
+.loop   ld a,(hl) : or a : jr z,.far
+        ld a,(de)                                       ; its first column
+.c1     cp 0 : jr nc,.far
+        inc de : ld a,(de) : dec de                     ; ... and the column after its last
+.c0     cp 0 : jr c,.far : jr z,.far
+        push bc : push de : push hl
+        ld a,b : dec a : ld (co_i),a : call draw_ix
+        call .test
+        pop hl : pop de : pop bc
+.far    dec hl : dec de : dec de : djnz .loop
+        jp .movers
+.test   ld a,(ix+D_KIND) : cp KIND_MEANIE : ret nz
         ; yoyo left < meanie right + 1 ? (unsigned, as the BBC version)
         ld a,(ix+D_IMG) : ld hl,img_w : call look : ld e,a : ld d,0
         ld l,(ix+D_LL) : ld h,(ix+D_LH) : add hl,de : ex de,hl
-        ld hl,(yb_l) : or a : sbc hl,de : jp nc,.next
+        ld hl,(yb_l) : or a : sbc hl,de : ret nc
         ; meanie left <= yoyo right ?
-        ld e,(ix+D_LL) : ld d,(ix+D_LH) : ld hl,(yb_r) : or a : sbc hl,de : jp c,.next
+        ld e,(ix+D_LL) : ld d,(ix+D_LH) : ld hl,(yb_r) : or a : sbc hl,de : ret c
         ; yoyo top < meanie bottom + 1 ?
         ld a,(ix+D_IMG) : ld hl,img_h : call look : ld e,a : ld d,0
         ld l,(ix+D_TL) : ld h,(ix+D_TH) : add hl,de : ex de,hl
-        ld hl,(yb_t) : or a : sbc hl,de : jp nc,.next
+        ld hl,(yb_t) : or a : sbc hl,de : ret nc
         ; meanie top <= yoyo bottom ?
-        ld e,(ix+D_TL) : ld d,(ix+D_TH) : ld hl,(yo_y) : or a : sbc hl,de : jp c,.next
+        ld e,(ix+D_TL) : ld d,(ix+D_TH) : ld hl,(yo_y) : or a : sbc hl,de : ret c
         ; Hit! It flies off in the yoyo's direction (launch_meanie squeals)
         ld a,1 : ld (yo_hit),a
         ld a,(co_i) : call alive_hl : ld (hl),0
         call queue_repaint
         ld a,(tface) : or a : ld a,YOYO_HIT_SPEED : jr z,.right
         ld a,256 - YOYO_HIT_SPEED
-.right  call launch_meanie
-.next   ld de,-D_SIZE : add ix,de
-        ld hl,co_i : dec (hl) : jp p,.loop
+.right  jp launch_meanie
+.movers
 
         ; Balloons and daggers are destroyed; a meanie already flying just bounces it back
         ld a,MAX_MOVERS - 1 : ld (mvc_i),a : call mover_last
@@ -505,42 +527,57 @@ launch_meanie
 
 ; Move everything one tick, removing what has gone
 update_movers
-        call mover_last : ld b,MAX_MOVERS
-.loop   ld a,(iy+M_ACTIVE) : or a : jr nz,.active
-.next   ld de,-M_SIZE : add iy,de
+        ld hl,movers : ld b,MAX_MOVERS
+.loop   ld a,(hl) : or a : jr nz,.active
+.next   ld de,M_SIZE : add hl,de
         djnz .loop
         ret
-.active push bc : call .one : pop bc
+.active push hl : push bc : call .one : pop bc : pop hl
+        jr nc,.next
+        ld (hl),0                                       ; (gone)
         jr .next
-.one    ld a,(iy+M_PAUSE) : or a : jr z,.move
-        dec (iy+M_PAUSE) : ret
+; HL = the mover (its M_ACTIVE, A): carry set if it's gone
+.one    ld b,a : inc hl
+        ld a,(hl) : or a : jr z,.move                   ; (M_PAUSE)
+        dec (hl) : ret
 .move   ; x += vx, y += vy (16.8 + signed 8.8: each velocity is just before its position)
-        push iy : pop hl : ld de,M_VXF : add hl,de
-        ld b,2
-.axis   ld e,(hl) : inc hl : ld d,(hl) : inc hl
+        inc hl : inc hl                                 ; (M_VXF)
+        REPEAT 2
+        ld e,(hl) : inc hl : ld d,(hl) : inc hl
         ld a,d : rla : sbc a,a : ld c,a                 ; (the velocity's sign)
         ld a,(hl) : add a,e : ld (hl),a : inc hl
         ld a,(hl) : adc a,d : ld (hl),a : inc hl
         ld a,(hl) : adc a,c : ld (hl),a : inc hl
-        djnz .axis
-        ld a,(iy+M_ACTIVE)
+        REND
+        ; (HL = M_YH + 1)
+        ld a,b
         cp MV_BALLOON : jr z,.balloon
         cp MV_DAGGER : jr z,.dagger
         ; a meanie flying off: gone once it's MOVER_RANGE from Trogg (or off the left)
-        ld a,(iy+M_XH) : or a : jp m,.gone
-        ld h,a : ld l,(iy+M_XL) : ld de,(tx) : or a : sbc hl,de
+        ld de,M_XH - M_YH - 1 : add hl,de
+        ld a,(hl) : or a : jp m,.gone
+        ld d,a : dec hl : ld e,(hl) : ex de,hl
+        ld de,(tx) : or a : sbc hl,de
         bit 7,h : call nz,neg_hl
-        ld de,MOVER_RANGE : or a : sbc hl,de : ret c
-        jr .gone
-.balloon
-        ; gone when it floats off the top (y < 0)
-        ld a,(iy+M_YH) : or a : ret p
-        jr .gone
-.dagger ; gone at the bottom of the level, or once x <= -11
-        ld l,(iy+M_YL) : ld h,(iy+M_YH) : ld de,(level_h) : call signed_less : jr nc,.gone
-        ld l,(iy+M_XL) : ld h,(iy+M_XH) : ld de,-10 : call signed_less : ret nc
-.gone   ld (iy+M_ACTIVE),0
+        ld de,MOVER_RANGE : or a : sbc hl,de : ccf
         ret
+.balloon ; gone when it floats off the top (y < 0)
+        dec hl : ld a,(hl) : or a : ret p
+.gone   scf
+        ret
+.dagger ; gone at the bottom of the level, or once x <= -11
+        dec hl : ld d,(hl) : dec hl : ld e,(hl)         ; (y; HL at M_YL)
+        bit 7,d : jr nz,.dag_x                          ; (above the top: not gone)
+        push hl : ld hl,(level_h) : or a : sbc hl,de : pop hl
+        jr c,.gone : jr z,.gone                         ; (y >= level_h)
+.dag_x  ld de,M_XH - M_YL : add hl,de
+        ld a,(hl) : or a : ret p                        ; (x >= 0)
+        inc a : jr nz,.gone                             ; (x < -256)
+        dec hl : ld a,(hl) : cp -10 & 255               ; (carry if x < -10)
+        ret
+
+ASSERT M_ACTIVE == 0 && M_PAUSE == 1 && M_VXF == 3 && M_XF == 5 && M_VYF == 8 && M_YF == 10
+ASSERT M_XH == 7 && M_YH == 12 && M_XL == 6 && M_YL == 11
 
 ; ------------------------------------------------------------------------------
 ; Balloons and daggers (port of the oRoom Step event, oBalloon and oDagger)
@@ -899,12 +936,18 @@ check_collisions
 .movers
 
         ; Moving objects (balloons, daggers, meanies flying off) are all deadly
-        ld a,MAX_MOVERS - 1 : ld (mvc_i),a : call mover_last
-.mloop  ld a,(iy+M_ACTIVE) : or a : jr z,.mnext
-        ld a,(iy+M_IMG) : ld (c_oimg),a
-        ld l,(iy+M_XL) : ld h,(iy+M_XH) : ld e,(iy+M_YL) : ld d,(iy+M_YH)
+        ld hl,movers + (MAX_MOVERS - 1) * M_SIZE : ld b,MAX_MOVERS     ; (the last first)
+.mloop  ld a,(hl) : or a : jr nz,.mover
+.mnext  ld de,-M_SIZE : add hl,de : djnz .mloop
+        jr .slows
+.mover  push hl : push bc
+        inc hl : inc hl : ld a,(hl) : ld (c_oimg),a                   ; (M_IMG)
+        ld de,M_XL - M_IMG : add hl,de : ld e,(hl) : inc hl : ld d,(hl)
+        ld bc,M_YL - M_XH : add hl,bc : ld c,(hl) : inc hl : ld b,(hl)
+        ex de,hl : ld d,b : ld e,c
         call trogg_overlap : call c,trogg_dies
-.mnext  ld de,-M_SIZE : add iy,de : ld hl,mvc_i : dec (hl) : jp p,.mloop
+        pop bc : pop hl : jr .mnext
+.slows
 
         ; ... and so are the moving meanies (the list of them where they're shown)
         ld a,(clist_dirty) : or a : call nz,build_clist
@@ -954,9 +997,10 @@ trogg_overlap
         ; (more than 127 pixels from Trogg either way: no. Every image's origin is less
         ; than 64 pixels from its edges, and the offsets between them must be -64..63)
         push hl
-        ld bc,(tx) : or a : sbc hl,bc : ld bc,128 : add hl,bc : ld a,h
-        ld h,d : ld l,e : ld bc,(ty) : or a : sbc hl,bc : ld bc,128 : add hl,bc : or h
-        pop hl
+        ld bc,(tx) : or a : sbc hl,bc : ld bc,128 : add hl,bc : ld a,h : or a
+        jr nz,.far
+        ld h,d : ld l,e : ld bc,(ty) : or a : sbc hl,bc : ld bc,128 : add hl,bc : ld a,h : or a
+.far    pop hl
         ret nz
         ld (to_y),de
         push hl : ld a,(c_oimg) : ld hl,img_xo : call look : pop hl
@@ -1277,7 +1321,6 @@ cmd_t       db 0
 cmd_i       db 0
 cmd_kp      dw 0
 cmd_rescan  db 1
-keys_last   DEFS 10                 ; the keyboard last tick
 cmd_sv      DEFS 8                  ; cmd_pre: where Trogg was (SV_)
 cmd_ud      db 0                    ; ... and his debounces
 cmd_lr      db 0

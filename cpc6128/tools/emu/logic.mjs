@@ -208,9 +208,11 @@ function cpcSide(m) {
         peek: (name, i = 0) => m[cs[name] + i],
         keys(held) {
             const press = k => { m[cs.keys + (k >> 3)] |= 1 << (k & 7); };
+            const was = m.slice(cs.keys, cs.keys + 10);
             m.fill(0, cs.keys, cs.keys + 10);
             for (const [move, alt] of held.moves) press(cs[MOVES[move][alt].toLowerCase()]);
             for (const k of held.typed) press(cs['key_' + TYPED[k].toLowerCase()]);
+            if (was.some((v, i) => v !== m[cs.keys + i])) m[cs.keys_changed] = 1;    // (as scan_keys does)
         },
         tick() {
             if (!TIME) { call(cs.game_tick); return c.a; }

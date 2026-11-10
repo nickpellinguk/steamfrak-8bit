@@ -171,6 +171,7 @@ ready       db 0                    ; #A5 once the program has the machine
 vsyncs      db 0                    ; counted by irq
 ga_ram      db RAM_BASE             ; the RAM configuration paged in
 keys        DEFS 10                 ; the keyboard: a bit set while a key is down
+keys_changed db 1                   ; ... set when it changes
 bank_errors db #FF                  ; bank_test's result
 front       db 0                    ; buffer on show
 back        db 1                    ; buffer being drawn (0 or 1)
@@ -225,8 +226,6 @@ p_row       db 0
 p_tab       db 0
 p_oldbank   db 0
 p_oldbank0  db 0
-p_scr       dw 0                    ; plot: the column's screen address
-p_notes     db 0                    ; ... and whether to note it in the save record
 hl_right    dw 0
 hl_p0       db 0
 hl_p1       db 0
@@ -237,13 +236,7 @@ hl_row      db 0
 hl_col      db 0
 ; the draw log, for each buffer (MAX_LOG entries each)
 log_n       db 0, 0
-log_kind    DEFS 2 * MAX_LOG
-log_img     DEFS 2 * MAX_LOG
-log_x       DEFS 4 * MAX_LOG
-log_y       DEFS 4 * MAX_LOG
-log_x1      DEFS 4 * MAX_LOG
-log_sb      DEFS 4 * MAX_LOG
-log_bank    DEFS 2 * MAX_LOG
+log_recs    DEFS 2 * 40 * 12            ; (MAX_LOG records of LG_SIZE bytes each)
 ; the compiled meanie
 jit_img     db 255                  ; the image compiled (255: none)
 jit_new     db 0

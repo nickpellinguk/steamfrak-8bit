@@ -135,13 +135,13 @@ for (const { room, immortal } of runs) {
         // the draw log
         const n = lo(sym.log_n + back);
         for (let k = 0; k < n; k++) {
-            const slot = k + back * sym.max_log;
-            const kind = lo(sym.log_kind + slot), img = lo(sym.log_img + slot);
-            const x = w(lo, sym.log_x + 2 * slot), y = w(lo, sym.log_y + 2 * slot), x1 = w(lo, sym.log_x1 + 2 * slot);
+            const rec = sym.log_recs + (k + back * sym.max_log) * sym.lg_size, next_rec = rec + sym.lg_size;
+            const kind = lo(rec + sym.lg_kind), img = lo(rec + sym.lg_img);
+            const x = w(lo, rec + sym.lg_x), y = w(lo, rec + sym.lg_y), x1 = w(lo, rec + sym.lg_x1);
             if (kind === sym.logk_line) {
                 // (the yoyo's string, black, is followed by the yoyo; a movable platform's line is yellow)
-                const next = k + 1 < n ? images[lo(sym.log_img + slot + 1)].name : '';
-                const yellow = !(lo(sym.log_kind + slot + 1) !== sym.logk_line && next.startsWith('IMG_Yoyo'));
+                const next = k + 1 < n ? images[lo(next_rec + sym.lg_img)].name : '';
+                const yellow = !(lo(next_rec + sym.lg_kind) !== sym.logk_line && next.startsWith('IMG_Yoyo'));
                 refLine(want, mode, clip, x, x1, y, yellow);
                 log.push(`${yellow ? 'yellow ' : ''}line ${x}-${x1},${y}`);
             } else if (images[img].raw) {
