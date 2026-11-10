@@ -35,11 +35,17 @@ start
         ; and the game's logic into extra bank 2
         ld hl,logic_name : ld b,logic_name_end - logic_name : ld c,RAM_BANK + LOGIC_BANK
         call load_file
+        ; and the music player into extra bank 1
+        ld hl,sound_name : ld b,sound_name_end - sound_name : ld c,RAM_BANK + SOUND_BANK
+        call load_file
         ; then the machine is ours
         di
         ld sp,#4000
         call machine_init
         call bank_test
+        ld a,RAM_BANK + SOUND_BANK : call bank_select
+        call snd_init
+        ld a,RAM_BASE : call bank_select
         call copy_font
         call make_popcount
         ld hl,palette : call set_palette
@@ -155,6 +161,8 @@ pack_name db "PACK.BIN"
 pack_name_end
 logic_name db "LOGIC.BIN"
 logic_name_end
+sound_name db "SOUND.BIN"
+sound_name_end
 
         INCLUDE "machine.asm"
         INCLUDE "plot.asm"
@@ -172,6 +180,12 @@ vsyncs      db 0                    ; counted by irq
 ga_ram      db RAM_BASE             ; the RAM configuration paged in
 keys        DEFS 10                 ; the keyboard: a bit set while a key is down
 keys_changed db 1                   ; ... set when it changes
+snd_music_req db #FF                ; sound (see sound.asm): a tune to start (#FF: none)
+snd_sfx_req db #FF                  ; ... sound effects to start (#FF: none)
+snd_sfx_req2 db #FF
+snd_music_opt db 0                  ; ... 0 all the tracks, 1 the first only, 2 no music (M)
+snd_sfx_opt db 0                    ; ... 0 sound effects on, 1 off (S)
+snd_cur     db 0                    ; ... the tune last asked for
 bank_errors db #FF                  ; bank_test's result
 front       db 0                    ; buffer on show
 back        db 1                    ; buffer being drawn (0 or 1)
@@ -427,3 +441,14 @@ loader_end
         ASSERT end_logic_bank <= #8000
         SAVE 'LOGIC.BIN',#4000,end_logic_bank-#4000,DSK,'build/frak.dsk'   ; (with its variables' starting values)
         PRINT "Logic from ",{hex}#4000," to ",{hex}logic_vars,", its variables to ",{hex}end_logic_bank
+
+; The music player, its tunes and variables, for extra bank 1 (the compiled meanie
+; goes after them: JIT_START)
+        BANK
+        ORG #4000
+        INCLUDE "sound.asm"
+        INCLUDE "gen/music.asm"
+end_sound_bank
+        ASSERT end_sound_bank <= #6000
+        SAVE 'SOUND.BIN',#4000,end_sound_bank-#4000,DSK,'build/frak.dsk'
+        PRINT "Sound from ",{hex}#4000," to ",{hex}end_sound_bank

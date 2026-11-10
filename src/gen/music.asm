@@ -48,6 +48,10 @@
 .trk_loop
     EQUB 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1
     EQUB 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0
+\ tracks played an octave up (for the chip's lowest note: the CPC version, whose chip goes lower, takes them down again)
+.trk_raised
+    EQUB 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0
+    EQUB 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0
 \ sound effects: instrument, semitone, pitch envelope, length (ticks)
 .sfx_ins
     EQUB 14, 15, 16, 17, 18

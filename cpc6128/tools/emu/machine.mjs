@@ -4,7 +4,7 @@
 //   banks  the program's own check of the extra 64K (bank_errors, which leaves the banks as it
 //          found them); the graphics loaded into bank 0, all 16K as on the disc; and the
 //          harness's own check that the banks are separate (a different signature written at
-//          #4000 and #7FFF of the base RAM and each extra bank, then all read back)
+//          #7FFE and #7FFF of the base RAM and each extra bank, then all read back)
 //   keys   every key of the keyboard matrix pressed in turn (through MAME's keyboard rows): the
 //          program's keys[] shows that key and no other, and the KEY_ constants agree with what
 //          MAME calls each key
@@ -22,8 +22,9 @@ steps.push('time t0', `peek k0 ${sym.ticks} 2`, 'wait 1000', 'time t1', `peek k1
 // banks
 const configs = [sym.ram_base, sym.ram_bank, sym.ram_bank + 1, sym.ram_bank + 2, sym.ram_bank + 3];
 steps.push(`peek bank_errors ${sym.bank_errors} 1`, `bank gfx ${sym.ram_bank} 16384 16384 ${sym.ga_ram}`);
-for (const c of configs) steps.push(`bankpoke ${c} 16384 ${c} ${sym.ga_ram}`, `bankpoke ${c} 32767 ${~c & 255} ${sym.ga_ram}`);
-for (const c of configs) steps.push(`bank first_${c} ${c} 16384 1 ${sym.ga_ram}`, `bank last_${c} ${c} 32767 1 ${sym.ga_ram}`);
+// (at the top of each bank: #4000 of bank 1 is the music player, which runs at every vertical sync)
+for (const c of configs) steps.push(`bankpoke ${c} 32766 ${c} ${sym.ga_ram}`, `bankpoke ${c} 32767 ${~c & 255} ${sym.ga_ram}`);
+for (const c of configs) steps.push(`bank first_${c} ${c} 32766 1 ${sym.ga_ram}`, `bank last_${c} ${c} 32767 1 ${sym.ga_ram}`);
 // keys
 steps.push(`peek none ${sym.keys} 10`);
 const matrix = [];
@@ -51,7 +52,7 @@ console.log(`  the graphics in bank 0: ${wrong < 0 ? 'all 16K as on the disc' : 
 if (wrong >= 0) fail('the graphics in bank 0 differ from build/GFX');
 for (const c of configs) {
     const first = r.peeks[`first_${c}`][0], last = r.peeks[`last_${c}`][0];
-    console.log(`  config #${c.toString(16).toUpperCase()}: #4000 = #${first.toString(16).toUpperCase()}, #7FFF = #${last.toString(16).toUpperCase()}`);
+    console.log(`  config #${c.toString(16).toUpperCase()}: #7FFE = #${first.toString(16).toUpperCase()}, #7FFF = #${last.toString(16).toUpperCase()}`);
     if (first !== c || last !== (~c & 255)) fail(`config #${c.toString(16)}: its signature isn't there`);
 }
 

@@ -45,9 +45,8 @@ machine_init
 ; Interrupts. The gate array interrupts 300 times a second, every 52 lines; the
 ; one 2 lines into vertical sync is the only one that sees PPI port B's bit 0
 ; set. At that one the handler counts the vertical sync, shows the buffer the
-; game has finished drawing (if it asked: flip_pending), and reads the keyboard
-; (here, because the keyboard is read through the sound chip, which the music
-; player will also drive from here). irq_band counts the interrupts since, so
+; game has finished drawing (if it asked: flip_pending), reads the keyboard
+; (through the sound chip) and runs the music player. irq_band counts the interrupts since, so
 ; the game knows how far down the screen the raster is.
 ; ------------------------------------------------------------------------------
 irq
@@ -58,6 +57,14 @@ irq
         xor a : ld (irq_band),a
         ld a,(flip_pending) : or a : call nz,.flip
         call scan_keys
+        ; ... and the music and sound effects (sound.asm, in SOUND_BANK)
+        ; (ga_ram says what's paged in all the while, for anything else that reads it)
+        push ix
+        ld a,(ga_ram) : push af
+        ld a,RAM_BANK + SOUND_BANK : call bank_select
+        call snd_tick
+        pop af : call bank_select               ; (whatever was paged in)
+        pop ix
 .done   pop hl : pop de : pop bc : pop af
         ei
         ret

@@ -657,7 +657,8 @@ safe_lines_v db 0, 0, 30, 82, 134, 186
 ; at an even pixel, wholly in the window, and none of its lines crosses the
 ; wrap at the end of a 2K block (else plot).
 ; ------------------------------------------------------------------------------
-JIT_BANK = 1                        ; the extra bank the code goes in
+JIT_BANK = 1                        ; the extra bank the code goes in (after the music player)
+SOUND_BANK = JIT_BANK
 JIT_END  = #8000
 JIT_LAST = (JIT_END >> 8) - 1      ; (the code must start each row below this page)
 
@@ -678,7 +679,7 @@ jit_build
         ld b,a : ld a,(jit_h) : ld e,a : ld d,0 : ld hl,0
 .size   add hl,de : add hl,de : djnz .size
         ld de,JIT_TMP_SIZE + 1 : or a : sbc hl,de : ret nc
-        ld hl,#4000 : ld (jit_emit),hl
+        ld hl,end_sound_bank : ld (jit_emit),hl  ; (after the music player)
         xor a : call jit_compile : ret c
         ld a,1 : call jit_compile : ret c
         ld a,(jit_new) : ld (jit_img),a
