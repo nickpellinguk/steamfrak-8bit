@@ -101,7 +101,7 @@ command
 .not9   dec a : jp z,log_sprite7                ; 10
         dec a : jr nz,.not11
         ld a,(t_arg) : jp load_level            ; 11
-.not11  dec a : ret nz                          ; 12: repaint the window from the cache
+.not11  dec a : jr nz,.not12                    ; 12: repaint the window from the cache
         ld a,(is_vert) : or a : jr nz,.rows
         xor a
 .cols   push af : call repaint_column : pop af
@@ -111,6 +111,9 @@ command
 .row    push af : call repaint_row : pop af
         inc a : cp 25 : jr nz,.row
         ret
+.not12  dec a : ret nz                          ; 13: play, from level t_arg (never returns)
+        ld a,RAM_BANK + LOGIC_BANK : call bank_select
+        ld a,(t_arg) : jp play
 
 ; A = 0 or 1: set that mode up and draw both buffers' test cards
 setup_mode
@@ -181,6 +184,8 @@ flip_count  db 25
 t_cmd       db 0                    ; a command from the test harness
 t_arg       db 0
 t_done      dw 0                    ; commands done
+t_lock      db 0                    ; playing: hold each frame for the test harness (see play.asm)
+t_frame     db 0                    ; ... 1 while it's held
 
 ; the plotter's parameters
 p_img       db 0

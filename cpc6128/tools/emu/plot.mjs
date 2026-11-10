@@ -54,8 +54,9 @@ function refPlot(buf, mode, clip, img, x, y) {
 const LEFT = [0xFF, 0x77, 0x33, 0x11], RIGHT = [0x88, 0xCC, 0xEE, 0xFF];
 function refLine(buf, mode, clip, x0, x1, y, yellow) {
     if (y - clip.t < 0 || y - clip.t >= (clip.h || 256)) return;
-    const a = Math.min(x0, x1), b = Math.max(x0, x1);
-    if (a >= 1024) return;
+    let a = Math.min(x0, x1), b = Math.max(x0, x1);
+    if (a >= 1024 || b < 0) return;
+    a = Math.max(a, 0);                                 // (clipped to the level's left edge)
     const c0 = a >> 2, c1 = b >= 1024 ? 255 : b >> 2;
     for (let c = c0; c <= c1; c++) {
         if (c < clip.l || c >= clip.r) continue;
@@ -130,7 +131,8 @@ for (let n = 0; n < 150; n++) {
     let label = `c${cases.length}`;
     steps.push(`dump ${label} ${PAGE} ${SIZE}`);
     const want = Buffer.from(background);
-    refLine(want, m, clip, x0, x1, y, yellow);
+    const signed = v => (v > 32767 ? v - 65536 : v);     // (the ends are signed: the yoyo can be left of the level)
+    refLine(want, m, clip, signed(x0), signed(x1), y, yellow);
     const what = `line ${x0}-${x1} at ${y}, mode ${m}, clip ${JSON.stringify(clip)}`;
     cases.push({ kind: 'hline', label, want, what });
     steps.push(`poke ${sym.p_mode} ${PM_RESTORE}`);

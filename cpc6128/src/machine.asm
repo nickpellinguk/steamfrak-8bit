@@ -223,6 +223,17 @@ show_front
         ld bc,CRTC_DAT*256+0 : out (c),c
         ret
 
+; Show buffer A (0 or 1) from byte offset HL (even, 0-#7FE) in it, at the next frame
+show_at
+        rlca : rlca : rlca : rlca : or #20 : ld d,a     ; R12: 10 = #8000, 11 = #C000
+        srl h : rr l                                    ; (in words)
+        ld a,h : and 3 : or d
+        ld bc,CRTC_SEL*256+12 : out (c),c
+        ld b,CRTC_DAT : out (c),a
+        ld bc,CRTC_SEL*256+13 : out (c),c
+        ld b,CRTC_DAT : out (c),l
+        ret
+
 ; Fill the buffer at back_page with byte A
 fill_back
         ld b,a
