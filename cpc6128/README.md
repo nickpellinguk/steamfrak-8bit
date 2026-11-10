@@ -309,8 +309,8 @@ on the background colour; its text (the time, the gems and the medal) comes with
 last frame, up to 4 a frame, as in the BBC version (below 12.5 frames a second, the game
 slows). Measured the same way on both (each level with Trogg unable to die, standing still for
 10 seconds: `fps.mjs` on MAME, `bbcfps.mjs` on jsbeeb), the CPC version draws about four
-fifths as many frames a second as the BBC version: 78% on average, from 60% on the lightest
-levels (where the drawing is most of the time) to 100% on the busiest.
+fifths as many frames a second as the BBC version: 81% on average, from 69% on the lightest
+levels (where the drawing is most of the time) to 101% on the busiest.
 
 Where the time goes is measured with `profile.mjs`: it copies the whole machine from MAME
 mid-level and plays on in the Z80 interpreter, timed as a CPC times it (each instruction a
@@ -328,70 +328,75 @@ BBC version's with the 65C02's cycles). The speed pass that made it this fast:
   in its record, after its level settings, so one IX covers both), walk HL through fields kept
   in the order they're used, skip what can't matter (the slow sprites past the level's last,
   moving objects not in play, things far from Trogg), and test the command keys only when the
-  keyboard has changed; the moving meanies to collide with are listed once a frame.
+  keyboard has changed (the keyboard interrupt notes when it does); the moving meanies to
+  collide with are listed once a frame, and the things drawn are first tested by their byte
+  columns (as Trogg's and the yoyo's);
+* the draw log keeps each entry in one record, and leaves out what can't be seen (lines
+  outside the window, images none of whose rows are in it); lines are drawn with their
+  address worked out once.
 
 <details><summary>Frame rates on every level (Easy)</summary>
 
 | Level | Window | CPC, standing | CPC, walking right | BBC, standing | CPC / BBC |
 | --- | --- | --- | --- | --- | --- |
-| 0 | 256x256 | 18.9 | 17.4 | 24.6 | 77% |
-| A_1 | 256x256 | 18.5 | 17.3 | 22.1 | 84% |
-| A_2 | 256x256 | 16.7 | 17.9 | 22.1 | 76% |
-| A_3 | 256x256 | 17.0 | 17.9 | 22.6 | 75% |
-| A_4 | 256x256 | 16.6 | 17.8 | 22.5 | 74% |
-| A_5 | 256x256 | 16.6 | 17.6 | 23.0 | 72% |
-| A_6 | 256x256 | 15.9 | 18.6 | 22.0 | 72% |
-| A_7 | 256x256 | 15.3 | 16.3 | 22.8 | 67% |
-| A_8 | 256x256 | 19.9 | 17.9 | 22.9 | 87% |
-| A_9 | 256x256 | 15.4 | 13.0 | 21.1 | 73% |
-| B_1 | 256x256 | 7.5 | 6.6 | 8.1 | 93% |
-| B_2 | 256x256 | 8.5 | 8.3 | 8.5 | 100% |
-| B_3 | 256x256 | 8.9 | 7.5 | 9.0 | 99% |
-| B_4 | 256x256 | 9.7 | 8.0 | 14.1 | 69% |
-| B_5 | 256x256 | 8.9 | 8.2 | 11.5 | 77% |
-| B_6 | 256x256 | 7.2 | 7.6 | 9.7 | 74% |
-| B_7 | 256x256 | 9.9 | 8.8 | 14.0 | 71% |
-| B_8 | 256x256 | 6.9 | 6.1 | 7.6 | 91% |
-| B_9 | 256x256 | 7.3 | 6.9 | 8.0 | 91% |
-| C_1 | 320x200 | 7.1 | 8.4 | 8.0 | 89% |
-| C_2 | 320x200 | 8.0 | 5.4 | 10.0 | 80% |
-| C_3 | 320x200 | 7.2 | 6.5 | 9.5 | 76% |
-| C_4 | 320x200 | 7.0 | 11.1 | 7.7 | 91% |
-| C_5 | 320x200 | 6.9 | 7.2 | 8.3 | 83% |
-| C_6 | 320x200 | 7.0 | 5.6 | 8.2 | 85% |
-| C_7 | 320x200 | 9.0 | 8.6 | 11.3 | 80% |
-| C_8 | 320x200 | 10.3 | 9.2 | 12.8 | 80% |
-| C_9 | 320x200 | 8.2 | 6.5 | 11.8 | 69% |
-| D_1 | 256x256 | 12.6 | 11.9 | 16.3 | 77% |
-| D_2 | 320x200 | 8.0 | 6.4 | 9.8 | 82% |
-| D_3 | 256x256 | 6.6 | 6.7 | 8.7 | 76% |
-| D_4 | 256x256 | 10.0 | 10.8 | 11.6 | 86% |
-| D_5 | 320x200 | 7.0 | 6.7 | 8.9 | 79% |
-| D_6 | 256x256 | 10.4 | 10.0 | 14.7 | 71% |
-| D_7 | 320x200 | 9.2 | 6.4 | 11.2 | 82% |
-| D_8 | 320x200 | 6.8 | 7.5 | 9.2 | 74% |
-| D_9 | 320x200 | 6.4 | 6.4 | 8.4 | 76% |
-| E_1 | 256x256 | 13.7 | 11.8 | 21.6 | 63% |
-| E_2 | 256x256 | 13.1 | 12.8 | 17.7 | 74% |
-| E_3 | 256x256 | 9.5 | 10.0 | 12.1 | 79% |
-| E_4 | 256x256 | 13.9 | 14.5 | 20.2 | 69% |
-| E_5 | 320x200 | 10.6 | 8.7 | 15.9 | 67% |
-| E_6 | 320x200 | 9.2 | 8.4 | 12.6 | 73% |
-| E_7 | 320x200 | 12.1 | 12.0 | 20.1 | 60% |
-| E_8 | 256x256 | 11.6 | 10.2 | 15.0 | 77% |
-| E_9 | 256x256 | 10.9 | 10.6 | 14.3 | 76% |
-| F_1 | 256x256 | 10.4 | 12.8 | 12.7 | 82% |
-| F_2 | 256x256 | 13.0 | 13.2 | 19.2 | 68% |
-| F_3 | 256x256 | 12.6 | 12.2 | 14.6 | 86% |
-| F_4 | 256x256 | 9.5 | 12.7 | 13.1 | 73% |
-| F_5 | 320x200 | 11.0 | 9.9 | 14.2 | 77% |
-| F_6 | 320x200 | 9.9 | 8.9 | 14.8 | 67% |
-| F_7 | 256x256 | 10.9 | 11.4 | 16.2 | 67% |
-| F_8 | 256x256 | 17.0 | 13.2 | 20.2 | 84% |
-| F_9 | 256x256 | 11.7 | 11.5 | 16.5 | 71% |
-| average (all) | | 11.0 | | 14.4 | 78% (median 76%) |
-| average (256x256) | | 12.3 | | 16.1 | 78% (median 76%) |
-| average (320x200) | | 8.5 | | 11.2 | 77% (median 79%) |
+| 0 | 256x256 | 19.9 | 18.3 | 24.6 | 81% |
+| A_1 | 256x256 | 19.8 | 18.6 | 22.1 | 90% |
+| A_2 | 256x256 | 18.0 | 19.2 | 22.1 | 81% |
+| A_3 | 256x256 | 18.2 | 19.1 | 22.6 | 81% |
+| A_4 | 256x256 | 17.8 | 18.9 | 22.5 | 79% |
+| A_5 | 256x256 | 17.7 | 19.1 | 23.0 | 77% |
+| A_6 | 256x256 | 17.1 | 20.0 | 22.0 | 78% |
+| A_7 | 256x256 | 16.2 | 17.6 | 22.8 | 71% |
+| A_8 | 256x256 | 21.0 | 18.9 | 22.9 | 92% |
+| A_9 | 256x256 | 16.7 | 13.7 | 21.1 | 79% |
+| B_1 | 256x256 | 7.6 | 6.8 | 8.1 | 94% |
+| B_2 | 256x256 | 8.6 | 8.5 | 8.5 | 101% |
+| B_3 | 256x256 | 9.1 | 7.7 | 9.0 | 101% |
+| B_4 | 256x256 | 10.0 | 8.2 | 14.1 | 71% |
+| B_5 | 256x256 | 9.1 | 8.3 | 11.5 | 79% |
+| B_6 | 256x256 | 7.4 | 7.8 | 9.7 | 76% |
+| B_7 | 256x256 | 10.2 | 9.1 | 14.0 | 73% |
+| B_8 | 256x256 | 7.1 | 6.2 | 7.6 | 93% |
+| B_9 | 256x256 | 7.3 | 7.2 | 8.0 | 91% |
+| C_1 | 320x200 | 7.2 | 8.8 | 8.0 | 90% |
+| C_2 | 320x200 | 8.2 | 5.5 | 10.0 | 82% |
+| C_3 | 320x200 | 7.4 | 6.7 | 9.5 | 78% |
+| C_4 | 320x200 | 7.5 | 12.6 | 7.7 | 97% |
+| C_5 | 320x200 | 7.1 | 7.5 | 8.3 | 86% |
+| C_6 | 320x200 | 7.1 | 5.7 | 8.2 | 87% |
+| C_7 | 320x200 | 9.3 | 9.2 | 11.3 | 82% |
+| C_8 | 320x200 | 10.6 | 9.5 | 12.8 | 83% |
+| C_9 | 320x200 | 8.5 | 6.7 | 11.8 | 72% |
+| D_1 | 256x256 | 13.3 | 12.4 | 16.3 | 82% |
+| D_2 | 320x200 | 8.3 | 6.6 | 9.8 | 85% |
+| D_3 | 256x256 | 6.7 | 6.9 | 8.7 | 77% |
+| D_4 | 256x256 | 10.3 | 11.1 | 11.6 | 89% |
+| D_5 | 320x200 | 7.2 | 6.9 | 8.9 | 81% |
+| D_6 | 256x256 | 10.8 | 10.3 | 14.7 | 73% |
+| D_7 | 320x200 | 9.4 | 6.4 | 11.2 | 84% |
+| D_8 | 320x200 | 7.0 | 7.4 | 9.2 | 76% |
+| D_9 | 320x200 | 6.6 | 6.6 | 8.4 | 79% |
+| E_1 | 256x256 | 14.9 | 12.6 | 21.6 | 69% |
+| E_2 | 256x256 | 14.1 | 13.9 | 17.7 | 80% |
+| E_3 | 256x256 | 10.2 | 10.4 | 12.1 | 84% |
+| E_4 | 256x256 | 15.8 | 16.3 | 20.2 | 78% |
+| E_5 | 320x200 | 11.4 | 9.4 | 15.9 | 72% |
+| E_6 | 320x200 | 9.7 | 8.8 | 12.6 | 77% |
+| E_7 | 320x200 | 14.2 | 14.0 | 20.1 | 71% |
+| E_8 | 256x256 | 12.3 | 10.7 | 15.0 | 82% |
+| E_9 | 256x256 | 11.6 | 11.7 | 14.3 | 81% |
+| F_1 | 256x256 | 11.0 | 13.4 | 12.7 | 87% |
+| F_2 | 256x256 | 13.2 | 14.7 | 19.2 | 69% |
+| F_3 | 256x256 | 13.1 | 13.0 | 14.6 | 90% |
+| F_4 | 256x256 | 9.8 | 13.2 | 13.1 | 75% |
+| F_5 | 320x200 | 11.5 | 10.8 | 14.2 | 81% |
+| F_6 | 320x200 | 10.2 | 9.2 | 14.8 | 69% |
+| F_7 | 256x256 | 11.7 | 12.1 | 16.2 | 72% |
+| F_8 | 256x256 | 18.0 | 13.8 | 20.2 | 89% |
+| F_9 | 256x256 | 12.6 | 12.4 | 16.5 | 76% |
+| average (all) | | 11.6 | | 14.4 | 81% (median 81%) |
+| average (256x256) | | 13.0 | | 16.1 | 82% (median 80%) |
+| average (320x200) | | 8.9 | | 11.2 | 81% (median 81%) |
 
 </details>
 

@@ -444,6 +444,7 @@ log_record
 log_sprite
         ; room in the save area? sfree + img_sv <= send
         ld a,(p_img) : ld e,a : ld d,0
+        call on_rows : ret nc                   ; (nothing logged if none of its rows are shown)
         ld hl,img_svl : add hl,de : ld c,(hl)
         ld hl,img_svh : add hl,de : ld b,(hl)
         ld hl,(sfree) : add hl,bc : ex de,hl
@@ -454,8 +455,40 @@ log_sprite
         ld hl,(sptr) : ld (sfree),hl
         ret
 
+; Carry set if any of image DE's rows at p_y are in the window (as plot clips
+; them: top - clip_t < clip_h, 0 meaning 256, and top - clip_t + its height > 0)
+on_rows
+        ld hl,img_yo : add hl,de : ld c,(hl) : ld b,0
+        ld hl,(p_y) : or a : sbc hl,bc
+        ld bc,(clip_t) : or a : sbc hl,bc       ; (HL = its top in the window)
+        ld a,h : or a : jr nz,.above
+        ld a,(clip_h) : or a : scf : ret z
+        ld b,a : ld a,l : cp b
+        ret
+.above  inc a : jr nz,.no                       ; (more than 256 above)
+        ld a,l : ld hl,img_h : add hl,de : add a,(hl)     ; (carry if top + height > 0:
+        jr z,.no                                ; not = 0)
+        ret
+.no     or a
+        ret
+
 ; Draw a black line from (p_x, p_y) to (q_x, p_y), saving the background
 log_line
+        ; (nothing logged for a line outside the window: its row, then its columns)
+        ld hl,(p_y) : ld bc,(clip_t) : or a : sbc hl,bc
+        ld a,h : or a : ret nz
+        ld a,(clip_h) : or a : jr z,.row_ok
+        ld b,a : ld a,l : cp b : ret nc
+.row_ok ld hl,(p_x) : ld de,(q_x)
+        ld a,h : or d : jp m,.cols_ok           ; (an end left of the level: hline sees to it)
+        or a : sbc hl,de : add hl,de : jr c,.ordered
+        ex de,hl
+.ordered                                        ; (HL = the left end, DE = the right)
+        srl d : rr e : srl d : rr e             ; (the right end's column: < clip_l?)
+        ld a,(clip_l) : ld b,a : ld a,e : cp b : ret c
+        srl h : rr l : srl h : rr l             ; (the left end's: >= clip_r?)
+        ld a,(clip_r) : ld b,a : ld a,l : cp b : ret nc
+.cols_ok
         ld hl,(sfree) : ld de,LINE_SAVE : add hl,de : ex de,hl
         ld hl,(send) : or a : sbc hl,de : ret c
         call log_slot : ret c
@@ -469,6 +502,7 @@ log_line
 ; which has far more room), then it is plotted
 log_sprite7
         ld a,(p_img) : ld e,a : ld d,0
+        call on_rows : ret nc
         ld hl,img_svl : add hl,de : ld c,(hl)
         ld hl,img_svh : add hl,de : ld b,(hl)
         ld hl,(sfree7) : add hl,bc : ex de,hl
