@@ -1,7 +1,7 @@
 ; The game's logic, in extra bank 2 (LOGIC_BANK, as the BBC version's is in its
 ; sideways RAM bank 6): one tick of the game (game_tick) and everything it does,
-; ported routine by routine from the BBC version. It runs with bank 2 paged in
-; at #4000. Whatever it calls in the low RAM that pages another bank in (the
+; ported routine by routine from the BBC version, with the keys and the typed
+; commands (commands.asm). It runs with bank 2 paged in at #4000. Whatever it calls in the low RAM that pages another bank in (the
 ; plotter, say) puts bank 2 back before it returns.
 ;
 ; The bank starts with the collision spans (the BBC version's SPANS, at
@@ -84,8 +84,10 @@ game_tick
         ld a,TICK_WON : or a : ret
 .playing
         ld hl,(lvl_ticks) : inc hl : ld (lvl_ticks),hl
-        ; (phase 6: the keys, and Escape)
-        call update_slow
+        call read_keys
+        ld a,KEY_ESC : call key_pressed : jr z,.stay
+        ld a,TICK_QUIT : or a : ret
+.stay   call update_slow
         call trogg_update
         call footsteps
         call spawn_hazards
@@ -137,9 +139,10 @@ trogg_update
         ld de,(ty) : add hl,de : ld (ty),hl
         ld a,255 : ld (cur_plat),a
 .no_ride
-        ; (phase 5c: the typed commands, before and after)
+        call cmd_pre                            ; (the typed commands)
         ld a,(tstate) : push af
         call trogg_move
+        call cmd_post
         pop af : cp ST_YOYO_OUT : jr nc,.moved  ; (the yoyo states carry a platform themselves)
         push af : call carry_above : pop af
         ; GameMaker puts him on whole pixels when he lands from a fall: rounded up onto
@@ -170,6 +173,7 @@ trogg_move
         jp trogg_standing
 
         INCLUDE "trogg.asm"
+        INCLUDE "commands.asm"
 
 ; ------------------------------------------------------------------------------
 ; The yoyo (port of the Yoyoing states of oTrogg and YoyoCollide)
@@ -1173,6 +1177,24 @@ snd_sfx_req2 db #FF
 snd_cur     db 0
 snd_music_req db 0
 cmd_live    db 0
+k_left      db 0                    ; the keys held this tick (real, or held by a command)
+k_right     db 0
+k_up        db 0
+k_down      db 0
+k_yoyo      db 0
+cmd_q       DEFS CMD_QUEUE          ; the commands queue: 0-5 L R U D J Y, 6-15 the digits
+cmd_qh      db 0                    ; its head and tail
+cmd_qt      db 0
+cmd_held    DEFS 16                 ; the command keys down last tick
+cmd_cl      dw 0                    ; ticks left for the command (currentcount)
+cmd_nl      dw 0                    ; the count being typed (nextcount)
+o_keys      db 0                    ; the keys the command holds (O_)
+cmd_f       db 0
+cmd_t       db 0
+cmd_i       db 0
+cmd_sv      DEFS 8                  ; cmd_pre: where Trogg was (SV_)
+cmd_ud      db 0                    ; ... and his debounces
+cmd_lr      db 0
 last_px     dw 0                    ; where Trogg's platform was last tick
 last_py     dw 0
 yo_len      dw 0                    ; the yoyo's string: tenths, then pixels

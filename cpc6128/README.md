@@ -5,11 +5,12 @@ A port of the BBC Master version (in the rest of this repository) to an unmodifi
 and tests. Levels that scroll sideways use a 256x256 screen, levels that scroll up and down
 320x200, and both are double-buffered.
 
-**Status: phase 5 of 9** (the game logic, all but the typed commands). The program so far
-loads the graphics, the levels and the game's logic, takes the machine over from the firmware,
-and has the BBC version's plotter, draw log, yoyo string and compiled meanie, its level loader,
-background unroller and repainting, and its game logic (Trogg, the yoyo, the moving platforms
-and meanies, balloons and daggers, collisions and checkpoints), ported to the CPC. The tests
+**Status: phase 5 of 9 done** (the game logic). The program so far loads the graphics, the
+levels and the game's logic, takes the machine over from the firmware, and has the BBC
+version's plotter, draw log, yoyo string and compiled meanie, its level loader, background
+unroller and repainting, and its game logic (the keys and typed commands, Trogg, the yoyo, the
+moving platforms and meanies, balloons and daggers, collisions and checkpoints), ported to the
+CPC. The tests
 check every byte drawn, Trogg's movement against GameMaker's, and the game logic against the
 BBC version's, tick for tick.
 
@@ -19,7 +20,7 @@ BBC version's, tick for tick.
 | 2 | Machine layer: interrupts and ticks, bank paging, keyboard, screen tables | `machine.mjs`: 50 ticks a second, every key, the extra banks — **passes** |
 | 3 | Plotter and drawing | `plot.mjs`: every image, clipped, saved and put back, the yoyo string, the compiled meanie, matching byte for byte — **passes** |
 | 4 | Levels and background | `levels.mjs`: all 55 levels' tables, background caches and repainted windows match the converter — **passes** |
-| 5 | Game logic | `connections.mjs`: Trogg moves as in GameMaker on all 55 levels; `logic.mjs`: the game logic does what the BBC version's does, tick for tick — **both pass** (the typed commands to come) |
+| 5 | Game logic | `connections.mjs`: Trogg moves as in GameMaker on all 55 levels; `logic.mjs`: the game logic does what the BBC version's does, tick for tick — **both pass** |
 | 6 | Main loop and scrolling | levels play, with no flicker |
 | 7 | Sound (AY-3-8912) | the notes match the web version's player |
 | 8 | Front end | menus, a level, then the next level |
@@ -84,15 +85,19 @@ down a pixel, as it does for the BBC version.
 It needs the BBC version built (`../build.sh` writes its symbols to `build/labels.txt`). For
 each level, both versions' memory is copied once the level has loaded (the BBC version's from
 jsbeeb), both start the level, and both run `game_tick` on the two interpreters (`cpu6502.mjs`
-and `cpuz80.mjs`) with the same keys held, random but mostly purposeful (walking on, jumping,
-climbing, throwing the yoyo), the same difficulty and the same random seed. After every tick
+and `cpuz80.mjs`) with the same keys pressed, the same difficulty and the same random seed. The
+keys are random but mostly purposeful: walking on, jumping, climbing, throwing the yoyo, and
+typing commands (a count, then L, R, U, D, J or Y). They're pressed on both keyboards: the CPC's
+key matrix is set as its interrupt handler sets it, and the BBC version's two key readers read a
+table instead of the keyboard. Its interpreter follows ROMSEL, so its typed commands run in its
+bank 5, as on a BBC. After every tick
 everything the logic keeps must be the same: Trogg, the yoyo, the platforms, the slow sprites,
 the balloons, daggers and meanies flying off, what's been collected, the timers, the random
 number and the checkpoint; a death goes back to the checkpoint, and finishing the level starts
 it again. Each level is run twice, the second time with Trogg unable to die and two keys short
-of finishing, so that he gets about. The whole run (5,000 ticks a run, about 6 minutes) covers
-about 1,600 deaths, 70 keys, 35 meanies knocked off and 25 platforms carried, checkpoints and
-finished levels: all 110 runs match.
+of finishing, so that he gets about. The whole run (5,000 ticks a run, about 9 minutes) covers
+about 2,600 typed commands, 1,400 deaths, 60 keys, 40 meanies knocked off and 25 platforms
+carried, checkpoints and finished levels: all 110 runs match.
 
 `levels.mjs` is phase 4's test. For every level it has the program load it, then compares,
 with what the BBC version's converter expects (`../build/levels.json`, as its
@@ -239,8 +244,9 @@ BBC version's separate arrays per field.
 
 ### The game's logic (`src/logic.asm`)
 
-A port of the BBC version's `game_tick` and everything it does, but for the keyboard (phase 6)
-and the typed commands: Trogg's movement (below) and riding platforms, the yoyo and the
+A port of the BBC version's `game_tick` and everything it does: the keys (Z or cursor left, X
+or right, O or up, K or down, P or Space for the yoyo, Esc for the menus) with their debounces,
+and the typed commands (`src/commands.asm`, the BBC version's `commands.asm`); Trogg's movement (below) and riding platforms, the yoyo and the
 platforms it moves, the moving platforms, Scrubblies (only while they're relevant to Trogg),
 Poglets and Hooters, balloons and daggers, meanies knocked flying, collisions by the BBC
 version's spans, checkpoints, and the start and end of a level. The bank starts with the

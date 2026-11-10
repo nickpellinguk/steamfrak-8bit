@@ -401,5 +401,5 @@ pack    INCBIN "../build/PACK"
         ORG #4000
         INCLUDE "logic.asm"
         ASSERT end_logic_bank <= #8000
-        SAVE 'LOGIC.BIN',#4000,logic_vars-#4000,DSK,'build/frak.dsk'
+        SAVE 'LOGIC.BIN',#4000,end_logic_bank-#4000,DSK,'build/frak.dsk'   ; (with its variables' starting values)
         PRINT "Logic from ",{hex}#4000," to ",{hex}logic_vars,", its variables to ",{hex}end_logic_bank
