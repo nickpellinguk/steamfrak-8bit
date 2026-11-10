@@ -319,7 +319,7 @@ def main():
             # (chan: 3 for the drums, on the noise channel; the tone tracks share the tone
             # channels, given out as they play: see snd_output)
             track_rows.append({'ins': 255 if drums else used.index(voice), 'chan': 3 if drums else 0,
-                               'order': len(orders), 'loop': loop})
+                               'order': len(orders), 'loop': loop, 'raised': int(part in raised)})
             orders.append(ids)
         k16 = int(round(65536 * 60 / (TICK_HZ * tpq)))
         tune_rows.append((k16, total, intro, len(t['tracks']), first))
@@ -366,6 +366,8 @@ def main():
     out.append(asm_bytes('trk_order_lo', ['LO(order%d)' % r['order'] for r in track_rows]))
     out.append(asm_bytes('trk_order_hi', ['HI(order%d)' % r['order'] for r in track_rows]))
     out.append(asm_bytes('trk_loop', [r['loop'] for r in track_rows]))
+    out.append('\\ tracks played an octave up (for the chip\'s lowest note: the CPC version, whose chip goes lower, takes them down again)')
+    out.append(asm_bytes('trk_raised', [r['raised'] for r in track_rows]))
     out.append('\\ sound effects: instrument, semitone, pitch envelope, length (ticks)')
     out.append(asm_bytes('sfx_ins', [drum_base + len(DRUM_VOICES) + i for i in range(len(SFX))]))
     out.append(asm_bytes('sfx_semi', [s[3] for s in SFX]))

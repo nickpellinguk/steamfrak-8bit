@@ -1298,11 +1298,6 @@ win_len dw 7 * 50, 6 * 50, 5 * 50, 4 * 50
 ; ------------------------------------------------------------------------------
 logic_vars
 difficulty  db 1
-snd_music_opt db 1
-snd_sfx_req db #FF
-snd_sfx_req2 db #FF
-snd_cur     db 0
-snd_music_req db 0
 cmd_live    db 0
 k_left      db 0                    ; the keys held this tick (real, or held by a command)
 k_right     db 0

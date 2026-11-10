@@ -228,6 +228,7 @@ begin_level
 ; version's redraw_all is reset_play, which restore_checkpoint and level_init end with)
 redraw
         call cancel_flip
+        call level_music
         call set_level_palette
         ld hl,#FFFF : ld (hud_secs),hl          ; (the timer to be drawn afresh)
         ; nothing drawn in either buffer
@@ -257,6 +258,29 @@ redraw
         ld a,(back) : dec a : jp p,.buffer
         ld a,1 : ld (back),a : call flip        ; (buffer 1 on show: buffer 0 is drawn first)
         ld a,(vsyncs) : ld (last_flip),a : ld (tick_vs),a
+        ret
+
+; The level's tune (as the Steam version): with Poglets, "A Little Bag of Weed";
+; with Hooters, "The Man Who Once Was I"; else the Frak! theme
+level_music
+        ld c,TUNE_WEED : ld a,IMG_Poglet : call level_has : jr c,.play
+        ld c,TUNE_MAN : ld a,IMG_Hooter : call level_has : jr c,.play
+        ld c,TUNE_FRAK
+.play   ld a,c : jp play_music
+; Carry set if image A is one of the level's objects or moving sprites (C kept)
+level_has
+        ld e,a
+        ld a,(num_draw) : or a : jr z,.slows
+        ld b,a : ld ix,draws
+.draw   ld a,(ix+D_IMG) : cp e : scf : ret z
+        push de : ld de,D_SIZE : add ix,de : pop de
+        djnz .draw
+.slows  ld a,(num_slow) : or a : ret z
+        ld b,a : ld ix,slows
+.slow   ld a,(ix+S_IMG) : cp e : scf : ret z
+        push de : ld de,S_SIZE : add ix,de : pop de
+        djnz .slow
+        or a
         ret
 
 ; The level's palette: the BBC version's (its background colour, yellow, magenta

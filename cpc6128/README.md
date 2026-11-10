@@ -5,12 +5,13 @@ A port of the BBC Master version (in the rest of this repository) to an unmodifi
 and tests. Levels that scroll sideways use a 256x256 screen, levels that scroll up and down
 320x200, and both are double-buffered.
 
-**Status: phase 6 of 9 done** (the game plays, with its HUD and level-complete screen; the
-level-complete screen's text comes with the front end). The program loads the graphics, the levels and the game's logic, takes the machine
+**Status: phase 7 of 9 done** (the game plays, with its HUD, level-complete screen, music and
+sound effects; the level-complete screen's text comes with the front end). The program loads the
+graphics, the levels, the game's logic and the music player, takes the machine
 over from the firmware, and has the BBC version's plotter, draw log and compiled meanie, its
 level loader and background, its game logic (the keys and typed commands, Trogg, the yoyo, the
-moving platforms and meanies, balloons and daggers, collisions and checkpoints), and its frame
-loop, scrolling and drawing, ported to the CPC. The test harness's command 13 plays from a
+moving platforms and meanies, balloons and daggers, collisions and checkpoints), its frame
+loop, scrolling and drawing, and its music and sound effects player, ported to the CPC. The test harness's command 13 plays from a
 level; there's no front end yet. The tests
 check every byte drawn, Trogg's movement against GameMaker's, and the game logic against the
 BBC version's, tick for tick.
@@ -23,7 +24,7 @@ BBC version's, tick for tick.
 | 4 | Levels and background | `levels.mjs`: all 55 levels' tables, background caches and repainted windows match the converter — **passes** |
 | 5 | Game logic | `connections.mjs`: Trogg moves as in GameMaker on all 55 levels; `logic.mjs`: the game logic does what the BBC version's does, tick for tick — **both pass** |
 | 6 | Main loop and scrolling | `frames.mjs`: every frame drawn is what the game's state says it should be — **passes**; `fps.mjs`: the frame rates below |
-| 7 | Sound (AY-3-8912) | the notes match the web version's player |
+| 7 | Sound (AY-3-8912) | `music.mjs`: every note of every tune's tracks is played as the web version's player plays it, and the drums as the BBC version's — **passes** |
 | 8 | Front end | menus, a level, then the next level |
 | 9 | Release | plays on a real 6128 |
 
@@ -64,6 +65,7 @@ CPC_ROMS=/path/to/roms node tools/emu/connections.mjs [room ...] [--detail]
 CPC_ROMS=/path/to/roms node tools/emu/logic.mjs [room ...] [--ticks=N] [--seed=N]
 CPC_ROMS=/path/to/roms node tools/emu/frames.mjs [room ...] [--frames=N] [--seed=N]
 CPC_ROMS=/path/to/roms node tools/emu/fps.mjs [room ...]
+CPC_ROMS=/path/to/roms node tools/emu/music.mjs [tune ...] [--detail] [--sfx]
 ```
 
 Steps a test can give (`steps.lua`): `wait` frames, `waitfor` a byte to have a value, `type`
@@ -88,6 +90,16 @@ second time with Trogg unable to die so that he gets about, and finishing the le
 or so in (with a short wait), so that the level-complete screen and the next level are drawn
 too: all 6,600 frames are right, with the view scrolling, the yoyo out, moving platforms and
 meanies, balloons and daggers, things collected, deaths and level-complete screens among them.
+
+`music.mjs` is phase 7's test, the CPC version of the BBC version's `music8.mjs`, with the same
+reference: the steamfrak repository's `js/audio.js` itself, run with its WebAudio calls replaced
+by ones that remember each voice's pitch and loudness, stepped at 60Hz. The CPC side is the
+game's own player, run on the Z80 interpreter 50 times a second from a copy of the machine after
+MAME has loaded it, with the AY's register writes (through the PPI) caught. Each note of each
+tone track must be heard on one of the AY's channels while it starts to sound, at its pitch,
+and each drum hit must be a new attack of the noise: every note of every tune's 27 tracks is
+(3,104 notes), and the drums are heard as in the BBC version (all but one hit in the game's
+tunes; the front end's tunes leave some out on both).
 
 `fps.mjs` measures the frame rate on every level, with Trogg unable to die: standing still for
 10 seconds (the meanies, balloons and daggers still moving), then walking right for 10.
@@ -316,6 +328,20 @@ apart, so the game knows where it is) and once anything drawn after it on the sa
 gone. Then it waits for the flip and draws the next frame. (Before, the buffer was shown and
 erased straight away, and on the lighter levels it could still be on show, below the raster,
 while it was erased: in 40% of frames on A_1.)
+
+**Sound.** The music player is the BBC version's (`sound.asm`, ported routine for routine), with
+the BBC version's tunes, instruments and envelopes (from `tools/music.py`, translated for RASM by
+`tools/gfx.py`), so both play the same notes. It runs from the vertical sync's interrupt, after
+the keyboard's read, with extra bank 1 paged in (the compiled meanie goes after it there). The
+BBC Master's sound chip has three tone channels and a noise channel of its own; the AY-3-8912
+has three channels, each of which can have the tone or the noise mixed in. So the noise voice
+(the drums, or a noise sound effect) borrows a channel while it sounds, a free one or else the
+quietest, and the tone voices share out the rest each tick as in the BBC version. The AY's
+dividers are half the BBC chip's, and 12 bits: the bass tracks the BBC version plays an octave
+up (its chip's lowest note is about 122Hz) are played at their own pitch. The BBC chip's
+loudness, in 2dB steps, becomes the AY's nearest level. M and S change the music (all the
+tracks, the first only, off) and the sound effects (on, off), as in the BBC version; with only
+the first track, or none, Trogg's footsteps are heard.
 
 **Speed.** The game logic runs at 50 ticks a second, a tick for each vertical sync, up to 4 a
 frame, as in the BBC version (below 12.5 frames a second, the game slows). Measured the same
