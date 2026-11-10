@@ -347,6 +347,7 @@ hline
         ld a,b
 .cs_ok  ld d,a                                  ; D = cs
         ld a,e : sub d : ret c
+        ld a,e : sub d
         inc a : ld (.count+1),a                 ; bytes
         ; the masks of its first and last bytes (all of a byte between)
         ld c,#FF
@@ -407,10 +408,12 @@ LOGK_LINE   = 1
 LOGK_SPRITE7 = 2                    ; saved in another bank (its LG_BANK)
 LINE_SAVE   = 24                    ; bytes: the longest line is about 82 pixels
 
-; a log record: kind, image, x, y, x1 (a line's other end), the save area, its bank
+; a log record: kind, image, x, y, x1 (a line's other end), the save area, its bank;
+; then, for restore_chase, the window's rows it covers and whether it's been erased
 LG_KIND = 0 : LG_IMG = 1 : LG_X = 2 : LG_Y = 4 : LG_X1 = 6 : LG_SB = 8 : LG_BANK = 10
-LG_SIZE = 12
-ASSERT 2 * MAX_LOG * LG_SIZE == 2 * 40 * 12
+LG_R0 = 11 : LG_R1 = 12 : LG_DONE = 13
+LG_SIZE = 16
+ASSERT 2 * MAX_LOG * LG_SIZE == 2 * 40 * 16
 
 ; HL = the log record for a new entry in the back buffer (or carry set if it's full)
 log_slot
@@ -420,7 +423,7 @@ log_slot
 log_addr
         dec e : jr nz,.got : add a,MAX_LOG
 .got    ld l,a : ld h,0
-        add hl,hl : add hl,hl : ld d,h : ld e,l : add hl,hl : add hl,de    ; (x 12)
+        add hl,hl : add hl,hl : add hl,hl : add hl,hl   ; (x 16)
         ld de,log_recs : add hl,de
         ret
 
@@ -453,7 +456,6 @@ log_sprite
         ld a,LOGK_SPRITE : call log_record
         call plot
         ld hl,(sptr) : ld (sfree),hl
-        ret
 
 ; Carry set if any of image DE's rows at p_y are in the window (as plot clips
 ; them: top - clip_t < clip_h, 0 meaning 256, and top - clip_t + its height > 0)
@@ -525,26 +527,120 @@ restore_log
         ld a,(hl) : or a : ret z
         dec (hl)
         ld a,(hl) : call log_addr
-        ld c,(hl) : inc hl                      ; C = its kind
-        ld a,(hl) : inc hl : ld (p_img),a
-        ld e,(hl) : inc hl : ld d,(hl) : inc hl : ld (p_x),de
-        ld e,(hl) : inc hl : ld d,(hl) : inc hl : ld (p_y),de
-        ld e,(hl) : inc hl : ld d,(hl) : inc hl : ld (q_x),de
-        ld e,(hl) : inc hl : ld d,(hl) : inc hl : ld (sbase),de
-        ld a,PM_RESTORE : ld (p_mode),a
-        ld a,c
-        cp LOGK_LINE : jr z,.line
-        cp LOGK_SPRITE7 : jr z,.other_bank
-        call restore_saved
+        push hl : pop ix
+        call restore_entry
         jr restore_log
-.other_bank                                     ; saved in another bank: page it in
-        ld a,(ga_ram) : push af
-        ld a,(hl) : call bank_select
+
+; Erase log record IX (IX lost)
+restore_entry
+        ld a,(ix+LG_IMG) : ld (p_img),a
+        ld l,(ix+LG_X) : ld h,(ix+LG_X+1) : ld (p_x),hl
+        ld l,(ix+LG_Y) : ld h,(ix+LG_Y+1) : ld (p_y),hl
+        ld l,(ix+LG_X1) : ld h,(ix+LG_X1+1) : ld (q_x),hl
+        ld l,(ix+LG_SB) : ld h,(ix+LG_SB+1) : ld (sbase),hl
+        ld a,PM_RESTORE : ld (p_mode),a
+        ld a,(ix+LG_KIND)
+        cp LOGK_LINE : jp z,hline
+        cp LOGK_SPRITE7 : jp nz,restore_saved
+        ld a,(ga_ram) : push af                 ; (saved in another bank: page it in)
+        ld a,(ix+LG_BANK) : call bank_select
         call restore_saved
-        pop af : call bank_select
-        jp restore_log
-.line   call hline
-        jp restore_log
+        pop af : jp bank_select
+
+; Erase everything logged in the back buffer while it's still on show, with the
+; other buffer waiting to be shown at the next vertical sync (flip_pending):
+; chasing the raster down the screen, each thing is erased once the raster has
+; passed its last row for the last time (as far as irq_band tells), and once
+; whatever was drawn after it on the same rows has been. When the other's
+; shown, the rest, most recent first.
+restore_chase
+        ld a,(flip_pending) : or a : jp z,restore_log   ; (shown already: no need)
+        ld a,(back) : ld e,a : ld d,0 : ld hl,log_n : add hl,de
+        ld a,(hl) : or a : ret z
+        ld (.count + 1),a
+        dec a : call log_addr
+        ld (.last + 2),hl
+        ; each one's rows in the window, and not erased yet
+        call .walk_start
+.rows   push bc : call rc_rows : pop bc
+        ld (ix+LG_DONE),0
+        ld de,-LG_SIZE : add ix,de : djnz .rows
+.pass   ld a,(flip_pending) : or a : jr z,.rest
+        ; the window's lines the raster has passed for the last time: none unless the
+        ; other buffer will be shown at the next vertical sync (FRAMES_PER_DRAW = 2)
+        ld a,(last_flip) : ld b,a : ld a,(vsyncs) : cp b : ld a,0 : jr z,.safe
+        ld a,(irq_band) : cp 6 : jr c,.band
+        ld a,5
+.band   ld e,a : ld d,0
+        ld a,(cur_mode) : or a : ld hl,safe_lines_h : jr z,.table
+        ld hl,safe_lines_v
+.table  add hl,de : ld a,(hl)
+.safe   ld (rc_safe),a
+        xor a : ld (rc_ns),a
+        call .walk_start
+.walk   ld a,(ix+LG_DONE) : or a : jr nz,.next
+        ld a,(rc_safe) : ld c,a : ld a,(ix+LG_R1) : cp c : jr nc,.skip
+        push bc : call rc_overlaps : pop bc : jr c,.skip
+        ld (ix+LG_DONE),1
+        push ix : push bc : call restore_entry : pop bc : pop ix
+        jr .next
+.skip   ld a,(rc_ns) : add a,a : ld e,a : ld d,0 : ld hl,rc_skip : add hl,de
+        push ix : pop de : ld (hl),e : inc hl : ld (hl),d
+        ld hl,rc_ns : inc (hl)
+.next   ld de,-LG_SIZE : add ix,de : djnz .walk
+        ld a,(rc_ns) : or a : jr z,.done
+        halt                                    ; (until the raster's moved on, or the flip)
+        jp .pass
+.rest   call .walk_start
+.r      ld a,(ix+LG_DONE) : or a : jr nz,.rn
+        push ix : push bc : call restore_entry : pop bc : pop ix
+.rn     ld de,-LG_SIZE : add ix,de : djnz .r
+.done   ld a,(back) : ld e,a : ld d,0 : ld hl,log_n : add hl,de : ld (hl),0
+        ret
+.walk_start                                     ; IX = the last record, B = how many
+.last   ld ix,0
+.count  ld b,0
+        ret
+
+; Record IX's first and last rows in the window (LG_R0, LG_R1: 0-255, clamped):
+; its image's, or a line's row
+rc_rows
+        ld l,(ix+LG_Y) : ld h,(ix+LG_Y+1)
+        ld bc,(clip_t) : or a : sbc hl,bc               ; (its y in the window)
+        ld a,(ix+LG_KIND) : cp LOGK_LINE : ld d,h : ld e,l : jr z,.clamp
+        ld a,(ix+LG_IMG) : ld c,a : ld b,0
+        push hl : ld hl,img_yo : add hl,bc : ld e,(hl) : ld d,0 : pop hl
+        or a : sbc hl,de                                ; HL = its top
+        push hl : ld hl,img_h : add hl,bc : ld e,(hl) : pop hl
+        ex de,hl : add hl,de : dec hl : ex de,hl        ; DE = its bottom
+.clamp  ; (HL = the top, DE = the bottom)
+        ld a,h : or a : jr z,.top_ok
+        ld l,0 : jp m,.top_ok                           ; (above the window: 0)
+        ld l,255
+.top_ok ld (ix+LG_R0),l
+        ld a,d : or a : jr z,.bot_ok
+        ld e,0 : jp m,.bot_ok
+        ld e,255
+.bot_ok ld (ix+LG_R1),e
+        ret
+
+; Carry set if record IX's rows overlap one passed over (rc_skip)
+rc_overlaps
+        ld a,(rc_ns) : or a : ret z
+        ld b,a : ld hl,rc_skip
+.o      ld e,(hl) : inc hl : ld d,(hl) : inc hl
+        push hl : push de : pop iy
+        ld a,(iy+LG_R1) : cp (ix+LG_R0) : jr c,.no
+        ld a,(ix+LG_R1) : cp (iy+LG_R0) : jr c,.no
+        pop hl : scf : ret
+.no     pop hl : djnz .o
+        or a : ret
+
+; The window's lines the raster has passed after each interrupt since the vertical
+; sync's (the k-th is 2 + 52k lines into it; the window starts 40 lines into it
+; at 256x256, 72 at 320x200), less 4 to spare
+safe_lines_h db 0, 10, 62, 114, 166, 218
+safe_lines_v db 0, 0, 30, 82, 134, 186
 
 ; ------------------------------------------------------------------------------
 ; The compiled meanie: the level's moving meanie compiled (by jit_build) into

@@ -175,6 +175,13 @@ keys_changed db 1                   ; ... set when it changes
 bank_errors db #FF                  ; bank_test's result
 front       db 0                    ; buffer on show
 back        db 1                    ; buffer being drawn (0 or 1)
+last_flip   db 0                    ; vsyncs when a buffer was last shown
+flip_pending db 0                   ; the game's finished drawing flip_buf: irq shows it
+flip_buf    db 0
+flip_r12    db 0                    ; ... at this CRTC start
+flip_r13    db 0
+irq_band    db 0                    ; interrupts since the vertical sync's (0-5)
+tick_vs     db 0                    ; vsyncs the game logic has been run for
 back_page   db #C0                  ; ... its page (#80 or #C0)
 cur_mode    db 0
 g_w         db 64                   ; bytes a line
@@ -236,7 +243,10 @@ hl_row      db 0
 hl_col      db 0
 ; the draw log, for each buffer (MAX_LOG entries each)
 log_n       db 0, 0
-log_recs    DEFS 2 * 40 * 12            ; (MAX_LOG records of LG_SIZE bytes each)
+log_recs    DEFS 2 * 40 * 16            ; (MAX_LOG records of LG_SIZE bytes each)
+rc_safe     db 0                    ; restore_chase: the window's lines scanned for the last time
+rc_ns       db 0                    ; ... how many entries are passed over
+rc_skip     DEFS 2 * 40             ; ... and which
 ; the compiled meanie
 jit_img     db 255                  ; the image compiled (255: none)
 jit_new     db 0

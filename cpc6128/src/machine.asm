@@ -42,20 +42,38 @@ machine_init
         ret
 
 ; ------------------------------------------------------------------------------
-; Interrupts. The gate array interrupts 300 times a second; the one 2 lines into
-; vertical sync is the only one that sees PPI port B's bit 0 set. At that one
-; the handler counts the vertical sync and reads the keyboard (here, because
-; the keyboard is read through the sound chip, which the music player will
-; also drive from here).
+; Interrupts. The gate array interrupts 300 times a second, every 52 lines; the
+; one 2 lines into vertical sync is the only one that sees PPI port B's bit 0
+; set. At that one the handler counts the vertical sync, shows the buffer the
+; game has finished drawing (if it asked: flip_pending), and reads the keyboard
+; (here, because the keyboard is read through the sound chip, which the music
+; player will also drive from here). irq_band counts the interrupts since, so
+; the game knows how far down the screen the raster is.
 ; ------------------------------------------------------------------------------
 irq
         push af : push bc : push de : push hl
         ld b,PPI_B : in a,(c)
-        rra : jr nc,.done
+        rra : jr nc,.band
         ld hl,vsyncs : inc (hl)
+        xor a : ld (irq_band),a
+        ld a,(flip_pending) : or a : call nz,.flip
         call scan_keys
 .done   pop hl : pop de : pop bc : pop af
         ei
+        ret
+.band   ld hl,irq_band : inc (hl)
+        jr .done
+; Show the buffer drawn (the CRTC takes the new start at the top of the next
+; frame, which the raster hasn't reached yet), no sooner than FRAMES_PER_DRAW
+; vertical syncs since the last one was shown
+.flip   ld a,(last_flip) : ld b,a : ld a,(vsyncs) : sub b : cp FRAMES_PER_DRAW : ret c
+        ld a,(vsyncs) : ld (last_flip),a
+        ld bc,CRTC_SEL*256+12 : out (c),c
+        ld a,(flip_r12) : ld b,CRTC_DAT : out (c),a
+        ld bc,CRTC_SEL*256+13 : out (c),c
+        ld a,(flip_r13) : ld b,CRTC_DAT : out (c),a
+        ld a,(flip_buf) : ld (front),a
+        xor a : ld (flip_pending),a
         ret
 
 ; Wait for the next vertical sync
@@ -244,13 +262,17 @@ copy_font
 
 ; Show buffer A (0 or 1) from byte offset HL (even, 0-#7FE) in it, at the next frame
 show_at
-        rlca : rlca : rlca : rlca : or #20 : ld d,a     ; R12: 10 = #8000, 11 = #C000
-        srl h : rr l                                    ; (in words)
-        ld a,h : and 3 : or d
+        call start_regs
         ld bc,CRTC_SEL*256+12 : out (c),c
         ld b,CRTC_DAT : out (c),a
         ld bc,CRTC_SEL*256+13 : out (c),c
         ld b,CRTC_DAT : out (c),l
+        ret
+; ... A = R12 and L = R13 for that
+start_regs
+        rlca : rlca : rlca : rlca : or #20 : ld d,a     ; R12: 10 = #8000, 11 = #C000
+        srl h : rr l                                    ; (in words)
+        ld a,h : and 3 : or d
         ret
 
 ; Fill the buffer at back_page with byte A
