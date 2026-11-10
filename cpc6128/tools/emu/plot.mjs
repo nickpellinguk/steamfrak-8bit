@@ -217,8 +217,10 @@ for (const c of cases) {
         `(#${got[first].toString(16)}, not #${c.want[first].toString(16)})`);
 }
 for (const img of meanies) if (r.peeks[`jit_${img}`][0] !== img) fail(`${images[img].name} wasn't compiled`);
-// nothing may have written over the code (but for the two operands it changes itself)
-const own = [sym['plot.do_col'] + 1, sym['plot.do_col'] + 2, sym.jit_jump + 1, sym.jit_jump + 2];
+// nothing may have written over the code (but for the operands it changes itself)
+const own = [sym['plot.scr'] + 1, sym['plot.scr'] + 2, sym['plot.dat'] + 1, sym['plot.dat'] + 2, sym['plot.notes_jr'] + 1, sym['plot.ncols'] + 1,
+             sym['hline.count'] + 1, sym['hline.last'] + 1, sym['hline.col'] + 1, sym['plot.do_col'] + 1, sym['plot.do_col'] + 2, sym.jit_jump + 1, sym.jit_jump + 2,
+             sym['plot.col_tab'], sym['plot.col_rows'], sym['plot.col_hgt'], sym.next_row_w + 1];
 const before = r.dump('code_before'), after = r.dump('code_after');
 const changed = [...after].findIndex((b, i) => b !== before[i] && !own.includes(64 + i));
 if (changed >= 0) fail(`the code at #${(64 + changed).toString(16)} was written over`);

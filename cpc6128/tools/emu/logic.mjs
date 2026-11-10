@@ -28,6 +28,7 @@ import { createRequire } from 'module';
 import { resolve, join } from 'path';
 import { pathToFileURL } from 'url';
 import { CpuZ80 } from './cpuz80.mjs';
+import { timed as timed6502 } from './cycles6502.mjs';
 
 const BBC = resolve(ROOT, '..');
 const { Cpu6502 } = await import(pathToFileURL(join(BBC, 'tools/emu/cpu6502.mjs')));
@@ -37,6 +38,9 @@ const { MachineSession } = await import(pathToFileURL(jsbeebPath));
 const args = process.argv.slice(2);
 const opt = k => { const a = args.find(s => s.startsWith('--' + k)); return a ? (a.split('=')[1] ?? true) : undefined; };
 const TICKS = +(opt('ticks') || 4000);
+// --time: how long each machine's game_tick takes, routine by routine (the CPC's timed as on a
+// CPC, cpuz80.mjs; the BBC version's at 2MHz, cycles6502.mjs)
+const TIME = !!opt('time');
 let seed = +(opt('seed') || 1);
 const NAMES = ['room_0', ...'ABCDEF'.split('').flatMap(c => [1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `room_${c}_${n}`))];
 const only = args.filter(a => a.startsWith('room'));
@@ -141,7 +145,12 @@ function bbcSide({ m, b5 }) {
             for (const [move, alt] of held.moves) m[FAKE1 + BKEY[MOVES[move][alt]]] = 1;
             for (const k of held.typed) m[FAKE2 + b5[bs.cmd_codes - 0x8000 + k]] = 1;
         },
-        tick() { c.sel = 6; c.call(bs.game_tick); return c.a; },
+        tick() {
+            c.sel = 6;
+            if (!TIME) { c.call(bs.game_tick); return c.a; }
+            timedCall(c, bs.game_tick, () => timed6502(c) / 2, pc => 'B' + pc + (pc >= 0x8000 && pc < 0xC000 ? ':' + c.sel : ''));
+            return c.a;
+        },
         commit() { for (let x = 0; x < MAX_SLOW; x++) c.call(bs.commit_one, { x }); },
         restore() {
             c.call(bs.restore_checkpoint);
@@ -191,22 +200,66 @@ function cpcSide(m) {
     return {
         name: 'CPC', cpu: c, m,
         v: name => cs[name],
-        slow: (i, f) => cs.srecs + i * cs.sr_size + srOff[f], plat: (i, f) => cs.plats + i * cs.plt_size + pOff[f],
-        cps: (i, f) => cs.cp_srecs + i * cs.sr_size + srOff[f], cpp: (i, f) => cs.cp_plats + i * 4 + pOff[f],
+        // (a slow sprite's state is in its record, after its settings; a checkpoint keeps just the state)
+        slow: (i, f) => cs.slows + i * cs.s_size + srOff[f], plat: (i, f) => cs.plats + i * cs.plt_size + pOff[f],
+        cps: (i, f) => cs.cp_srecs + i * cs.sr_size + srOff[f] - cs.s_sr, cpp: (i, f) => cs.cp_plats + i * 4 + pOff[f],
         mover: (i, f) => cs.movers + i * cs.m_size + mvOff[f],
         cp: name => (name in cpOff ? cs.cp_keys + cpOff[name] : cs['cp_' + name]),
         peek: (name, i = 0) => m[cs[name] + i],
         keys(held) {
             const press = k => { m[cs.keys + (k >> 3)] |= 1 << (k & 7); };
+            const was = m.slice(cs.keys, cs.keys + 10);
             m.fill(0, cs.keys, cs.keys + 10);
             for (const [move, alt] of held.moves) press(cs[MOVES[move][alt].toLowerCase()]);
             for (const k of held.typed) press(cs['key_' + TYPED[k].toLowerCase()]);
+            if (was.some((v, i) => v !== m[cs.keys + i])) m[cs.keys_changed] = 1;    // (as scan_keys does)
         },
-        tick() { call(cs.game_tick); return c.a; },
+        tick() {
+            if (!TIME) { call(cs.game_tick); return c.a; }
+            c.sp = 0x4000; timedCall(c, cs.game_tick, () => c.timedStep(), pc => 'C' + pc);
+            return c.a;
+        },
         commit() { call(cs.commit_all); },
         restore() { call(cs.restore_checkpoint); },
         start() { call(cs.level_init); },
     };
+}
+
+// ---- Timing (--time): µs by place, for each machine
+const TIMES = new Map();
+function timedCall(c, addr, step, key) {
+    const RET = 0xFFF0;
+    if (c instanceof CpuZ80) c.push(RET);
+    else { c.s = 0xFF; c.push((RET - 1) >> 8); c.push((RET - 1) & 0xFF); }     // (as JSR)
+    c.pc = addr;
+    while (c.pc !== RET) { const k = key(c.pc); TIMES.set(k, (TIMES.get(k) || 0) + step()); }
+}
+function timeReport(ticks) {
+    const labelsOf = (entries) => { const l = entries.filter(([, v]) => v !== undefined).sort((a, b) => a[1] - b[1]); return l; };
+    const cl = [];
+    for (const line of readFileSync(join(ROOT, 'build/frak.sym'), 'utf8').split('\n')) {
+        const mm = line.match(/^(\S+)\s+#([0-9A-F]+)\s+B\d+\s+L/i);
+        if (mm && (opt('fine') || !mm[1].includes('.'))) cl.push([mm[1].toLowerCase(), parseInt(mm[2], 16)]);
+    }
+    // (the BBC version's banks 5 and 6 share addresses: its bank 5 has the music, the typed
+    // commands and the meanie compiler)
+    const bank5 = /^(cmd_|snd_|pat\d|order\d|tune_|trk_|sfx_|env_|music_|jit_compile|jit_linestep|jit_code|band_scroll|win_scroll|o_keys|fe_|front|icon_|n_|diff_|level_names|level_good|ins_|ntab_|amptab|v_|last_)/;
+    const cLabels = labelsOf(cl), bAll = Object.entries(bs);
+    const bLabels = labelsOf(bAll.filter(([n, a]) => a < 0x8000 || a >= 0xC000 || !bank5.test(n)));
+    const bLabels5 = labelsOf(bAll.filter(([n, a]) => a < 0x8000 || a >= 0xC000 || bank5.test(n)));
+    const name = (labels, pc) => { let n = '?'; for (const [l, a] of labels) { if (a <= pc) n = l; else break; } return n; };
+    const by = {};
+    let totC = 0, totB = 0;
+    for (const [k, t] of TIMES) {
+        const machine = k[0], pc = parseInt(k.slice(1)), sel = k.split(':')[1];
+        const n = name(machine === 'C' ? cLabels : sel === '5' ? bLabels5 : bLabels, pc);
+        by[n] ||= { C: 0, B: 0 }; by[n][machine] += t;
+        if (machine === 'C') totC += t; else totB += t;
+    }
+    console.log(`\ngame_tick: CPC ${(totC / ticks).toFixed(0)} µs a tick, BBC ${(totB / ticks).toFixed(0)} µs (${(totC / totB).toFixed(2)} times)`);
+    console.log('  routine                     CPC µs   BBC µs');
+    for (const [n, v] of Object.entries(by).sort((a, b) => Math.max(b[1].C, b[1].B) - Math.max(a[1].C, a[1].B)).slice(0, 40))
+        console.log(`  ${n.padEnd(24)} ${(v.C / ticks).toFixed(0).padStart(7)} ${(v.B / ticks).toFixed(0).padStart(8)}`);
 }
 
 // ---- What must be the same
@@ -342,8 +395,9 @@ for (const { room, immortal } of runs) {
         console.log(`${room}${immortal ? ' (immortal)' : ''}: FAIL`);
         for (const l of log.slice(-5)) console.log('    ' + l);
         for (const l of bad.slice(0, 20)) console.log('    ' + l);
-    } else console.log(`${room}${immortal ? ' (immortal)' : ''}: ${t} ticks the same (difficulty ${difficulty})`);
+    } else console.log(`${room}${immortal ? ' (immortal)' : ''}: ${t} ticks the same (difficulty ${difficulty}; ${Math.round(C.cpu.count / t)} Z80 instructions a tick, ${Math.round(B.cpu.count / t)} 6502)`);
 }
 console.log(`\n${runs.length - failed} of ${runs.length} runs the same for ${TICKS} ticks; ${totalTicks} ticks in all, ` +
             Object.entries(events).map(([k, v]) => `${v} ${k}`).join(', '));
+if (TIME) timeReport(totalTicks);
 process.exit(failed ? 1 : 0);

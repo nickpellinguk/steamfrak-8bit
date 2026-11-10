@@ -51,5 +51,5 @@ img_part_b
         db #FF, #FF, #FF, #FF, #FF, #FF, #FF, #FF, #FF, #FF, #FF, #FF, #FF, #FF, #FF, #FF
         db #FF, #FF, #FF, #FF, #4B, #46, #4B, #4C, #4D, #4E, #46, #47, #48, #49, #FF, #FF
         db #FF, #FF, #FF, #FF, #FF, #FF, #FF, #FF, #FF, #FF, #FF, #FF, #FF, #FF, #FF, #FF
-SAVE_RESERVE_ALIVE = 358
-SAVE_RESERVE_DEAD = 654
+SAVE_RESERVE_ALIVE = 527
+SAVE_RESERVE_DEAD = 823

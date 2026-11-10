@@ -40,6 +40,8 @@ start
         ld sp,#4000
         call machine_init
         call bank_test
+        call copy_font
+        call make_popcount
         ld hl,palette : call set_palette
         ld a,(want_mode) : call setup_mode
         ld a,(vsyncs) : ld (last_vsync),a
@@ -169,6 +171,7 @@ ready       db 0                    ; #A5 once the program has the machine
 vsyncs      db 0                    ; counted by irq
 ga_ram      db RAM_BASE             ; the RAM configuration paged in
 keys        DEFS 10                 ; the keyboard: a bit set while a key is down
+keys_changed db 1                   ; ... set when it changes
 bank_errors db #FF                  ; bank_test's result
 front       db 0                    ; buffer on show
 back        db 1                    ; buffer being drawn (0 or 1)
@@ -233,13 +236,7 @@ hl_row      db 0
 hl_col      db 0
 ; the draw log, for each buffer (MAX_LOG entries each)
 log_n       db 0, 0
-log_kind    DEFS 2 * MAX_LOG
-log_img     DEFS 2 * MAX_LOG
-log_x       DEFS 4 * MAX_LOG
-log_y       DEFS 4 * MAX_LOG
-log_x1      DEFS 4 * MAX_LOG
-log_sb      DEFS 4 * MAX_LOG
-log_bank    DEFS 2 * MAX_LOG
+log_recs    DEFS 2 * 40 * 12            ; (MAX_LOG records of LG_SIZE bytes each)
 ; the compiled meanie
 jit_img     db 255                  ; the image compiled (255: none)
 jit_new     db 0
@@ -284,6 +281,7 @@ ld_j        db 0
 ld_p        db 0
 ld_f        db 0
 pf_i        db 0
+pf_left     db 0                    ; platform_find: the platforms left (for res_i)
 pf_bottom   dw 0
 px          dw 0                    ; a moving platform's edges
 py          dw 0
@@ -361,6 +359,7 @@ u_nh        db 0
 u_h8        db 0
 u_cellp     dw 0
 cmask       DEFS 30                 ; a line's masks
+pl_masks    dw 0                    ; seek_line: the line's masks
 pl_line     db 0                    ; painting: the line, its cells [pl_i0, pl_i1]
 pl_i0       db 0
 pl_i1       db 0
@@ -376,6 +375,7 @@ line_lo     DEFS 256
 line_hi     DEFS 256
 rowoff_lo   DEFS 256
 rowoff_hi   DEFS 256
+popcount    DEFS 256                ; the bits set in each byte (make_popcount)
 savebuf0                            ; save areas for the draw log, one per buffer
 STAGE       DEFS 1024               ; (the first is also where a level is unpacked from)
 savebuf1    DEFS 1024
@@ -383,6 +383,7 @@ plats       DEFS MAX_PLATS * PLT_SIZE     ; the level tables (see level.asm)
 ladders     DEFS MAX_LADDERS * L_SIZE
 draws       DEFS MAX_DRAW * D_SIZE
 slows       DEFS MAX_SLOW * S_SIZE
+hud_image   DEFS 64                 ; the timer, as a raw image: 8 byte columns of 8 rows (see plot)
 end_ram
         ASSERT end_ram <= #3F00     ; (the stack is below #4000)
 
@@ -399,7 +400,15 @@ gfx     INCBIN "../build/GFX"
         BANK
         ORG #4000
 pack    INCBIN "../build/PACK"
-        SAVE 'PACK.BIN',#4000,PACK_SIZE,DSK,'build/frak.dsk'
+; ... and after them, the level loader, to run in screen buffer 1 (see load_level)
+        ASSERT PACK_ORG + PACK_SIZE <= LOADER_STORE
+        ORG LOADER_RUN, LOADER_STORE
+loader_start
+        INCLUDE "loader.asm"
+loader_end
+        ASSERT LOADER_STORE + loader_end - loader_start <= #8000
+        SAVE 'PACK.BIN',#4000,LOADER_STORE + loader_end - loader_start - #4000,DSK,'build/frak.dsk'
+        PRINT "Loader: ",loader_end - loader_start," bytes, at ",{hex}LOADER_STORE," (run at ",{hex}LOADER_RUN,")"
 
 ; The game's logic, for extra bank 2 (see logic.asm)
         BANK

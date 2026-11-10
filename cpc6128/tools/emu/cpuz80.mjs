@@ -20,13 +20,14 @@ export class CpuZ80 {
         this.a = this.f = this.b = this.c = this.d = this.e = this.h = this.l = 0;
         this.a_ = this.f_ = this.b_ = this.c_ = this.d_ = this.e_ = this.h_ = this.l_ = 0;
         this.ix = this.iy = 0; this.sp = 0x4000; this.pc = 0; this.i = this.r = 0;
-        this.count = 0;
+        this.count = 0; this.us = 0;
     }
     get bc() { return this.b << 8 | this.c; } set bc(v) { this.b = v >> 8 & 255; this.c = v & 255; }
     get de() { return this.d << 8 | this.e; } set de(v) { this.d = v >> 8 & 255; this.e = v & 255; }
     get hl() { return this.h << 8 | this.l; } set hl(v) { this.h = v >> 8 & 255; this.l = v & 255; }
     get af() { return this.a << 8 | this.f; } set af(v) { this.a = v >> 8 & 255; this.f = v & 255; }
 
+    out(port, v) {}                     // (OUT: nothing, unless a subclass wants it)
     rd(a) { return this.m[a & 0xFFFF]; }
     wr(a, v) { this.m[a & 0xFFFF] = v; }
     rd16(a) { return this.rd(a) | this.rd(a + 1) << 8; }
@@ -123,6 +124,58 @@ export class CpuZ80 {
     }
     add16(a, b) { const r = a + b; this.f = (this.f & (S | Z | PV)) | (((a ^ b ^ r) >> 8) & H) | (r > 0xFFFF ? C : 0); return r & 0xFFFF; }
 
+    // A step, timed as on a CPC: each instruction takes a whole number of microseconds (the gate
+    // array holds the Z80 to 4 T-state boundaries; about its T-states / 4, rounded up). Adds them
+    // to this.us.
+    timedStep() {
+        const pc0 = this.pc, m = this.m, bc0 = this.bc;
+        let i = pc0, x = 0, op = m[i];
+        while (op === 0xDD || op === 0xFD) { x = 1; op = m[(++i) & 0xFFFF]; }
+        this.step();
+        const len = n => (this.pc !== ((i + n) & 0xFFFF));                 // (a branch taken?)
+        let t;
+        if (op === 0xCB) {
+            const cb = m[(i + (x ? 2 : 1)) & 0xFFFF];
+            t = x ? ((cb >> 6) === 1 ? 6 : 7) : ((cb & 7) === 6 ? ((cb >> 6) === 1 ? 3 : 4) : 2);
+        } else if (op === 0xED) {
+            const e = m[(i + 1) & 0xFFFF], z = e & 7, q = (e >> 3) & 1;
+            if (e >> 6 === 2) t = (e & 0x10) ? 6 * ((bc0 || 65536) - 1) + 5 : 5;     // (LDIR/LDDR: per byte)
+            else t = [4, 4, 4, 6, 2, 4, 2, 3][z] + (z === 7 && e >= 0x67 && e <= 0x6F ? 2 : 0);
+            if (e >> 6 === 2 && (e & 3) === 1) t = (e & 0x10) ? 6 * ((bc0 || 65536) - this.bc) - 1 : 4;   // (CPIR, CPI)
+            void q;
+        } else {
+            const y = (op >> 3) & 7, z = op & 7, p = y >> 1, q = y & 1, hl6 = (y === 6 || z === 6);
+            switch (op >> 6) {
+                case 1: t = hl6 ? (x ? 5 : 2) : (x ? 2 : 1); break;
+                case 2: t = z === 6 ? (x ? 5 : 2) : (x ? 2 : 1); break;
+                case 0:
+                    switch (z) {
+                        case 0: t = y < 2 ? 1 : y === 2 ? (len(2) ? 4 : 3) : y === 3 ? 3 : (len(2) ? 3 : 2); break;
+                        case 1: t = 3 + x; break;
+                        case 2: t = y < 4 ? 2 : y < 6 ? 5 + x : 4; break;
+                        case 3: t = 2 + x; break;
+                        case 4: case 5: t = y === 6 ? (x ? 6 : 3) : (x ? 2 : 1); break;
+                        case 6: t = y === 6 ? (x ? 6 : 3) : (x ? 3 : 2); break;
+                        default: t = 1;
+                    }
+                    break;
+                default:
+                    switch (z) {
+                        case 0: t = len(1) ? 4 : 2; break;
+                        case 1: t = q === 0 ? 3 + x : [3, 1, 1 + x, 2 + x][p]; break;
+                        case 2: t = 3; break;
+                        case 3: t = [3, 0, 3, 3, 6 + x, 1, 1, 1][y]; break;
+                        case 4: t = len(3) ? 5 : 3; break;
+                        case 5: t = q === 0 ? 4 + x : 5; break;
+                        case 6: t = 2; break;
+                        default: t = 4;
+                    }
+            }
+        }
+        this.us += t;
+        return t;
+    }
+
     step() {
         this.count++;
         let op = this.fetch(), x = 0;
@@ -207,7 +260,7 @@ export class CpuZ80 {
                     case 3:
                         switch (y) {
                             case 0: this.pc = this.fetch16(); return;
-                            case 2: this.fetch(); return;                               // OUT (n),A
+                            case 2: { const n = this.fetch(); this.out(this.a << 8 | n, this.a); return; }   // OUT (n),A
                             case 3: this.fetch(); this.a = 0xFF; return;                // IN A,(n)
                             case 4: { const v = this.rd16(this.sp); this.wr16(this.sp, this.rp(2, x)); this.setRp(2, x, v); return; }
                             case 5: { const v = this.de; this.de = this.hl; this.hl = v; return; }
@@ -242,7 +295,7 @@ export class CpuZ80 {
         if (op >> 6 === 1) {
             switch (z) {
                 case 0: { const v = 0xFF; if (y !== 6) this.setReg(y, 0, 0, v); this.f = (this.f & C) | SZP[v]; return; }
-                case 1: return;                                                 // OUT (C),r
+                case 1: this.out(this.bc, y === 6 ? 0 : this.reg(y, 0, 0)); return;    // OUT (C),r
                 case 2: {
                     const hl = this.hl, v = this.rp(p, 0), c = this.f & C;
                     let r;

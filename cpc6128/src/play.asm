@@ -18,7 +18,7 @@
 ; pixels (2 byte columns) at a time, where the BBC version's moves 4.
 
 FRAMES_PER_DRAW = 2                 ; vertical syncs per drawn frame
-MAX_TICKS_PER_FRAME = 4
+MAX_TICKS_PER_FRAME = 4             ; (as the BBC version: below 12.5 frames a second the game slows)
 VIEW_L = 96 : VIEW_R = 160          ; the band Trogg moves in without the view scrolling,
 VIEW_T = 72 : VIEW_B = 136          ; across a 256-pixel window, down a 200-line one
 STEP_X = 8                          ; (pixels a sideways scroll step moves)
@@ -42,7 +42,10 @@ frame_loop
         call set_window_clip
         ; Once Trogg has won, or is dead and this buffer already shows the FRAK!
         ; bubble, nothing changes, so don't redraw
-        ld a,(won) : or a : jp nz,.show         ; (phase 6b: the level-complete screen)
+        ld a,(won) : or a : jr z,.not_won
+        ld a,(back) : ld hl,bwon : call look : or a : call z,win_screen   ; (once in each buffer)
+        jp .show
+.not_won
         ld a,(dead) : or a : jr z,.redraw
         ld a,(back) : ld hl,bfrak : call look : or a : jp nz,.show
 .redraw xor a : ld (dmg_n),a : ld (dmg_all),a  ; nothing repainted yet this frame
@@ -83,6 +86,7 @@ frame_loop
         ld hl,(yo_x) : ld (p_x),hl : ld hl,(yo_y) : ld (p_y),hl
         call log_sprite
 .no_yoyo
+        call draw_springs                       ; (moving bouncy platforms' springs)
         ; Trogg (standing or walking, he's two images: his body and his legs)
         call trogg_image : ld e,a : ld d,0
         ld hl,img_part_b : add hl,de : ld a,(hl) : ld (t_part_b),a
@@ -94,6 +98,7 @@ frame_loop
         ld hl,(tx) : ld (p_x),hl : ld hl,(ty) : ld (p_y),hl
         call log_sprite
 .one_part
+        call draw_hud                           ; the timer and rating
         ; ... and "FRAK!" at (x + 12, y - 26) if he's dead
         ld a,(back) : ld e,a : ld d,0 : ld hl,bfrak : add hl,de
         ld a,(dead) : ld (hl),a : or a : jr z,.show
@@ -102,7 +107,8 @@ frame_loop
         ld hl,(ty) : ld de,-26 : add hl,de : ld (p_y),hl
         call log_sprite
 
-.show   ; (the test harness can hold each frame to look at it, and then the game
+.show   ld hl,(frames_drawn) : inc hl : ld (frames_drawn),hl
+        ; (the test harness can hold each frame to look at it, and then the game
         ; runs two ticks a frame)
         ld a,(t_lock) : or a : jr z,.wait
         ld a,1 : ld (t_frame),a
@@ -175,6 +181,7 @@ begin_level
 ; version's redraw_all is reset_play, which restore_checkpoint and level_init end with)
 redraw
         call set_level_palette
+        ld hl,#FFFF : ld (hud_secs),hl          ; (the timer to be drawn afresh)
         ; nothing drawn in either buffer
         ld hl,drecs : ld de,drecs + 1 : ld bc,2 * MAX_SLOW * DR_SIZE - 1 : ld (hl),0 : ldir
         call centre_scroll
@@ -475,25 +482,36 @@ cell_at ld h,rowoff_lo >> 8 : ld e,(hl) : inc h : ld d,(hl)
 ; overlaps the clip window
 draw_scenery
         ld a,PM_PLOT : ld (p_mode),a
-        xor a : ld (ds_i),a
-.loop   ld a,(ds_i) : call alive_hl : ld a,(hl) : or a : jr z,.skip   ; (collected)
-        ld a,(ds_i) : call draw_ix
-        ld a,(clip_l) : ld b,a : ld a,(ix+D_C1) : cp b : jr c,.skip : jr z,.skip
-        ld a,(clip_r) : ld b,a : ld a,(ix+D_C0) : cp b : jr nc,.skip
-        ; rows: skip it if it ends above clip_t, or starts at or below clip_t + clip_h
-        ld a,(ix+D_IMG) : ld hl,img_h : call look : ld e,a : ld d,0
+        ld a,(num_draw) : or a : ret z
+        ld b,a
+        ld a,(clip_r) : ld (.cr + 1),a          ; (the byte columns, in the compares below)
+        ld a,(clip_l) : ld (.cl + 1),a
+        ld hl,alive : ld de,dcols : ld ix,draws
+.loop   ld a,(hl) : or a : jr z,.skip           ; (collected)
+        ld a,(de)                               ; its first byte column ...
+.cr     cp 0 : jr nc,.skip                      ; (at or after clip_r)
+        inc de : ld a,(de) : dec de             ; ... and the one after its last
+.cl     cp 0 : jr c,.skip : jr z,.skip          ; (at or before clip_l)
+        push bc : push de : push hl
+        call .rows
+        pop hl : pop de : pop bc
+.skip   inc hl : inc de : inc de
+        push de : ld de,D_SIZE : add ix,de : pop de
+        djnz .loop
+        ret
+; ... in the rows too? (skip it if it ends above clip_t, or starts at or below
+; clip_t + clip_h) Then plot it.
+.rows   ld a,(ix+D_IMG) : ld hl,img_h : call look : ld e,a : ld d,0
         ld l,(ix+D_TL) : ld h,(ix+D_TH) : add hl,de : ex de,hl
-        ld hl,(clip_t) : call signed_less : jr nc,.skip
+        ld hl,(clip_t) : call signed_less : ret nc
         ld a,(clip_h) : ld e,a : ld d,0 : or a : jr nz,.h_ok
         inc d                                   ; (0 = 256)
 .h_ok   ld hl,(clip_t) : add hl,de : ex de,hl
-        ld l,(ix+D_TL) : ld h,(ix+D_TH) : call signed_less : jr nc,.skip
+        ld l,(ix+D_TL) : ld h,(ix+D_TH) : call signed_less : ret nc
         ld a,(ix+D_IMG) : ld (p_img),a
         ld l,(ix+D_XL) : ld h,(ix+D_XH) : ld (p_x),hl
         ld l,(ix+D_YL) : ld h,(ix+D_YH) : ld (p_y),hl
-        call plot
-.skip   ld a,(num_draw) : ld b,a
-        ld a,(ds_i) : inc a : ld (ds_i),a : cp b : jp c,.loop
+        push ix : call plot : pop ix
         ret
 
 ; Note damage dm_c0..dm_c1, dm_y0..dm_y1 (byte columns, 4-line rows)
@@ -521,12 +539,12 @@ add_damage
 ; right. Each one plotted is damage too, for the ones after it.
 ; ------------------------------------------------------------------------------
 
-; IX = slow sprite A's drawn record in the back buffer
-dr_ix   ld l,a : ld a,(back) : or a : ld a,l : jr z,.b0
+; IY = slow sprite A's drawn record in the back buffer
+dr_iy   ld l,a : ld a,(back) : or a : ld a,l : jr z,.b0
         add a,MAX_SLOW
 .b0     ld l,a : ld h,0 : ld d,h : ld e,l
         add hl,hl : add hl,hl : add hl,hl : add hl,de
-        ld de,drecs : add hl,de : push hl : pop ix
+        ld de,drecs : add hl,de : push hl : pop iy
         ret
 ; HL = n_vis + A, n_chg + A
 nvis_hl ld hl,n_vis : jr idx_hl
@@ -538,8 +556,8 @@ idx_hl  add a,l : ld l,a : ret nc
 ; any of it is in the window, with its byte columns in nr_c0..nr_c1 and rows in
 ; nr_y0..nr_y1 (4-line rows, inclusive, clamped to the level)
 slow_rect
-        ld a,(iy+SR_ALIVE) : or a : ret z
-        ld a,(ix+S_IMG) : ld l,(iy+SR_DXL) : ld h,(iy+SR_DXH) : call box_from_x
+        ld a,(ix+SR_ALIVE) : or a : ret z
+        ld a,(ix+S_IMG) : ld l,(ix+SR_DXL) : ld h,(ix+SR_DXH) : call box_from_x
         ld de,(box_r) : dec de
         sra h : rr l : sra h : rr l             ; left and right, as byte columns
         sra d : rr e : sra d : rr e
@@ -556,7 +574,7 @@ slow_rect
         ld a,255
 .r_byte ld (nr_c1),a
         ; top and bottom: visible if bottom >= clip_t and top < clip_t + 256
-        ld a,(ix+S_IMG) : ld l,(iy+SR_DYL) : ld h,(iy+SR_DYH) : call box_from_y
+        ld a,(ix+S_IMG) : ld l,(ix+SR_DYL) : ld h,(ix+SR_DYH) : call box_from_y
         ld (sr_top),hl
         ld hl,(box_r) : dec hl : ld (sr_bot),hl
         ld de,(clip_t) : call signed_less : jr c,.out
@@ -570,35 +588,37 @@ slow_rect
 
 ; Bring the slow sprites in the back buffer up to date
 draw_slow
+        ; (just the level's slow sprites: no others are ever drawn)
+        ld a,(num_slow) : or a : ret z
         ; 1. Erase the ones that have moved, or gone
-        ld a,MAX_SLOW - 1 : ld (sl_i),a
+        dec a : ld (sl_i),a
 .erase_loop
         ld a,(sl_i) : call nchg_hl : ld (hl),0
         ld a,(sl_i) : call slow_both
         call slow_rect : ld a,0 : rla : ld b,a  ; (carry: visible)
         ld a,(sl_i) : call nvis_hl : ld (hl),b
-        ld a,(sl_i) : call dr_ix
+        ld a,(sl_i) : call dr_iy
         ld a,b : or a : jr nz,.vis
         ; not visible: erase it if it was drawn
-        ld a,(ix+DR_ON) : or a : jp z,.e_next
+        ld a,(iy+DR_ON) : or a : jp z,.e_next
         jr .erase
-.vis    ld a,(ix+DR_ON) : or a : jr z,.new
-        ld a,(iy+SR_DXL) : cp (ix+DR_XL) : jr nz,.moved
-        ld a,(iy+SR_DXH) : cp (ix+DR_XH) : jr nz,.moved
-        ld a,(iy+SR_DYL) : cp (ix+DR_YL) : jr nz,.moved
-        ld a,(iy+SR_DYH) : cp (ix+DR_YH) : jr nz,.moved
+.vis    ld a,(iy+DR_ON) : or a : jr z,.new
+        ld a,(ix+SR_DXL) : cp (iy+DR_XL) : jr nz,.moved
+        ld a,(ix+SR_DXH) : cp (iy+DR_XH) : jr nz,.moved
+        ld a,(ix+SR_DYL) : cp (iy+DR_YL) : jr nz,.moved
+        ld a,(ix+SR_DYH) : cp (iy+DR_YH) : jr nz,.moved
         jr .e_next
 .moved  ld a,(sl_i) : call nchg_hl : ld (hl),1
 .erase  call erase_drawn
         ld a,(sl_i) : call nchg_hl : ld a,(hl) : or a : jr z,.e_next   ; gone: nothing to draw
 .new    ld a,(sl_i) : call nchg_hl : ld (hl),1
         ; it will be drawn here
-        ld a,(sl_i) : call slow_both : ld a,(sl_i) : call dr_ix
-        ld a,(iy+SR_DXL) : ld (ix+DR_XL),a : ld a,(iy+SR_DXH) : ld (ix+DR_XH),a
-        ld a,(iy+SR_DYL) : ld (ix+DR_YL),a : ld a,(iy+SR_DYH) : ld (ix+DR_YH),a
-        ld a,(nr_c0) : ld (ix+DR_C0),a : ld a,(nr_c1) : ld (ix+DR_C1),a
-        ld a,(nr_y0) : ld (ix+DR_Y0),a : ld a,(nr_y1) : ld (ix+DR_Y1),a
-        ld (ix+DR_ON),1
+        ld a,(sl_i) : call slow_both : ld a,(sl_i) : call dr_iy
+        ld a,(ix+SR_DXL) : ld (iy+DR_XL),a : ld a,(ix+SR_DXH) : ld (iy+DR_XH),a
+        ld a,(ix+SR_DYL) : ld (iy+DR_YL),a : ld a,(ix+SR_DYH) : ld (iy+DR_YH),a
+        ld a,(nr_c0) : ld (iy+DR_C0),a : ld a,(nr_c1) : ld (iy+DR_C1),a
+        ld a,(nr_y0) : ld (iy+DR_Y0),a : ld a,(nr_y1) : ld (iy+DR_Y1),a
+        ld (iy+DR_ON),1
 .e_next ld hl,sl_i : dec (hl) : jp p,.erase_loop
 
         ; 2. Plot, in order, the ones that moved and the ones painted over
@@ -607,38 +627,39 @@ draw_slow
         ld a,(sl_i) : call nvis_hl : ld a,(hl) : or a : jr z,.p_next
         ld a,(sl_i) : call nchg_hl : ld a,(hl) : or a : jr nz,.plot_it
         ld a,(dmg_all) : or a : jr nz,.plot_it
-        ld a,(sl_i) : call dr_ix : call damaged : jr nc,.p_next
+        ld a,(sl_i) : call dr_iy : call damaged : jr nc,.p_next
 .plot_it
         ld a,(sl_i) : call slow_both
         ld a,(ix+S_IMG) : ld (p_img),a
-        ld l,(iy+SR_DXL) : ld h,(iy+SR_DXH) : ld (p_x),hl
-        ld l,(iy+SR_DYL) : ld h,(iy+SR_DYH) : ld (p_y),hl
+        ld l,(ix+SR_DXL) : ld h,(ix+SR_DXH) : ld (p_x),hl
+        ld l,(ix+SR_DYL) : ld h,(ix+SR_DYH) : ld (p_y),hl
         ld a,PM_PLOT : ld (p_mode),a
         call plot_slow
         ; ... which is damage for the ones after it
-        ld a,(sl_i) : call dr_ix
-        ld a,(ix+DR_C0) : ld (dm_c0),a : ld a,(ix+DR_C1) : ld (dm_c1),a
-        ld a,(ix+DR_Y0) : ld (dm_y0),a : ld a,(ix+DR_Y1) : ld (dm_y1),a
+        ld a,(sl_i) : call dr_iy
+        ld a,(iy+DR_C0) : ld (dm_c0),a : ld a,(iy+DR_C1) : ld (dm_c1),a
+        ld a,(iy+DR_Y0) : ld (dm_y0),a : ld a,(iy+DR_Y1) : ld (dm_y1),a
         call add_damage
-.p_next ld hl,sl_i : inc (hl) : ld a,(hl) : cp MAX_SLOW : jr nz,.plot_loop
+.p_next ld a,(num_slow) : ld b,a
+        ld hl,sl_i : inc (hl) : ld a,(hl) : cp b : jr nz,.plot_loop
         ret
 
 ; Erase the slow sprite drawn at record IX (the visible part of it) and forget it
 erase_drawn
-        ld (ix+DR_ON),0
-        ld a,(clip_l) : ld b,a : ld a,(ix+DR_C0) : cp b : jr nc,.c0
+        ld (iy+DR_ON),0
+        ld a,(clip_l) : ld b,a : ld a,(iy+DR_C0) : cp b : jr nc,.c0
         ld a,b
 .c0     ld (rr_c0),a
-        ld a,(clip_r) : dec a : ld b,a : ld a,(ix+DR_C1) : cp b : jr c,.c1
+        ld a,(clip_r) : dec a : ld b,a : ld a,(iy+DR_C1) : cp b : jr c,.c1
         ld a,b
 .c1     ld (rr_c1),a
         ld b,a : ld a,(rr_c0) : ld c,a : ld a,b : cp c : ret c
         ; its character rows, within the window's
-        ld a,(ix+DR_Y0) : srl a : ld b,a : ld a,(scrollrow) : cp b : jr nc,.k0
+        ld a,(iy+DR_Y0) : srl a : ld b,a : ld a,(scrollrow) : cp b : jr nc,.k0
         ld a,b
 .k0     ld (rr_k0),a
         ld a,(win_rows) : dec a : ld b,a : ld a,(scrollrow) : add a,b : ld b,a
-        ld a,(ix+DR_Y1) : srl a : cp b : jr c,.k1
+        ld a,(iy+DR_Y1) : srl a : cp b : jr c,.k1
         ld a,b
 .k1     ld (rr_k1),a
         ld b,a : ld a,(rr_k0) : ld c,a : ld a,b : cp c : ret c
@@ -647,10 +668,10 @@ erase_drawn
 ; Carry set if drawn record IX overlaps any damage
 damaged ld a,(dmg_n) : or a : ret z
         ld b,a : ld hl,dmg_list
-.loop   ld a,(ix+DR_C1) : cp (hl) : jr c,.n0            ; ends left of it
-        inc hl : ld a,(hl) : cp (ix+DR_C0) : jr c,.n1   ; starts right of it
-        inc hl : ld a,(ix+DR_Y1) : cp (hl) : jr c,.n2   ; ends above it
-        inc hl : ld a,(hl) : cp (ix+DR_Y0) : jr c,.n3   ; starts below it
+.loop   ld a,(iy+DR_C1) : cp (hl) : jr c,.n0            ; ends left of it
+        inc hl : ld a,(hl) : cp (iy+DR_C0) : jr c,.n1   ; starts right of it
+        inc hl : ld a,(iy+DR_Y1) : cp (hl) : jr c,.n2   ; ends above it
+        inc hl : ld a,(hl) : cp (iy+DR_Y0) : jr c,.n3   ; starts below it
         scf : ret
 .n0     inc hl
 .n1     inc hl
@@ -658,6 +679,115 @@ damaged ld a,(dmg_n) : or a : ret z
 .n3     inc hl
         djnz .loop
         or a : ret
+
+; ------------------------------------------------------------------------------
+; The HUD, springs, and the level-complete screen
+; ------------------------------------------------------------------------------
+
+; The timer at the top left of the window, and the rating at the bottom right.
+; The timer is an image (IMG_Hud, raw: see plot) made from the font each second.
+draw_hud
+        ld hl,(lvl_ticks) : ld a,50 : call div16        ; (seconds)
+        ld de,(hud_secs) : or a : sbc hl,de : add hl,de : jr z,.same
+        ld (hud_secs),hl
+        call time_digits
+        ; each character two byte columns of 8 rows: the glyph's left and right nibbles
+        ld hl,hud_image : ld ix,time_text : ld b,4
+.char   ld a,(ix+0) : sub '0' : add a,a : add a,a : add a,a
+        ld e,a : ld d,0 : push hl : ld hl,font_digits : add hl,de : ex de,hl : pop hl
+        ld c,8
+.row    ld a,(de) : rrca : rrca : rrca : rrca : and 15 : ld (hl),a
+        push hl : ld a,l : add a,8 : ld l,a : jr nc,.nc
+        inc h
+.nc     ld a,(de) : and 15 : ld (hl),a : pop hl
+        inc hl : inc de : dec c : jr nz,.row
+        ld de,8 : add hl,de
+        inc ix : djnz .char
+.same   ld a,IMG_Hud : ld (p_img),a
+        ld a,(scrollcol) : ld l,a : ld h,0 : add hl,hl : add hl,hl
+        ld de,4 : add hl,de : ld (p_x),hl
+        ld hl,(clip_t) : inc hl : inc hl : ld (p_y),hl
+        call log_sprite
+        ld a,(restarts) : cp 3 : jr c,.r_ok
+        ld a,3
+.r_ok   add a,IMG_Rating_1 : ld (p_img),a
+        ld hl,(p_x) : ld de,(win_w128) : add hl,de : ld de,-128 - 12 : add hl,de : ld (p_x),hl
+        ld a,(win_lines) : dec a : ld e,a : ld d,0      ; (the window's last line: 255 or 199)
+        ld hl,(clip_t) : add hl,de : ld (p_y),hl
+        jp log_sprite
+
+; HL = HL / A, the remainder in A
+div16   ld c,a : xor a : ld b,16
+.loop   add hl,hl : rla : cp c : jr c,.no
+        sub c : inc l
+.no     djnz .loop
+        ret
+
+; time_text = "m:ss" for HL seconds (at most 9:59)
+time_digits
+        ld de,600 : push hl : or a : sbc hl,de : pop hl : jr c,.ok
+        ld hl,599
+.ok     ld a,60 : call div16 : ld b,a                   ; (HL = minutes, B = seconds)
+        ld a,l : add a,'0' : ld (time_text),a
+        ld a,':' : ld (time_text + 1),a
+        ld a,b : ld c,'0' - 1
+.tens   inc c : sub 10 : jr nc,.tens
+        add a,10 + '0' : ld (time_text + 3),a
+        ld a,c : ld (time_text + 2),a
+        ret
+
+; The springs of the bouncy platforms that move (they can't be in the background
+; like the others), and the yellow line under a platform Trogg can move
+draw_springs
+        ld a,(num_plats) : or a : ret z
+        ld (spr_i),a : dec a : call plat_ix : push ix : pop iy     ; (IY: the last, going down)
+.loop   ld a,(iy+PLT_MOVING) : or a : jr z,.next
+        cp 2 : jr nz,.spring
+        ; the line, from x to x + w - 1, on the row under it
+        ld l,(iy+PLT_XL) : ld h,(iy+PLT_XH) : ld (p_x),hl
+        ld e,(iy+PLT_W) : ld d,0 : add hl,de : dec hl : ld (q_x),hl
+        ld a,(iy+PLT_IMG) : ld hl,img_h : call look : ld e,a : ld d,0
+        ld l,(iy+PLT_YL) : ld h,(iy+PLT_YH) : add hl,de : ld (p_y),hl
+        ld a,#F0 : ld (hl_yel),a
+        call log_line
+        xor a : ld (hl_yel),a
+.spring ld a,(iy+PLT_BOUNCY) : or a : jr z,.next
+        call spring_pos
+        ld a,IMG_Spring : ld (p_img),a
+        call log_sprite
+.next   ld de,-PLT_SIZE : add iy,de
+        ld hl,spr_i : dec (hl) : jr nz,.loop
+        ret
+
+; The level-complete screen, drawn once into each buffer: just Trogg (and his
+; trophy if there's a medal) on the background colour. (The time, the gems and
+; the medal's text come with the front end, in phase 8.) Both buffers are put at
+; the view's scroll position first, as they're then shown in turn.
+win_screen
+        call calc_scroll
+        ld a,(back) : ld e,a : ld d,0
+        ld a,(newcol) : ld (scrollcol),a : ld hl,bscroll : add hl,de : ld (hl),a
+        ld a,(newrow) : ld (scrollrow),a : ld hl,brow : add hl,de : ld (hl),a
+        ld hl,bwon : add hl,de : ld (hl),1
+        ld hl,log_n : add hl,de : ld (hl),0     ; (nothing to erase from it now)
+        call set_window_clip
+        xor a : call fill_back
+        ld a,PM_PLOT : ld (p_mode),a
+        call trogg_image : ld e,a : ld d,0
+        ld hl,img_part_b : add hl,de : ld a,(hl) : ld (t_part_b),a
+        ld hl,img_part_a : add hl,de : ld a,(hl) : ld (p_img),a
+        ld hl,(tx) : ld (p_x),hl : ld hl,(ty) : ld (p_y),hl
+        call plot
+        ld a,(t_part_b) : cp 255 : jr z,.one_part
+        ld (p_img),a : call plot
+.one_part
+        ld a,(done_restarts) : cp 3 : ret nc
+        add a,IMG_Rating_1 : ld (p_img),a
+        ld hl,(tx) : ld de,21 : add hl,de : ld (p_x),hl
+        ld hl,(ty) : ld de,-23 : add hl,de : ld (p_y),hl
+        call plot
+        ld a,IMG_TrophyStand : ld (p_img),a
+        jp plot
 
 ; ------------------------------------------------------------------------------
 ; The moving objects, the yoyo

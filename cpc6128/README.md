@@ -5,8 +5,8 @@ A port of the BBC Master version (in the rest of this repository) to an unmodifi
 and tests. Levels that scroll sideways use a 256x256 screen, levels that scroll up and down
 320x200, and both are double-buffered.
 
-**Status: phase 6 of 9** (the game plays: everything but the HUD and the level-complete
-screen). The program loads the graphics, the levels and the game's logic, takes the machine
+**Status: phase 6 of 9 done** (the game plays, with its HUD and level-complete screen; the
+level-complete screen's text comes with the front end). The program loads the graphics, the levels and the game's logic, takes the machine
 over from the firmware, and has the BBC version's plotter, draw log and compiled meanie, its
 level loader and background, its game logic (the keys and typed commands, Trogg, the yoyo, the
 moving platforms and meanies, balloons and daggers, collisions and checkpoints), and its frame
@@ -22,7 +22,7 @@ BBC version's, tick for tick.
 | 3 | Plotter and drawing | `plot.mjs`: every image, clipped, saved and put back, the yoyo string, the compiled meanie, matching byte for byte — **passes** |
 | 4 | Levels and background | `levels.mjs`: all 55 levels' tables, background caches and repainted windows match the converter — **passes** |
 | 5 | Game logic | `connections.mjs`: Trogg moves as in GameMaker on all 55 levels; `logic.mjs`: the game logic does what the BBC version's does, tick for tick — **both pass** |
-| 6 | Main loop and scrolling | `frames.mjs`: every frame drawn is what the game's state says it should be — **passes** (6a; the HUD, the level-complete screen and a frame-rate table to come) |
+| 6 | Main loop and scrolling | `frames.mjs`: every frame drawn is what the game's state says it should be — **passes**; `fps.mjs`: the frame rates below |
 | 7 | Sound (AY-3-8912) | the notes match the web version's player |
 | 8 | Front end | menus, a level, then the next level |
 | 9 | Release | plays on a real 6128 |
@@ -63,6 +63,7 @@ CPC_ROMS=/path/to/roms node tools/emu/levels.mjs [room ...]
 CPC_ROMS=/path/to/roms node tools/emu/connections.mjs [room ...] [--detail]
 CPC_ROMS=/path/to/roms node tools/emu/logic.mjs [room ...] [--ticks=N] [--seed=N]
 CPC_ROMS=/path/to/roms node tools/emu/frames.mjs [room ...] [--frames=N] [--seed=N]
+CPC_ROMS=/path/to/roms node tools/emu/fps.mjs [room ...]
 ```
 
 Steps a test can give (`steps.lua`): `wait` frames, `waitfor` a byte to have a value, `type`
@@ -80,11 +81,16 @@ what a reference renderer (`render.mjs`, written from the data formats, not from
 of the game's state: the window's background from the converter's background data, the scenery
 not yet collected, each moving platform and meanie where the buffer says it drew it, then the
 buffer's draw log in order (balloons, daggers, meanies flying off, the yoyo and its string,
-Trogg, the FRAK! bubble). So anything left behind, erased wrongly, drawn in the wrong place or
+springs and movable platforms' yellow lines, Trogg, the timer and rating, the FRAK! bubble); or,
+once the level is complete, its screen. So anything left behind, erased wrongly, drawn in the wrong place or
 not repainted shows up. Eleven levels, both kinds, are each played twice for 300 frames, the
-second time with Trogg unable to die so that he gets about: all 6,600 frames are right, with
-the view scrolling, the yoyo out, moving platforms and meanies, balloons and daggers, things
-collected and deaths among them.
+second time with Trogg unable to die so that he gets about, and finishing the level a second
+or so in (with a short wait), so that the level-complete screen and the next level are drawn
+too: all 6,600 frames are right, with the view scrolling, the yoyo out, moving platforms and
+meanies, balloons and daggers, things collected, deaths and level-complete screens among them.
+
+`fps.mjs` measures the frame rate on every level, with Trogg unable to die: standing still for
+10 seconds (the meanies, balloons and daggers still moving), then walking right for 10.
 
 `connections.mjs` is phase 5's test, the CPC version of the BBC version's `connections8.mjs`.
 It needs the steamfrak repository alongside this one (`STEAMFRAK` names it otherwise), for
@@ -289,6 +295,110 @@ Trogg is between 96 and 160 pixels across the 256-pixel window; up and down, whi
 between 72 and 136 lines down the 200-line one). For the same reason the view's sideways
 position is always even, so on a level whose width in byte columns is odd, the last 4 pixels on
 the right never come into view.
+
+**The HUD.** The timer (top left) is drawn as the BBC version draws it: an image made each
+second from the font (the CPC's own, in its lower ROM at `&3800`: `copy_font` copies the digits
+and the colon to the logic bank at start-up), whose bytes are nibbles of 4 black pixels, which
+the plotter looks up in two tables of its own (in spare pages of the graphics bank) rather than
+the 5-pixel code tables. The rating is at the bottom right of the window. The springs on moving
+bouncy platforms and the yellow line under platforms Trogg can move are drawn each frame, as in
+the BBC version. The level-complete screen is drawn once in each buffer: Trogg (and his trophy)
+on the background colour; its text (the time, the gems and the medal) comes with the front end.
+
+**Speed.** The game logic runs at 50 ticks a second, a tick for each vertical sync since the
+last frame, up to 4 a frame, as in the BBC version (below 12.5 frames a second, the game
+slows). Measured the same way on both (each level with Trogg unable to die, standing still for
+10 seconds: `fps.mjs` on MAME, `bbcfps.mjs` on jsbeeb), the CPC version draws about four
+fifths as many frames a second as the BBC version: 81% on average, from 69% on the lightest
+levels (where the drawing is most of the time) to 101% on the busiest.
+
+Where the time goes is measured with `profile.mjs`: it copies the whole machine from MAME
+mid-level and plays on in the Z80 interpreter, timed as a CPC times it (each instruction a
+whole number of microseconds: the gate array holds the Z80 to them), naming the routines the
+time is spent in. `logic.mjs --time` times both versions' game_tick routine by routine (the
+BBC version's with the 65C02's cycles). The speed pass that made it this fast:
+
+* the level loader is an overlay, kept in the base RAM after the levels and run from screen
+  buffer 1 while a level loads, which freed 4K of the low RAM for faster code;
+* the plotter's column routines do whole character cells unrolled, with no branches: a byte
+  saved and plotted takes 27µs (the BBC version's, 21µs), one restored 10µs (9.5µs);
+* `paint_line` (the background, for scrolling and erasing) keeps its state in registers, with
+  its copies unrolled: about twice as fast;
+* the game logic's loops step pointers rather than working them out (a slow sprite's state is
+  in its record, after its level settings, so one IX covers both), walk HL through fields kept
+  in the order they're used, skip what can't matter (the slow sprites past the level's last,
+  moving objects not in play, things far from Trogg), and test the command keys only when the
+  keyboard has changed (the keyboard interrupt notes when it does); the moving meanies to
+  collide with are listed once a frame, and the things drawn are first tested by their byte
+  columns (as Trogg's and the yoyo's);
+* the draw log keeps each entry in one record, and leaves out what can't be seen (lines
+  outside the window, images none of whose rows are in it); lines are drawn with their
+  address worked out once.
+
+<details><summary>Frame rates on every level (Easy)</summary>
+
+| Level | Window | CPC, standing | CPC, walking right | BBC, standing | CPC / BBC |
+| --- | --- | --- | --- | --- | --- |
+| 0 | 256x256 | 19.9 | 18.3 | 24.6 | 81% |
+| A_1 | 256x256 | 19.8 | 18.6 | 22.1 | 90% |
+| A_2 | 256x256 | 18.0 | 19.2 | 22.1 | 81% |
+| A_3 | 256x256 | 18.2 | 19.1 | 22.6 | 81% |
+| A_4 | 256x256 | 17.8 | 18.9 | 22.5 | 79% |
+| A_5 | 256x256 | 17.7 | 19.1 | 23.0 | 77% |
+| A_6 | 256x256 | 17.1 | 20.0 | 22.0 | 78% |
+| A_7 | 256x256 | 16.2 | 17.6 | 22.8 | 71% |
+| A_8 | 256x256 | 21.0 | 18.9 | 22.9 | 92% |
+| A_9 | 256x256 | 16.7 | 13.7 | 21.1 | 79% |
+| B_1 | 256x256 | 7.6 | 6.8 | 8.1 | 94% |
+| B_2 | 256x256 | 8.6 | 8.5 | 8.5 | 101% |
+| B_3 | 256x256 | 9.1 | 7.7 | 9.0 | 101% |
+| B_4 | 256x256 | 10.0 | 8.2 | 14.1 | 71% |
+| B_5 | 256x256 | 9.1 | 8.3 | 11.5 | 79% |
+| B_6 | 256x256 | 7.4 | 7.8 | 9.7 | 76% |
+| B_7 | 256x256 | 10.2 | 9.1 | 14.0 | 73% |
+| B_8 | 256x256 | 7.1 | 6.2 | 7.6 | 93% |
+| B_9 | 256x256 | 7.3 | 7.2 | 8.0 | 91% |
+| C_1 | 320x200 | 7.2 | 8.8 | 8.0 | 90% |
+| C_2 | 320x200 | 8.2 | 5.5 | 10.0 | 82% |
+| C_3 | 320x200 | 7.4 | 6.7 | 9.5 | 78% |
+| C_4 | 320x200 | 7.5 | 12.6 | 7.7 | 97% |
+| C_5 | 320x200 | 7.1 | 7.5 | 8.3 | 86% |
+| C_6 | 320x200 | 7.1 | 5.7 | 8.2 | 87% |
+| C_7 | 320x200 | 9.3 | 9.2 | 11.3 | 82% |
+| C_8 | 320x200 | 10.6 | 9.5 | 12.8 | 83% |
+| C_9 | 320x200 | 8.5 | 6.7 | 11.8 | 72% |
+| D_1 | 256x256 | 13.3 | 12.4 | 16.3 | 82% |
+| D_2 | 320x200 | 8.3 | 6.6 | 9.8 | 85% |
+| D_3 | 256x256 | 6.7 | 6.9 | 8.7 | 77% |
+| D_4 | 256x256 | 10.3 | 11.1 | 11.6 | 89% |
+| D_5 | 320x200 | 7.2 | 6.9 | 8.9 | 81% |
+| D_6 | 256x256 | 10.8 | 10.3 | 14.7 | 73% |
+| D_7 | 320x200 | 9.4 | 6.4 | 11.2 | 84% |
+| D_8 | 320x200 | 7.0 | 7.4 | 9.2 | 76% |
+| D_9 | 320x200 | 6.6 | 6.6 | 8.4 | 79% |
+| E_1 | 256x256 | 14.9 | 12.6 | 21.6 | 69% |
+| E_2 | 256x256 | 14.1 | 13.9 | 17.7 | 80% |
+| E_3 | 256x256 | 10.2 | 10.4 | 12.1 | 84% |
+| E_4 | 256x256 | 15.8 | 16.3 | 20.2 | 78% |
+| E_5 | 320x200 | 11.4 | 9.4 | 15.9 | 72% |
+| E_6 | 320x200 | 9.7 | 8.8 | 12.6 | 77% |
+| E_7 | 320x200 | 14.2 | 14.0 | 20.1 | 71% |
+| E_8 | 256x256 | 12.3 | 10.7 | 15.0 | 82% |
+| E_9 | 256x256 | 11.6 | 11.7 | 14.3 | 81% |
+| F_1 | 256x256 | 11.0 | 13.4 | 12.7 | 87% |
+| F_2 | 256x256 | 13.2 | 14.7 | 19.2 | 69% |
+| F_3 | 256x256 | 13.1 | 13.0 | 14.6 | 90% |
+| F_4 | 256x256 | 9.8 | 13.2 | 13.1 | 75% |
+| F_5 | 320x200 | 11.5 | 10.8 | 14.2 | 81% |
+| F_6 | 320x200 | 10.2 | 9.2 | 14.8 | 69% |
+| F_7 | 256x256 | 11.7 | 12.1 | 16.2 | 72% |
+| F_8 | 256x256 | 18.0 | 13.8 | 20.2 | 89% |
+| F_9 | 256x256 | 12.6 | 12.4 | 16.5 | 76% |
+| average (all) | | 11.6 | | 14.4 | 81% (median 81%) |
+| average (256x256) | | 13.0 | | 16.1 | 82% (median 80%) |
+| average (320x200) | | 8.9 | | 11.2 | 81% (median 81%) |
+
+</details>
 
 The yoyo string's ends are compared signed: at the left edge of a level the yoyo can be a
 pixel or two left of it, which made `hline`, comparing them unsigned, draw the string right

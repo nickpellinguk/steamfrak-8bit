@@ -68,12 +68,12 @@ ladder_find
         ld hl,(q_y1) : ld (res_y),hl : ld a,(q_y1f) : ld (res_yf),a
         ; going up (y2 < y1) or down? Nothing if they're the same
         ld hl,(q_y2) : ld de,(q_y1) : or a : sbc hl,de
-        jr c,.is_up : jr nz,.loop
+        jr c,.is_up : jr nz,.loop0
         ld a,(q_y1f) : ld b,a : ld a,(q_y2f) : cp b
-        ret z : jr nc,.loop
+        ret z : jr nc,.loop0
 .is_up  ld a,1 : ld (lf_up),a
+.loop0  ld ix,ladders
 .loop   ld a,(num_ladders) : ld b,a : ld a,(lf_i) : cp b : ret z
-        call lad_ix
         ; only ladders within 6 pixels of q_x
         ld hl,(q_x) : ld e,(ix+L_XL) : ld d,(ix+L_XH) : or a : sbc hl,de
         ld a,h : or a : jr z,.pos
@@ -100,7 +100,8 @@ ladder_find
         ; res_y = max(y2, lad_top), and stop if that's y2
         ld hl,(q_y2) : ld de,(lad_top) : or a : sbc hl,de : jr nc,.use_y2
         ld (res_y),de : xor a : ld (res_yf),a
-.next   ld hl,lf_i : inc (hl)
+.next   ld de,L_SIZE : add ix,de                ; (the next ladder)
+        ld hl,lf_i : inc (hl)
         jp .loop
 .use_y2 ld hl,(q_y2) : ld (res_y),hl
         ld a,(q_y2f) : ld (res_yf),a
