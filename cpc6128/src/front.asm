@@ -176,6 +176,8 @@ fe_select_key
         ld a,KEY_RETURN : call key_pressed : ret nz
         ld a,KEY_ENTER : call key_pressed : ret nz
         ld a,KEY_P : call key_pressed : ret nz
+        ld a,KEY_FIRE1 : call key_pressed : ret nz
+        ld a,KEY_FIRE2 : call key_pressed : ret nz
         ld a,KEY_Y : jp key_pressed
 
 ; Wait until none of the menu keys is pressed
@@ -186,6 +188,7 @@ fe_release
         ret
 fe_keys db KEY_SPACE, KEY_RETURN, KEY_ENTER, KEY_P, KEY_Y, KEY_ESC
         db KEY_Z, KEY_LEFT, KEY_X, KEY_RIGHT, KEY_O, KEY_UP, KEY_K, KEY_DOWN
+        db KEY_JOY_LEFT, KEY_JOY_RIGHT, KEY_JOY_UP, KEY_JOY_DOWN, KEY_FIRE1, KEY_FIRE2
 fe_keys_end
 
 ; ---- The menus
@@ -249,20 +252,24 @@ fe_grid
 .not_escape
         ld a,(fe_sel) : ld (fe_i),a             ; (the new selection, if it moves)
         ld a,KEY_Z : call key_pressed : jr nz,.left
+        ld a,KEY_JOY_LEFT : call key_pressed : jr nz,.left
         ld a,KEY_LEFT : call key_pressed : jr z,.not_left
 .left   ld a,(fe_i) : call fe_col : jp z,.loop
         ld hl,fe_i : dec (hl) : jr .moved
 .not_left
         ld a,KEY_X : call key_pressed : jr nz,.right
+        ld a,KEY_JOY_RIGHT : call key_pressed : jr nz,.right
         ld a,KEY_RIGHT : call key_pressed : jr z,.not_right
 .right  ld a,(fe_i) : call fe_col : cp 2 : jp z,.loop
         ld hl,fe_i : inc (hl) : jr .moved
 .not_right
         ld a,KEY_O : call key_pressed : jr nz,.up
+        ld a,KEY_JOY_UP : call key_pressed : jr nz,.up
         ld a,KEY_UP : call key_pressed : jr z,.not_up
 .up     ld a,(fe_i) : cp 3 : jp c,.loop
         sub 3 : ld (fe_i),a : jr .moved
 .not_up ld a,KEY_K : call key_pressed : jr nz,.down
+        ld a,KEY_JOY_DOWN : call key_pressed : jr nz,.down
         ld a,KEY_DOWN : call key_pressed : jp z,.loop
 .down   ld a,(fe_i) : cp 6 : jp nc,.loop
         add a,3 : ld (fe_i),a

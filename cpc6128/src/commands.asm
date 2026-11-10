@@ -21,23 +21,25 @@ CMD_QUEUE = 16                      ; (a power of 2)
 SV_TX = 0 : SV_TY = 2 : SV_TYF = 4 : SV_STATE = 5 : SV_FACE = 6 : SV_CLIMB = 7  ; cmd_sv
 
 ; The keys held this tick -> xmove, ymove and doyoyo, with their debounces
+; var = 1 if any of keys a, b and c is down, else 0
+MACRO KEY3 var, a, b, c
+        ld a,(keys + ({a} >> 3)) : and 1 << ({a} & 7) : ld b,a
+        ld a,(keys + ({b} >> 3)) : and 1 << ({b} & 7) : or b : ld b,a
+        ld a,(keys + ({c} >> 3)) : and 1 << ({c} & 7) : or b
+        add a,255 : sbc a,a : and 1 : ld ({var}),a
+MEND
+
 read_keys
-        ; (each key's bit in keys[], tested directly: these are read every tick)
-        ld a,(keys + (KEY_Z >> 3)) : and 1 << (KEY_Z & 7) : ld b,a
-        ld a,(keys + (KEY_LEFT >> 3)) : and 1 << (KEY_LEFT & 7) : or b
-        add a,255 : sbc a,a : and 1 : ld (k_left),a     ; (1 if either is down)
-        ld a,(keys + (KEY_X >> 3)) : and 1 << (KEY_X & 7) : ld b,a
-        ld a,(keys + (KEY_RIGHT >> 3)) : and 1 << (KEY_RIGHT & 7) : or b
-        add a,255 : sbc a,a : and 1 : ld (k_right),a
-        ld a,(keys + (KEY_O >> 3)) : and 1 << (KEY_O & 7) : ld b,a
-        ld a,(keys + (KEY_UP >> 3)) : and 1 << (KEY_UP & 7) : or b
-        add a,255 : sbc a,a : and 1 : ld (k_up),a
-        ld a,(keys + (KEY_K >> 3)) : and 1 << (KEY_K & 7) : ld b,a
-        ld a,(keys + (KEY_DOWN >> 3)) : and 1 << (KEY_DOWN & 7) : or b
-        add a,255 : sbc a,a : and 1 : ld (k_down),a
-        ld a,(keys + (KEY_P >> 3)) : and 1 << (KEY_P & 7) : ld b,a
-        ld a,(keys + (KEY_SPACE >> 3)) : and 1 << (KEY_SPACE & 7) : or b
-        add a,255 : sbc a,a : and 1 : ld (k_yoyo),a
+        ; (each key's bit in keys[], tested directly: these are read every tick; the
+        ; joystick too, in the keyboard's row 9)
+        KEY3 k_left, KEY_Z, KEY_LEFT, KEY_JOY_LEFT
+        KEY3 k_right, KEY_X, KEY_RIGHT, KEY_JOY_RIGHT
+        KEY3 k_up, KEY_O, KEY_UP, KEY_JOY_UP
+        KEY3 k_down, KEY_K, KEY_DOWN, KEY_JOY_DOWN
+        KEY3 k_yoyo, KEY_P, KEY_SPACE, KEY_FIRE1
+        ld a,(keys + (KEY_FIRE2 >> 3)) : and 1 << (KEY_FIRE2 & 7) : jr z,.fire2
+        ld a,1 : ld (k_yoyo),a                          ; (either fire button)
+.fire2
         ; the typed commands (L R U D J Y) hold keys down too
         call cmd_keys
         ; doyoyo, with debounce: after the yoyo comes back, the key must be released

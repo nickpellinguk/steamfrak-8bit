@@ -23,6 +23,10 @@
 --                          paged in to LABEL.bin, likewise
 --   bankpoke CONFIG ADDR VALUE COPY
 --                          write a byte with RAM configuration CONFIG paged in, likewise
+--   fill CONFIG ADDR LEN SEED
+--                          fill LEN bytes from ADDR with pseudo-random ones (from SEED), with
+--                          RAM configuration CONFIG paged in, then #C0 (the base 64K, as the
+--                          firmware has it) back
 --   quit                   stop
 local steps = {}
 local dir = os.getenv("CPC_STEPS"):match("^(.*)/[^/]*$")
@@ -122,6 +126,15 @@ local function step()
       io:write_u8(0x7F00, tonumber(config))
       mem:write_u8(tonumber(a), tonumber(v))
       io:write_u8(0x7F00, mem:read_u8(tonumber(copy)))
+    elseif op == "fill" then
+      local config, a, n, seed = rest:match("(%d+)%s+(%d+)%s+(%d+)%s+(%d+)")
+      io:write_u8(0x7F00, tonumber(config))
+      local x = tonumber(seed)
+      for k = 0, tonumber(n) - 1 do
+        x = (x * 1103515245 + 12345) % 2147483648
+        mem:write_u8(tonumber(a) + k, (x >> 16) & 255)
+      end
+      io:write_u8(0x7F00, 0xC0)
     elseif op == "quit" then
       print("OUT done")
       machine:exit()

@@ -5,8 +5,9 @@ A port of the BBC Master version (in the rest of this repository) to an unmodifi
 and tests. Levels that scroll sideways use a 256x256 screen, levels that scroll up and down
 320x200, and both are double-buffered.
 
-**Status: phase 8 of 9 done** (the whole game: the attract screen, the menus and records, the
-levels with their HUD, music and sound effects, and the level-complete screen). The program
+**Status: ready for release; phase 9's last test, playing it on a real 6128, is to come** (the
+whole game: the attract screen, the menus and records, the levels with their HUD, music and
+sound effects, and the level-complete screen, with the keyboard or a joystick). The program
 loads the graphics, the levels, the game's logic, the music player and the front end, takes the machine
 over from the firmware, and has the BBC version's plotter, draw log and compiled meanie, its
 level loader and background, its game logic (the keys and typed commands, Trogg, the yoyo, the
@@ -26,7 +27,7 @@ BBC version's, tick for tick.
 | 6 | Main loop and scrolling | `frames.mjs`: every frame drawn is what the game's state says it should be — **passes**; `fps.mjs`: the frame rates below |
 | 7 | Sound (AY-3-8912) | `music.mjs`: every note of every tune's tracks is played as the web version's player plays it, and the drums as the BBC version's — **passes** |
 | 8 | Front end | `front.mjs`: from the attract screen through the menus into a level, won, then the next level, and back to the menus with its record — **passes** |
-| 9 | Release | plays on a real 6128 |
+| 9 | Release: joystick, the disc image, ready for a real machine | `front.mjs` with `CPC_COLD=1` (and `frames.mjs`): the game from memory filled with garbage, as a real machine's might be — **passes**; plays on a real 6128 — to come |
 
 ## Building
 
@@ -40,11 +41,13 @@ RASM=/path/to/rasm ./build.sh
 ```
 
 This writes `build/frak.dsk` (and `build/frak.sym`, the symbols, for the tests). In an emulator,
-choose a CPC 6128, insert the disc and type `RUN"FRAK.BIN`. The attract screen comes up; Space,
+choose a CPC 6128, insert the disc and type `RUN"FRAK` (on a real 6128, likewise, with the disc
+written to a 3" disc or on a Gotek-style drive). The attract screen comes up; Space,
 Return, P or Y goes on to the menus, where Z X O K (or the cursor keys) move, Space, Return, P or
 Y choose, and Escape goes back (and, while playing, back to the menus). In a level: Z and X (or
 the cursor keys) walk, O and K climb, P or Space throw the yoyo; M and S change the music and the
-sound effects.
+sound effects. A joystick works too, in the menus and in the game (either fire button throws the
+yoyo, or chooses).
 
 (RASM works out expressions in floating point and rounds them, so `label/256` of an address
 that isn't page-aligned can come out one too high: the source takes high bytes with `>>8`.)
@@ -106,6 +109,11 @@ and each drum hit must be a new attack of the noise: every note of every tune's 
 (3,104 notes), and the drums are heard as in the BBC version (all but one hit in the game's
 tunes; the front end's tunes leave some out on both).
 
+With `CPC_COLD=1` set, every test boots the disc as a real machine might have it: the memory the
+program doesn't load (the low RAM above its code, the base RAM's window, the four extra banks)
+filled with garbage first, so nothing can rely on memory starting as MAME's does. `front.mjs` and
+`frames.mjs` pass that way too.
+
 `front.mjs` is phase 8's test. The game starts by itself unless the test harness says it's there
 within a second of starting (every other test does: `boot` in `mame.mjs` sets `t_harness`), so
 MAME boots the disc without that and checks that the attract screen comes up; Space, Down and
@@ -113,7 +121,7 @@ Space choose the Classic group, and Space its first level, which must start and 
 is then won (its state as `level_complete` leaves it: a time, all the gems, no restarts), so the
 level-complete screen with its text must come up and then the next level start; Escape goes back
 to the menus, and the records must have the level's time and gems. Each step is a screenshot
-(`build/shots/front_*.png`).
+(`build/shots/front_*.png`). Last, the joystick must move around the menus.
 
 `fps.mjs` measures the frame rate on every level, with Trogg unable to die: standing still for
 10 seconds (the meanies, balloons and daggers still moving), then walking right for 10.
