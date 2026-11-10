@@ -4409,8 +4409,9 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
     lda p_y : sec : sbc clip_t : lda p_y+1 : sbc clip_t+1 : beq row_ok
     rts
 .row_ok
-    \ order the ends: left in left, right in tmp
-    lda q_x : cmp p_x : lda q_x+1 : sbc p_x+1 : bcs ordered
+    \ order the ends (signed: the yoyo can be a pixel or two left of the level):
+    \ left in left, right in tmp, the left clipped to the level's edge
+    lda q_x : cmp p_x : lda q_x+1 : sbc p_x+1 : bvc v1 : eor #&80 : .v1 : bpl ordered
     lda q_x : sta left : lda q_x+1 : sta left+1
     lda p_x : sta tmp : lda p_x+1 : sta tmp+1
     bra have_ends
@@ -4418,10 +4419,15 @@ SYSVIA_ORA  = &FE4F                 \ port A without handshake
     lda p_x : sta left : lda p_x+1 : sta left+1
     lda q_x : sta tmp : lda q_x+1 : sta tmp+1
 .have_ends
+    lda tmp+1 : bmi off_level               \ (wholly left of the level)
+    lda left+1 : bpl left_ok
+    stz left : stz left+1
+.left_ok
     \ byte columns and the pixel within the first and last
     lda left : and #3 : sta hl_p0
     lda tmp : and #3 : sta hl_p1
     lda left+1 : cmp #4 : bcc on_level              \ off the level?
+.off_level
     rts
 .on_level
     sta hl_c0 : lda left : lsr hl_c0 : ror a : lsr hl_c0 : ror a : sta hl_c0     \ (x / 4)

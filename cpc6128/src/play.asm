@@ -204,13 +204,15 @@ redraw
         ret
 
 ; The level's palette: the BBC version's (its background colour, yellow, magenta
-; and black)
+; and black). A Mode 1 pixel's two bits are the other way round in a CPC byte
+; from a BBC one, so the BBC's colour 1 (yellow) is the CPC's pen 2, and its
+; colour 2 (magenta) pen 1.
 set_level_palette
         ld a,(level_bg) : and 7 : ld hl,bbc_colours : call look
         ld (level_palette),a
         ld hl,level_palette : jp set_palette
 bbc_colours   db #54, #4C, #52, #4A, #55, #4D, #53, #4B ; black, red, green, yellow, blue, magenta, cyan, white
-level_palette db 0, #4A, #4D, #54, #54
+level_palette db 0, #4D, #4A, #54, #54   ; (pens 0-3, the border)
 black_palette db #54, #54, #54, #54, #54
 
 ; ------------------------------------------------------------------------------

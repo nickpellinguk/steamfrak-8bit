@@ -291,8 +291,12 @@ position is always even, so on a level whose width in byte columns is odd, the l
 the right never come into view.
 
 The yoyo string's ends are compared signed: at the left edge of a level the yoyo can be a
-pixel or two left of it, which made the BBC version's `hline`, comparing them unsigned, draw
-the string right across the window for a frame. The BBC version still does that.
+pixel or two left of it, which made `hline`, comparing them unsigned, draw the string right
+across the window for a frame (in the BBC version too, which now compares them signed as well).
+
+The palette is the BBC version's (the level's background colour, yellow, magenta and black),
+but a Mode 1 pixel's two bits are the other way round in a CPC byte from a BBC one, so the
+BBC's colour 1 (yellow) is the CPC's pen 2, and its colour 2 (magenta) pen 1.
 
 ### Trogg's movement (`src/trogg.asm`)
 
