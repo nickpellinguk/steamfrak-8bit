@@ -1,14 +1,18 @@
 ; Steam Frak for the Amstrad CPC 6128 - assembled with RASM (see ../build.sh)
 ;
-; Phase 3: the plotter (src/plot.asm). For now the program loads the graphics,
-; takes the machine over (src/machine.asm), and then does what the test harness
+; So far (phase 5): the plotter (src/plot.asm), the level loader and background
+; (src/level.asm, src/bg.asm) and Trogg's movement (src/trogg.asm). For now the
+; program loads the graphics and the levels, takes the machine over
+; (src/machine.asm), and then does what the test harness
 ; (tools/emu) asks: it pokes the plotter's parameters and a command into t_cmd,
 ; and the program runs it and counts it in t_done. It also still shows a test
 ; card in each screen buffer in turn (want_mode and flip_rate, for screens.mjs).
 ;
 ; Memory: the code from #0040 (below #4000, so it stays visible whichever extra
 ; bank is paged in at #4000), the screen buffers at #8000 and #C000, the
-; graphics in extra bank 0 (GFX_BANK) and the compiled meanie in bank 1.
+; graphics in extra bank 0 (GFX_BANK), the compiled meanie in bank 1 and the
+; background cache in bank 3. The levels are in the base RAM at #4000, and the
+; game's logic after them, from #7000 (it runs with the base RAM paged in).
 
 GFX_BANK = 0
 JIT_TMP_SIZE = 2560                 ; bytes for jit_build's decoded image
@@ -278,6 +282,40 @@ pl          dw 0
 pb          dw 0
 found       db 0
 best        dw 0
+; Trogg (see trogg.asm)
+tx          dw 0                    ; where he is: x, y in pixels and twentieths
+ty          dw 0
+tyf         db 0
+tstate      db 0                    ; ST_
+tv          db 0                    ; y velocity (up), twentieths of a pixel a tick
+tv_prev     db 0                    ; ... before this tick's gravity
+xvel        db 0                    ; x velocity, pixels a tick
+xmove       db 0                    ; the keys: -1, 0 or 1 (left, right)
+ymove       db 0                    ; ... (down, up)
+doyoyo      db 0
+tface       db 0                    ; 0 facing right, 1 left
+tclimb      db 0                    ; 0 still on a ladder, 1 going up, 2 down
+anim        db 0
+cur_plat    db 255                  ; the platform he's on (255: none)
+plat_hit    db 0
+dead        db 0                    ; ticks until he restarts (0: alive)
+won         db 0
+ud_db       db 0                    ; up/down and left/right debounces
+lr_db       db 0
+; ... and the platform and ladder questions' workings
+q_y1f       db 0
+q_y2f       db 0
+q_onplat    db 0
+q_jump      db 0
+res_x       dw 0
+res_yf      db 0
+lf_up       db 0
+lf_i        db 0
+lad_top     dw 0
+lad_len     dw 0
+lf_bot      dw 0
+fy2         dw 0
+fy2f        db 0
 ; the background (see bg.asm)
 num_bg      db 0
 mb          db 0                    ; bytes in each of a line's masks (4 or 10)
@@ -349,4 +387,12 @@ gfx     INCBIN "../build/GFX"
         BANK
         ORG #4000
 pack    INCBIN "../build/PACK"
-        SAVE 'PACK.BIN',#4000,PACK_SIZE,DSK,'build/frak.dsk'
+; ... and after them, the game's logic: code that only runs with the base RAM
+; paged in (it never pages a bank in itself, nor calls anything that does)
+        ALIGN 256
+logic
+        INCLUDE "trogg.asm"
+end_logic
+        ASSERT end_logic <= #8000
+        SAVE 'PACK.BIN',#4000,end_logic-#4000,DSK,'build/frak.dsk'
+        PRINT "Logic from ",{hex}logic," to ",{hex}end_logic
