@@ -27,7 +27,9 @@ S_AMINL = 6 : S_AMINH = 7 : S_AMAXL = 8 : S_AMAXH = 9 : S_BMINL = 10 : S_BMINH =
 S_BMAXL = 12 : S_BMAXH = 13 : S_VF = 14 : S_VI = 15 : S_VY = 16 : S_PLAT = 17
 S_WAIT = 18 : S_SIMPLE = 19
 S_SR = 20                           ; (then its state while the level plays: SR_, in logic.asm)
-S_SIZE = 36
+S_PLL = 36 : S_PLH = 37 : S_PRL = 38 : S_PRH = 39   ; (then a Scrubbly's box for relevant: its
+S_QT = 40 : S_QBL = 41 : S_QBH = 42                 ; left and right edges, its rows above and below y)
+S_SIZE = 44
 
 ; the packed level's header (copied to STAGE, which is save area 0, free while loading)
 H_COLS = 0 : H_CELLS = 1 : H_BG = 2 : H_TX = 3 : H_TY = 5 : H_FLAGS = 7
@@ -36,18 +38,19 @@ H_SIZE = 14
 STAGE_SIZE = 1024                   ; (more than any level needs)
 
 ; IX = record A of a table (by shifts and adds: the record sizes are 12, 8, 12 and
-; 36 bytes). B and C kept; DE and HL lost.
+; 44 bytes). B and C kept; DE and HL lost.
 plat_ix ld l,a : ld h,0 : add hl,hl : add hl,hl : ld d,h : ld e,l   ; IX = platform A (* 12)
         add hl,hl : add hl,de : ld de,plats : jr rec_ix
 lad_ix  ld l,a : ld h,0 : add hl,hl : add hl,hl : add hl,hl         ; IX = ladder A (* 8)
         ld de,ladders : jr rec_ix
 draw_ix ld l,a : ld h,0 : add hl,hl : add hl,hl : ld d,h : ld e,l   ; IX = drawn thing A (* 12)
         add hl,hl : add hl,de : ld de,draws : jr rec_ix
-slow_ix ld l,a : ld h,0 : add hl,hl : add hl,hl : ld d,h : ld e,l   ; IX = slow sprite A (* 36)
-        add hl,hl : add hl,hl : add hl,hl : add hl,de : ld de,slows
+slow_ix ld l,a : ld h,0 : add hl,hl : add hl,hl : ld d,h : ld e,l   ; IX = slow sprite A (* 44)
+        add hl,hl : push hl : add hl,hl : add hl,hl : add hl,de
+        pop de : add hl,de : ld de,slows
 rec_ix  add hl,de : push hl : pop ix
         ret
-        ASSERT PLT_SIZE == 12 && L_SIZE == 8 && D_SIZE == 12 && S_SIZE == 36
+        ASSERT PLT_SIZE == 12 && L_SIZE == 8 && D_SIZE == 12 && S_SIZE == 44
 
 ; A = the byte at HL + A (a table lookup)
 look    add a,l : ld l,a : ld a,h : adc a,0 : ld h,a
@@ -70,28 +73,30 @@ platform_find
         ld b,a
         ; the tops looked for: y - q_y1 < q_y2 - q_y1 (unsigned)
         ld hl,(q_y2) : ld de,(q_y1) : or a : sbc hl,de : ret c : ret z     ; (none)
-        ld a,h : or a : jr nz,.wide
+        ld a,h : or a : jp nz,.wide
         ld a,l : ld (.span + 1),a
         ld a,b : dec a : call plat_ix
         push ix : pop hl : inc hl : inc hl      ; HL = the last one's y (going down the list)
-.loop   ld de,(q_y1)
-        ld a,(hl) : sub e : ld e,a : inc hl
-        ld a,(hl) : sbc a,d : dec hl            ; (y - q_y1, the high byte)
-        jr nz,.next
+        ld a,b : ld ixl,a                       ; (IXL: the platforms left)
+        ld bc,(q_y1)
+.loop   ld a,(hl) : sub c : ld e,a : inc hl
+        ld a,(hl) : sbc a,b : jr nz,.next       ; (y - q_y1, the high byte)
         ld a,e
 .span   cp 0 : call c,.candidate                ; (cp q_y2 - q_y1)
-.next   ld de,-PLT_SIZE : add hl,de
-        djnz .loop
+.next   ld de,-PLT_SIZE - 1 : add hl,de         ; (the one before's y)
+        dec ixl : jr nz,.loop
         ret
 ; ... a top in range: under q_x? x <= q_x < x + w
 .candidate
         push hl : push bc
-        push hl : pop ix : dec ix : dec ix      ; IX = its record
+        ld a,ixl : ld (pf_left),a               ; (the count: IX is the record now)
+        push hl : pop ix : dec ix : dec ix : dec ix     ; IX = its record (HL is at its y's high byte)
         ld hl,(q_x) : ld e,(ix+PLT_XL) : ld d,(ix+PLT_XH) : or a : sbc hl,de : jr c,.no
         ld a,(ix+PLT_W) : add a,e : ld e,a : jr nc,.nc : inc d
 .nc     ld hl,(q_x) : or a : sbc hl,de : jr nc,.no
         call .best
-.no     pop bc : pop hl
+.no     ld a,(pf_left) : ld ixl,a
+        pop bc : pop hl
         ret
 ; ... keep the highest (smallest y), and of those the first (going down the list)
 .best   ld a,(res_found) : or a : jr z,.take
@@ -99,7 +104,7 @@ platform_find
         jr c,.take : ret nz
 .take   ld a,1 : ld (res_found),a
         ld l,(ix+PLT_YL) : ld h,(ix+PLT_YH) : ld (res_y),hl
-        ld a,b : dec a : ld (res_i),a
+        ld a,(pf_left) : dec a : ld (res_i),a
         ret
 ; (a range of 256 or more: each platform in full)
 .wide   ld a,b : dec a : call plat_ix
@@ -110,6 +115,7 @@ platform_find
         ld hl,(q_x) : ld e,(ix+PLT_XL) : ld d,(ix+PLT_XH) : or a : sbc hl,de : jr c,.wnext
         ld a,(ix+PLT_W) : add a,e : ld e,a : jr nc,.wnc : inc d
 .wnc    ld hl,(q_x) : or a : sbc hl,de : jr nc,.wnext
+        ld a,b : ld (pf_left),a
         call .best
 .wnext  ld de,-PLT_SIZE : add ix,de
         djnz .wloop

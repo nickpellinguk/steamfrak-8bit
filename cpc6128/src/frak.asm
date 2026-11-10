@@ -41,6 +41,7 @@ start
         call machine_init
         call bank_test
         call copy_font
+        call make_popcount
         ld hl,palette : call set_palette
         ld a,(want_mode) : call setup_mode
         ld a,(vsyncs) : ld (last_vsync),a
@@ -287,6 +288,7 @@ ld_j        db 0
 ld_p        db 0
 ld_f        db 0
 pf_i        db 0
+pf_left     db 0                    ; platform_find: the platforms left (for res_i)
 pf_bottom   dw 0
 px          dw 0                    ; a moving platform's edges
 py          dw 0
@@ -364,6 +366,7 @@ u_nh        db 0
 u_h8        db 0
 u_cellp     dw 0
 cmask       DEFS 30                 ; a line's masks
+pl_masks    dw 0                    ; seek_line: the line's masks
 pl_line     db 0                    ; painting: the line, its cells [pl_i0, pl_i1]
 pl_i0       db 0
 pl_i1       db 0
@@ -379,6 +382,7 @@ line_lo     DEFS 256
 line_hi     DEFS 256
 rowoff_lo   DEFS 256
 rowoff_hi   DEFS 256
+popcount    DEFS 256                ; the bits set in each byte (make_popcount)
 savebuf0                            ; save areas for the draw log, one per buffer
 STAGE       DEFS 1024               ; (the first is also where a level is unpacked from)
 savebuf1    DEFS 1024

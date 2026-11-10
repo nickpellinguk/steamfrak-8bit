@@ -33,7 +33,7 @@ SR_YF = S_SR + 6 : SR_YL = S_SR + 7 : SR_YH = S_SR + 8
 SR_VY = S_SR + 9 : SR_WAIT = S_SR + 10
 SR_DXL = S_SR + 11 : SR_DXH = S_SR + 12 : SR_DYL = S_SR + 13 : SR_DYH = S_SR + 14   ; where it's shown (and collided with)
 SR_SIZE = 16                        ; (the state's bytes)
-ASSERT S_SR + SR_SIZE == S_SIZE
+ASSERT S_SR + SR_SIZE <= S_PLL
 ; a moving object
 M_ACTIVE = 0 : M_PAUSE = 1 : M_IMG = 2      ; (each velocity before the position it changes)
 M_VXF = 3 : M_VXI = 4 : M_XF = 5 : M_XL = 6 : M_XH = 7
@@ -703,31 +703,21 @@ update_slow
 relevant
         ld a,(ix+S_PLAT) : cp 255 : jr z,.look
 .yes    scf : ret
-.look   ld a,(ix+S_IMG) : ld (rl_img),a
-        ; across: it walks from amin to amax
-        ld l,(ix+S_AMINL) : ld h,(ix+S_AMINH) : ld (rl_l),hl
-        ld l,(ix+S_AMAXL) : ld h,(ix+S_AMAXH) : ld (rl_r),hl
-        ; its edges, from tx: left = l - xo - tx, right = r - xo + w - 1 - tx
-        ld hl,img_w : call rl_look : dec a : ld (rl_a),a
-        ld hl,img_xo : call rl_look : ld e,a : ld d,0
-        ld hl,(tx) : add hl,de : call box
+.look   ; across: it walks from amin to amax; its edges from tx: left = amin - xo - tx,
+        ; right = amax - xo + w - 1 - tx (the parts not from tx made at the start: S_PL, S_PR)
+        ld hl,(tx) : ex de,hl
+        ld l,(ix+S_PRL) : ld h,(ix+S_PRH) : or a : sbc hl,de : ld (rl_r),hl
+        ld l,(ix+S_PLL) : ld h,(ix+S_PLH) : or a : sbc hl,de : ld (rl_l),hl
         ; above or below him (within 12 pixels of his middle)?
         ld a,12 : call within : jr c,.yes
         ld a,REACH : call within : ret nc
-        ; level with him? Down: it's at y
-        ld l,(ix+SR_YL) : ld h,(ix+SR_YH) : ld (rl_l),hl : ld (rl_r),hl
-        ; edges from his middle (17 pixels above his feet)
-        ld hl,img_h : call rl_look : dec a : ld (rl_a),a
-        ld hl,img_yo : call rl_look : ld e,a : ld d,0
-        ld hl,(ty) : add hl,de : ld de,-17 : add hl,de : call box
+        ; level with him? Down: its edges from his middle (17 pixels above his feet):
+        ; top = y - yo - (ty - 17), bottom = top + h - 1
+        ld l,(ix+SR_YL) : ld h,(ix+SR_YH) : ld de,(ty) : or a : sbc hl,de
+        ld de,17 : add hl,de : push hl
+        ld e,(ix+S_QT) : ld d,0 : or a : sbc hl,de : ld (rl_l),hl
+        pop hl : ld e,(ix+S_QBL) : ld d,(ix+S_QBH) : add hl,de : ld (rl_r),hl
         ld a,17 : jp within                     ; (his 34 rows)
-rl_look ld a,(rl_img) : jp look
-; rl_l -= HL; rl_r += rl_a - HL
-box     ex de,hl
-        ld hl,(rl_l) : or a : sbc hl,de : ld (rl_l),hl
-        ld a,(rl_a) : ld c,a : ld b,0
-        ld hl,(rl_r) : add hl,bc : or a : sbc hl,de : ld (rl_r),hl
-        ret
 ; Carry set if rl_l..rl_r (signed) reaches within A of 0: rl_r >= -A and rl_l <= A
 within  ld (rl_a),a : ld c,a : ld b,0
         ld hl,(rl_r) : add hl,bc : bit 7,h : jr nz,.no
@@ -1215,6 +1205,8 @@ slow_init
         xor a : ld (ix+SR_VF),a : ld (ix+SR_VI),a       ; Hooters start still, then jump
 .vel_ok ld a,(ix+S_VY) : ld (ix+SR_VY),a
         ld a,(ix+S_WAIT) : ld (ix+SR_WAIT),a
+        ; (a Scrubbly's box, for relevant: amin - xo, amax - xo + w - 1, yo, h - 1 - yo)
+        ld a,(ix+S_KIND) : cp SL_SCRUBBLY : call z,.box
         ld de,-S_SIZE : add ix,de : ld hl,sl_i : dec (hl) : jp p,.loop
         ld ix,plats : ld b,MAX_PLATS : ld de,PLT_SIZE
 .plat   ld a,(ix+PLT_X0L) : ld (ix+PLT_XL),a : ld a,(ix+PLT_X0H) : ld (ix+PLT_XH),a
@@ -1222,6 +1214,16 @@ slow_init
         add ix,de : djnz .plat
         ld a,255 : ld (cur_plat),a : ld (carry),a
         xor a : ld (dropped),a
+        ret
+.box    ld a,(ix+S_IMG) : ld hl,img_xo : call look : ld c,a : ld b,0
+        ld l,(ix+S_AMINL) : ld h,(ix+S_AMINH) : or a : sbc hl,bc
+        ld (ix+S_PLL),l : ld (ix+S_PLH),h
+        ld a,(ix+S_IMG) : ld hl,img_w : call look : dec a : ld e,a : ld d,0
+        ld l,(ix+S_AMAXL) : ld h,(ix+S_AMAXH) : add hl,de : or a : sbc hl,bc
+        ld (ix+S_PRL),l : ld (ix+S_PRH),h
+        ld a,(ix+S_IMG) : ld hl,img_yo : call look : ld (ix+S_QT),a : ld c,a
+        ld a,(ix+S_IMG) : ld hl,img_h : call look : dec a : ld l,a : ld h,0
+        or a : sbc hl,bc : ld (ix+S_QBL),l : ld (ix+S_QBH),h
         ret
 
 ; All the keys: the level is complete. Note the result for the records, and

@@ -156,7 +156,7 @@ set_mode
         ld hl,crtc_h : ld a,64 : ld c,255
         jr z,.got
         ld hl,crtc_v : ld a,80 : ld c,199
-.got    ld (g_w),a : ld a,c : ld (g_last),a
+.got    ld (g_w),a : ld (next_row_w + 1),a : ld a,c : ld (g_last),a
         call crtc_set
         call make_rowoff
         jr make_lines

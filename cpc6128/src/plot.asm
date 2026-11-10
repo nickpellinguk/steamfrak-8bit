@@ -166,6 +166,9 @@ plot
         ld a,(p_mode) : cp PM_SAVEONLY : ld a,1 : jr z,.notes
         xor a
 .notes  ld (p_notes),a
+        ld a,(p_tab) : ld (.col_tab),a          ; (the column loop's constants, in its code)
+        ld a,(p_rows) : ld (.col_rows),a
+        ld a,(p_hgt) : ld (.col_hgt),a
         exx : ld hl,(sptr) : exx                ; (HL' is the save record's pointer throughout)
 .col_loop
         ld bc,(p_scr)
@@ -174,11 +177,16 @@ plot
         ld a,b : exx : ld (hl),a : inc hl : exx
 .no_address
         ld de,(p_dcol)
-        ld a,(p_tab) : ld h,a
-        ld a,(p_rows) : ld ixl,a
+        ld h,0                                  ; (ld h,p_tab: set above)
+.col_tab equ $ - 1
+        ld ixl,0                                ; (ld ixl,p_rows)
+.col_rows equ $ - 1
 .do_col call 0                                  ; (the column routine for this mode)
         ; the next column: its data, and the next byte on the screen (within the 2K)
-        ld hl,(p_dcol) : ld a,(p_hgt) : add a,l : ld l,a : jr nc,.data_ok
+        ld hl,(p_dcol)
+        ld a,0                                  ; (ld a,p_hgt)
+.col_hgt equ $ - 1
+        add a,l : ld l,a : jr nc,.data_ok
         inc h
 .data_ok
         ld (p_dcol),hl
@@ -217,7 +225,9 @@ col_start
 ; wrapping within its 2K
 next_row
         ld a,b : sub #40 : ld b,a
-        ld a,(g_w) : add a,c : ld c,a
+        ld a,c
+next_row_w
+        add a,64 : ld c,a                       ; (add a,g_w: set_mode sets it)
         jr nc,.nc : inc b
 .nc     res 3,b                                 ; (wrapping within the 2K)
         ret
@@ -230,9 +240,11 @@ MACRO PLOT_LINE                                 ; plot a byte
         ld a,(bc) : and (hl) : dec h : or (hl) : inc h : ld (bc),a
         STEP
 MEND
-MACRO SAVE_LINE                                 ; save it first
+MACRO SAVE_LINE                                 ; save it first (reading the screen once)
+        ld a,(de) : inc de : ld l,a
         ld a,(bc) : exx : ld (hl),a : inc hl : exx
-        PLOT_LINE
+        and (hl) : dec h : or (hl) : inc h : ld (bc),a
+        STEP
 MEND
 MACRO SAVEONLY_LINE
         ld a,(bc) : exx : ld (hl),a : inc hl : exx

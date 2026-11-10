@@ -51,18 +51,20 @@ spring_pos
 ; ------------------------------------------------------------------------------
 seek_line
         ld a,(pl_line) : ld l,a : ld h,BG_LO >> 8 : ld e,(hl) : inc h : ld d,(hl)
-        ld a,(mb) : ld b,a : add a,a : add a,b : ld c,a : ld b,0     ; 3 masks
-        ex de,hl : ld de,cmask : ldir
-        push hl                                         ; (the numbers start here)
+        ld (pl_masks),de                                ; (its masks, read where they are)
+        ld a,(mb) : ld l,a : add a,a : add a,l : ld l,a : ld h,0 : add hl,de
+        push hl                                         ; (the numbers start after the 3 masks)
         ; skip the numbers of the non-empty cells before pl_i0 (count its mask bits)
-        ld c,0                                          ; the count
-        ld hl,cmask : ld a,(pl_i0) : ld b,a
-.whole  ld a,b : cp 8 : jr c,.part
-        ld a,(hl) : call add_bits : inc hl
-        ld a,b : sub 8 : ld b,a : jr .whole
-.part   ld a,(hl) : inc b
-.top    dec b : jr z,.counted                           ; (only its top B bits)
-        rla : jr nc,.top : inc c : jr .top
+        ex de,hl : ld c,0                               ; (HL = the first mask; C = the count)
+        ld d,popcount >> 8
+        ld a,(pl_i0) : rrca : rrca : rrca : and 31 : jr z,.part
+        ld b,a
+.whole  ld e,(hl) : ld a,(de) : add a,c : ld c,a : inc hl
+        djnz .whole
+.part   ld a,(pl_i0) : and 7 : jr z,.counted
+        ld e,a : ld a,(hl) : push hl
+        ld hl,topbits : ld d,0 : add hl,de : and (hl)   ; (only its top bits)
+        pop hl : ld e,a : ld d,popcount >> 8 : ld a,(de) : add a,c : ld c,a
 .counted
         pop hl : ld b,0 : add hl,bc : ld (pl_src),hl
         ld a,(pl_i0) : rrca : rrca : rrca : and 31 : ld (pl_x),a
@@ -70,12 +72,17 @@ seek_line
 .sh     rrca : djnz .sh
 .bit    ld (curbit),a
         ret
+topbits db #00, #80, #C0, #E0, #F0, #F8, #FC, #FE
 
-; C += the number of bits set in A
-add_bits
-        or a : ret z
-.loop   add a,a : jr nc,.no : inc c
-.no     jr nz,.loop
+; popcount: the number of bits set in each byte
+make_popcount
+        ld hl,popcount
+.byte   ld a,l : ld c,0
+.bit    or a : jr z,.done
+        add a,a : jr nc,.bit
+        inc c : jr .bit
+.done   ld (hl),c
+        inc l : jr nz,.byte
         ret
 
 ; Paint cells pl_i0..pl_i1 of line pl_line on the screen, from pl_ptr (stepping
@@ -93,7 +100,7 @@ paint_line
         ld a,(pl_i0) : ld b,a : ld a,(pl_i1) : sub b : inc a : ld b,a
         ld a,(curbit) : ld c,a
         ld de,(pl_src)
-        ld a,(pl_x) : ld hl,cmask : add a,l : ld l,a : jr nc,.nc0
+        ld hl,(pl_masks) : ld a,(pl_x) : add a,l : ld l,a : jr nc,.nc0
         inc h
 .nc0    exx
         ld hl,(pl_ptr) : ld a,h : and #F8 : ld c,a
