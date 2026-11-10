@@ -42,12 +42,37 @@ V_EPOS = 12 * NV - VOFF : V_AMPL = 13 * NV - VOFF : V_AMPH = 14 * NV - VOFF
 V_PHASE = 15 * NV - VOFF : V_ATT = 16 * NV - VOFF                ; (phase: 0 off, 1 attack,
 V_NL = 17 * NV - VOFF : V_NH = 18 * NV - VOFF                    ; 2 decay, 3 sustain, 4 release)
 V_PL = 19 * NV - VOFF : V_PH = 20 * NV - VOFF                    ; (the pitch V_NL/V_NH are for)
-V_FIELDS = 21
-ASSERT V_PH < 128
+V_PFLAT = 21 * NV - VOFF            ; (its note's pitch is worked out, and its pitch envelope flat)
+V_FIELDS = 22
+ASSERT V_PFLAT < 128
 
 ; A = table HL's entry E (D = 0)
 MACRO TLOOK table
         ld hl,{table} : add hl,de : ld a,(hl)
+MEND
+
+; Channel N's registers, from the voice that has it (if any): its divider (or the noise
+; period) and its volume, if they've changed, and its bits in the mixer (snd_mix)
+MACRO CHANNEL n
+        ld a,(snd_owner + {n}) : cp #FF : ld a,15 : jr z,@vol
+        ld a,(snd_owner + {n}) : ld e,a : ld d,0 : ld ix,vtab + VOFF : add ix,de
+        ld a,(snd_nch) : cp {n} : jr z,@noise
+        ld a,(ix+V_NL) : ld hl,last_tp + 2 * {n} : cp (hl) : jr nz,@tp
+        ld a,(ix+V_NH) : inc hl : cp (hl) : jr z,@tone
+@tp     ld a,(ix+V_NL) : ld (last_tp + 2 * {n}),a : ld e,2 * {n} : call psg_write
+        ld a,(ix+V_NH) : ld (last_tp + 2 * {n} + 1),a : ld e,2 * {n} + 1 : call psg_write
+@tone   ld a,(snd_mix) : and (1 << {n}) ^ #FF : ld (snd_mix),a
+        jr @att
+@noise  ld e,(ix+V_INS) : ld d,0 : TLOOK ins_noise
+        and 3 : ld e,a : TLOOK noise_period
+        ld hl,last_np : cp (hl) : jr z,@nmix
+        ld (hl),a : ld e,6 : call psg_write
+@nmix   ld a,(snd_mix) : and (8 << {n}) ^ #FF : ld (snd_mix),a
+@att    ld a,(ix+V_ATT)
+@vol    ld e,a : ld d,0 : TLOOK att_vol
+        ld hl,last_vol + {n} : cp (hl) : jr z,@same
+        ld (hl),a : ld e,8 + {n} : call psg_write
+@same
 MEND
 
 ; One tick: requests and keys, then a quarter beat if one is due, then every voice
@@ -74,8 +99,9 @@ snd_tick
         call c,snd_quarter_beat
 .no_qb
         ld ix,vtab + VOFF + NV - 1 : ld b,NV
-.voices push bc : call snd_voice : pop bc
-        dec ix : djnz .voices
+.voices ld a,(ix+V_PHASE) : or a : jr z,.silent ; (a silent voice's attenuation is 15 already)
+        push bc : call snd_voice : pop bc
+.silent dec ix : djnz .voices
         jp snd_output
 .sfx_len
         ld a,(ix+V_LEFT) : or a : ret z
@@ -161,7 +187,7 @@ end_byte db PAT_END
 
 ; Voice IX: start its note (the attack)
 snd_trigger
-        xor a : ld (ix+V_EPOS),a : ld (ix+V_AMPL),a : ld (ix+V_AMPH),a
+        xor a : ld (ix+V_EPOS),a : ld (ix+V_AMPL),a : ld (ix+V_AMPH),a : ld (ix+V_PFLAT),a
         ld (ix+V_PHASE),1
         ret
 
@@ -295,12 +321,16 @@ snd_voice
         ld a,15
 .att_ok ld (ix+V_ATT),a
         TLOOK ins_noise : or a : ret nz
+        ld a,(ix+V_PFLAT) : or a : ret nz       ; (the pitch can't have changed)
         ; pitch envelope: this tick's offset, then on to the next (or back to its loop)
         ld e,(ix+V_ENV)
         TLOOK env_start : add a,(ix+V_EPOS) : ld (snd_tmp),a
         inc a
         ld hl,env_end : add hl,de : cp (hl) : jr c,.advance
-        TLOOK env_loop
+        ; (at its end: a flat one if it's one long, so the note's pitch won't change)
+        ld a,(ix+V_EPOS) : or a : jr nz,.loop
+        inc (ix+V_PFLAT)
+.loop   TLOOK env_loop
 .advance
         ld hl,env_start : add hl,de : sub (hl) : ld (ix+V_EPOS),a
         ; p = semitone * 8 + offset (eighths of a semitone), at least 0
@@ -424,51 +454,14 @@ snd_output
         inc c : ld a,c : cp MAX_TRACKS : jr nz,.place
         ; 4. each channel: its voice's pitch (or the noise's period), its loudness, and the mixer
 .output ld a,#3F : ld (snd_mix),a               ; (nothing mixed in: and port A, the keyboard, input)
-        ld b,0
-.channel
-        call owner_hl : ld a,(hl) : cp #FF : ld a,15 : jr z,.set_att
-        ld a,(hl) : call voice_ix
-        ld a,(snd_nch) : cp b : jr z,.noise
-        ; a tone: its divider, if it's changed
-        ld a,b : add a,a : ld e,a : ld d,0 : ld hl,last_tp : add hl,de
-        ld a,(ix+V_NL) : cp (hl) : jr nz,.new_tp
-        inc hl : ld a,(ix+V_NH) : cp (hl) : jr z,.tone_on
-        dec hl
-.new_tp ld a,(ix+V_NL) : ld (hl),a : inc hl
-        ld a,(ix+V_NH) : ld (hl),a
-        ld a,b : add a,a : ld e,a
-        push bc : ld a,(ix+V_NL) : call psg_write : pop bc
-        inc e
-        push bc : ld a,(ix+V_NH) : call psg_write : pop bc
-.tone_on
-        ld a,b : ld hl,tone_bits : call .bit : cpl : ld hl,snd_mix : and (hl) : ld (hl),a
-        jr .att
-.noise  ; the noise: its period, if it's changed
-        ld e,(ix+V_INS) : ld d,0 : TLOOK ins_noise
-        and 3 : ld e,a : TLOOK noise_period
-        ld hl,last_np : cp (hl) : jr z,.noise_on
-        ld (hl),a
-        ld e,6 : push bc : call psg_write : pop bc
-.noise_on
-        ld a,b : ld hl,noise_bits : call .bit : cpl : ld hl,snd_mix : and (hl) : ld (hl),a
-.att    ld a,(ix+V_ATT)
-.set_att                                        ; (A = the attenuation)
-        ld e,a : ld d,0 : TLOOK att_vol
-        ld e,b : ld hl,last_vol : add hl,de
-        cp (hl) : jr z,.same_vol
-        ld (hl),a
-        ld a,8 : add a,b : ld e,a : ld a,(hl)
-        push bc : call psg_write : pop bc
-.same_vol
-        inc b : ld a,b : cp 3 : jp nz,.channel
+        CHANNEL 0
+        CHANNEL 1
+        CHANNEL 2
         ; the mixer, if it's changed
         ld a,(snd_mix) : ld hl,last_mix : cp (hl) : ret z
         ld (hl),a
         ld e,7 : jp psg_write
-.bit    ld e,a : ld d,0 : add hl,de : ld a,(hl)
-        ret
-tone_bits  db 1, 2, 4
-noise_bits db 8, 16, 32
+
 
 ; HL = the owner of channel B (DE kept)
 owner_hl
@@ -549,6 +542,7 @@ snd_init
         ld b,NV - 1
 .voices ld a,b : call voice_ix : call snd_silence
         ld (ix+V_PH),#FF                        ; (no pitch worked out yet)
+        ld (ix+V_PFLAT),0
         dec b : jp p,.voices
         ld hl,snd_owner : ld (hl),#FF : inc hl : ld (hl),#FF : inc hl : ld (hl),#FF
         ld a,#FF : ld (snd_nch),a
