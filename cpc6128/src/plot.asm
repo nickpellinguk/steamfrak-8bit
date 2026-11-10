@@ -150,10 +150,9 @@ plot
         ld a,(hl) : inc hl : ld h,(hl) : ld l,a
         ld (.do_col+1),hl
 
-.col_loop
-        ; colw = col + cidx
+        ; the first column's screen address:
+        ; back_page + y0 * #800 + (rowoff[row] + col + cidx) MOD #800
         ld hl,(p_col) : ld a,(p_cidx) : ld e,a : ld d,0 : add hl,de
-        ; BC = back_page + y0 * #800 + (rowoff[row] + colw) MOD #800
         ex de,hl
         ld a,(p_row) : ld l,a : ld h,rowoff_lo>>8
         ld a,(hl) : inc h : ld h,(hl) : ld l,a
@@ -161,20 +160,34 @@ plot
         ld a,(p_y0) : add a,a : add a,a : add a,a : ld b,a
         ld a,h : and 7 : add a,b : ld b,a
         ld a,(back_page) : add a,b : ld b,a : ld c,l
-        ; when saving, note the column's screen address
-        ld a,(p_mode) : cp PM_SAVE : jr z,.address : cp PM_SAVEONLY : jr nz,.no_address
-.address ld hl,(sptr) : ld (hl),c : inc hl : ld (hl),b : inc hl : ld (sptr),hl
+        ld (p_scr),bc
+        ; (saving: each column's address goes in the save record)
+        ld a,(p_mode) : cp PM_SAVE : ld a,1 : jr z,.notes
+        ld a,(p_mode) : cp PM_SAVEONLY : ld a,1 : jr z,.notes
+        xor a
+.notes  ld (p_notes),a
+        exx : ld hl,(sptr) : exx                ; (HL' is the save record's pointer throughout)
+.col_loop
+        ld bc,(p_scr)
+        ld a,(p_notes) : or a : jr z,.no_address
+        ld a,c : exx : ld (hl),a : inc hl : exx
+        ld a,b : exx : ld (hl),a : inc hl : exx
 .no_address
         ld de,(p_dcol)
         ld a,(p_tab) : ld h,a
         ld a,(p_rows) : ld ixl,a
-        exx : ld hl,(sptr) : exx
 .do_col call 0                                  ; (the column routine for this mode)
-        exx : ld (sptr),hl : exx
-        ; next column
-        ld hl,(p_dcol) : ld a,(p_hgt) : ld e,a : ld d,0 : add hl,de : ld (p_dcol),hl
+        ; the next column: its data, and the next byte on the screen (within the 2K)
+        ld hl,(p_dcol) : ld a,(p_hgt) : add a,l : ld l,a : jr nc,.data_ok
+        inc h
+.data_ok
+        ld (p_dcol),hl
+        ld hl,(p_scr) : inc l : jr nz,.scr_ok
+        ld a,h : and #F8 : ld b,a : ld a,h : inc a : and 7 : or b : ld h,a
+.scr_ok ld (p_scr),hl
         ld hl,p_cidx : inc (hl)
         ld a,(p_cend) : cp (hl) : jr nz,.col_loop
+        exx : ld (sptr),hl : exx
 .exit   ld a,(p_oldbank) : jp bank_select
 
 ; img_lo<shift> for each shift (img_hi<shift> and img_bank<shift> follow each)

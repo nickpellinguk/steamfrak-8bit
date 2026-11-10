@@ -224,6 +224,8 @@ p_row       db 0
 p_tab       db 0
 p_oldbank   db 0
 p_oldbank0  db 0
+p_scr       dw 0                    ; plot: the column's screen address
+p_notes     db 0                    ; ... and whether to note it in the save record
 hl_right    dw 0
 hl_p0       db 0
 hl_p1       db 0

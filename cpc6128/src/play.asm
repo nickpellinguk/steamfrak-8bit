@@ -529,12 +529,12 @@ add_damage
 ; right. Each one plotted is damage too, for the ones after it.
 ; ------------------------------------------------------------------------------
 
-; IX = slow sprite A's drawn record in the back buffer
-dr_ix   ld l,a : ld a,(back) : or a : ld a,l : jr z,.b0
+; IY = slow sprite A's drawn record in the back buffer
+dr_iy   ld l,a : ld a,(back) : or a : ld a,l : jr z,.b0
         add a,MAX_SLOW
 .b0     ld l,a : ld h,0 : ld d,h : ld e,l
         add hl,hl : add hl,hl : add hl,hl : add hl,de
-        ld de,drecs : add hl,de : push hl : pop ix
+        ld de,drecs : add hl,de : push hl : pop iy
         ret
 ; HL = n_vis + A, n_chg + A
 nvis_hl ld hl,n_vis : jr idx_hl
@@ -546,8 +546,8 @@ idx_hl  add a,l : ld l,a : ret nc
 ; any of it is in the window, with its byte columns in nr_c0..nr_c1 and rows in
 ; nr_y0..nr_y1 (4-line rows, inclusive, clamped to the level)
 slow_rect
-        ld a,(iy+SR_ALIVE) : or a : ret z
-        ld a,(ix+S_IMG) : ld l,(iy+SR_DXL) : ld h,(iy+SR_DXH) : call box_from_x
+        ld a,(ix+SR_ALIVE) : or a : ret z
+        ld a,(ix+S_IMG) : ld l,(ix+SR_DXL) : ld h,(ix+SR_DXH) : call box_from_x
         ld de,(box_r) : dec de
         sra h : rr l : sra h : rr l             ; left and right, as byte columns
         sra d : rr e : sra d : rr e
@@ -564,7 +564,7 @@ slow_rect
         ld a,255
 .r_byte ld (nr_c1),a
         ; top and bottom: visible if bottom >= clip_t and top < clip_t + 256
-        ld a,(ix+S_IMG) : ld l,(iy+SR_DYL) : ld h,(iy+SR_DYH) : call box_from_y
+        ld a,(ix+S_IMG) : ld l,(ix+SR_DYL) : ld h,(ix+SR_DYH) : call box_from_y
         ld (sr_top),hl
         ld hl,(box_r) : dec hl : ld (sr_bot),hl
         ld de,(clip_t) : call signed_less : jr c,.out
@@ -585,28 +585,28 @@ draw_slow
         ld a,(sl_i) : call slow_both
         call slow_rect : ld a,0 : rla : ld b,a  ; (carry: visible)
         ld a,(sl_i) : call nvis_hl : ld (hl),b
-        ld a,(sl_i) : call dr_ix
+        ld a,(sl_i) : call dr_iy
         ld a,b : or a : jr nz,.vis
         ; not visible: erase it if it was drawn
-        ld a,(ix+DR_ON) : or a : jp z,.e_next
+        ld a,(iy+DR_ON) : or a : jp z,.e_next
         jr .erase
-.vis    ld a,(ix+DR_ON) : or a : jr z,.new
-        ld a,(iy+SR_DXL) : cp (ix+DR_XL) : jr nz,.moved
-        ld a,(iy+SR_DXH) : cp (ix+DR_XH) : jr nz,.moved
-        ld a,(iy+SR_DYL) : cp (ix+DR_YL) : jr nz,.moved
-        ld a,(iy+SR_DYH) : cp (ix+DR_YH) : jr nz,.moved
+.vis    ld a,(iy+DR_ON) : or a : jr z,.new
+        ld a,(ix+SR_DXL) : cp (iy+DR_XL) : jr nz,.moved
+        ld a,(ix+SR_DXH) : cp (iy+DR_XH) : jr nz,.moved
+        ld a,(ix+SR_DYL) : cp (iy+DR_YL) : jr nz,.moved
+        ld a,(ix+SR_DYH) : cp (iy+DR_YH) : jr nz,.moved
         jr .e_next
 .moved  ld a,(sl_i) : call nchg_hl : ld (hl),1
 .erase  call erase_drawn
         ld a,(sl_i) : call nchg_hl : ld a,(hl) : or a : jr z,.e_next   ; gone: nothing to draw
 .new    ld a,(sl_i) : call nchg_hl : ld (hl),1
         ; it will be drawn here
-        ld a,(sl_i) : call slow_both : ld a,(sl_i) : call dr_ix
-        ld a,(iy+SR_DXL) : ld (ix+DR_XL),a : ld a,(iy+SR_DXH) : ld (ix+DR_XH),a
-        ld a,(iy+SR_DYL) : ld (ix+DR_YL),a : ld a,(iy+SR_DYH) : ld (ix+DR_YH),a
-        ld a,(nr_c0) : ld (ix+DR_C0),a : ld a,(nr_c1) : ld (ix+DR_C1),a
-        ld a,(nr_y0) : ld (ix+DR_Y0),a : ld a,(nr_y1) : ld (ix+DR_Y1),a
-        ld (ix+DR_ON),1
+        ld a,(sl_i) : call slow_both : ld a,(sl_i) : call dr_iy
+        ld a,(ix+SR_DXL) : ld (iy+DR_XL),a : ld a,(ix+SR_DXH) : ld (iy+DR_XH),a
+        ld a,(ix+SR_DYL) : ld (iy+DR_YL),a : ld a,(ix+SR_DYH) : ld (iy+DR_YH),a
+        ld a,(nr_c0) : ld (iy+DR_C0),a : ld a,(nr_c1) : ld (iy+DR_C1),a
+        ld a,(nr_y0) : ld (iy+DR_Y0),a : ld a,(nr_y1) : ld (iy+DR_Y1),a
+        ld (iy+DR_ON),1
 .e_next ld hl,sl_i : dec (hl) : jp p,.erase_loop
 
         ; 2. Plot, in order, the ones that moved and the ones painted over
@@ -615,38 +615,38 @@ draw_slow
         ld a,(sl_i) : call nvis_hl : ld a,(hl) : or a : jr z,.p_next
         ld a,(sl_i) : call nchg_hl : ld a,(hl) : or a : jr nz,.plot_it
         ld a,(dmg_all) : or a : jr nz,.plot_it
-        ld a,(sl_i) : call dr_ix : call damaged : jr nc,.p_next
+        ld a,(sl_i) : call dr_iy : call damaged : jr nc,.p_next
 .plot_it
         ld a,(sl_i) : call slow_both
         ld a,(ix+S_IMG) : ld (p_img),a
-        ld l,(iy+SR_DXL) : ld h,(iy+SR_DXH) : ld (p_x),hl
-        ld l,(iy+SR_DYL) : ld h,(iy+SR_DYH) : ld (p_y),hl
+        ld l,(ix+SR_DXL) : ld h,(ix+SR_DXH) : ld (p_x),hl
+        ld l,(ix+SR_DYL) : ld h,(ix+SR_DYH) : ld (p_y),hl
         ld a,PM_PLOT : ld (p_mode),a
         call plot_slow
         ; ... which is damage for the ones after it
-        ld a,(sl_i) : call dr_ix
-        ld a,(ix+DR_C0) : ld (dm_c0),a : ld a,(ix+DR_C1) : ld (dm_c1),a
-        ld a,(ix+DR_Y0) : ld (dm_y0),a : ld a,(ix+DR_Y1) : ld (dm_y1),a
+        ld a,(sl_i) : call dr_iy
+        ld a,(iy+DR_C0) : ld (dm_c0),a : ld a,(iy+DR_C1) : ld (dm_c1),a
+        ld a,(iy+DR_Y0) : ld (dm_y0),a : ld a,(iy+DR_Y1) : ld (dm_y1),a
         call add_damage
 .p_next ld hl,sl_i : inc (hl) : ld a,(hl) : cp MAX_SLOW : jr nz,.plot_loop
         ret
 
 ; Erase the slow sprite drawn at record IX (the visible part of it) and forget it
 erase_drawn
-        ld (ix+DR_ON),0
-        ld a,(clip_l) : ld b,a : ld a,(ix+DR_C0) : cp b : jr nc,.c0
+        ld (iy+DR_ON),0
+        ld a,(clip_l) : ld b,a : ld a,(iy+DR_C0) : cp b : jr nc,.c0
         ld a,b
 .c0     ld (rr_c0),a
-        ld a,(clip_r) : dec a : ld b,a : ld a,(ix+DR_C1) : cp b : jr c,.c1
+        ld a,(clip_r) : dec a : ld b,a : ld a,(iy+DR_C1) : cp b : jr c,.c1
         ld a,b
 .c1     ld (rr_c1),a
         ld b,a : ld a,(rr_c0) : ld c,a : ld a,b : cp c : ret c
         ; its character rows, within the window's
-        ld a,(ix+DR_Y0) : srl a : ld b,a : ld a,(scrollrow) : cp b : jr nc,.k0
+        ld a,(iy+DR_Y0) : srl a : ld b,a : ld a,(scrollrow) : cp b : jr nc,.k0
         ld a,b
 .k0     ld (rr_k0),a
         ld a,(win_rows) : dec a : ld b,a : ld a,(scrollrow) : add a,b : ld b,a
-        ld a,(ix+DR_Y1) : srl a : cp b : jr c,.k1
+        ld a,(iy+DR_Y1) : srl a : cp b : jr c,.k1
         ld a,b
 .k1     ld (rr_k1),a
         ld b,a : ld a,(rr_k0) : ld c,a : ld a,b : cp c : ret c
@@ -655,10 +655,10 @@ erase_drawn
 ; Carry set if drawn record IX overlaps any damage
 damaged ld a,(dmg_n) : or a : ret z
         ld b,a : ld hl,dmg_list
-.loop   ld a,(ix+DR_C1) : cp (hl) : jr c,.n0            ; ends left of it
-        inc hl : ld a,(hl) : cp (ix+DR_C0) : jr c,.n1   ; starts right of it
-        inc hl : ld a,(ix+DR_Y1) : cp (hl) : jr c,.n2   ; ends above it
-        inc hl : ld a,(hl) : cp (ix+DR_Y0) : jr c,.n3   ; starts below it
+.loop   ld a,(iy+DR_C1) : cp (hl) : jr c,.n0            ; ends left of it
+        inc hl : ld a,(hl) : cp (iy+DR_C0) : jr c,.n1   ; starts right of it
+        inc hl : ld a,(iy+DR_Y1) : cp (hl) : jr c,.n2   ; ends above it
+        inc hl : ld a,(hl) : cp (iy+DR_Y0) : jr c,.n3   ; starts below it
         scf : ret
 .n0     inc hl
 .n1     inc hl
