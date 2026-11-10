@@ -62,7 +62,7 @@ for (const { room, immortal } of runs) {
     const steps = [...boot, `poke ${sym.t_lock} 1`, `poke ${sym.t_arg} ${li}`];
     // (the second run of each level: Trogg can't die, so he gets about, and the view scrolls)
     if (immortal) steps.push(`bankpoke ${sym.ram_bank + sym.logic_bank} ${sym.trogg_dies} ${0xC9} ${sym.ga_ram}`);
-    steps.push(`poke ${sym.t_cmd} 13`);
+    steps.push(`bankdump font ${sym.ram_bank + sym.front_bank} ${sym.fe_font} 768 ${sym.ga_ram}`, `poke ${sym.t_cmd} 13`);
     let held = [], plan = 0;
     for (let f = 0; f < FRAMES; f++) {
         steps.push(`waitfor ${sym.t_frame} 1 1000`, `dump L${f} 0 16384`,
@@ -88,6 +88,7 @@ for (const { room, immortal } of runs) {
         steps.push(`poke ${sym.t_frame} 0`);
     }
     const r = run(steps, { seconds: 1200 });
+    const font = r.dump('font');
 
     // ---- check each frame
     const bgs = {};
@@ -114,6 +115,29 @@ for (const { room, immortal } of runs) {
             if (partB[t] !== 255) refPlot(want, mode, clip, partB[t], tx, ty);
             const r = b2(sym.done_restarts);
             if (r < 3) { refPlot(want, mode, clip, IMG.Rating_1 + r, tx + 21, ty - 23); refPlot(want, mode, clip, IMG.TrophyStand, tx + 21, ty - 23); }
+            // ... and its text, in black, centred, from 40 rows above the window's middle (60 with a
+            // medal): "We've done it!", the time (m:ss.mmm), the gems, the medal
+            const text = (dy, str) => {
+                const y0 = clip.t + (mode ? 100 : 128) - 40 - (r < 3 ? 20 : 0) + dy;
+                let c = scol + cols / 2 - str.length;
+                for (const ch of str) {
+                    for (let row = 0; row < 8; row++) {
+                        const g = font[(ch.charCodeAt(0) - 32) * 8 + row];
+                        for (const [k, n] of [[0, g >> 4], [1, g & 15]]) {
+                            const i = at(mode, c + k, y0 + row), m = (n << 4 | n);
+                            want[i] = want[i] & ~m | m;
+                        }
+                    }
+                    c += 2;
+                }
+            };
+            const ticks = b2(sym.done_ticks) | b2(sym.done_ticks + 1) << 8;
+            const secs = Math.min(599, Math.floor(ticks / 50)), ms = (ticks % 50) * 20;
+            text(0, "We've done it!");
+            text(16, `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}.${String(ms).padStart(3, '0')}`);
+            let dy = 32;
+            if (b2(sym.done_gems)) { text(32, 'You collected all the gems!'); dy = 48; }
+            if (r < 3) text(dy + 32, ['!!! Gold Medal !!!', '!!! Silver Medal !!!', '!!! Bronze Medal !!!'][r]);
             log.push('(the level-complete screen)');
             seen.won++;
         } else {

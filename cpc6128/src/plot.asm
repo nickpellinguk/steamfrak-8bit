@@ -659,7 +659,9 @@ safe_lines_v db 0, 0, 30, 82, 134, 186
 ; ------------------------------------------------------------------------------
 JIT_BANK = 1                        ; the extra bank the code goes in (after the music player)
 SOUND_BANK = JIT_BANK
-JIT_END  = #8000
+FRONT_BANK = JIT_BANK                ; (the front end, from FRONT_ORG, above the compiled meanie)
+FRONT_ORG = #6400
+JIT_END  = FRONT_ORG                ; (the front end above it)
 JIT_LAST = (JIT_END >> 8) - 1      ; (the code must start each row below this page)
 
 ; A = the image: compile it, at shifts 0 and 2 (jit_img = it, or 255 if it

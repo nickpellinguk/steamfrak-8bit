@@ -250,8 +250,9 @@ show_front
         ld bc,CRTC_DAT*256+0 : out (c),c
         ret
 
-; Copy the font's digits and colon from the lower ROM (its characters are at #3800,
-; 8 bytes each, top row first) to font_digits in the logic bank. The lower ROM
+; Copy the font from the lower ROM (its characters are at #3800, 8 bytes each, top
+; row first): characters 32-127 to fe_font in bank 1 (for the front end), and the
+; digits and colon to font_digits in the logic bank (for the timer). The lower ROM
 ; overlays #0000-#3FFF, where this code is, so a copier in screen buffer 0 does it.
 FONT_TMP = #9800 : FONT_COPIER = #9F00
 copy_font
@@ -259,10 +260,12 @@ copy_font
         call FONT_COPIER
         ld a,(ga_ram) : push af
         ld a,RAM_BANK + LOGIC_BANK : call bank_select
-        ld hl,FONT_TMP : ld de,font_digits : ld bc,11 * 8 : ldir
+        ld hl,FONT_TMP + ('0' - 32) * 8 : ld de,font_digits : ld bc,11 * 8 : ldir
+        ld a,RAM_BANK + FRONT_BANK : call bank_select
+        ld hl,FONT_TMP : ld de,fe_font : ld bc,96 * 8 : ldir
         pop af : jp bank_select
 .copier ld bc,GA*256 + (GA_MODE1 AND #FB) : out (c),c     ; (the lower ROM in)
-        ld hl,#3800 + '0' * 8 : ld de,FONT_TMP : ld bc,11 * 8 : ldir
+        ld hl,#3800 + 32 * 8 : ld de,FONT_TMP : ld bc,96 * 8 : ldir
         ld bc,GA*256 + GA_MODE1 : out (c),c                ; (and out)
         ret
 .copier_end

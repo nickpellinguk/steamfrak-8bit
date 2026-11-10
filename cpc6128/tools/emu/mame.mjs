@@ -30,7 +30,9 @@ export function symbols(file = join(ROOT, 'build/frak.sym')) {
 // Steps for the start: boot to BASIC, then RUN"FRAK.BIN, and wait until it has loaded and taken
 // the machine over (it sets `ready` to READY)
 export const READY = 0xA5;
-export const boot = ['wait 100', 'type RUN"FRAK.BIN\\n', `waitfor ${symbols().ready} ${READY} 3000`, 'wait 2'];
+export const boot = ['wait 100', 'type RUN"FRAK.BIN\\n', `waitfor ${symbols().ready} ${READY} 3000`, `poke ${symbols().t_harness} 1`, 'wait 2'];
+// (... without the harness saying it's there: the game starts by itself, at the attract screen)
+export const bootGame = ['wait 100', 'type RUN"FRAK.BIN\\n', `waitfor ${symbols().ready} ${READY} 3000`];
 
 // Run the steps (strings, as steps.lua takes them; a final "quit" is added). Returns
 // { peeks: {label: [bytes]}, snaps: {label: png file}, log }.

@@ -1298,6 +1298,7 @@ win_len dw 7 * 50, 6 * 50, 5 * 50, 4 * 50
 ; ------------------------------------------------------------------------------
 logic_vars
 difficulty  db 1
+last_level  db 1                    ; (for the front end's Replay)
 cmd_live    db 0
 k_left      db 0                    ; the keys held this tick (real, or held by a command)
 k_right     db 0
