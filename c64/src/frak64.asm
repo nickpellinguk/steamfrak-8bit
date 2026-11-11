@@ -276,11 +276,11 @@ start   sei
         ldy masks3,x
         lda maskjm,y
         sta rowimm,x
-        lda #0                      ; (and no sprites set up, until the multiplexer's first frame)
-        sta tcount,x
-        sta tcount + 32,x
         dex
         bpl -
+        .if !TEST
+        jsr muxinit                 ; (the multiplexer's: no sprites yet, in either buffer)
+        .endif
 
         lda $dd02                   ; VIC bank 1
         ora #3
@@ -825,10 +825,7 @@ rl0     lda d18a0                   ; tick 38 (line 45): row 0's screen and set
         sta $d01d
         lda t01b,y
         sta $d01b
-        lda tcount,y
-        beq +
-        jsr apply
-+
+        jsr apply0
         .endif
         ldx #0
         stx row
