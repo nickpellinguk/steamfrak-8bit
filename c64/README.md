@@ -7,8 +7,8 @@ out by a sprite multiplexer, but no Trogg and no game.
 
 **Status: demo working in VICE (x64sc, PAL), with a sprite multiplexer; the display an
 interrupt a row that stays on time whatever sprites are shown, leaving the main program about
-45% of the CPU. With Frak's balloons and daggers (Hard) the multiplexer is ready for about 90%
-of frames, and the scroll waits for it the rest: see the multiplexer's section. Not yet tried on a real machine.**
+45% of the CPU. With Frak's balloons and daggers the multiplexer is ready for more than 90% of
+frames (Hard or Insane), and the scroll waits for it the rest: see the multiplexer's section. Not yet tried on a real machine.**
 
 ## The idea
 
@@ -186,16 +186,24 @@ first, in the level's x. (An earlier test, six balls bouncing 1 to 3 pixels a fr
 cost 9,400 cycles a frame on average: most of it rows, as every ball crossed a row's line 3 or 4
 most frames.)
 
-| The multiplexer's CPU time (`tools/profile.py`, 24 frames) | Hard | Insane |
-| --- | --- | --- |
-| Average | 4,536 | 6,224 |
-| Most frames | 3,100 to 4,100 | 4,000 to 5,600 |
-| Frames that place a sprite (and sweep the registers) | 7,600 to 8,800 | 8,400 to 10,100 |
-| Frames the multiplexer was ready (the display) | 87-90% | 64-81% |
+A sprite moving up needs an earlier tick every 8 lines (a balloon, every 5 or 6 frames): it's
+moved there in place, keeping its hardware sprite, and if its set-up changes the registers, the
+new tick's are those in force there with its settings (and those set at the ticks it now comes
+before take them too). A sprite placed with the settings already in force on its hardware sprite
+(the sprite before it there has the same, or there's none and it has none) changes no registers;
+nor does dropping one. Otherwise the registers are swept down the ticks: so mostly when a sprite
+of another kind comes onto a hardware sprite, or a sprite crosses x 256.
 
-In most frames the cost is game (650-850), sort (650), copying the last frame's changes (600),
-and the update pass (850-1,150); placing a sprite and sweeping the registers make the
-expensive frames.
+| The multiplexer's CPU time (`tools/profile.py`, 2 x 24 frames) | Hard | Insane |
+| --- | --- | --- |
+| Average | 3,100 to 4,200 | 3,200 to 5,900 |
+| Most frames | 2,600 to 4,400 | 2,250 to 7,000 |
+| Frames that place a new sprite (a sweep, mostly) | 5,400 to 7,800 | 6,000 to 10,100 |
+| Frames the multiplexer was ready (the display) | 92-98% | 91-92% |
+
+In most frames the cost is game (600-850), sort (630-850), copying the last frame's changes
+(500-1,100) and the update pass (850-950); a new sprite (placing it, about 700, and a sweep,
+about 1,500) makes the expensive frames.
 
 ## Next
 

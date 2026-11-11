@@ -577,14 +577,7 @@ _v
         lda #1
         sta regdirty
 +       jmp _chg
-_un     lda vfl,y               ; (not shown: waiting to be placed?)
-        bmi _nx
-        lda vy,y
-        cmp #47
-        bcc _nx
-        cmp #251
-        bcs _nx
-        inc mwait
+_un     jsr wadd                ; (not shown: waiting to be placed?)
         jmp _nx
 _ck
         .if MUXTIME
@@ -601,11 +594,14 @@ _ck
         cmp #251
         bcs _rm
         sta my
-        tax                     ; (its tick still early enough)
+        tax                     ; (its tick still early enough: if not, an earlier one)
         lda mktab,x
         cmp vt,y
-        bcc _rm
-        jsr calcl
+        bcs +
+        jsr retick
+        bcs +
+        jmp _rm
++       jsr calcl
         ldy mv                  ; the sprite before it on its hardware sprite ends in time
         ldx vprv,y
         bmi _np
@@ -628,7 +624,7 @@ _np     ldy mv                  ; it ends before the one after it is set up
         stx mi
         jmp _clash
 _rm     jsr remove
-        inc mwait
+        jsr wadd
 _nx     inc mo
         jmp _v
 _ok     ldy mv                  ; kept: its rows, and what's changed
@@ -678,6 +674,175 @@ _clash  ldy mv                  ; sprite mv and mi clash: mi goes if it isn't ke
         sta mv
         jmp _v
 
+; Sprite mv on the list of those waiting to be placed (wlist, mwait long), if it can be shown
+wadd    ldy mv
+        lda vfl,y
+        bmi +
+        lda vy,y
+        cmp #47
+        bcc +
+        cmp #251
+        bcs +
+        ldx mwait
+        tya
+        sta wlist,x
+        inc mwait
++       rts
+
+; The settings (a) of the sprite before mv on its hardware sprite (0 if none): what the
+; registers hold for that hardware sprite where mv is set up (kept so: the registers are swept
+; whenever something would change that)
+prevattr
+        ldy mv
+        ldx vprv,y
+        bmi +
+        lda va,x
+        rts
++       lda #0
+        rts
+
+; Sprite mv moved up past its tick (a: the latest it may have now): moved to the latest free
+; tick that's early enough, and after its hardware sprite's last use before it, keeping its
+; hardware sprite (c set if it can be; not to tick 0: then it's dropped and placed again). If its
+; set-up changes the registers, the new tick's are those in force there with its settings, and
+; those set at the ticks it now comes before take its settings too
+retick  sta mk
+        lda vt,y
+        sta mlim                ; (its tick now)
+        lda #0
+        ldx vprv,y
+        bmi +
+        lda vl,x
++       sta ms                  ; (the line the sprite before it ends on)
+        ldx mk
+_t      beq _no
+        lda lim,x
+        cmp ms
+        bcc _no
+        lda tinst,x
+        bmi _yes
+        dex
+        jmp _t
+_no     clc
+        rts
+_yes    stx mt
+        lda mlim
+        ora nb
+        tax
+        lda trch,x
+        sta mcur                ; (whether its set-up changes the registers)
+        ldx mlim                ; the old tick freed
+        lda #$ff
+        sta tinst,x
+        txa
+        ora nb
+        tay
+        lda #$ff
+        sta u_n,y
+        lda #2
+        jsr dirtyt
+        ldy mv                  ; the new one
+        lda mt
+        sta vt,y
+        tax
+        tya
+        sta tinst,x
+        lda mcur
+        bne _regs
+        txa                     ; (no register change)
+        ora nb
+        tax
+        lda #0
+        sta trch,x
+        jmp _fin
+_regs   ldx mh                  ; (its hardware sprite's bits, and its settings)
+        lda bits,x
+        sta mbit
+        eor #$ff
+        sta mkey
+        lda va,y
+        sta mfl
+        ldx mt                  ; the registers in force before the new tick: the latest
+-       dex                     ; set-up before it that sets them, or tick 0's
+        beq +
+        lda tinst,x
+        bmi -
+        txa
+        ora nb
+        tay
+        lda trch,y
+        beq -
+        jmp ++
++       ldy nb
++       lda mt
+        ora nb
+        tax
+        lda t010,y
+        sta t010,x
+        lda t017,y
+        sta t017,x
+        lda t01d,y
+        sta t01d,x
+        lda t01b,y
+        sta t01b,x
+        jsr setbits
+        lda #1
+        sta trch,x
+        lda mt                  ; the ticks between: their registers with its settings
+        sta mj
+_b      inc mj
+        ldx mj
+        cpx mlim
+        bcs _fin
+        lda tinst,x
+        bmi _b
+        txa
+        ora nb
+        tax
+        lda trch,x
+        beq _b
+        jsr setbits
+        ldx mj
+        lda #4
+        jsr dirtyt
+        jmp _b
+_fin    ldx mt
+        lda #4
+        jsr dirtyt
+        jsr writerec
+        ldy mv
+        sec
+        rts
+
+; List x's registers with sprite mv's settings (mfl) for its hardware sprite (mbit, mkey)
+setbits lda mfl
+        sta mcur
+        lda t017,x
+        and mkey
+        lsr mcur
+        bcc +
+        ora mbit
++       sta t017,x
+        lda t01d,x
+        and mkey
+        lsr mcur
+        bcc +
+        ora mbit
++       sta t01d,x
+        lda t01b,x
+        and mkey
+        lsr mcur
+        bcc +
+        ora mbit
++       sta t01b,x
+        lda t010,x
+        and mkey
+        lsr mcur
+        bcc +
+        ora mbit
++       sta t010,x
+        rts
+
 ; Those not shown placed (at most PLACES), kept before others first; a sprite kept before others
 ; that can't be may drop the nearest that isn't
 pplace
@@ -694,22 +859,16 @@ pplace
 _p      lda #0
         sta mo
 _pv     ldx mo
-        cpx #NV
+        cpx mwait
         bcs _pe
-        ldy order,x
+        ldy wlist,x
         sty mv
         lda vh,y
         bpl _pn
         lda vfl,y
-        bmi _pn
         and #VFIRST
         cmp mpass
         bne _pn
-        lda vy,y
-        cmp #47
-        bcc _pn
-        cmp #251
-        bcs _pn
         lda mbud
         beq _done
         dec mbud
@@ -875,9 +1034,24 @@ _hn     ldx mh
         sta vflp,y
         lda vxhi,y
         sta vxhp,y
+        jsr prevattr            ; its settings those in force there already: no register
+        ldy mv                  ; change (and none for the sprite after it), so no sweep
+        cmp va,y
+        beq +
         lda #1
         sta regdirty
-        jsr writerec
+        jmp ++
++       ldx mt
+        beq +
+        txa
+        ora nb
+        tax
+        lda #0
+        sta trch,x
+        ldx mt
+        lda #4
+        jsr dirtyt
++       jsr writerec
         sec
         rts
 
@@ -926,7 +1100,13 @@ remove
         .if MUXTIME
         inc cnt0
         .endif
-        ldy mv
+        jsr prevattr            ; (its set-up changed the registers: the sprite after it may
+        ldy mv                  ; have relied on that)
+        cmp va,y
+        beq +
+        lda #1
+        sta regdirty
++       ldy mv
         ldx vprv,y
         lda vnxt,y
         cpx #$ff
@@ -1512,6 +1692,7 @@ tdn     .byte 0
 rdf     .fill ROWS
 rdl     .fill ROWS
 rdn     .byte 0
+wlist   .fill NV
 ; (the two buffers: 32 each, by tick: tick 0's slots (e_*), each later tick's set-up (u_*:
 ; u_n $ff for none) and registers where they change (trch); and the rows' operands)
 t010    .fill 64
