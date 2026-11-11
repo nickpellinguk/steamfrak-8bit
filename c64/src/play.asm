@@ -12,7 +12,9 @@
 ; Death (landing at 1.6 pixels a tick or faster, or falling off the bottom) restarts the level
 ; after a second.
 
+        .section high               ; (placed past the level map: frak64.asm)
         .include "geometry.inc"     ; NPLATS, NLADS, LEVEL_W, LEVEL_H, TSTARTX, TSTARTY, the tables
+        .send high
 
 JUMP_SPEED = 25                     ; (twentieths of a pixel a tick; gravity is 1)
 TERMINAL_SPEED = 80
@@ -24,6 +26,9 @@ X_MAX    = LEVEL_W - 10
 
 ; ---- A game tick: the keys, then Trogg (or, dead, the count to the restart), then his frame
 gametick
+        .if CAMTEST
+        jmp camtest
+        .endif
         lda dead
         beq +
         dec dead
@@ -57,6 +62,7 @@ restart lda #<TSTARTX
         lda #1                      ; (a key held through the restart does nothing till let go)
         sta ud_db
         sta lr_db
+        sta jumping                 ; (and the camera back to the start)
         ldx #NB - 1
 -       lda #0
         sta oact,x
@@ -1142,6 +1148,70 @@ _none   lda #0
         rts
 kstep   .byte 0
 kticks  .byte 0
+        .endif
+
+        .if CAMTEST
+; (a test of the camera: Trogg walked across the level and back, a pixel a tick, turning round at
+; each of camturn's x's in turn; the keys read and his movement worked out as well, for what they
+; cost, but then left out)
+camtest ldx #CAMSAVE - 1
+-       lda tx,x
+        sta camsv,x
+        dex
+        bpl -
+        lda tstate
+        sta camst
+        jsr read_keys
+        jsr trogg_update
+        ldx #CAMSAVE - 1
+-       lda camsv,x
+        sta tx,x
+        dex
+        bpl -
+        lda camst
+        sta tstate
+        ldx camti                   ; at the next turning point: turn round, and on to the next
+        lda tx
+        cmp camtl,x
+        bne _cgo
+        lda tx+1
+        cmp camth,x
+        bne _cgo
+        lda camdir
+        eor #$fe
+        sta camdir
+        inx
+        cpx #CAMTN
+        bcc _cnx
+        ldx #0
+_cnx    stx camti
+_cgo    lda camdir                  ; a pixel on
+        bmi _cleft
+        inc tx
+        bne _cw
+        inc tx+1
+        bne _cw
+_cleft  lda tx
+        bne _cdec
+        dec tx+1
+_cdec   dec tx
+_cw     lda #ST_WALK
+        sta tstate
+        lda camdir
+        lsr a
+        and #1
+        sta tface
+        jsr animate
+        jmp trogg_frame
+CAMTURN = [400, 250, 700, 600, 650, 100, 300, 280, 320, 41]
+CAMTN   = len(CAMTURN)
+camtl   .byte <CAMTURN
+camth   .byte >CAMTURN
+camti   .byte 0
+camdir  .byte 1
+CAMSAVE = 4                         ; (tx, ty: saved)
+camsv   .fill CAMSAVE
+camst   .byte 0
         .endif
 
 ; ---- Data

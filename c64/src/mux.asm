@@ -1728,6 +1728,7 @@ slackhi .fill 32
 slacklo .fill 32, 255
 frontc  .byte 0
 nswap   .byte 0
+cwait   .byte 0
 nhold   .byte 0
         .endif
 
@@ -1753,6 +1754,7 @@ opause  .fill NB
 btim    .byte 1
 dtim    .byte 30
 rnd     .byte 1
+        .section high               ; (placed past the level map: frak64.asm)
 ; (tables: the latest tick for a y; the line a hardware sprite's last use must end by, for a
 ; tick; the first and last rows shown on line 4 and line 3, for a y and a last line)
         .align $100
@@ -1774,6 +1776,7 @@ r3hi    .for i = 0, i < 256, i += 1
 lim     .for i = 0, i < 26, i += 1
         .byte 46 + 8 * i
         .endfor
+        .send high
         .virtual $6000             ; (RAM only, set up by muxinit)
 mdata
 ; (the multiplexer's model: for each virtual sprite, its hardware sprite ($ff: not shown), tick,

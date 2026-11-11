@@ -878,7 +878,7 @@ rl0     lda d18a0                   ; tick 38 (line 45): row 0's screen and set
 ; flip, and the column the hidden pair should be filled for next, are left for the border to make
 ; (flippend, targpend), and $d016 for it to write
 decide  .if !SCROLLDEMO
-        rts                         ; (held at the left while Trogg's played, till the camera)
+        jmp camera
         .endif
         lda pause
         beq +
@@ -935,6 +935,120 @@ _turn   lda dir
         lda #1
         sta targpend
 _hold   rts
+
+; The camera (for the next frame, in the main program, with the multiplexer): Trogg kept between
+; VL and VR across the screen (his x less the scroll), the scroll moving a pixel a frame (his
+; walking speed) when he's past one; the hidden pair filled for the next column on the side of
+; the middle he's on (so it's mostly ready when the scroll gets there; if it isn't, the scroll
+; waits, and he has the rest of the screen's width to walk first). After a restart (jumping), it
+; jumps to the start: the hidden pair filled for column 0, then that shown, the scroll 0.
+VL      = 112
+VR      = 192
+MAXC    = MAXX / 8
+camera  lda jumping
+        beq _go
+        lda #0                      ; (a restart: column 0 filled, then shown)
+        jsr _want
+        lda curc
+        bne +
+        lda #0                      ; (there already)
+        sta scrx
+        sta scrx+1
+        sta jumping
+        rts
++       lda prepared
+        bne _x
+        sta curc
+        sta scrx
+        sta scrx+1
+        sta jumping
+        lda #1
+        sta flippend
+_x      rts
+_go     lda tx                      ; where he is on the screen
+        sec
+        sbc scrx
+        sta dtmp
+        lda tx+1
+        sbc scrx+1
+        sta dtmp+1
+        ldx curc                    ; the column wanted next: on his side of the middle
+        lda dtmp+1
+        bmi _wl
+        bne _wr
+        lda dtmp
+        cmp #(VL + VR) / 2
+        bcc _wl
+_wr     cpx #MAXC
+        bcs _w
+        inx
+        bne _wt
+_wl     cpx #0
+        beq _w
+        dex
+_wt     txa
+        jsr _want
+_w      lda dtmp+1                  ; past one end of the zone: a pixel that way
+        bmi _ml
+        bne _mr
+        lda dtmp
+        cmp #VR + 1
+        bcs _mr
+        cmp #VL
+        bcc _ml
+        rts
+_mr     lda scrx
+        cmp #<MAXX
+        lda scrx+1
+        sbc #>MAXX
+        bcs _x
+        lda #1
+        bne _step
+_ml     lda scrx
+        ora scrx+1
+        beq _x
+        lda #$ff
+_step   sta dir
+        clc
+        adc scrx
+        sta dtmp
+        lda dir
+        bpl +
+        lda #$ff
+        .byte $2c
++       lda #0
+        adc scrx+1
+        sta dtmp+1
+        lsr                         ; its column
+        lda dtmp
+        ror
+        lsr
+        lsr
+        cmp curc
+        beq _same
+        cmp prepared                ; a new column: is the hidden pair ready for it? (no: wait)
+        beq _ready
+        .if SLACK
+        inc cwait                   ; (debug: frames the camera waited for the fill)
+        .endif
+        rts
+_ready  sta curc
+        lda #1                      ; (the flip)
+        sta flippend
+_same   lda dtmp
+        sta scrx
+        lda dtmp+1
+        sta scrx+1
+        rts
+_want   cmp wantc                   ; (a: the column the hidden pair's to be filled for)
+        beq +
+        sta wantc
+        sta ntarget
+        lda #1
+        sta targpend
++       rts
+jumping .byte 0
+wantc   .byte 1
 
 ; In the border: the scroll decided (the flip, the target, $d016 and the cover sprite's x)
 frame   lda scrx                    ; (the position the multiplexer's frame was made for)
@@ -1011,3 +1125,4 @@ TROGG   .binary "trogg.bin"         ; Trogg's sprites: per frame outline P1-P3, 
         .cerror * > $8000, "Trogg's sprites run out of the VIC bank"
 tops    .binary "tops.bin"          ; (the level map, past the VIC bank)
 bottoms .binary "bottoms.bin"
+        .dsection high              ; (tables that needn't be low: mux.asm's, play.asm's)

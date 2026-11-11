@@ -2,13 +2,13 @@
 # gametick run in a 6502 emulator (py65) for the script's ticks and a second more, against the
 # build run in VICE (his state read from its memory once the script's long done, and a screenshot
 # then, checked with troggshot.py: he's still by then, so the two agree exactly or not at all).
-#   python3 keytest.py 60:-,150:U,30:-        (keys: L R U D Y, or - for none)
+#   python3 keytest.py 60:-,150:U,30:- [build options]      (keys: L R U D Y, or - for none)
 import os, re, subprocess, sys
 from py65.devices.mpu6502 import MPU
 DIR = os.path.dirname(os.path.abspath(__file__))
 B = os.path.join(DIR, '..', 'build')
 keys = sys.argv[1]
-subprocess.run(['node', os.path.join(DIR, 'build.mjs'), '--nopack', '--keys', keys], check=True, capture_output=True)
+subprocess.run(['node', os.path.join(DIR, 'build.mjs'), '--nopack', '--keys', keys] + sys.argv[2:], check=True, capture_output=True)
 lbl = {}
 for line in open(os.path.join(B, 'frak64.lbl')):
     m = re.match(r'^(\w+)\s*=\s*(\$?)([0-9a-fA-F]+)', line)

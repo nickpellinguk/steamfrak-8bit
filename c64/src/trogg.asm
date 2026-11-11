@@ -26,11 +26,16 @@ TSET    = 9
 ; multiplexer, the rows of his ticks (tra; trb the next), the ticks it's to leave alone (lists
 ; tres1 to tres2: the rows whose tails, lines 55 + 8r to 61 + 8r, run while he's drawn, lines y + 1
 ; to y + 42), and bit 8 of his x
-trogset lda ty+1                    ; y = the line before his top: (ty - 34) + 27 - 1
+trogset lda jumping                 ; (hidden while the camera jumps back to the start: y 255)
+        beq +
+        lda #7
+        bne ++
++       lda ty+1                    ; y = the line before his top: (ty - 34) + 27 - 1
         beq +
         lda #255                    ; (fallen off the bottom: under the screen)
         .byte $2c
 +       lda ty
++
         sec
         sbc #8
         sta tpen + TY1

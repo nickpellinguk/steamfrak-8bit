@@ -1,6 +1,7 @@
 # Plan: a playable A_1
 
-Status: **milestones 1-3 done** (the data; Trogg shown; his movement and the keys). Each milestone is checked before the next, and this
+Status: **milestones 1-4 done** (the data; Trogg shown; his movement and the keys; the camera),
+but **the CPU budget is short** while the screen scrolls (see milestone 4): next, before the yoyo. Each milestone is checked before the next, and this
 file is updated as they're done.
 
 ## Scope
@@ -181,12 +182,36 @@ often everything is ready in time.
      the same results: a tick 1,100-1,450 cycles (437 of them reading the keyboard). With him
      climbing up and down the row tails' least time to spare is 36 cycles, and the frame checker
      finds no problems.
-4. **Camera**: the scroll following him, turning round included, with the fill keeping up.
+4. **Camera** (done, but see the budget): the scroll following him, turning round included, with
+   the fill keeping up.
+   - `frak64.asm`'s `camera`: Trogg kept between 112 and 192 across the screen, the scroll a pixel
+     a frame when he's past one end; the hidden pair filled for the next column on his side of the
+     middle (and refilled when he turns); the scroll waiting if it isn't ready. A restart jumps
+     back to the start (column 0 filled, then shown; Trogg hidden meanwhile). The old scrolling
+     demo: `--scrolldemo`.
+   - Space below `$4000` ran out: the multiplexer's and the physics' tables now go past the level
+     map (a 64tass section, `high`).
+   - Checked: key scripts walking him right (the scroll to 31) and back (a fall, a restart, the
+     camera back to 0): the same in py65 and VICE, him exact on the screen, and every row but his
+     matching the mock-up. `--camtest` walks him across the level and back, turning ten times
+     (his movement still worked out each tick, for its cost): over 720 frames the scroll goes 0 to
+     165, back to 144 and on, every row but his matching the mock-up in 24 shots; the frame checker
+     finds no problems; no row tail overran (21 cycles to spare at the least).
+   - **The budget**: scrolling all the time, the multiplexer is ready for 80% of frames on Hard
+     (61% on Insane), and the camera waits for the fill in 16% of frames on Hard. Measured: the
+     main program gets roughly 6,000-7,000 cycles a frame (the rows' interrupts take most of the
+     frame, about 330 cycles a row); a frame's work is about 5,200 (Hard: the multiplexer about
+     2,800, keys and movement about 1,300, Trogg's settings and his part of the multiplexer about
+     600, the camera 100) and the fill another 3,300 (1,055 cycles a row, 25 rows a column, a
+     column every 8 frames).
 5. **Yoyo**: the string and the yoyo, then knocking a Scrubbly off.
 6. **Budget**: the whole frame profiled, readiness and slack measured with everything running,
    and whatever that shows fixed.
 
 ## Unknowns, measured early rather than guessed
+
+- The budget with the screen scrolling (milestone 4): short by about 2,000-3,000 cycles a frame
+  scrolling all the time on Hard, more on Insane.
 
 - The row tails' slack with Trogg's sprites: 12 cycles at the least, with his rows' ticks left
   alone (milestone 2). Little margin: to watch when he moves.
