@@ -42,7 +42,8 @@ black outline with yellow eyes and teeth in the characters, and a magenta sprite
 
 It needs node and [64tass](https://sourceforge.net/projects/tass64/); `--run` needs VICE's
 `x64sc` and `xvfb-run`. VICE's Debian package comes without Commodore's ROMs, so `--run` boots a
-stand-in ROM (`src/rom.asm`) that copies the program into memory and starts it. The demo uses no
+stand-in ROM (`src/rom.asm`) that copies the program into memory from a cartridge image of it
+(`build/frak64.crt`, made by `build.mjs`) and starts it. The demo uses no
 ROM routines.
 
 | File | |
@@ -56,6 +57,8 @@ ROM routines.
 | `tools/compare.py` | Checks a VICE screenshot against the mock-up, pixel by pixel, character row by row |
 | `tools/vice.py` | Drives VICE through its remote monitor (screenshots while it runs, breakpoints, memory) |
 | `tools/dump.py` | Runs the demo in VICE a while and prints memory at labels |
+| `tools/troggshot.py` | Finds Trogg in a screenshot and checks his place and every pixel, and nothing below his feet |
+| `tools/muxcheck.py` | Checks the multiplexer's buffer, frame by frame, in VICE: set-ups, hardware sprites, rows' operands, registers, Trogg's ticks |
 | `tools/profile.py` | Exact CPU cycles of the multiplexer, by routine and source line: VICE memory snapshots at its start, run in a 6502 emulator (py65) |
 
 ## How the display works
@@ -98,14 +101,17 @@ Of a frame's 19,656 cycles, the VIC takes about 2,100 (50 bad lines); the interr
 rest. The border ticks could be switched off to save about 600 more.
 
 Memory (VIC bank 1): screen pairs at `$4000`/`$4400` and `$4800`/`$4c00`, character sets at
-`$5000` and `$5800`, the program and level from `$0801`.
+`$5000` and `$5800`, the multiplexer's RAM at `$6000`, Trogg's sprites at `$6800`; the program
+from `$0801` (below `$4000`), and the level map from `$7e80`. The program file runs on through the
+VIC bank (what's there set up at the start), so the stand-in ROMs carry it as a cartridge image
+(`build/frak64.crt`).
 
 ## Sprites and the critical write
 
 | Sprite | |
 | --- | --- |
 | 0 | The cover over the FLI bug's columns: X- and Y-expanded with 16 pixels set (32 wide, so it also hides a fourth character when the write lands a cycle late), cyan, following the fine scroll, moved down the screen every 42 lines from the row ticks. In front of every other sprite |
-| 1, 2 | (Trogg: `tools/trogg.mjs`) |
+| 1, 2 | Trogg (`src/trogg.asm`): his black outline (hi-res) and his infill (multicolour, yellow and magenta), each used three times down him (`tools/trogg.mjs`) |
 | 3-7 | Multiplexed: the Scrubblies' bodies (their x following the scroll, wrapped round when part off at the left), balloons and daggers |
 
 Other sprites move the critical write. The VIC fetches the sprites shown on a line at the end of

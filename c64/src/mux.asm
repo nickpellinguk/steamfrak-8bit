@@ -61,6 +61,9 @@ mpass   = zp + 81
 n3c     = zp + 82
 n3d     = zp + 83
 mwait   = zp + 84
+matt    = zp + 85
+mcm     = zp + 86
+mbm     = zp + 87
 
 ; Once a frame, in the main program
 muxframe
@@ -150,8 +153,11 @@ muxinit lda #<mdata             ; (all 0 first)
         sta vh,x
         sta vprv,x
         sta vnxt,x
+        dex
+        bpl -
+        ldx #NV
         lda #NONE
-        sta v3lo,x
+-       sta v3lo,x
         sta v4lo,x
         dex
         bpl -
@@ -542,6 +548,7 @@ update  lda #0
         sta regdirty
         sta mwait
         sta mo
+        jsr troggmux
 _v
         .if MUXTIME
         jsr stamp2
@@ -674,6 +681,68 @@ _clash  ldy mv                  ; sprite mv and mi clash: mi goes if it isn't ke
         sta mv
         jmp _v
 
+; Trogg's sprites (trogg.asm), for the multiplexer: nothing set up in the ticks of his rows
+; (lists tres1 to tres2: anything there dropped, to be placed again); his lines (y + 1 to y + 42) in the rows' masks, as a virtual
+; sprite of its own (NV, on hardware sprite "8": bits 1 and 2), only the rows that change; his
+; rows' tails (rowsfin) when they move; bit 8 of his x in the registers
+troggmux
+        ldx tres1
+-       cpx tres2
+        beq +
+        bcs ++
++       jsr _free
+        inx
+        bne -
++
+        lda #NV
+        sta mv
+        lda #8
+        sta mh
+        lda tpen + TY1
+        sta my
+        clc
+        adc #42
+        bcc +
+        lda #255
++       sta ml
+        jsr rngs
+        lda tra                     ; (his rows' tails: the old ones and the new ones redone)
+        cmp traw
+        beq +
+        ldy traw
+        jsr _row
+        ldy traw
+        iny
+        jsr _row
+        ldy tra
+        sty traw
+        jsr _row
+        ldy tra
+        iny
+        jsr _row
++       lda tmsbb
+        cmp tmsbw
+        beq +
+        sta tmsbw
+        lda #1
+        sta regdirty
++       rts
+_free   cpx #1                      ; (not tick 0's slots: before the frame, nothing's drawn)
+        bcc +
+        lda tinst,x
+        bmi +
+        sta mv
+        stx mt
+        jsr remove
+        ldx mt
++       rts
+_row    cpy #ROWS
+        bcs +
+        jmp rdirty
++       rts
+traw    .byte $ff                   ; (the rows and bit 8 last frame)
+tmsbw   .byte 0
+
 ; Sprite mv on the list of those waiting to be placed (wlist, mwait long), if it can be shown
 wadd    ldy mv
         lda vfl,y
@@ -720,8 +789,13 @@ _t      beq _no
         cmp ms
         bcc _no
         lda tinst,x
-        bmi _yes
-        dex
+        bpl +
+        cpx tres1
+        bcc _yes
+        cpx tres2
+        beq +
+        bcs _yes
++       dex
         jmp _t
 _no     clc
         rts
@@ -917,8 +991,13 @@ place
         ldx mk
         beq _t0
 -       lda tinst,x
-        bmi _tk
-        dex
+        bpl +
+        cpx tres1
+        bcc _tk
+        cpx tres2
+        beq +
+        bcs _tk
++       dex
         bne -
 _t0     ldy #3
 -       lda slotv,y
@@ -929,6 +1008,8 @@ _t0     ldy #3
         rts
 _s0     sty ms
 _tk     stx mt
+        jsr attrof              ; (its settings: a hardware sprite whose sprite before it has the
+        sta matt                ; same is preferred, so its set-up changes no registers)
         lda #$ff
         sta mbest
         ldx #3
@@ -961,15 +1042,31 @@ _p1     ldy mn
         ldx mh
         cmp ml
         bcc _hn
-_p2     lda #0
+_p2     lda #0                  ; (the settings before it there: the same as its own?)
         ldy mp
+        bmi +
+        lda va,y
++       cmp matt
+        beq +
+        lda #0
+        .byte $2c
++       lda #1
+        sta mcm
+        lda #0                  ; (the line the sprite before it ends on: the latest, of those
+        ldy mp                  ; matching as well, is best)
         bmi +
         lda vl,y
 +       ldx mbest
         bmi _hb
+        ldx mcm
+        cpx mbm
+        bcc _hn
+        bne _hb
         cmp mbl
         bcc _hn
 _hb     sta mbl
+        lda mcm
+        sta mbm
         lda mh
         sta mbest
         lda mp
@@ -979,8 +1076,9 @@ _hb     sta mbl
 _hn     ldx mh
         inx
         cpx #8
-        bne _h
-        lda mbest
+        beq +
+        jmp _h
++       lda mbest
         bpl +
         clc
         rts
@@ -1456,8 +1554,9 @@ sweep
         .if MUXTIME
         inc cnt0+4
         .endif
-        lda #0
+        lda tmsbb                   ; (Trogg's x's bit 8)
         sta s010
+        lda #0
         sta s01b
         ldx #7
 -       sta hattr,x
@@ -1572,16 +1671,34 @@ rowsfin ldy #0
         lda maskjm,x
         sta rowimm,y
         ldx mi
+        cpx tra
+        beq _ta
+        cpx trb
+        beq _tb
         lda mk4,x
         tax
         lda masktl,x
         sta rowtl,y
         lda maskth,x
         sta rowth,y
-        ldy mj
+_rn     ldy mj
         iny
         bne -
 +       rts
+_ta     lda mk4,x                   ; (Trogg's rows: their tails then change his sprites)
+        tax
+        lda masktla,x
+        sta rowtl,y
+        lda masktha,x
+        sta rowth,y
+        jmp _rn
+_tb     lda mk4,x
+        tax
+        lda masktlb,x
+        sta rowtl,y
+        lda maskthb,x
+        sta rowth,y
+        jmp _rn
 
 ; ---- In the last border tick: the set-ups before the frame (tick 0's four slots)
 apply0  ldx bufoff
@@ -1604,7 +1721,7 @@ aps1    sta SCR1 + $3f8,y
         bne -
         rts
 
-bits    .byte 1, 2, 4, 8, 16, 32, 64, 128
+bits    .byte 1, 2, 4, 8, 16, 32, 64, 128, 6     ; ("8": Trogg's, sprites 1 and 2)
 mux0    .fill 32
         .if SLACK
 slackhi .fill 32
@@ -1666,10 +1783,10 @@ vh      .fill NV
 vt      .fill NV
 vs      .fill NV
 vl      .fill NV
-v3lo    .fill NV
-v3hi    .fill NV
-v4lo    .fill NV
-v4hi    .fill NV
+v3lo    .fill NV + 1               ; (NV: Trogg's)
+v3hi    .fill NV + 1
+v4lo    .fill NV + 1
+v4hi    .fill NV + 1
 va      .fill NV
 vflp    .fill NV
 vxhp    .fill NV

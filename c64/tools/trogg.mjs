@@ -128,6 +128,8 @@ for (const f of out) {
 }
 writeFileSync(`${OUT}/trogg.txt`, T.join('\n'));
 writeFileSync(`${OUT}/trogg.bin`, Buffer.concat(blocks));
+writeFileSync(`${OUT}/trogg.inc`, `; made by tools/trogg.mjs: Trogg's frames (each 6 sprite blocks in trogg.bin): ${out.map((f, k) => `${k} ${f.name}`).join(', ')}\n` +
+    `TFRAMES = ${out.length}\ntrleft  .byte ${out.map(f => f.xo - f.cut).join(', ')}       ; (the sprites' left edge, left of his x)\n`);
 writeFileSync(`${OUT}/trogg.json`, JSON.stringify(out.map(f => ({ name: f.name, left: f.xo - f.cut, outline: [f.base, f.base + 1, f.base + 2], infill: [f.base + 3, f.base + 4, f.base + 5], shown: f.shown })), null, 1));
 console.log(`${out.length} frames, ${blocks.length} blocks (${blocks.length * 64} bytes); ${lostAll} pixels cut off in all; every pair of pointer changes (lines 13-21, 21-34) checked, nothing below his feet`);
 

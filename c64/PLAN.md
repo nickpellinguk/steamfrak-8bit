@@ -1,6 +1,6 @@
 # Plan: a playable A_1
 
-Status: **milestone 1 done** (the data). Each milestone is checked before the next, and this
+Status: **milestones 1 and 2 done** (the data; Trogg shown, standing). Each milestone is checked before the next, and this
 file is updated as they're done.
 
 ## Scope
@@ -127,9 +127,35 @@ often everything is ready in time.
      differ, one to one).
    - The screenshots, scrolling, still match the mock-up on every row but the known ladder
      pixels (rows 17-19).
-2. **Trogg shown, standing**: sprites, the second instance and pointer change, his rows in the
-   masks. Check: against his mock-up; the row tails' slack measured; the frame checker covering
-   his sprites.
+2. **Trogg shown, standing** (done): sprites, the second instance and pointer change, his rows in
+   the masks. Check: against his mock-up; the row tails' slack measured; the frame checker
+   covering his sprites.
+   - Found on the way: the second instances show all 21 rows, so P2's rows 13-20 would show
+     again below his feet. Now a third block per frame (P3: P2's rows 0-12, then blank),
+     switched to in the next row's tick; `trogg.mjs` checks all 42 lines with both changes at
+     every line they can fall on. 15 frames, 90 blocks, 5,760 bytes.
+   - Memory: the program now runs on into the VIC bank (Trogg's blocks loaded straight to
+     `$6800`) and past it (the level map from `$7e80`): fine from disk, too long for the stand-in
+     ROMs, so tests attach `build/frak64.crt`, a Magic Desk cartridge image of the program that
+     the stand-in KERNAL copies to RAM (which takes about 560,000 cycles, so the demo starts
+     about 0.6s later in VICE than before).
+   - `src/trogg.asm`: his settings worked out in the main program for the next frame and made
+     his at the switch to it; tick 37 sets the first instances; his two rows have tails of their
+     own (each tail in three kinds, from `build.mjs`), chosen by the multiplexer's row tables.
+   - The multiplexer: his lines in the masks (as a virtual sprite of its own on bits 1 and 2), bit
+     8 of his x in the registers, and no set-ups in the ticks of the rows whose tails run while
+     he's drawn (five or six ticks): with only his own two kept free, a set-up just above him that
+     changed the registers left a tail 2 cycles to spare and overran. Placing a sprite now also
+     prefers a hardware sprite whose sprite before has the same settings (so its set-up changes no
+     registers).
+   - Checked: `tools/troggshot.py` finds him in a screenshot: exact (place and every pixel, and
+     nothing below his feet) at all 8 phases of a row and near the top and bottom, in 15 cases
+     (frames and heights), still and scrolling. The screen with him fetched in the right border
+     (bit 8 set): all 24 shots match the mock-up. `tools/muxcheck.py` (the frame checker, now with
+     Trogg): no problems in 30 frames at three heights. The row tails' least time to spare with
+     him mid-screen on Insane: 12 cycles (the interrupt allows for up to 15 late; before him, 21).
+     The multiplexer with him standing: Hard 4,000-4,200 cycles a frame on average, Insane
+     3,700-5,600.
 3. **Movement and keys**: the 6502 physics against the Python model in py65; a build with
    scripted keys for VICE runs. Restarting the level on death.
 4. **Camera**: the scroll following him, turning round included, with the fill keeping up.
@@ -139,7 +165,8 @@ often everything is ready in time.
 
 ## Unknowns, measured early rather than guessed
 
-- The row tails' slack with Trogg's sprites (milestone 2).
+- The row tails' slack with Trogg's sprites: 12 cycles at the least, with his rows' ticks left
+  alone (milestone 2). Little margin: to watch when he moves.
 - Whether two character sets still do, with the string and yoyoed-off glyphs: yes, but set 0 is
   full again, so any more glyphs would mean a third set.
 - What the physics costs (milestone 3).

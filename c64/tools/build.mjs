@@ -65,8 +65,15 @@ const delayCode = d => { const out = []; let r = d; if (r & 1) { out.push('bit $
 let inc = '; made by tools/build.mjs: for each mask of sprites shown (0, the cover, always), the row\n; interrupt\'s tail (line 4\'s fetches) and its slide\'s constant (line 3\'s); the tails\n';
 inc += 'masktl  .byte ' + tailFor.map(d => `<tail${d}`).join(', ') + '\n';
 inc += 'maskth  .byte ' + tailFor.map(d => `>tail${d}`).join(', ') + '\n';
+// (the same tails, then Trogg's second instances (a: y + 21 and P2) or third blocks (b: P3), for
+// the rows whose ticks change his sprites)
+for (const v of 'ab') {
+    inc += `masktl${v} .byte ` + tailFor.map(d => `<tail${d}${v}`).join(', ') + '\n';
+    inc += `maskth${v} .byte ` + tailFor.map(d => `>tail${d}${v}`).join(', ') + '\n';
+}
 inc += 'maskjm  .byte ' + jmFor.join(', ') + '\n';
-for (const d of delays) inc += `tail${d}  stx $d018\n` + delayCode(d).map(c => `        ${c}\n`).join('') + '        sta $d011\n        jmp tailend\n';
+for (const [v, to] of [['', 'tailend'], ['a', 'trogga'], ['b', 'troggb']])
+    for (const d of delays) inc += `tail${d}${v}  stx $d018\n` + delayCode(d).map(c => `        ${c}\n`).join('') + `        sta $d011\n        jmp ${to}\n`;
 writeFileSync(DIR + 'tails.inc', inc);
 
 // ---- The sprites shown on each row's lines 3 and 4. A sprite whose y is Y shows on lines
@@ -84,7 +91,7 @@ if (PM !== null) spr = [1, 2, 3, 4, 5, 6, 7].map(n => ({ n, y: (+PM >> n & 1) ? 
 const maskOn = line => spr.reduce((m, s) => line >= s.y + CONV && line < s.y + CONV + (s.exp ? 42 : 21) ? m | 1 << s.n : m, COVER);
 const masks = [], masks3 = [];
 for (let r = 0; r < 25; r++) { masks3.push(maskOn(54 + 8 * r)); masks.push(maskOn(55 + 8 * r)); }
-defs.push('-D', `TEST=${TEST ? 1 : 0}`, '-D', `BALLTEST=${process.argv.includes('--balltest') ? 1 : 0}`, '-D', `NOBALLS=${process.argv.includes('--noballs') ? 1 : 0}`, '-D', `MUXTIME=${process.argv.includes('--muxtime') ? 1 : 0}`, '-D', `SLACK=${process.argv.includes('--slack') ? 1 : 0}`, '-D', `INSANE=${process.argv.includes('--insane') ? 1 : 0}`);
+defs.push('-D', `TEST=${TEST ? 1 : 0}`, '-D', `BALLTEST=${process.argv.includes('--balltest') ? 1 : 0}`, '-D', `NOBALLS=${process.argv.includes('--noballs') ? 1 : 0}`, '-D', `MUXTIME=${process.argv.includes('--muxtime') ? 1 : 0}`, '-D', `SLACK=${process.argv.includes('--slack') ? 1 : 0}`, '-D', `INSANE=${process.argv.includes('--insane') ? 1 : 0}`, '-D', `TROGGX=${arg('troggx', 0)}`, '-D', `TROGGY=${arg('troggy', 0)}`, '-D', `TROGGF=${arg('troggf', 7)}`);
 const testy = TEST ? spr.map(s => s.y) : [0];
 const sx = scrub.placed.map(p => 31 + p.x);
 writeFileSync(DIR + 'masks.inc', `; made by tools/build.mjs\nmasks   .byte ${masks.join(', ')}\nmasks3  .byte ${masks3.join(', ')}\n` +

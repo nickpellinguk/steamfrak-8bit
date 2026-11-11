@@ -184,6 +184,19 @@ start   sei
         sta $d010
         sta $d01c                   ; (all hi-res)
         .if !TEST
+        lda #0                      ; Trogg (trogg.asm): sprite 1 his black outline, sprite 2 his
+        sta $d028                   ; infill (multicolour: yellow, magenta)
+        lda #4
+        sta $d01c
+        lda #7
+        sta $d025
+        lda #4
+        sta $d026
+        lda #255                    ; (parked below the screen until the first frame)
+        sta $d003
+        sta $d005
+        .endif
+        .if !TEST
         ; Sprites 3-7: shared out by the multiplexer (mux.asm) among the virtual sprites: the
         ; Scrubblies' bodies (expanded both ways, magenta, behind the characters, so their black
         ; and the eyes' and teeth's yellow are in front, their x following the scroll) and some
@@ -232,7 +245,7 @@ start   sei
         sta muxbusy
         sta flippend
         sta targpend
-        lda #$f9
+        lda #$ff
         .else
         ; (the test: sprites 1-7 in the left border, where they can't be seen, but are fetched)
         ldx #2
@@ -443,6 +456,7 @@ nextframe
         lda #0
         sta muxreq
         jsr decide
+        jsr trogset                 ; (Trogg's sprites, for the next frame's scroll)
         jsr muxframe
         lda #0
         sta muxbusy
@@ -518,7 +532,9 @@ usefront
         lda #>(SCR1 + $3f8)
         sta aps1+2
         sta apt1+2
-        rts
+        lda #>(SCR0 + $3f8)         ; (and Trogg's)
+        ldx #>(SCR1 + $3f8)
+        jmp tpair
 +       lda #<d18a1
         sta rl0+1
         lda #<(d18a1+1)
@@ -538,7 +554,9 @@ usefront
         lda #>(SCR3 + $3f8)
         sta aps1+2
         sta apt1+2
-        rts
+        lda #>(SCR2 + $3f8)
+        ldx #>(SCR3 + $3f8)
+        jmp tpair
 
 nmi     rti
 
@@ -821,6 +839,7 @@ _dmux
         lda t01b,y
         sta $d01b
         jsr apply0
+        jsr tick37                  ; (Trogg's sprites' first instances)
 t37n
         .endif
         ldy savy
@@ -916,6 +935,7 @@ _hold   rts
 ; In the border: the scroll decided (the flip, the target, $d016 and the cover sprite's x)
 frame   lda scrx                    ; (the position the multiplexer's frame was made for)
         sta shx
+        jsr tswitch                 ; (and Trogg's settings)
         lda flippend
         beq +
         lda #0
@@ -945,6 +965,7 @@ setx    lda shx
         rts
 
         .include "mux.asm"
+        .include "trogg.asm"
 
         .align $100
 d18a0   .fill ROWS + 1
@@ -976,8 +997,6 @@ _y      := COVERY0 + 42 * (1 + ((54 + 8 * i) - (COVERY0 + 1)) / 42)
         .endfor
         .include "masks.inc"
 charsets .binary "charsets.bin"
-tops    .binary "tops.bin"
-bottoms .binary "bottoms.bin"
 end
         .cerror end > SCR0, "the program runs into the screens"
         ; (then the VIC bank: the screens, character sets, sprites and the multiplexer's RAM, all
@@ -985,3 +1004,5 @@ end
         .fill $6800 - *, 0
 TROGG   .binary "trogg.bin"         ; Trogg's sprites: per frame outline P1-P3, infill P1-P3
         .cerror * > $8000, "Trogg's sprites run out of the VIC bank"
+tops    .binary "tops.bin"          ; (the level map, past the VIC bank)
+bottoms .binary "bottoms.bin"
