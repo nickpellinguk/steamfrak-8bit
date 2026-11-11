@@ -218,6 +218,9 @@ alloc   ldx #25
         sta t0n
         sta ni
         sta mo
+        .if MUXTIME
+        jsr stamp
+        .endif
         jmp _v
 _sk     jmp _skip               ; (not shown)
 _v      ldx mo
@@ -409,7 +412,11 @@ _z      ldy mj
         inc ment
 _zn     inc mj
         jmp _z
-_zd     ldx nb
+_zd
+        .if MUXTIME
+        jsr stamp
+        .endif
+        ldx nb
         lda ment
         sec
         sbc nb
@@ -471,7 +478,11 @@ _tu     sta mi
         inx
         cpx #26
         bne _tl
-_rows   ldx #0                  ; each row's slide constant and tail (unless it's the cover's
+_rows
+        .if MUXTIME
+        jsr stamp
+        .endif
+        ldx #0                  ; each row's slide constant and tail (unless it's the cover's
         ldy nb                  ; alone, and the buffer has those already); the rows' sprites
 _r      lda mk3,x               ; reset for next time
         ora mk4,x
