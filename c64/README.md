@@ -57,6 +57,7 @@ ROM routines.
 | `tools/compare.py` | Checks a VICE screenshot against the mock-up, pixel by pixel, character row by row |
 | `tools/vice.py` | Drives VICE through its remote monitor (screenshots while it runs, breakpoints, memory) |
 | `tools/dump.py` | Runs the demo in VICE a while and prints memory at labels |
+| `tools/profile.py` | Exact CPU cycles of the multiplexer, by routine and source line: VICE memory snapshots at its start, run in a 6502 emulator (py65) |
 
 ## How the display works
 
@@ -175,7 +176,8 @@ tail, and the registers in force for every sprite on every line.
 Measuring: `--muxtime` times its stages in VICE with interrupts off, and counts what happened;
 `--slack` records each tick's least time to spare before the next (21 cycles at the least) and
 how many frames the multiplexer was ready. For exact CPU cycles, memory snapshots taken in VICE
-at the multiplexer's start are run in a 6502 emulator (py65), counting cycles by routine.
+at the multiplexer's start are run in a 6502 emulator (py65), counting cycles by routine and
+by source line (`tools/profile.py [FRAMES [SECONDS [LINES]]]`, on the last build).
 
 | The multiplexer's CPU time, 11 virtual sprites (9 shown), 12 frames in the emulator | Cycles a frame |
 | --- | --- |
