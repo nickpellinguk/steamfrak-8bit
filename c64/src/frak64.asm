@@ -41,7 +41,7 @@ CS0     = $5000
 CS1     = $5800
 IRQLINE = 44                        ; the raster interrupt that starts the timer (stable on 46)
 TICK    = 504                       ; the timer's period: 8 lines
-EARLY   = 32                        ; (its first period that much shorter: see irq2)
+EARLY   = 96                        ; (its first period that much shorter: see irq2)
 D011A   = $5b                       ; ECM, display on, 25 rows, YSCROLL 3 (rows start at 51+8n)
 D011B   = $5f                       ; ... YSCROLL 7 (the forced bad line at 55+8n)
 MAXX    = (NC - 40) * 8             ; the furthest scroll, in pixels
@@ -67,6 +67,11 @@ savx    = zp + 16
 ftmp    = zp + 17                   ; (2: the interrupt's)
 cnt     = zp + 19                   ; (2: MEASURE's count)
 last    = zp + 21                   ; (2: ... a frame's)
+jv      = zp + 23                   ; (2: the row's tail)
+stall0  = zp + 25
+SPRCOVER = $5400                    ; the cover sprite's data
+COVERX  = 24                        ; its x at fine scroll 0
+COVERY0 = 50                        ; its first piece's y (lines 51-92; then 93, 135, 177, 219)
 
         * = $0801
         .word (+), 10
@@ -101,8 +106,79 @@ start   sei
 
         lda #$0b                    ; the display off while setting up
         sta $d011
+
+        ; Sprite 7: the cover over the FLI bug's columns at the left (4 characters: 16 pixels
+        ; set, expanded both ways), cyan like the border, in front; down the screen in 42-line
+        ; pieces (covery), so the VIC fetches it on line 4 of every row
+        ldx #62
+-       lda #0
+        sta SPRCOVER,x
+        dex
+        bpl -
+        ldx #60
+-       lda #$ff
+        sta SPRCOVER,x
+        sta SPRCOVER+1,x
+        dex
+        dex
+        dex
+        bpl -
+        lda #(SPRCOVER & $3fff) / 64
+        sta SCR0 + $3ff
+        sta SCR1 + $3ff
+        sta SCR2 + $3ff
+        sta SCR3 + $3ff
+        lda #3
+        sta $d02e
+        lda #COVERY0
+        sta $d00f
+        lda #COVERX + 7
+        sta $d00e
+        lda #$80
+        sta $d017                   ; (expanded down)
+        sta $d01d                   ; (... and across)
         lda #0
-        sta $d015                   ; no sprites
+        sta $d010
+        sta $d01b                   ; (in front of the characters)
+        sta $d01c                   ; (hi-res)
+        lda #$80
+        .if TEST
+        ; (the test: sprites 0-6 in the left border, where they can't be seen, but are fetched)
+        ldx #0
+        ldy #0
+-       lda testy,y
+        sta $d001,x
+        lda #0
+        sta $d000,x
+        iny
+        inx
+        inx
+        cpx #14
+        bne -
+        lda #(SPRCOVER & $3fff) / 64
+        ldx #6
+-       sta SCR0 + $3f8,x
+        sta SCR1 + $3f8,x
+        sta SCR2 + $3f8,x
+        sta SCR3 + $3f8,x
+        dex
+        bpl -
+        lda #TESTEXP
+        sta $d017
+        lda #$ff
+        .endif
+        sta $d015
+
+        ; the tail for each row, from which sprites are on its line 4 (masks)
+        ldx #ROWS - 1
+-       ldy masks,x
+        lda masktl,y
+        sta rowtl,x
+        lda maskth,y
+        sta rowth,x
+        dex
+        bpl -
+
         lda $dd02                   ; VIC bank 1
         ora #3
         sta $dd02
@@ -418,12 +494,55 @@ _sl     .fill 15, $c9               ; (cmp #$c9 ... cmp #$c5, nop; or ... cmp $e
         ldx row
         cpx #ROWS
         bcs border
+        lda covery,x                ; the cover sprite's next place down the screen
+        sta $d00f
+        lda rowtl,x                 ; the tail for this row's sprites on line 4
+        sta jv
+        lda rowth,x
+        sta jv+1
 rlb     lda d18b0,x                 ; the bottoms' screen, the next band's set
-        sta $d018
-        lda #D011B                  ; the forced bad line: line 4, just after cycle 14
+        tax
+        .if STALL
+        lda $dc06                   ; (STALL: the timer before the tail ...)
+        sta stall0
+        lda #D011A                  ; (... and no forced bad line, whose wait would hide the rest)
+        .else
+        lda #D011B
+        .endif
+        jmp (jv)
+        .endpage
+
+; The tails (tails.inc, made by build.mjs): $d018 written on line 3's cycle 55, then a delay
+; that depends on which sprites the VIC fetches for line 4 (sprites 0-2 at the end of line 3,
+; 3-7 at the start of line 4, each stopping the CPU for a few cycles), then the forced bad line
+; written on line 4's cycle 14 (or 15, where no delay can reach 14). Then:
+tailend lda #D011A                  ; (the CPU has waited out the bad line) YSCROLL back
         sta $d011
-        lda #D011A                  ; (the CPU waits out the bad line) YSCROLL back
-        sta $d011
+        ldx row
+        .if MASKTEST
+        ; (MASKTEST: the test sprites' y for the next test row, row by row)
+        lda mty0,x
+        sta $d001
+        lda mty1,x
+        sta $d003
+        lda mty2,x
+        sta $d005
+        lda mty3,x
+        sta $d007
+        lda mty4,x
+        sta $d009
+        lda mty5,x
+        sta $d00b
+        lda mty6,x
+        sta $d00d
+        .endif
+        .if STALL
+        lda $dc06                   ; (... and after: their difference, row by row)
+        sec
+        sbc stall0
+        eor #$ff
+        sta stalls,x
+        .endif
 rla     lda d18a0+1,x               ; the next row's tops' screen (the same set)
         sta $d018
         inx
@@ -431,9 +550,10 @@ rla     lda d18a0+1,x               ; the next row's tops' screen (the same set)
         ldx savx
         lda sava
         rti
-        .endpage
 
 border  bne +                       ; tick 25: the frame's bookkeeping
+        lda #COVERY0                ; (the cover sprite back to the top, for the next frame)
+        sta $d00f
         inc frames
         jsr frame
         .if MEASURE
@@ -456,6 +576,8 @@ rl0     lda d18a0                   ; tick 38 (line 46): row 0's screen and set
         ldx savx
         lda sava
         rti
+
+        .include "tails.inc"
 
 ; Move the scroll on a pixel (holding at the ends; holding if the next column isn't ready)
 frame   lda pause
@@ -519,6 +641,9 @@ setx    lda scrx
         and #7
         eor #7                      ; (38 columns)
         sta $d016
+        clc                         ; the cover sprite follows the fine scroll
+        adc #COVERX
+        sta $d00e
         rts
 
         .align $100
@@ -543,6 +668,16 @@ mul40hi .for i = 0, i < ROWS, i += 1
 bandset .binary "bandset.bin"
 junk    .fill 16
 hist    .fill 16
+stalls  .fill ROWS
+rowtl   .fill ROWS
+rowth   .fill ROWS
+; the cover sprite's y for each row's tick: the next piece's, once this one has started
+covery  .for i = 0, i < ROWS, i += 1
+_y      := COVERY0 + 42 * (1 + ((54 + 8 * i) - (COVERY0 + 1)) / 42)
+        .byte _y > COVERY0 + 4 * 42 ? COVERY0 + 4 * 42 : _y   ; (the last piece runs past the bottom)
+        .endfor
+        .include "masks.inc"
+        .include "mty.inc"
 charsets .binary "charsets.bin"
 tops    .binary "tops.bin"
 bottoms .binary "bottoms.bin"

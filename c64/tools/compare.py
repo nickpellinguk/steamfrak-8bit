@@ -41,7 +41,7 @@ for r in range(25):
   tried = []
   for scroll in (base, base + 1, base - 1, base + 2, base - 2):
     cells = []
-    for c in range(3, 39):
+    for c in range(4, 39):     # (columns 0-3: under the cover sprite)
         diff = 0
         for y in range(r * 8, r * 8 + 8):
             for x in range(c * 8, c * 8 + 8):

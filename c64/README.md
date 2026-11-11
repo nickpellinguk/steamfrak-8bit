@@ -84,12 +84,30 @@ other pair of screens, which the main program fills from the level map.
 | --- | --- |
 | The first demo: one timed loop for the whole display | 6,464 |
 | Now: an interrupt a row | 13,808 |
+| With the cover sprite (sprite 7) over the FLI bug | 11,344 |
 
 Of a frame's 19,656 cycles, the VIC takes about 2,100 (50 bad lines); the interrupts take the
 rest. The border ticks could be switched off to save about 600 more.
 
 Memory (VIC bank 1): screen pairs at `$4000`/`$4400` and `$4800`/`$4c00`, character sets at
 `$5000` and `$5800`, the program and level from `$0801`.
+
+## Sprites and the critical write
+
+Sprite 7 covers the FLI bug's columns: X- and Y-expanded with 16 pixels set (32 wide, so it also
+hides a fourth character when the write lands a cycle late), cyan, following the fine scroll,
+and moved down the screen every 42 lines from the row ticks so the VIC fetches it on every row.
+
+Other sprites are the hard part. The VIC fetches the sprites shown on a line at the end of the
+line before (sprites 0-2) and the start of the line (3-7), stopping the CPU for about 5 cycles a
+sprite (less where fetches run together), and the row interrupt's code runs through two rounds
+of them before the forced bad line's write: line 3's and line 4's. So the write moves with which
+sprites are on lines 3 and 4. The tails (made by `tools/build.mjs`, chosen per row from a mask of
+the sprites on line 4) delay the write to suit, from a model of the fetches; measured in VICE
+(`--masktest`, `tools/garbage.py`: the write's cycle read off where the garbage lands), the model
+holds once both rounds are counted, but heavy patterns can't be rescued by a delay after the
+`$d018` write alone. Next: the interrupt restructured so its code is reads only through both
+rounds, compensated before the `$d018` write as well as after.
 
 ## Next
 
