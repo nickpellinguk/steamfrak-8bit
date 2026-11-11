@@ -1,13 +1,13 @@
 ; Frak! on the C64: display demo. Level A_1 ("FRAK!") in ECM with a forced bad line at line 4
 ; of every character row (4-line FLI), so every 8x4 half has its own glyph (tops from the first
 ; screen, bottoms from the second) and its own ECM background; two character sets, switched at
-; the forced bad lines; the level scrolling left and right. Sprite 7 covers the FLI bug's
-; garbage at the left of every row.
+; the forced bad lines; the level scrolling left and right. Sprite 0 covers the FLI bug's
+; garbage at the left of every row; sprites 3-7 are the Scrubblies' bodies.
 ;
 ; VIC bank 1 ($4000-$7fff):
 ;   $4000/$4400  screen pair 0 (tops, bottoms)     $4800/$4c00  screen pair 1
 ;   $5000        character set 0 (64 characters)   $5800        character set 1
-;   $5400        the cover sprite
+;   $5400        the cover sprite                 $5440        the Scrubblies' sprite
 ; Colour RAM is black throughout (every cell's foreground is black). ECM backgrounds: cyan,
 ; yellow, purple (Frak's magenta), black.
 ;
@@ -32,7 +32,7 @@
 ; Built by ../build.sh (64tass, with tools/build.mjs), which sets TS (when the timer starts, the
 ; earliest that works). MEASURE=1 replaces the foreground with a counting loop that measures the
 ; free cycles (in last: cycles a frame = last * 8 + (last >> 8) * 8); HIST=1 counts the slide's
-; skips (in hist); TEST=1 puts sprites 0-6 in the left border (unseen, but fetched).
+; skips (in hist); TEST=1 puts sprites 1-7 in the left border (unseen, but fetched).
 
         .include "level.inc"        ; NC (columns), ROWS
 
@@ -72,6 +72,9 @@ cnt     = zp + 19                   ; (2: MEASURE's count)
 last    = zp + 21                   ; (2: ... a frame's)
 jv      = zp + 23                   ; (2: the row's tail)
 sprites = zp + 25                   ; ($d015, once the timer's going)
+msb     = zp + 26                   ; (the sprites' x's bit 8)
+savy    = zp + 27
+SPRSCRUB = $5440                    ; the Scrubblies' sprite
 SPRCOVER = $5400                    ; the cover sprite's data
 COVERX  = 24                        ; its x at fine scroll 0
 COVERY0 = 50                        ; its first piece's y (lines 51-92; then 93, 135, 177, 219)
@@ -110,9 +113,9 @@ start   sei
         lda #$0b                    ; the display off while setting up
         sta $d011
 
-        ; Sprite 7: the cover over the FLI bug's columns at the left (4 characters: 16 pixels
-        ; set, expanded both ways), cyan like the border, in front; down the screen in 42-line
-        ; pieces (covery), so the VIC fetches it on line 4 of every row
+        ; Sprite 0: the cover over the FLI bug's columns at the left (4 characters: 16 pixels
+        ; set, expanded both ways), cyan like the border, in front of the characters and of
+        ; every other sprite; down the screen in 42-line pieces (covery)
         ldx #62
 -       lda #0
         sta SPRCOVER,x
@@ -127,27 +130,52 @@ start   sei
         dex
         bpl -
         lda #(SPRCOVER & $3fff) / 64
-        sta SCR0 + $3ff
-        sta SCR1 + $3ff
-        sta SCR2 + $3ff
-        sta SCR3 + $3ff
+        sta SCR0 + $3f8
+        sta SCR1 + $3f8
+        sta SCR2 + $3f8
+        sta SCR3 + $3f8
         lda #3
-        sta $d02e
+        sta $d027
         lda #COVERY0
-        sta $d00f
+        sta $d001
         lda #COVERX + 7
-        sta $d00e
-        lda #$80
-        sta $d017                   ; (expanded down)
-        sta $d01d                   ; (... and across)
+        sta $d000
         lda #0
         sta $d010
-        sta $d01b                   ; (in front of the characters)
-        sta $d01c                   ; (hi-res)
-        lda #$80
-        .if TEST
-        ; (the test: sprites 0-6 in the left border, where they can't be seen, but are fetched)
-        ldx #0
+        sta $d01c                   ; (all hi-res)
+        .if !TEST
+        ; Sprites 3-7: the Scrubblies' bodies, expanded both ways, magenta, behind the characters
+        ; (so their black, and the eyes' and teeth's yellow, are in front); their x follows the
+        ; scroll (scrubx)
+        ldx #62
+-       lda sprscrub,x
+        sta SPRSCRUB,x
+        dex
+        bpl -
+        ldx #4
+-       lda #(SPRSCRUB & $3fff) / 64
+        sta SCR0 + $3fb,x
+        sta SCR1 + $3fb,x
+        sta SCR2 + $3fb,x
+        sta SCR3 + $3fb,x
+        lda #4
+        sta $d02a,x
+        txa
+        asl
+        tay
+        lda scruby,x
+        sta $d007,y
+        dex
+        bpl -
+        lda #$f9
+        sta $d017                   ; (0 and 3-7 expanded down ...)
+        sta $d01d                   ; (... and across)
+        lda #$f8
+        sta $d01b                   ; (3-7 behind the characters)
+        lda #$f9
+        .else
+        ; (the test: sprites 1-7 in the left border, where they can't be seen, but are fetched)
+        ldx #2
         ldy #0
 -       lda testy,y
         sta $d001,x
@@ -156,18 +184,22 @@ start   sei
         iny
         inx
         inx
-        cpx #14
+        cpx #16
         bne -
         lda #(SPRCOVER & $3fff) / 64
         ldx #6
--       sta SCR0 + $3f8,x
-        sta SCR1 + $3f8,x
-        sta SCR2 + $3f8,x
-        sta SCR3 + $3f8,x
+-       sta SCR0 + $3f9,x
+        sta SCR1 + $3f9,x
+        sta SCR2 + $3f9,x
+        sta SCR3 + $3f9,x
         dex
         bpl -
         lda #TESTEXP
         sta $d017
+        lda #1
+        sta $d01d
+        lda #0
+        sta $d01b
         lda #$ff
         .endif
         sta sprites                 ; (shown once the timer has started: their fetches would upset
@@ -507,7 +539,7 @@ _sl     .fill 31, $c9               ; (cmp #$c9 ... cmp #$c5, nop; or ... cmp $e
         ; (line 3's cycle 11 or later: the same cycle every time)
         lda $dc0d                   ; (acknowledged)
 rcy     lda #0                      ; the cover sprite's next place down the screen
-        sta $d00f
+        sta $d001
 rx      ldx #0                      ; the bottoms' screen, the next band's set
         lda #D011B
 rtj     jmp tailend                   ; (the tail for line 4's fetches)
@@ -552,12 +584,13 @@ rlb     lda d18b0,x
 ; ---- A border tick (25-38): the first does the frame's bookkeeping, the last sets row 0 up
 bordirq sta sava
         stx savx
+        sty savy                    ; (the frame's bookkeeping uses y)
         lda $dc0d
         ldx row
         cpx #ROWS
         bne +
         lda #COVERY0                ; (the cover sprite back to the top, for the next frame)
-        sta $d00f
+        sta $d001
         inc frames
         jsr frame
         .if MEASURE
@@ -574,6 +607,7 @@ bordirq sta sava
         cpx #39
         bcs +
         stx row
+        ldy savy
         ldx savx
         lda sava
         rti
@@ -587,6 +621,7 @@ rl0     lda d18a0                   ; tick 38 (line 45): row 0's screen and set
         sta $fffe
         lda #>rowirq
         sta $ffff
+        ldy savy
         ldx savx
         lda sava
         rti
@@ -657,8 +692,58 @@ setx    lda scrx
         sta $d016
         clc                         ; the cover sprite follows the fine scroll
         adc #COVERX
-        sta $d00e
+        sta $d000
+        jmp scrubx                  ; (and the Scrubblies, the scroll)
+
+; The Scrubblies' sprites' x: their place in the level (sxlo/hi: 31 more, the screen's left edge
+; in sprite x at scroll 0, fine scroll 7) less the scroll; hidden in the right border once off
+; the screen, wrapped round (PAL: 504) when part off at the left
+scrubx  .if !TEST
+        lda #0
+        sta msb
+        ldx #4
+-       txa
+        asl
+        tay
+        lda sxlo,x
+        sec
+        sbc scrx
+        sta ftmp
+        lda sxhi,x
+        sbc scrx+1
+        bmi _neg
+        bne _hi
+        lda ftmp                    ; 0-255
+        sta $d006,y
+        jmp _next
+_hi     cmp #1                      ; 256-343: on the screen
+        bne _hide
+        lda ftmp
+        cmp #344 - 256
+        bcs _hide
+        sta $d006,y
+        bcc _msb
+_neg    cmp #$ff                    ; -47 to -1: part on the screen, as 457-503
+        bne _hide
+        lda ftmp
+        cmp #256 - 47
+        bcc _hide
+        clc
+        adc #<504
+        sta $d006,y
+        jmp _msb
+_hide   lda #<400                   ; (in the right border)
+        sta $d006,y
+_msb    lda msb
+        ora bit3,x
+        sta msb
+_next   dex
+        bpl -
+        lda msb
+        sta $d010
+        .endif
         rts
+bit3    .byte 8, 16, 32, 64, 128
 
         .align $100
 d18a0   .fill ROWS + 1
@@ -682,6 +767,7 @@ mul40hi .for i = 0, i < ROWS, i += 1
 bandset .binary "bandset.bin"
 junk    .fill 16
 hist    .fill 32
+sprscrub .binary "scrubspr.bin"
 rowimm  .fill ROWS
 rowtl   .fill ROWS
 rowth   .fill ROWS

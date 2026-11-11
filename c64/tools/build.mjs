@@ -22,7 +22,7 @@ function split(n) {
     }
     throw new Error(`no delay of ${n}`);
 }
-export const PARAMS = { TS: +arg('ts', 99) };
+export const PARAMS = { TS: +arg('ts', 98) };
 const defs = [];
 for (const [name, n] of Object.entries(PARAMS)) {
     const s = split(n);
@@ -41,49 +41,59 @@ defs.push('-D', `MEASURE=${process.argv.includes('--measure') ? 1 : 0}`, '-D', `
 // write on line 3's cycle 55, the tail only reads (a delay of d cycles, then sta $d011's three
 // reads) through line 4's fetches (58, 60, 62, then line 4's 1-9: 64 ... 72) to the $d011 write,
 // which must land on line 4's cycle W (14; or W + 1 where nothing reaches W: a character more of
-// the FLI bug, under the cover sprite). Sprite 7, the cover, is always shown.
+// the FLI bug, under the cover sprite). Sprite 0, the cover, is always shown.
 const PA = [-5, -3, -1, 1, 3, 5, 7, 9], PB = [58, 60, 62, 64, 66, 68, 70, 72];
 const lowAt = P => (m, t) => P.some((p, n) => (m >> n & 1) && t >= p - 3 && t <= p + 1);
 const lowA = lowAt(PA), lowB = lowAt(PB);
 let stallA = m => { let c = 0; for (let t = -20; t < 20; t++) if (lowA(m, t)) c++; return c; };
 const writeAt = (m, d) => { let t = 56, r = d + 3; while (r > 0) { if (!lowB(m, t)) r--; t++; } return t - 63; };
-const W = +arg('w', 14), JM0 = +arg('jm', 4);
+const W = +arg('w', 14), JM0 = +arg('jm', 4), COVER = 1;
 const tailFor = [], jmFor = [];
-for (let m = 0; m < 128; m++) {
+for (let m = 0; m < 256; m++) {
     let d = -1;
-    for (const want of [W, W + 1]) { for (let k = 0; k <= 30 && d < 0; k++) if (k !== 1 && writeAt(m | 128, k) === want) d = k; if (d >= 0) break; }
+    for (const want of [W, W + 1]) { for (let k = 0; k <= 30 && d < 0; k++) if (k !== 1 && writeAt(m | COVER, k) === want) d = k; if (d >= 0) break; }
     if (d < 0) throw new Error(`no tail for sprites ${m.toString(2)}`);
     tailFor.push(d);
-    jmFor.push(JM0 + stallA(m | 128) - stallA(128));
+    jmFor.push(JM0 + stallA(m | COVER) - stallA(COVER));
 }
-// --probemask M --d D: sprites M (0-6), expanded, on rows 3-8 (lines 3 and 4 alike), every row's
+// --probemask M --d D: sprites M (1-7), expanded, on rows 3-8 (lines 3 and 4 alike), every row's
 // tail D cycles long: where the garbage lands then (tools/garbage.py) says how late the write is
 const PM = arg('probemask', null), PD = +arg('d', 0);
 if (PM !== null) tailFor.fill(PD);
 const delays = [...new Set(tailFor)].sort((a, b) => a - b);
 const delayCode = d => { const out = []; let r = d; if (r & 1) { out.push('bit $ea'); r -= 3; } while (r > 0) { out.push('nop'); r -= 2; } return out; };
-let inc = '; made by tools/build.mjs: for each mask of sprites 0-6 (7 always shown), the row\n; interrupt\'s tail (line 4\'s fetches) and its slide\'s constant (line 3\'s); the tails\n';
+let inc = '; made by tools/build.mjs: for each mask of sprites shown (0, the cover, always), the row\n; interrupt\'s tail (line 4\'s fetches) and its slide\'s constant (line 3\'s); the tails\n';
 inc += 'masktl  .byte ' + tailFor.map(d => `<tail${d}`).join(', ') + '\n';
 inc += 'maskth  .byte ' + tailFor.map(d => `>tail${d}`).join(', ') + '\n';
 inc += 'maskjm  .byte ' + jmFor.join(', ') + '\n';
 for (const d of delays) inc += `tail${d}  stx $d018\n` + delayCode(d).map(c => `        ${c}\n`).join('') + '        sta $d011\n        jmp tailend\n';
 writeFileSync(DIR + 'tails.inc', inc);
 
-// ---- Which sprites are shown on each row's lines 3 and 4 (7 left out: always). A sprite whose
-// y is Y shows on lines Y + CONV to Y + CONV + 20 (41 expanded). --test SEED: sprites 0-6 in the
-// left border (unseen, but fetched) at random heights
+// ---- The sprites shown on each row's lines 3 and 4. A sprite whose y is Y shows on lines
+// Y + CONV to Y + CONV + 20 (41 expanded). The Scrubblies' (3-7: expanded, y the line before
+// their top), from the mock-up (../build/scrub.json); or, --test SEED, sprites 1-7 in the left
+// border (unseen, but fetched) at random heights
 const CONV = +arg('conv', 1), TEST = process.argv.includes('--test') || PM !== null;
+const scrub = JSON.parse(readFileSync(DIR + 'scrub.json', 'utf8'));
 let seed = +arg('test', 1) || 1;
 const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x80000000;
-const testy = [], testexp = [];
-for (let n = 0; n < 7; n++) { testy.push(30 + Math.floor(rnd() * 220)); testexp.push(rnd() < 0.3 ? 1 : 0); }
-if (PM !== null) for (let n = 0; n < 7; n++) { testy[n] = (+PM >> n & 1) ? 77 : 0; testexp[n] = (+PM >> n & 1); }
-const maskOn = line => { let m = 0; if (TEST) for (let n = 0; n < 7; n++) { const h = testexp[n] ? 42 : 21; if (line >= testy[n] + CONV && line < testy[n] + CONV + h) m |= 1 << n; } return m; };
+let spr = [];                                       // (sprite, y, expanded)
+if (TEST) for (let n = 1; n < 8; n++) spr.push({ n, y: 30 + Math.floor(rnd() * 220), exp: rnd() < 0.3 });
+else scrub.placed.forEach((p, i) => spr.push({ n: 3 + i, y: 50 + p.top, exp: true }));
+if (PM !== null) spr = [1, 2, 3, 4, 5, 6, 7].map(n => ({ n, y: (+PM >> n & 1) ? 77 : 0, exp: !!(+PM >> n & 1) }));
+const maskOn = line => spr.reduce((m, s) => line >= s.y + CONV && line < s.y + CONV + (s.exp ? 42 : 21) ? m | 1 << s.n : m, COVER);
 const masks = [], masks3 = [];
 for (let r = 0; r < 25; r++) { masks3.push(maskOn(54 + 8 * r)); masks.push(maskOn(55 + 8 * r)); }
 defs.push('-D', `TEST=${TEST ? 1 : 0}`);
-writeFileSync(DIR + 'masks.inc', `; made by tools/build.mjs\nmasks   .byte ${masks.join(', ')}\nmasks3  .byte ${masks3.join(', ')}\ntesty   .byte ${testy.join(', ')}\nTESTEXP = ${testexp.reduce((s, e, n) => s | e << n, 0) | 0x80}\n`);
-if (TEST) console.log(`row masks (line 3/4): ${masks.map((m, r) => masks3[r] === m ? m.toString(16) : masks3[r].toString(16) + '/' + m.toString(16)).join(' ')}; tails ${masks.map(m => tailFor[m]).join(' ')}`);
+const testy = TEST ? spr.map(s => s.y) : [0];
+const sx = scrub.placed.map(p => 31 + p.x);
+writeFileSync(DIR + 'masks.inc', `; made by tools/build.mjs\nmasks   .byte ${masks.join(', ')}\nmasks3  .byte ${masks3.join(', ')}\n` +
+    `testy   .byte ${testy.join(', ')}\nTESTEXP = ${spr.reduce((m, s) => s.exp ? m | 1 << s.n : m, COVER)}\n` +
+    `scruby  .byte ${scrub.placed.map(p => 50 + p.top).join(', ')}\nsxlo    .byte ${sx.map(v => v & 255).join(', ')}\nsxhi    .byte ${sx.map(v => v >> 8).join(', ')}\n`);
+const sb = Buffer.alloc(64);
+scrub.sprite.forEach((row, y) => { for (let k = 0; k < 3; k++) sb[y * 3 + k] = parseInt(row.slice(k * 8, k * 8 + 8), 2); });
+writeFileSync(DIR + 'scrubspr.bin', sb);
+console.log(`row masks (line 3/4): ${masks.map((m, r) => masks3[r] === m ? m.toString(16) : masks3[r].toString(16) + '/' + m.toString(16)).join(' ')}; tails ${masks.map(m => tailFor[m]).join(' ')}`);
 if (!process.argv.includes('--nopack')) execFileSync('node', [TOOLS + 'pack.mjs'], { stdio: 'inherit' });
 execFileSync('64tass', ['-q', '-a', '-C', ...defs, '-I', DIR, '--labels=' + DIR + 'frak64.lbl', '-o', DIR + 'frak64.prg', SRC + 'frak64.asm'], { cwd: DIR, stdio: 'inherit' });
 const lbl = Object.fromEntries(readFileSync(DIR + 'frak64.lbl', 'utf8').split('\n').map(l => l.match(/^(\w+)\s*=\s*\$([0-9a-f]+)/i)).filter(Boolean).map(m => [m[1], parseInt(m[2], 16)]));

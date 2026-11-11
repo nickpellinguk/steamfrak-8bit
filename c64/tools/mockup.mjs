@@ -88,6 +88,16 @@ for (const pc of pieces) {
         art[at2(x, y)] = l === 0 ? (v === 3 ? 3 : 0) : l <= 4 ? (v === 0 ? 2 : v === 1 ? 2 : v) : (v === 3 ? 3 : v === 2 ? 3 : 0);
     }
 }
+// ... and the half below the magenta (lines 5-8), under the whole of the magenta's width: black
+// on yellow
+for (const pc of pieces) {
+    const top = snapTop(pc.y0);
+    for (let x = 0; x < W; x++) {
+        let m = false;
+        for (let l = 1; l <= 4 && !m; l++) if (inside(x, top + l) && art[at2(x, top + l)] === 2) m = true;
+        if (m) for (let l = 5; l <= 8; l++) if (inside(x, top + l)) art[at2(x, top + l)] = art[at2(x, top + l)] === 3 ? 3 : 1;
+    }
+}
 
 // ---- The ladders, redrawn (where the ledges aren't)
 const area = ledgeArea(art);
@@ -301,6 +311,10 @@ for (const { left, top } of placed) for (let y = 0; y < 42; y++) for (let x = 0;
     if (SPR[y >> 1][x >> 1] && inside(X, Y) && Y < HS && !fgm[at2(X, Y)]) shown[at2(X, Y)] = 2;
 }
 writeFileSync(`${OUT}/sprite.txt`, '; The Scrubbly\'s sprite, 24 x 21 (# solid magenta, . clear), shown expanded to 48 x 42\n' + SPR.map(r => r.map(v => v ? '#' : '.').join('')).join('\n') + '\n');
+// (for the demo: where the Scrubblies' sprites go, the sprite, and the picture with them but
+// without the keys' sprites)
+writeFileSync(`${OUT}/scrub${SUF}.json`, JSON.stringify({ placed: placed.map(({ left, top }) => ({ x: left - 8, top })), sprite: SPR.map(r => r.join('')) }));
+writeFileSync(`${OUT}/charsspr${SUF}.bin`, shown.subarray(0, W * HS));
 // ---- The picture (the keys and gems drawn over the juggled art and the result)
 const KEYS = !process.env.NOKEYS;
 if (KEYS) for (let q = 0; q < W * H; q++) if (ovl[q] === 1 && !fgm[q]) shown[q] = 1;   // (the keys' yellow sprites, behind)

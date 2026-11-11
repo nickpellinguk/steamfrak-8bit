@@ -2,11 +2,11 @@
 
 An experiment in showing Frak's graphics on an unexpanded C64 (and a C128 in C64 mode) at their
 own resolution, without doubling the pixels' width. So far it's a display demo: level A_1
-("FRAK!") scrolling left and right, with no Trogg, no sprites and no game.
+("FRAK!") scrolling left and right, with the Scrubblies' sprites but no Trogg and no game.
 
-**Status: demo working in VICE (x64sc, PAL), the display an interrupt a row that stays on time
-whatever sprites are shown, leaving the main program about half the CPU; not yet tried on a
-real machine.**
+**Status: demo working in VICE (x64sc, PAL), with the Scrubblies' sprites; the display an
+interrupt a row that stays on time whatever sprites are shown, leaving the main program about
+45% of the CPU; not yet tried on a real machine.**
 
 ## The idea
 
@@ -25,11 +25,12 @@ three in one 8x8 area, so the demo uses:
   bottoms and the next row's tops. Each character holds a top glyph and a bottom glyph, so a
   set holds 64 of each.
 
-The BBC art is redrawn to suit: platforms snapped to the 8x4 grid (8 across, 4 down), ladders
-and objects black on cyan, lined up with the 16-pixel platform units. Every 8x8 cell's
+The BBC art is redrawn to suit: platforms snapped to the 8x4 grid (8 across, 4 down) with a
+black top line, a magenta band, black lattice on yellow for the next 4 lines and on cyan below;
+ladders and objects black on cyan, lined up with the 16-pixel platform units. Every 8x8 cell's
 foreground came out black, so colour RAM is filled once and never scrolled. The Scrubblies are a
-black outline with yellow eyes and teeth in the characters; a magenta sprite behind each will
-make the body (in the mock-up, not yet in the demo).
+black outline with yellow eyes and teeth in the characters, and a magenta sprite behind each
+(expanded both ways, behind the characters, with holes over the eyes and teeth) makes the body.
 
 ## Building and testing
 
@@ -95,9 +96,11 @@ Memory (VIC bank 1): screen pairs at `$4000`/`$4400` and `$4800`/`$4c00`, charac
 
 ## Sprites and the critical write
 
-Sprite 7 covers the FLI bug's columns: X- and Y-expanded with 16 pixels set (32 wide, so it also
-hides a fourth character when the write lands a cycle late), cyan, following the fine scroll,
-and moved down the screen every 42 lines from the row ticks so the VIC fetches it on every row.
+| Sprite | |
+| --- | --- |
+| 0 | The cover over the FLI bug's columns: X- and Y-expanded with 16 pixels set (32 wide, so it also hides a fourth character when the write lands a cycle late), cyan, following the fine scroll, moved down the screen every 42 lines from the row ticks. In front of every other sprite |
+| 1, 2 | (Trogg: `tools/trogg.mjs`) |
+| 3-7 | The Scrubblies' bodies, their x following the scroll (hidden in the right border off the screen, wrapped round when part off at the left) |
 
 Other sprites move the critical write. The VIC fetches the sprites shown on a line at the end of
 the line before (sprites 0-2) and the start of the line (3-7), holding BA low from 3 cycles
@@ -112,12 +115,13 @@ The row interrupt meets two rounds of these: line 3's (end of line 2, start of l
 - the slide skips line 3's cost as well as the interrupt's lateness, so `$d018` is written on
   line 3's cycle 55 whatever sprites are there;
 - the tail's delay suits line 4's sprites, so the `$d011` write lands on line 4's cycle 14 (or 15
-  where none can: 33 of the 128 masks, the extra garbage character under the cover sprite).
+  where none can, the extra garbage character under the cover sprite).
 
 Each row's masks (the sprites on its lines 3 and 4) pick the slide constant and the tail from
-tables of all 128 masks of sprites 0-6. The model was checked in VICE for every mask
+tables of all 256 masks of sprites (0 always on). The model was checked in VICE for every mask
 (`--probemask`: the write's cycle read off where the garbage lands, `tools/garbage.py`) and
-predicts all 128 exactly; and 30 layouts of sprites at random heights (`--test`), 72 of their
+predicts all 128 exactly (measured with the cover as sprite 7; it's now sprite 0, and 24
+layouts were checked again); and 30 layouts of sprites at random heights (`--test`), 72 of their
 rows with a sprite starting or ending between lines 3 and 4, match the mock-up on every row.
 
 The timer is started (once, from a stable raster) before any sprite is shown: their fetches
@@ -126,8 +130,9 @@ would upset the stable raster.
 | Free CPU time with sprites | Cycles a frame |
 | --- | --- |
 | The cover sprite only | 10,432 |
-| ... and sprites 0-6 on screen (a test layout) | 9,816 |
+| ... and seven more sprites on screen (a test layout) | 9,816 |
+| The cover sprite and the five Scrubblies' (the demo) | 8,968 |
 
 ## Next
 
-The Scrubblies' magenta sprites, a sprite over the FLI bug's columns, then Trogg.
+A multiplexer working the masks out each frame (sprites moving up and down), then Trogg.
