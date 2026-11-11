@@ -2,7 +2,7 @@
 
 An experiment in showing Frak's graphics on an unexpanded C64 (and a C128 in C64 mode) at their
 own resolution, without doubling the pixels' width. So far it's a display demo: level A_1
-("FRAK!") scrolling left and right, with the Scrubblies' sprites and some bouncing balls shared
+("FRAK!") scrolling left and right, with the Scrubblies' sprites and balloons and daggers shared
 out by a sprite multiplexer, but no Trogg and no game.
 
 **Status: demo working in VICE (x64sc, PAL), with a sprite multiplexer; the display an
