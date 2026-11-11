@@ -43,6 +43,7 @@ ROM routines.
 | File | |
 | --- | --- |
 | `tools/mockup.mjs` | Redraws A_1 for the 8x4 grid and works out what ECM + 4-line FLI shows: `build/mockup.png`, and the data for `pack.mjs` |
+| `tools/trogg.mjs` | Trogg's frames as sprites: a hi-res black outline over a multicolour infill, 24 wide, each sprite used twice down his 34 lines (`build/trogg.png`, `trogg.txt`, `trogg.bin`) |
 | `tools/pack.mjs` | Packs the glyphs into two character sets (by band: a row's bottoms and the next row's tops) and writes the screen codes (glyph + background) for the 94 x 25 level |
 | `src/frak64.asm` | The demo: the timer interrupt a row, double-buffered screens, scrolling |
 | `tools/build.mjs` | Assembles it and the stand-in ROMs, and runs VICE headless for a screenshot |
