@@ -67,7 +67,10 @@ trogset lda jumping                 ; (hidden while the camera jumps back to the
         beq +
         lda #6                      ; (sprites 1 and 2)
 +       sta tmsbb
-        txa                         ; the pointers
+        cpx tfrw                    ; the pointers (when his frame changes)
+        beq +
+        stx tfrw
+        txa
         asl
         sta mt
         asl
@@ -81,6 +84,7 @@ trogset lda jumping                 ; (hidden while the camera jumps back to the
         inx
         cpx #6
         bne -
++
         lda #$ff                    ; his rows' ticks
         sta tra
         sta trb
@@ -185,6 +189,7 @@ tpair   sta tq0+2
 tx      .word TROGGX ? TROGGX : TSTARTX     ; (his place in the level: x, and his feet's y;
 ty      .word TROGGY ? TROGGY : TSTARTY     ;  the start, from geometry.json)
 tfr     .byte TROGGF
+tfrw    .byte $ff                   ; (the frame whose pointers are in tpen)
 tpen    .fill TSET
 tact    .fill TSET, 255             ; (parked below the screen until the first frame)
 tmsbb   .byte 0

@@ -232,13 +232,13 @@ _s      stx mt
         txa
         ora nb
         tax
+        lda mflg
+        and #2
+        beq +
         lda e_x,y
         sta e_x,x
         lda e_y,y
         sta e_y,x
-        lda mflg
-        and #2
-        beq +
         lda e_n,y
         sta e_n,x
         lda e_reg,y
@@ -261,15 +261,14 @@ _u      ora nb
         tax                     ; (to)
         eor #32
         tay                     ; (from)
+        lda mflg
+        lsr
+        lsr
+        bcc +
         lda u_x,y
         sta u_x,x
         lda u_y,y
         sta u_y,x
-        lda mflg
-        lsr
-        beq _nx                 ; (x and y only)
-        lsr
-        bcc +
         lda u_n,y
         sta u_n,x
         lda u_reg,y
@@ -511,21 +510,28 @@ spawn   ldx #NB - 1
 
 ; ---- Sort: the virtual sprites down the screen (order, kept from frame to frame, so nearly in
 ; order already: an insertion sort)
-sort    ldx #1
+sort    ldy order               ; (in order, mostly: each compared with the one before, and only
+        lda vy,y                ; one that's out of order moved back to its place)
+        sta mkey
+        ldx #1
 _next   cpx #NV
         bcs _done
-        stx mi
-        lda order,x
-        sta mcur
-        tay
+        ldy order,x
         lda vy,y
+        cmp mkey
+        bcc _ins
         sta mkey
+        inx
+        bne _next
+_ins    stx mi                  ; (higher than the one before: back to its place)
+        sty mcur
+        sta mlo
         ldy mi
 _shift  dey
         bmi _first
         ldx order,y
         lda vy,x
-        cmp mkey
+        cmp mlo
         bcc _put
         beq _put
         lda order,y
@@ -536,7 +542,10 @@ _first  lda mcur
         jmp _on
 _put    lda mcur
         sta order+1,y
-_on     ldx mi
+_on     ldx mi                  ; (the one now here is the highest so far)
+        ldy order,x
+        lda vy,y
+        sta mkey
         inx
         bne _next
 _done   rts
@@ -560,8 +569,12 @@ _v
 +       ldy order,x
         sty mv
         lda vh,y
-        bmi _un
-        sta mh
+        bpl _shown
+        lda vfl,y               ; (not shown, and hidden: nothing to do)
+        bpl +
+        jmp _nx
++       jmp _un
+_shown  sta mh
         .if MUXTIME
         lda #1                  ; (debug: the path taken, 1 unchanged, 2 checked)
         ldx it
@@ -655,25 +668,48 @@ _chg    lda vptr,y
         lda vcol,y
         cmp vcp,y
         bne _full
+        lda vy,y                ; x and y: into the buffer being made, where it differs (so it's
+        sta vyp,y               ; always up to date there: nothing to note, or copy across after)
+        ldx vt,y
+        bne _xu
+        lda vs,y
+        ora nb
+        tax
         lda vy,y
-        cmp vyp,y
-        bne _xy
-        lda vxlo,y
-        cmp vxp,y
-        beq _nx
-_xy     jsr writexy
+        cmp e_y,x
+        beq +
+        sta e_y,x
++       lda vxlo,y
+        sta vxp,y
+        cmp e_x,x
+        beq _nxj
+        sta e_x,x
+_nxj    jmp _nx
+_xu     txa
+        ora nb
+        tax
+        lda vy,y
+        cmp u_y,x
+        beq +
+        sta u_y,x
++       lda vxlo,y
+        sta vxp,y
+        cmp u_x,x
+        beq _nxj
+        sta u_x,x
         jmp _nx
 _full   jsr writerec
         jmp _nx
 _clash  ldy mv                  ; sprite mv and mi clash: mi goes if it isn't kept before others
         lda vfl,y               ; and mv is, else mv; then mv again
         and #VFIRST
-        beq _rm
+        beq _rmj
         ldx mi
         lda vfl,x
         and #VFIRST
-        bne _rm
-        lda mv
+        beq +
+_rmj    jmp _rm
++       lda mv
         pha
         stx mv
         jsr remove
@@ -686,14 +722,24 @@ _clash  ldy mv                  ; sprite mv and mi clash: mi goes if it isn't ke
 ; sprite of its own (NV, on hardware sprite "8": bits 1 and 2), only the rows that change; his
 ; rows' tails (rowsfin) when they move; bit 8 of his x in the registers
 troggmux
+        lda tres1                   ; (only when his rows change: nothing's set up there after)
+        cmp tres1w
+        bne +
+        lda tres2
+        cmp tres2w
+        beq _kept
++       lda tres1
+        sta tres1w
+        lda tres2
+        sta tres2w
         ldx tres1
 -       cpx tres2
         beq +
-        bcs ++
+        bcs _kept
 +       jsr _free
         inx
         bne -
-+
+_kept
         lda #NV
         sta mv
         lda #8
@@ -741,6 +787,8 @@ _row    cpy #ROWS
         jmp rdirty
 +       rts
 traw    .byte $ff                   ; (the rows and bit 8 last frame)
+tres1w  .byte $ff
+tres2w  .byte $ff
 tmsbw   .byte 0
 
 ; Sprite mv on the list of those waiting to be placed (wlist, mwait long), if it can be shown
@@ -1469,8 +1517,7 @@ dirtyt  sta mflg                ; (tick x changed: a, what)
         sta tdf,x
         rts
 
-; Sprite mv's record (hardware sprite, pointer, colour, x, y) written for its tick; or just its
-; x and y
+; Sprite mv's record (hardware sprite, pointer, colour, x, y) written for its tick
 writerec
         ldy mv
         lda vy,y
@@ -1518,34 +1565,6 @@ _u      txa
         sta u_col,x
         ldx vt,y
         lda #3
-        jmp dirtyt
-
-writexy ldy mv
-        lda vy,y
-        sta vyp,y
-        lda vxlo,y
-        sta vxp,y
-        ldx vt,y
-        bne _u
-        lda vs,y
-        ora nb
-        tax
-        lda vy,y
-        sta e_y,x
-        lda vxlo,y
-        sta e_x,x
-        ldx #0
-        lda #1
-        jmp dirtyt
-_u      txa
-        ora nb
-        tax
-        lda vy,y
-        sta u_y,x
-        lda vxlo,y
-        sta u_x,x
-        ldx vt,y
-        lda #1
         jmp dirtyt
 
 ; The registers down the ticks (only when a hardware sprite's settings changed): before the

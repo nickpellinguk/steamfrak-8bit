@@ -474,22 +474,24 @@ fillrow ldx prow
         sta tmp+1
         lda tmp
         clc
-        adc #<tops
-        sta _st+1
+        adc #<(tops + 3)            ; (from column 3: columns 0-2 are the FLI bug's, never seen,
+        sta _st+1                   ; under the cover sprite)
         lda tmp+1
-        adc #>tops
+        adc #>(tops + 3)
         sta _st+2
         lda tmp
         clc
-        adc #<bottoms
+        adc #<(bottoms + 3)
         sta _sb+1
         lda tmp+1
-        adc #>bottoms
+        adc #>(bottoms + 3)
         sta _sb+2
         lda back                    ; destination: the pair's screens, the row
         asl
         tay
-        lda mul40lo,x
+        lda mul40lo,x               ; (+ 3 never carries: a row's offset's low byte is at most 248)
+        clc
+        adc #3
         sta _dt+1
         sta _db+1
         lda mul40hi,x
@@ -500,7 +502,7 @@ fillrow ldx prow
         clc
         adc pairhi+1,y
         sta _db+2
-        ldx #39
+        ldx #36
 _st     lda $ffff,x
 _dt     sta $ffff,x
 _sb     lda $ffff,x

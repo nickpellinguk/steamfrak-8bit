@@ -1,7 +1,7 @@
 # Plan: a playable A_1
 
 Status: **milestones 1-4 done** (the data; Trogg shown; his movement and the keys; the camera),
-but **the CPU budget is short** while the screen scrolls (see milestone 4): next, before the yoyo. Each milestone is checked before the next, and this
+with the CPU budget trimmed to 96% ready on Hard while the screen scrolls (see milestone 4). Each milestone is checked before the next, and this
 file is updated as they're done.
 
 ## Scope
@@ -204,14 +204,24 @@ often everything is ready in time.
      2,800, keys and movement about 1,300, Trogg's settings and his part of the multiplexer about
      600, the camera 100) and the fill another 3,300 (1,055 cycles a row, 25 rows a column, a
      column every 8 frames).
+   - **Main-program trims** (budget option 1): the sort's in-order fast path, the keys read once
+     into a byte, hidden sprites skipped quickly, x and y written straight into the buffer being
+     made, Trogg's part of the multiplexer and his pointers only redone when they change, and the
+     fill starting at column 3 (the columns the border covers left out). Measured on Hard,
+     scrolling all the time: the multiplexer ready for **96.1%** of frames (was 80.2%), the camera
+     waiting for the fill in 20.7% of frames (it moves on sooner, so asks more often); a frame's
+     work about 4,800 cycles (3,800-6,300), the fill 989 cycles a row. The frame checker finds no
+     problems. What's left is the fill's rate when he walks without stopping; skipping empty rows
+     would hardly help (1.35 of a window's 25 rows are empty on average, 4 at most).
 5. **Yoyo**: the string and the yoyo, then knocking a Scrubbly off.
 6. **Budget**: the whole frame profiled, readiness and slack measured with everything running,
    and whatever that shows fixed.
 
 ## Unknowns, measured early rather than guessed
 
-- The budget with the screen scrolling (milestone 4): short by about 2,000-3,000 cycles a frame
-  scrolling all the time on Hard, more on Insane.
+- The budget with the screen scrolling (milestone 4): after the trims, the multiplexer is ready
+  for 96% of frames on Hard scrolling all the time; the camera lags the fill about a fifth of
+  the time then. Insane is taken to be out of the C64's reach.
 
 - The row tails' slack with Trogg's sprites: 12 cycles at the least, with his rows' ticks left
   alone (milestone 2). Little margin: to watch when he moves.

@@ -74,71 +74,83 @@ restart lda #<TSTARTX
 ; joystick 2), with its debouncing: after landing or climbing off, up and down do nothing till
 ; they're let go; after stepping onto a ladder from a fall, left and right
 read_keys
-        lda #$ff                    ; (joystick 2: port A's lines, with no keyboard column chosen)
-        sta $dc00
+        lda #$ff                    ; joystick 2 (port A's lines, with no keyboard column chosen):
+        sta $dc00                   ; bits 0 up, 1 down, 2 left, 3 right, 4 fire, set when pushed
         lda $dc00
         eor #$ff
+        and #$1f
         sta joy
-        lda #%11111101              ; column 1: Z (row 4)
+        lda #%11111101              ; and the keys into the same bits: Z (column 1, row 4) left
         sta $dc00
         lda $dc01
         and #%00010000
-        jsr _key
-        sta k_left
-        lda joy
-        and #4
-        jsr _flag
-        ora k_left
-        sta k_left
-        lda #%11111011              ; column 2: X (row 7)
+        bne +
+        lda #4
+        ora joy
+        sta joy
++       lda #%11111011              ; X (column 2, row 7) right
         sta $dc00
         lda $dc01
-        and #%10000000
-        jsr _key
-        sta k_right
-        lda joy
-        and #8
-        jsr _flag
-        ora k_right
-        sta k_right
-        lda #%11101111              ; column 4: O (row 6), K (row 5)
+        bmi +
+        lda #8
+        ora joy
+        sta joy
++       lda #%11101111              ; O (column 4, row 6) up, K (row 5) down
         sta $dc00
         lda $dc01
-        sta ktmp
+        tax
         and #%01000000
-        jsr _key
-        sta k_up
-        lda joy
-        and #1
-        jsr _flag
-        ora k_up
-        sta k_up
-        lda ktmp
+        bne +
+        lda #1
+        ora joy
+        sta joy
++       txa
         and #%00100000
-        jsr _key
-        sta k_down
-        lda joy
-        and #2
-        jsr _flag
-        ora k_down
-        sta k_down
-        lda #%11011111              ; column 5: P (row 1)
+        bne +
+        lda #2
+        ora joy
+        sta joy
++       lda #%11011111              ; P (column 5, row 1) the yoyo
         sta $dc00
         lda $dc01
         and #%00000010
-        jsr _key
-        sta k_yoyo
-        lda #%01111111              ; column 7: Space (row 4)
+        bne +
+        lda #16
+        ora joy
+        sta joy
++       lda #%01111111              ; Space (column 7, row 4) the yoyo
         sta $dc00
         lda $dc01
         and #%00010000
-        jsr _key
-        ora k_yoyo
-        sta k_yoyo
-        lda joy
-        and #16
-        jsr _flag
-        ora k_yoyo
+        bne +
+        lda #16
+        ora joy
+        sta joy
++       lda joy                     ; (each key: 0 or 1)
+        lsr a
+        rol k_up
+        lsr a
+        rol k_down
+        lsr a
+        rol k_left
+        lsr a
+        rol k_right
+        lsr a
+        rol k_yoyo
+        lda #1
+        and k_up
+        sta k_up
+        lda #1
+        and k_down
+        sta k_down
+        lda #1
+        and k_left
+        sta k_left
+        lda #1
+        and k_right
+        sta k_right
+        lda #1
+        and k_yoyo
         sta k_yoyo
         lda #$ff
         sta $dc00
@@ -192,14 +204,6 @@ _lr_live
         sta xmove
 _lr_done
         rts
-_key    beq +                       ; (a key's row bit: 0 if it's down)
-        lda #0
-        rts
-+       lda #1
-        rts
-_flag   beq +                       ; (a joystick bit, inverted: set if it's pushed)
-        lda #1
-+       rts
 
 ; ---- Trogg's movement for a tick
 trogg_update
