@@ -12,5 +12,5 @@ def black(r, c):
     return sum(1 for y in range(4) for x in range(8) if px[X0 + 8 * c + x, Y0 + 8 * r + 4 + y] == (0, 0, 0))
 for r in rows:
     b = [black(r, c) for c in range(39)]
-    start = next((c for c in range(4, 37) if all(b[c + k] >= 24 for k in range(3))), None)
+    start = next((c for c in range(4, 37) if all(b[c + k] >= 24 for k in range(3))), -1)
     print(r, start, ' '.join(str(v) for v in b[:30]))

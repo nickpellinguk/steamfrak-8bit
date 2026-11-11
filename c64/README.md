@@ -4,8 +4,9 @@ An experiment in showing Frak's graphics on an unexpanded C64 (and a C128 in C64
 own resolution, without doubling the pixels' width. So far it's a display demo: level A_1
 ("FRAK!") scrolling left and right, with no Trogg, no sprites and no game.
 
-**Status: demo working in VICE (x64sc, PAL), the display an interrupt a row, leaving the main
-program about 70% of the CPU; not yet tried on a real machine.**
+**Status: demo working in VICE (x64sc, PAL), the display an interrupt a row that stays on time
+whatever sprites are shown, leaving the main program about half the CPU; not yet tried on a
+real machine.**
 
 ## The idea
 
@@ -84,7 +85,7 @@ other pair of screens, which the main program fills from the level map.
 | --- | --- |
 | The first demo: one timed loop for the whole display | 6,464 |
 | Now: an interrupt a row | 13,808 |
-| With the cover sprite (sprite 7) over the FLI bug | 11,344 |
+| With the cover sprite, and the interrupt proof against sprite fetches | 10,432 |
 
 Of a frame's 19,656 cycles, the VIC takes about 2,100 (50 bad lines); the interrupts take the
 rest. The border ticks could be switched off to save about 600 more.
@@ -98,16 +99,34 @@ Sprite 7 covers the FLI bug's columns: X- and Y-expanded with 16 pixels set (32 
 hides a fourth character when the write lands a cycle late), cyan, following the fine scroll,
 and moved down the screen every 42 lines from the row ticks so the VIC fetches it on every row.
 
-Other sprites are the hard part. The VIC fetches the sprites shown on a line at the end of the
-line before (sprites 0-2) and the start of the line (3-7), stopping the CPU for about 5 cycles a
-sprite (less where fetches run together), and the row interrupt's code runs through two rounds
-of them before the forced bad line's write: line 3's and line 4's. So the write moves with which
-sprites are on lines 3 and 4. The tails (made by `tools/build.mjs`, chosen per row from a mask of
-the sprites on line 4) delay the write to suit, from a model of the fetches; measured in VICE
-(`--masktest`, `tools/garbage.py`: the write's cycle read off where the garbage lands), the model
-holds once both rounds are counted, but heavy patterns can't be rescued by a delay after the
-`$d018` write alone. Next: the interrupt restructured so its code is reads only through both
-rounds, compensated before the `$d018` write as well as after.
+Other sprites move the critical write. The VIC fetches the sprites shown on a line at the end of
+the line before (sprites 0-2) and the start of the line (3-7), holding BA low from 3 cycles
+before each sprite's first fetch to its last, and the CPU stops at its next read while it's low.
+The row interrupt meets two rounds of these: line 3's (end of line 2, start of line 3) and line
+4's (end of line 3, start of line 4). So:
+
+- it reads the timer in line 2, before line 3's fetches, and from there until the forced bad
+  line's write it only reads: the slide, padding, and a tail of `nop`s and `bit`s. (Everything a
+  row needs is set by the row before, as operands.) So the fetches cost exactly the cycles BA is
+  low, which a model of them in `tools/build.mjs` counts;
+- the slide skips line 3's cost as well as the interrupt's lateness, so `$d018` is written on
+  line 3's cycle 55 whatever sprites are there;
+- the tail's delay suits line 4's sprites, so the `$d011` write lands on line 4's cycle 14 (or 15
+  where none can: 33 of the 128 masks, the extra garbage character under the cover sprite).
+
+Each row's masks (the sprites on its lines 3 and 4) pick the slide constant and the tail from
+tables of all 128 masks of sprites 0-6. The model was checked in VICE for every mask
+(`--probemask`: the write's cycle read off where the garbage lands, `tools/garbage.py`) and
+predicts all 128 exactly; and 30 layouts of sprites at random heights (`--test`), 72 of their
+rows with a sprite starting or ending between lines 3 and 4, match the mock-up on every row.
+
+The timer is started (once, from a stable raster) before any sprite is shown: their fetches
+would upset the stable raster.
+
+| Free CPU time with sprites | Cycles a frame |
+| --- | --- |
+| The cover sprite only | 10,432 |
+| ... and sprites 0-6 on screen (a test layout) | 9,816 |
 
 ## Next
 

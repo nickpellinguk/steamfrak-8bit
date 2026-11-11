@@ -1,35 +1,38 @@
 ; Frak! on the C64: display demo. Level A_1 ("FRAK!") in ECM with a forced bad line at line 4
 ; of every character row (4-line FLI), so every 8x4 half has its own glyph (tops from the first
 ; screen, bottoms from the second) and its own ECM background; two character sets, switched at
-; the forced bad lines; the level scrolling left and right. No sprites yet, so the FLI bug's 3
-; garbage characters show at the left of every row.
+; the forced bad lines; the level scrolling left and right. Sprite 7 covers the FLI bug's
+; garbage at the left of every row.
 ;
 ; VIC bank 1 ($4000-$7fff):
 ;   $4000/$4400  screen pair 0 (tops, bottoms)     $4800/$4c00  screen pair 1
 ;   $5000        character set 0 (64 characters)   $5800        character set 1
+;   $5400        the cover sprite
 ; Colour RAM is black throughout (every cell's foreground is black). ECM backgrounds: cyan,
 ; yellow, purple (Frak's magenta), black.
 ;
 ; Timing (PAL, 63 cycles a line): character row n starts at raster 51 + 8n (YSCROLL 3, a normal
 ; bad line, the tops' screen). At raster 55 + 8n, just after cycle 14, YSCROLL 7: a bad line the
 ; VIC didn't expect, which fetches the bottoms' screen's codes without resetting its row counter,
-; so lines 4-7 show rows 4-7 of the new codes' characters. Just before it, $d018 switches to the
-; bottoms' screen and to the character set for the band from here to line 3 of the next row (the
-; set changes only here, so nothing else needs timing). After it, YSCROLL 3 again and the tops'
-; screen for the next row's bad line.
+; so lines 4-7 show rows 4-7 of the new codes' characters. On line 3's cycle 55, $d018 switches
+; to the bottoms' screen and to the character set for the band from there to line 3 of the next
+; row (the set changes only there). After the bad line, YSCROLL 3 again and the tops' screen for
+; the next row's bad line.
 ;
-; Only that one write in a row has to land on an exact cycle, so the display is an interrupt a
-; row, not a loop that holds the CPU: CIA 1's timer B runs with a period of 504 cycles (8 lines;
-; a PAL frame is exactly 39 of them) and interrupts at line 3 of each row. The interrupt reads
-; the timer to see how late it was taken (the instruction it waited for: 0-15 cycles) and skips
-; that much of a slide of cmp #$c9s, so the writes land on the same cycle every time. The other
-; 14 ticks fall in the border; the first of them does the frame's bookkeeping.
+; Only those writes in a row need timing, so the display is an interrupt a row: CIA 1's timer B
+; runs with a period of 504 cycles (8 lines; a PAL frame is exactly 39 of them) and interrupts in
+; line 2 of each row. It reads the timer to see how late it was taken and skips that much of a
+; slide of cmp #$c9s; then, reading only, it goes through the VIC's fetches of the sprites shown
+; on lines 3 and 4, which stop the CPU for a few cycles each (see rowirq): the slide skips line
+; 3's too, and a tail with a delay to suit line 4's leads to the forced bad line's write. Which
+; sprites are shown where (masks3, masks) picks both, from tables made by tools/build.mjs from a
+; model of the fetches, checked in VICE for every mask of sprites. The other 14 ticks fall in the
+; border; the first of them does the frame's bookkeeping, the last sets row 0 up.
 ;
-; Built by ../build.sh (64tass, with tools/build.mjs); TS (when the timer starts: 24, the
-; earliest that works), JM (what the timer's low nibble reads when the interrupt isn't late: 5)
-; and RD (a delay before the interrupt reads it: none) are set there. MEASURE=1 replaces the foreground with a counting
-; loop that measures the free cycles (in last: cycles a frame = last * 8 + (last >> 8) * 8);
-; HIST=1 counts the timer's low nibble as the interrupt sees it (in hist).
+; Built by ../build.sh (64tass, with tools/build.mjs), which sets TS (when the timer starts, the
+; earliest that works). MEASURE=1 replaces the foreground with a counting loop that measures the
+; free cycles (in last: cycles a frame = last * 8 + (last >> 8) * 8); HIST=1 counts the slide's
+; skips (in hist); TEST=1 puts sprites 0-6 in the left border (unseen, but fetched).
 
         .include "level.inc"        ; NC (columns), ROWS
 
@@ -41,7 +44,7 @@ CS0     = $5000
 CS1     = $5800
 IRQLINE = 44                        ; the raster interrupt that starts the timer (stable on 46)
 TICK    = 504                       ; the timer's period: 8 lines
-EARLY   = 96                        ; (its first period that much shorter: see irq2)
+EARLY   = 160                        ; (its first period that much shorter: see irq2)
 D011A   = $5b                       ; ECM, display on, 25 rows, YSCROLL 3 (rows start at 51+8n)
 D011B   = $5f                       ; ... YSCROLL 7 (the forced bad line at 55+8n)
 MAXX    = (NC - 40) * 8             ; the furthest scroll, in pixels
@@ -68,7 +71,7 @@ ftmp    = zp + 17                   ; (2: the interrupt's)
 cnt     = zp + 19                   ; (2: MEASURE's count)
 last    = zp + 21                   ; (2: ... a frame's)
 jv      = zp + 23                   ; (2: the row's tail)
-stall0  = zp + 25
+sprites = zp + 25                   ; ($d015, once the timer's going)
 SPRCOVER = $5400                    ; the cover sprite's data
 COVERX  = 24                        ; its x at fine scroll 0
 COVERY0 = 50                        ; its first piece's y (lines 51-92; then 93, 135, 177, 219)
@@ -167,15 +170,20 @@ start   sei
         sta $d017
         lda #$ff
         .endif
+        sta sprites                 ; (shown once the timer has started: their fetches would upset
+        lda #0                      ; the stable raster that starts it)
         sta $d015
 
-        ; the tail for each row, from which sprites are on its line 4 (masks)
+        ; each row's tail, from the sprites on its line 4, and slide, from those on its line 3
         ldx #ROWS - 1
 -       ldy masks,x
         lda masktl,y
         sta rowtl,x
         lda maskth,y
         sta rowth,x
+        ldy masks3,x
+        lda maskjm,y
+        sta rowimm,x
         dex
         bpl -
 
@@ -444,10 +452,14 @@ irq2    txs
         sta $dc07
         lda d18a0                   ; row 0's screen and set
         sta $d018
+        lda sprites                 ; the sprites on
+        sta $d015
         lda #0                      ; the raster interrupt done with
         sta $d01a
         lda #1
         sta $d019
+        ldx #0                      ; row 0's interrupt
+        jsr prep
         lda #<rowirq
         sta $fffe
         lda #>rowirq
@@ -463,95 +475,87 @@ irq2    txs
         rti
         .endpage
 
-; ---- A tick: line 3 of a character row (ticks 0-24), or the border (25-38)
+; ---- A row's tick: line 2 of character row n (ticks 0-24). From the timer read to the $d018
+; write the CPU only reads (but for the slide's operand, written before the sprite fetches): the
+; VIC's fetches of the sprites shown on line 3 (from line 2's cycle 55 to line 3's 10) and on
+; line 4 (from line 3's 55 to line 4's 10) each stop it for a few cycles, so where the writes
+; land depends on which sprites are shown there. Line 3's: the slide skips that many more cycles
+; (rjm, from this row's mask of sprites on line 3), so the $d018 write still lands on line 3's
+; cycle 55. Line 4's: the tail (rtj, from the mask on line 4) has a delay to suit before the
+; forced bad line's write on line 4's cycle 14. Everything a row needs is set by the row before
+; (prep), as operands.
         .align $100
         .page
 rowirq  sta sava
-        .rept RDN
-        nop
-        .endrept
-        .if RDB
-        bit $ea
-        .endif
-        lda #JM                     ; how late this was taken (0-15 cycles): the timer's low
-        sec                         ; nibble, counting down, from what it reads when the
-        sbc $dc06                   ; interrupt is taken at once (JM)
-        and #15
-        .if HIST
         stx savx
+rjm     lda #0                      ; (JM, and line 3's fetches: see prep)
+        sec                         ; how late this was taken, the timer's low bits counting
+        sbc $dc06                   ; down, and line 3's fetches yet to come: 0-31 cycles ...
+        and #31
+        .if HIST
         tax
         inc hist,x
         txa
-        ldx savx
         .endif
         sta _br+1
 _br     bpl _sl                     ; ... that many bytes of the slide skipped (a cycle each)
-_sl     .fill 15, $c9               ; (cmp #$c9 ... cmp #$c5, nop; or ... cmp $ea)
+_sl     .fill 31, $c9               ; (cmp #$c9 ... cmp #$c5, nop; or ... cmp $ea)
         .byte $c5, $ea
-        ; the same cycle every time
-        lda $dc0d                   ; (acknowledged first, so a tick due during this one isn't lost)
-        stx savx
-        ldx row
-        cpx #ROWS
-        bcs border
-        lda covery,x                ; the cover sprite's next place down the screen
+        .rept 8                     ; (so the read and that write come well before line 3's
+        nop                         ; fetches, however late this was taken)
+        .endrept
+        ; (line 3's cycle 11 or later: the same cycle every time)
+        lda $dc0d                   ; (acknowledged)
+rcy     lda #0                      ; the cover sprite's next place down the screen
         sta $d00f
-        lda rowtl,x                 ; the tail for this row's sprites on line 4
-        sta jv
-        lda rowth,x
-        sta jv+1
-rlb     lda d18b0,x                 ; the bottoms' screen, the next band's set
-        tax
-        .if STALL
-        lda $dc06                   ; (STALL: the timer before the tail ...)
-        sta stall0
-        lda #D011A                  ; (... and no forced bad line, whose wait would hide the rest)
-        .else
+rx      ldx #0                      ; the bottoms' screen, the next band's set
         lda #D011B
-        .endif
-        jmp (jv)
+rtj     jmp tailend                   ; (the tail for line 4's fetches)
         .endpage
 
-; The tails (tails.inc, made by build.mjs): $d018 written on line 3's cycle 55, then a delay
-; that depends on which sprites the VIC fetches for line 4 (sprites 0-2 at the end of line 3,
-; 3-7 at the start of line 4, each stopping the CPU for a few cycles), then the forced bad line
-; written on line 4's cycle 14 (or 15, where no delay can reach 14). Then:
+; The tails (tails.inc, made by build.mjs): $d018 written on line 3's cycle 55, a delay, and the
+; forced bad line written on line 4's cycle 14 (or 15, where no delay can reach 14). Then:
 tailend lda #D011A                  ; (the CPU has waited out the bad line) YSCROLL back
         sta $d011
         ldx row
-        .if MASKTEST
-        ; (MASKTEST: the test sprites' y for the next test row, row by row)
-        lda mty0,x
-        sta $d001
-        lda mty1,x
-        sta $d003
-        lda mty2,x
-        sta $d005
-        lda mty3,x
-        sta $d007
-        lda mty4,x
-        sta $d009
-        lda mty5,x
-        sta $d00b
-        lda mty6,x
-        sta $d00d
-        .endif
-        .if STALL
-        lda $dc06                   ; (... and after: their difference, row by row)
-        sec
-        sbc stall0
-        eor #$ff
-        sta stalls,x
-        .endif
 rla     lda d18a0+1,x               ; the next row's tops' screen (the same set)
         sta $d018
         inx
         stx row
+        cpx #ROWS
+        bcs +
+        jsr prep                    ; (the next row's interrupt)
+        ldx savx
+        lda sava
+        rti
++       lda #<bordirq               ; (the rows done: the border's ticks)
+        sta $fffe
+        lda #>bordirq
+        sta $ffff
         ldx savx
         lda sava
         rti
 
-border  bne +                       ; tick 25: the frame's bookkeeping
+; Row x's interrupt: the operands it uses
+prep    lda covery,x
+        sta rcy+1
+rlb     lda d18b0,x
+        sta rx+1
+        lda rowtl,x
+        sta rtj+1
+        lda rowth,x
+        sta rtj+2
+        lda rowimm,x
+        sta rjm+1
+        rts
+
+; ---- A border tick (25-38): the first does the frame's bookkeeping, the last sets row 0 up
+bordirq sta sava
+        stx savx
+        lda $dc0d
+        ldx row
+        cpx #ROWS
+        bne +
         lda #COVERY0                ; (the cover sprite back to the top, for the next frame)
         sta $d00f
         inc frames
@@ -568,11 +572,21 @@ border  bne +                       ; tick 25: the frame's bookkeeping
         ldx #ROWS
 +       inx
         cpx #39
-        bcc +
-rl0     lda d18a0                   ; tick 38 (line 46): row 0's screen and set
+        bcs +
+        stx row
+        ldx savx
+        lda sava
+        rti
++
+rl0     lda d18a0                   ; tick 38 (line 45): row 0's screen and set
         sta $d018
         ldx #0
-+       stx row
+        stx row
+        jsr prep
+        lda #<rowirq
+        sta $fffe
+        lda #>rowirq
+        sta $ffff
         ldx savx
         lda sava
         rti
@@ -667,8 +681,8 @@ mul40hi .for i = 0, i < ROWS, i += 1
         .endfor
 bandset .binary "bandset.bin"
 junk    .fill 16
-hist    .fill 16
-stalls  .fill ROWS
+hist    .fill 32
+rowimm  .fill ROWS
 rowtl   .fill ROWS
 rowth   .fill ROWS
 ; the cover sprite's y for each row's tick: the next piece's, once this one has started
@@ -677,7 +691,6 @@ _y      := COVERY0 + 42 * (1 + ((54 + 8 * i) - (COVERY0 + 1)) / 42)
         .byte _y > COVERY0 + 4 * 42 ? COVERY0 + 4 * 42 : _y   ; (the last piece runs past the bottom)
         .endfor
         .include "masks.inc"
-        .include "mty.inc"
 charsets .binary "charsets.bin"
 tops    .binary "tops.bin"
 bottoms .binary "bottoms.bin"
