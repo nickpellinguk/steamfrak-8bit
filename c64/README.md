@@ -207,4 +207,5 @@ about 1,500) makes the expensive frames.
 
 ## Next
 
-Make the multiplexer fit a frame, then Trogg.
+A playable A_1: Trogg walking, climbing, jumping and falling, the scroll following him, and
+the yoyo (knocking Scrubblies off). The plan: [`PLAN.md`](PLAN.md).
