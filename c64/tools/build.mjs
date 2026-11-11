@@ -99,7 +99,21 @@ execFileSync('64tass', ['-q', '-a', '-C', ...defs, '-I', DIR, '--labels=' + DIR 
 const lbl = Object.fromEntries(readFileSync(DIR + 'frak64.lbl', 'utf8').split('\n').map(l => l.match(/^(\w+)\s*=\s*\$([0-9a-f]+)/i)).filter(Boolean).map(m => [m[1], parseInt(m[2], 16)]));
 const prg = readFileSync(DIR + 'frak64.prg');
 console.log(`frak64.prg: $0801-$${(0x0801 + prg.length - 3).toString(16)} (${prg.length - 2} bytes), start $${lbl.start.toString(16)}, row interrupt $${lbl.rowirq.toString(16)}; TS ${PARAMS.TS}`);
-writeFileSync(DIR + 'rom.inc', `START = $${lbl.start.toString(16)}\nLENGTH = ${prg.length - 2}\n`);
+writeFileSync(DIR + 'rom.inc', `START = $${lbl.start.toString(16)}\nPAGES = ${Math.ceil((prg.length - 2) / 256)}\n`);
+// (the cartridge for the stand-in ROMs: a Magic Desk CRT, the PRG in 8K banks)
+{
+    const body = prg.subarray(2), banks = Math.ceil(body.length / 0x2000), hd = Buffer.alloc(0x40);
+    if (Math.ceil(body.length / 256) > 255) throw new Error('the program is too long for the stand-in loader');
+    hd.write('C64 CARTRIDGE   ', 0, 'latin1'); hd.writeUInt32BE(0x40, 0x10); hd.writeUInt16BE(0x0100, 0x14);
+    hd.writeUInt16BE(19, 0x16); hd[0x18] = 0; hd[0x19] = 1; hd.write('FRAK64', 0x20, 'latin1');
+    const chips = [];
+    for (let b = 0; b < banks; b++) {
+        const c = Buffer.alloc(0x10 + 0x2000); c.write('CHIP', 0, 'latin1'); c.writeUInt32BE(0x2010, 4);
+        c.writeUInt16BE(0, 8); c.writeUInt16BE(b, 10); c.writeUInt16BE(0x8000, 12); c.writeUInt16BE(0x2000, 14);
+        body.copy(c, 0x10, b * 0x2000, Math.min(body.length, (b + 1) * 0x2000)); chips.push(c);
+    }
+    writeFileSync(DIR + 'frak64.crt', Buffer.concat([hd, ...chips]));
+}
 execFileSync('64tass', ['-q', '-a', '-C', '-b', '-I', DIR, '-o', DIR + 'rom.bin', SRC + 'rom.asm'], { cwd: DIR, stdio: 'inherit' });
 const rom = readFileSync(DIR + 'rom.bin');          // $a000-$bfff, then $e000-$ffff
 writeFileSync(DIR + 'basic.rom', rom.subarray(0, 0x2000)); writeFileSync(DIR + 'kernal.rom', rom.subarray(0x2000, 0x4000));
@@ -108,7 +122,7 @@ if (process.argv.includes('--run')) {
     const shot = arg('shot', DIR + 'shot.png');
     if (existsSync(shot)) unlinkSync(shot);
     try {
-        execFileSync('xvfb-run', ['-a', 'x64sc', '-default', '-kernal', DIR + 'kernal.rom', '-basic', DIR + 'basic.rom', '-chargen', DIR + 'chargen.rom',
+        execFileSync('xvfb-run', ['-a', 'x64sc', '-default', '-kernal', DIR + 'kernal.rom', '-basic', DIR + 'basic.rom', '-chargen', DIR + 'chargen.rom', '-cartcrt', DIR + 'frak64.crt',
             '-drive8type', '0', '-sounddev', 'dummy', '-VICIIfilter', '0', '-limitcycles', arg('cycles', '800000'), '-exitscreenshot', shot],
             { cwd: DIR, stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000 });
     } catch (e) { if (!existsSync(shot)) { console.log(String(e.stderr || e).slice(-2000)); throw e; } }

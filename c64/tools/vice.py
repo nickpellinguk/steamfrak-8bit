@@ -5,7 +5,7 @@
 import socket, subprocess, sys, time, os
 DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'build')   # (the ROMs: build.mjs)
 PORT = 6510 + os.getpid() % 1000
-p = subprocess.Popen(['xvfb-run', '-a', 'x64sc', '-default', '-kernal', 'kernal.rom', '-basic', 'basic.rom', '-chargen', 'chargen.rom',
+p = subprocess.Popen(['xvfb-run', '-a', 'x64sc', '-default', '-kernal', 'kernal.rom', '-basic', 'basic.rom', '-chargen', 'chargen.rom', '-cartcrt', 'frak64.crt',
                       '-drive8type', '0', '-sounddev', 'dummy', '-VICIIfilter', '0', '-jamaction', '2'] + os.environ.get('VICEARGS', '').split() + ['-remotemonitor', '-remotemonitoraddress', f'ip4://127.0.0.1:{PORT}'],
                      cwd=DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 try:

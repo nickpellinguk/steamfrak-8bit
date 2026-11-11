@@ -5,17 +5,19 @@
 //
 // Trogg is 34 lines high, a sprite 21, so each sprite is used twice down the screen: its first
 // instance from block P1 (Trogg's lines 0-20), its second (Y + 21) from block P2 (rows 0-12:
-// lines 21-33). The pointer changes from P1 to P2 at a boundary between the FLI screen's 4-line
-// halves, where the screen whose pointers the VIC reads changes too, so the row interrupt can
-// write it into the screen not being shown: any of Trogg's lines 13-20, which always holds one.
-// P2's rows 13-20 repeat lines 13-20, so the change can't be seen wherever it falls. Checked here
-// by drawing every frame as the VIC would, with the change at each of those lines.
+// lines 21-33). The pointer changes from P1 to P2 somewhere in his lines 13-20 (a row's tick
+// always falls there): P2's rows 13-20 repeat lines 13-20, so the change can't be seen wherever
+// it falls. But the second instance shows all 21 rows, so P2's rows 13-20 would show again below
+// his feet: the pointer changes again, to P3 (P2's rows 0-12, then blank), somewhere in his lines
+// 21-33 (the next row's tick always falls there). Checked here by drawing every frame as the VIC
+// would, all 42 lines of the two instances, with the changes at each of those lines.
 //
 //   node trogg.mjs    (needs ../../cpc6128/build, see ../build.sh)
 // writes, in ../build: trogg.png (each frame: the BBC original, the outline, the infill, the two
 // together, what differs), trogg.txt (each frame's sprites as text), trogg.bin (the sprite
-// blocks: per frame outline P1, P2, infill P1, P2, 64 bytes each) and trogg.json (the frames:
-// name, x offset of the sprites' left edge from Trogg's x, block numbers)
+// blocks: per frame outline P1, P2, P3, infill P1, P2, P3, 64 bytes each) and trogg.json (the
+// frames: name, x offset of the sprites' left edge from Trogg's x, block numbers, and the frame as
+// shown, for checking screenshots)
 import { refPlot, images, at } from '../../cpc6128/tools/emu/render.mjs';
 import { writeFileSync, mkdirSync } from 'fs';
 import { deflateSync } from 'zlib';
@@ -82,16 +84,19 @@ for (const fr of frames) {
     const hires = r => [0, 1, 2].map(k => r.slice(k * 8, k * 8 + 8).reduce((v, p) => v << 1 | p, 0));
     const MC = [0b00, 0b01, 0b11];                              // (clear; yellow: $d025; magenta: $d026)
     const multi = r => [0, 1, 2].map(k => r.slice(k * 4, k * 4 + 4).reduce((v, c) => v << 2 | MC[c], 0));
+    const blank = rows => rows[0].map(() => 0);
     const p1 = rows => rows.slice(0, 21), p2 = rows => [...rows.slice(21, 34), ...rows.slice(13, 21)];
+    const p3 = rows => [...rows.slice(21, 34), ...Array(8).fill(blank(rows))];
     const base = blocks.length;
-    blocks.push(block(p1(outline), hires), block(p2(outline), hires), block(p1(infill), multi), block(p2(infill), multi));
-    // drawn as the VIC would: the first instance's lines 0-20, the pointer changing from P1 to P2
-    // at line s (rows s-20 of the first instance from P2), the second instance's lines 21-33 from P2
-    const draw = s => {
+    blocks.push(block(p1(outline), hires), block(p2(outline), hires), block(p3(outline), hires),
+        block(p1(infill), multi), block(p2(infill), multi), block(p3(infill), multi));
+    // drawn as the VIC would, the two instances' 42 lines: the pointer changing from P1 to P2 at
+    // line s, and from P2 to P3 at line t
+    const draw = (s, t) => {
         const img = [];
-        for (let y = 0; y < H; y++) {
-            const row = y < 21 ? y : y - 21, blk = y < s ? 0 : 1;
-            const o = blocks[base + blk], f = blocks[base + 2 + blk], r = [];
+        for (let y = 0; y < 42; y++) {
+            const row = y < 21 ? y : y - 21, blk = y < s ? 0 : y < t ? 1 : 2;
+            const o = blocks[base + blk], f = blocks[base + 3 + blk], r = [];
             for (let x = 0; x < W; x++) {
                 if ((o[row * 3 + (x >> 3)] >> (7 - (x & 7))) & 1) { r.push(3); continue; }
                 const xx = x >> 1, m = (f[row * 3 + (xx >> 2)] >> (6 - 2 * (xx & 3))) & 3;
@@ -101,8 +106,11 @@ for (const fr of frames) {
         }
         return img;
     };
-    const shown = draw(13);
-    for (let s = 14; s <= 21; s++) if (JSON.stringify(draw(s)) !== JSON.stringify(shown)) throw new Error(`${fr.name}: the pointer change at line ${s} shows`);
+    const all = draw(13, 21);
+    for (let y = 34; y < 42; y++) if (all[y].some(p => p >= 0)) throw new Error(`${fr.name}: something shows below his feet`);
+    for (let s = 13; s <= 21; s++) for (let t = 21; t <= 34; t++)
+        if (JSON.stringify(draw(s, t)) !== JSON.stringify(all)) throw new Error(`${fr.name}: the pointer changes at lines ${s} and ${t} show`);
+    const shown = all.slice(0, H);
     let differ = 0;
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (shown[y][x] !== at2(x, y)) differ++;
     out.push({ ...fr, cut, lost, clash, leak, differ, outline, infill, shown, at2, base });
@@ -120,8 +128,8 @@ for (const f of out) {
 }
 writeFileSync(`${OUT}/trogg.txt`, T.join('\n'));
 writeFileSync(`${OUT}/trogg.bin`, Buffer.concat(blocks));
-writeFileSync(`${OUT}/trogg.json`, JSON.stringify(out.map(f => ({ name: f.name, left: f.xo - f.cut, outline: [f.base, f.base + 1], infill: [f.base + 2, f.base + 3] })), null, 1));
-console.log(`${out.length} frames, ${blocks.length} blocks (${blocks.length * 64} bytes); ${lostAll} pixels cut off in all; every pointer change from line 13 to 21 checked`);
+writeFileSync(`${OUT}/trogg.json`, JSON.stringify(out.map(f => ({ name: f.name, left: f.xo - f.cut, outline: [f.base, f.base + 1, f.base + 2], infill: [f.base + 3, f.base + 4, f.base + 5], shown: f.shown })), null, 1));
+console.log(`${out.length} frames, ${blocks.length} blocks (${blocks.length * 64} bytes); ${lostAll} pixels cut off in all; every pair of pointer changes (lines 13-21, 21-34) checked, nothing below his feet`);
 
 // ---- The picture: per frame, BBC original | outline | infill | together | differences, 6x
 const S = 6, GAP = 2, PW = 26, CW = (PW + GAP) * 5 + 6, CH = H + 4, PER = 5;

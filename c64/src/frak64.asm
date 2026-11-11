@@ -980,3 +980,8 @@ tops    .binary "tops.bin"
 bottoms .binary "bottoms.bin"
 end
         .cerror end > SCR0, "the program runs into the screens"
+        ; (then the VIC bank: the screens, character sets, sprites and the multiplexer's RAM, all
+        ; set up at the start; and what's loaded straight into it)
+        .fill $6800 - *, 0
+TROGG   .binary "trogg.bin"         ; Trogg's sprites: per frame outline P1-P3, infill P1-P3
+        .cerror * > $8000, "Trogg's sprites run out of the VIC bank"
