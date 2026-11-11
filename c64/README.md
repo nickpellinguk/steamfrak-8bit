@@ -47,9 +47,9 @@ ROM routines.
 
 | File | |
 | --- | --- |
-| `tools/mockup.mjs` | Redraws A_1 for the 8x4 grid and works out what ECM + 4-line FLI shows: `build/mockup.png`, and the data for `pack.mjs` |
+| `tools/mockup.mjs` | Redraws A_1 for the 8x4 grid and works out what ECM + 4-line FLI shows: `build/mockup.png`, the data for `pack.mjs`, and the platforms and ladders where it draws them, for Trogg's physics (`build/geometry.json`) |
 | `tools/trogg.mjs` | Trogg's frames as sprites: a hi-res black outline over a multicolour infill, 24 wide, each sprite used twice down his 34 lines (`build/trogg.png`, `trogg.txt`, `trogg.bin`) |
-| `tools/pack.mjs` | Packs the glyphs into two character sets (by band: a row's bottoms and the next row's tops) and writes the screen codes (glyph + background) for the 94 x 25 level |
+| `tools/pack.mjs` | Packs the glyphs into two character sets (by band: a row's bottoms and the next row's tops), with the level's yo-yoed-off variant and 4 characters per set kept for the yoyo's string, and writes the screen codes (glyph + background) for the 94 x 25 level and each Scrubbly's patch knocking it off |
 | `src/frak64.asm` | The demo: the timer interrupt a row, double-buffered screens, scrolling |
 | `src/mux.asm` | The sprite multiplexer, and the demo's "game" (the Scrubblies following the scroll, the balls) |
 | `tools/build.mjs` | Assembles it and the stand-in ROMs, and runs VICE headless for a screenshot |

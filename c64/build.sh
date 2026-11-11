@@ -18,4 +18,5 @@ if [ ! -f ../cpc6128/build/images.json ]; then
     (cd ../cpc6128 && mkdir -p build && python3 tools/gfx.py)
 fi
 node tools/mockup.mjs > /dev/null
+OFF=1 node tools/mockup.mjs > /dev/null      # (the Scrubblies yo-yoed off: their glyphs packed too)
 node tools/build.mjs "$@"

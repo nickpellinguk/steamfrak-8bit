@@ -1,7 +1,7 @@
 # Plan: a playable A_1
 
-Status: **planned**, nothing built yet. Each milestone is checked before the next, and this file
-is updated as they're done.
+Status: **milestone 1 done** (the data). Each milestone is checked before the next, and this
+file is updated as they're done.
 
 ## Scope
 
@@ -110,8 +110,23 @@ often everything is ready in time.
 
 ## Milestones
 
-1. **Data**: the geometry exported, the string characters reserved, the yoyoed-off glyphs
-   included, everything repacked. Check: the screenshots still match the mock-up.
+1. **Data** (done): the geometry exported, the string characters reserved, the yoyoed-off
+   glyphs included, everything repacked. Check: the screenshots still match the mock-up.
+   - `build/geometry.json` (by `mockup.mjs`): each platform at its piece's snapped place (each of
+     the 41 is exactly one piece; its y is the piece's top line); each ladder's x the redrawn
+     ladder's middle less 2, its top a line below its platform's top, its bottom as far from the
+     top of the platform under it as in the original (8 above to 7 below); Trogg's start moved
+     with his platform, (38, 208) to (41, 207). Moves: platforms by up to 4 across and -1 to +2
+     down, ladders by -3 to +5 across. Drawn over the mock-up: the platforms' tops on their black
+     top lines, the ladders on the drawn ladders.
+   - `pack.mjs` packs the level and its yoyoed-off variant (`OFF=1 mockup.mjs`, now in
+     `build.sh`) into the same sets, keeping characters 60-63 of each for the string (a black
+     line at line 0-3 of both halves). Two sets still do: set 0 60 tops and 60 bottoms (full),
+     set 1 46 and 38. Every cell of both variants is read back through its band's set as a
+     check. `build/scrpatch.inc`: each Scrubbly's patch (27, 26, 26, 27, 27 cells: the 133 that
+     differ, one to one).
+   - The screenshots, scrolling, still match the mock-up on every row but the known ladder
+     pixels (rows 17-19).
 2. **Trogg shown, standing**: sprites, the second instance and pointer change, his rows in the
    masks. Check: against his mock-up; the row tails' slack measured; the frame checker covering
    his sprites.
@@ -125,6 +140,7 @@ often everything is ready in time.
 ## Unknowns, measured early rather than guessed
 
 - The row tails' slack with Trogg's sprites (milestone 2).
-- Whether two character sets still do, with the string and yoyoed-off glyphs (milestone 1).
+- Whether two character sets still do, with the string and yoyoed-off glyphs: yes, but set 0 is
+  full again, so any more glyphs would mean a third set.
 - What the physics costs (milestone 3).
 - How long the fill takes after turning round, and so the dead zone (milestone 4).

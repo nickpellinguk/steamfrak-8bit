@@ -100,7 +100,7 @@ for (const pc of pieces) {
 }
 
 // ---- The ladders, redrawn (where the ledges aren't)
-const area = ledgeArea(art);
+const area = ledgeArea(art), ladMid = [];
 e.lad_x.forEach((lx, k) => {
     // The BBC ladder's black pixels (its yellow now the background), 12 wide, on the 8x4 grid: its
     // middle on a character boundary (the middle of the 16-pixel platform unit above it: the units
@@ -128,8 +128,35 @@ e.lad_x.forEach((lx, k) => {
         const p = y & 7, row = p >= 1 && p <= 3 ? RUNG[p - 1] : POLE;
         for (let x = 0; x < 12; x++) if (row[x] === '#') put(cx - 6 + x, 3);
     }
+    ladMid[k] = cx;
     console.log(`ladder ${k}: middle x ${cx} (mod 8: ${cx & 7}), lines ${from}-${to - 1} (from mod 4: ${from & 3}, ${to - from} high: ${(to - from) / 4} halves)`);
 });
+
+// ---- The geometry for Trogg's physics, where the C64 draws it (level coordinates, as the CPC
+// port's): each platform as its piece was snapped (left end to 8, top to a half's last line); each
+// ladder's middle where it's redrawn, its top a line below its platform's top as in the original,
+// its bottom as far from the top of the platform under it as in the original; Trogg's start
+// moved with the platform he starts on
+const snapX = x => Math.round(x / 8) * 8;
+const plats = e.plat_x.map((x, k) => ({ x: snapX(x), y: snapTop(e.plat_y[k]), w: e.plat_w[k] }));
+const under = (x, y) => {            // (the platform under x whose top is nearest y, within 16)
+    let best = -1;
+    e.plat_x.forEach((px, i) => { if (px <= x && x < px + e.plat_w[i] && Math.abs(e.plat_y[i] - y) <= 16 && (best < 0 || Math.abs(e.plat_y[i] - y) < Math.abs(e.plat_y[best] - y))) best = i; });
+    return best;
+};
+const lads = e.lad_x.map((x, k) => {
+    const y = e.lad_y[k], bot = y + e.lad_h[k], t = under(x, y - 1), b = under(x, bot);
+    if (t < 0 || e.plat_y[t] !== y - 1) throw new Error(`ladder ${k}: no platform at its top`);
+    const ny = plats[t].y + 1, nb = b < 0 ? bot : plats[b].y + (bot - e.plat_y[b]);
+    return { x: ladMid[k] - 2, y: ny, h: nb - ny, ext: e.lad_ext[k], top: t, under: b, dx: ladMid[k] - 2 - x, dy: ny - y, dbot: nb - bot };
+});
+const start = e.trogg, sp = under(start[0], start[1]);
+const troggStart = sp < 0 ? start : [start[0] + plats[sp].x - e.plat_x[sp], plats[sp].y + start[1] - e.plat_y[sp]];
+if (!SUF) {
+    writeFileSync(`${OUT}/geometry.json`, JSON.stringify({ plats, lads, trogg: troggStart, w: e.w, h: e.h, row0: ROW0 }, null, 1));
+    console.log(`geometry: ${plats.length} platforms (moved ${[...new Set(plats.map((p, k) => `${p.x - e.plat_x[k]},${p.y - e.plat_y[k]}`))].join(' ')}), ` +
+        `${lads.length} ladders (moved ${[...new Set(lads.map(l => `${l.dx},${l.dy}/${l.dbot}`))].join(' ')}), Trogg from ${start} to ${troggStart}`);
+}
 
 // ---- The objects
 function imagePixels(i) {
