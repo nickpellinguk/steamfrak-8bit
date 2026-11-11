@@ -78,14 +78,14 @@ for (const pc of pieces) {
     for (const q of pc.pix) { const x = q % W + dx, y = ((q / W) | 0) + dy; if (inside(x, y)) art[at2(x, y)] = base[q]; }
 }
 // ... their colours by line: the top black on background, the next 4 magenta and black, the rest
-// black and background (each piece's lines from its own top)
+// black and background, to line 12 (each piece's lines from its own top)
 for (const pc of pieces) {
     const dx = Math.round(pc.x0 / 8) * 8 - pc.x0, top = snapTop(pc.y0);
     for (const q of pc.pix) {
         const x = q % W + dx, y = ((q / W) | 0) + top - pc.y0;
         if (!inside(x, y)) continue;
         const v = art[at2(x, y)], l = y - top;
-        art[at2(x, y)] = l === 0 ? (v === 3 ? 3 : 0) : l <= 4 ? (v === 0 ? 2 : v === 1 ? 2 : v) : (v === 3 ? 3 : v === 2 ? 3 : 0);
+        art[at2(x, y)] = l === 0 ? (v === 3 ? 3 : 0) : l <= 4 ? (v === 0 ? 2 : v === 1 ? 2 : v) : l <= 12 ? (v === 3 ? 3 : v === 2 ? 3 : 0) : 0;   // (lines 13 on dropped: the piece ends on a half's boundary)
     }
 }
 // ... and the half below the magenta (lines 5-8), under the whole of the magenta's width: black

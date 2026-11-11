@@ -2,11 +2,14 @@
 
 An experiment in showing Frak's graphics on an unexpanded C64 (and a C128 in C64 mode) at their
 own resolution, without doubling the pixels' width. So far it's a display demo: level A_1
-("FRAK!") scrolling left and right, with the Scrubblies' sprites but no Trogg and no game.
+("FRAK!") scrolling left and right, with the Scrubblies' sprites and some bouncing balls shared
+out by a sprite multiplexer, but no Trogg and no game.
 
-**Status: demo working in VICE (x64sc, PAL), with the Scrubblies' sprites; the display an
+**Status: demo working in VICE (x64sc, PAL), with a sprite multiplexer; the display an
 interrupt a row that stays on time whatever sprites are shown, leaving the main program about
-45% of the CPU; not yet tried on a real machine.**
+45% of the CPU. With the demo's 11 virtual sprites the multiplexer needs about 1.4 frames of
+that, so for now the scroll (which waits for it) runs at half speed: see the multiplexer's
+section. Not yet tried on a real machine.**
 
 ## The idea
 
@@ -26,7 +29,8 @@ three in one 8x8 area, so the demo uses:
   set holds 64 of each.
 
 The BBC art is redrawn to suit: platforms snapped to the 8x4 grid (8 across, 4 down) with a
-black top line, a magenta band, black lattice on yellow for the next 4 lines and on cyan below;
+black top line, a magenta band, black lattice on yellow for the next 4 lines and on cyan for the
+4 below, ending on the grid;
 ladders and objects black on cyan, lined up with the 16-pixel platform units. Every 8x8 cell's
 foreground came out black, so colour RAM is filled once and never scrolled. The Scrubblies are a
 black outline with yellow eyes and teeth in the characters, and a magenta sprite behind each
@@ -48,9 +52,11 @@ ROM routines.
 | `tools/trogg.mjs` | Trogg's frames as sprites: a hi-res black outline over a multicolour infill, 24 wide, each sprite used twice down his 34 lines (`build/trogg.png`, `trogg.txt`, `trogg.bin`) |
 | `tools/pack.mjs` | Packs the glyphs into two character sets (by band: a row's bottoms and the next row's tops) and writes the screen codes (glyph + background) for the 94 x 25 level |
 | `src/frak64.asm` | The demo: the timer interrupt a row, double-buffered screens, scrolling |
+| `src/mux.asm` | The sprite multiplexer, and the demo's "game" (the Scrubblies following the scroll, the balls) |
 | `tools/build.mjs` | Assembles it and the stand-in ROMs, and runs VICE headless for a screenshot |
 | `tools/compare.py` | Checks a VICE screenshot against the mock-up, pixel by pixel, character row by row |
 | `tools/vice.py` | Drives VICE through its remote monitor (screenshots while it runs, breakpoints, memory) |
+| `tools/dump.py` | Runs the demo in VICE a while and prints memory at labels |
 
 ## How the display works
 
@@ -100,7 +106,7 @@ Memory (VIC bank 1): screen pairs at `$4000`/`$4400` and `$4800`/`$4c00`, charac
 | --- | --- |
 | 0 | The cover over the FLI bug's columns: X- and Y-expanded with 16 pixels set (32 wide, so it also hides a fourth character when the write lands a cycle late), cyan, following the fine scroll, moved down the screen every 42 lines from the row ticks. In front of every other sprite |
 | 1, 2 | (Trogg: `tools/trogg.mjs`) |
-| 3-7 | The Scrubblies' bodies, their x following the scroll (hidden in the right border off the screen, wrapped round when part off at the left) |
+| 3-7 | Multiplexed: the Scrubblies' bodies (their x following the scroll, wrapped round when part off at the left) and six balls |
 
 Other sprites move the critical write. The VIC fetches the sprites shown on a line at the end of
 the line before (sprites 0-2) and the start of the line (3-7), holding BA low from 3 cycles
@@ -133,6 +139,58 @@ would upset the stable raster.
 | ... and seven more sprites on screen (a test layout) | 9,816 |
 | The cover sprite and the five Scrubblies' (the demo) | 8,968 |
 
+## The sprite multiplexer
+
+`src/mux.asm` shares sprites 3-7 out among virtual sprites (`vy`, `vxlo`/`vxhi`, `vptr`, `vcol`,
+`vfl`: expanded down or across, behind the characters, kept before others, hidden). The display
+sets the constraints:
+
+- A sprite can only be set up (pointer, colour, x, y, and the whole of `$d010`, `$d017`,
+  `$d01d`, `$d01b`) where the CPU has time: in a row interrupt's tail, after the forced bad line
+  (the row's *tick*), or before the frame (the last border tick, up to 4 there). A tail has room
+  for one set-up before the next row's interrupt, so each tick sets up at most one sprite.
+- Row *k*'s tick can set up a sprite whose y is 62 + 8*k* or more (it's ready by line y, where
+  the VIC looks for it), on a hardware sprite last shown no later than line 54 + 8*k*.
+- Every row interrupt must know which sprites are shown on its lines 3 and 4 (its masks), for
+  its slide constant and tail.
+
+Once a frame, in the main program, for the frame after (double-buffered: the border switches
+buffers once the next is ready, together with the scroll it was made for):
+
+1. **game**: the Scrubblies' x from the scroll, the balls bounce;
+2. **sort**: the virtual sprites down the screen (an insertion sort, kept from frame to frame);
+3. **alloc**: for each, the latest tick without a set-up, from the latest early enough for it up
+   the screen, and of the hardware sprites free by then, the one free latest (best fit). If none
+   is, a sprite kept before others (the Scrubblies) takes the place of one that isn't. Sprites
+   that don't fit aren't shown that frame;
+4. **build**: each tick's set-up, the registers where they change, and each row's masks, slide
+   constant and tail.
+
+Checked in VICE: the balls put in the left border (`--balltest`: fetched, so they move the
+critical writes, but unseen) and every row compared with the mock-up while it scrolls; a
+breakpoint after each frame's build checks the masks against the set-ups and that no hardware
+sprite is set up while shown, and that the registers in force match every sprite shown on every
+line. What's left is screenshot tearing and a few pixels where a ladder meets the lower
+Scrubbly's antenna (as before the multiplexer).
+
+Debugging builds: `--slack` records each row tail's least time to spare before the next tick
+(the least is about 25 cycles) and frames the multiplexer wasn't ready; `--muxtime` times each
+stage with interrupts off.
+
+| The multiplexer's CPU time (11 virtual sprites, about 9 shown) | Cycles |
+| --- | --- |
+| game | 950 |
+| sort | 700 |
+| alloc | 4,100 |
+| build | 7,600 |
+| total | 13,400 |
+
+With 7 virtual sprites it's about 7,500. The main program has about 9,000 cycles a frame, and
+the foreground needs about 2,600 a frame to fill the hidden pair of screens at a pixel a frame,
+so at 11 sprites the multiplexer is ready every other frame and the scroll goes at half speed.
+Ways on: a leaner build (most of it is the rows' masks and operands), running the whole
+multiplexer every other frame with only the sprites' x refreshed in between, or fewer sprites.
+
 ## Next
 
-A multiplexer working the masks out each frame (sprites moving up and down), then Trogg.
+Make the multiplexer fit a frame, then Trogg.

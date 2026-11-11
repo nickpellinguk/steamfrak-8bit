@@ -74,6 +74,46 @@ jv      = zp + 23                   ; (2: the row's tail)
 sprites = zp + 25                   ; ($d015, once the timer's going)
 msb     = zp + 26                   ; (the sprites' x's bit 8)
 savy    = zp + 27
+bufoff  = zp + 28                   ; the multiplexer's buffer being shown (0, 32), and being made
+nb      = zp + 29
+muxreq  = zp + 30                   ; (a frame's multiplexing wanted; done)
+muxready = zp + 31
+mi      = zp + 32                   ; (the multiplexer's)
+mcur    = zp + 33
+mkey    = zp + 34
+mo      = zp + 35
+mv      = zp + 36
+my      = zp + 37
+ml      = zp + 38
+mk      = zp + 39
+mlim    = zp + 40
+ni      = zp + 41
+ment    = zp + 42
+mt      = zp + 43
+mh      = zp + 44
+mbit    = zp + 45
+mfl     = zp + 46
+mlo     = zp + 47
+mhi     = zp + 48
+acnt    = zp + 49
+s010    = zp + 50
+s017    = zp + 51
+s01d    = zp + 52
+s01b    = zp + 53
+NS      = 5                         ; the Scrubblies
+NB      = 6                         ; the balls
+SPRBALL = $5480                     ; the balls' sprite
+flippend = zp + 54                  ; (the next frame's scroll, decided in the main program:
+targpend = zp + 55                  ;  a pair flip and a new target for the border to make)
+ntarget = zp + 56
+muxbusy = zp + 57
+dtmp    = zp + 58                   ; (2)
+mt0     = zp + 60
+mte     = zp + 61                   ; (the multiplexer's)
+mk2     = zp + 62
+mj      = zp + 63
+mnv     = zp + 64
+shx     = zp + 65                   ; the scroll position shown (its low byte: scrx is the next frame's)
 SPRSCRUB = $5440                    ; the Scrubblies' sprite
 SPRCOVER = $5400                    ; the cover sprite's data
 COVERX  = 24                        ; its x at fine scroll 0
@@ -144,34 +184,54 @@ start   sei
         sta $d010
         sta $d01c                   ; (all hi-res)
         .if !TEST
-        ; Sprites 3-7: the Scrubblies' bodies, expanded both ways, magenta, behind the characters
-        ; (so their black, and the eyes' and teeth's yellow, are in front); their x follows the
-        ; scroll (scrubx)
+        ; Sprites 3-7: shared out by the multiplexer (mux.asm) among the virtual sprites: the
+        ; Scrubblies' bodies (expanded both ways, magenta, behind the characters, so their black
+        ; and the eyes' and teeth's yellow are in front, their x following the scroll) and some
+        ; balls bouncing about
         ldx #62
 -       lda sprscrub,x
         sta SPRSCRUB,x
+        lda sprball,x
+        sta SPRBALL,x
         dex
         bpl -
-        ldx #4
--       lda #(SPRSCRUB & $3fff) / 64
-        sta SCR0 + $3fb,x
-        sta SCR1 + $3fb,x
-        sta SCR2 + $3fb,x
-        sta SCR3 + $3fb,x
+        ldx #NS - 1
+-       lda scruby,x
+        sta vy,x
+        lda #(SPRSCRUB & $3fff) / 64
+        sta vptr,x
         lda #4
-        sta $d02a,x
-        txa
-        asl
-        tay
-        lda scruby,x
-        sta $d007,y
+        sta vcol,x
+        lda #VHIDE
+        sta vfl,x
         dex
         bpl -
-        lda #$f9
-        sta $d017                   ; (0 and 3-7 expanded down ...)
-        sta $d01d                   ; (... and across)
-        lda #$f8
-        sta $d01b                   ; (3-7 behind the characters)
+        ldx #NB - 1
+-       lda #(SPRBALL & $3fff) / 64
+        sta vptr + NS,x
+        lda #1
+        sta vcol + NS,x
+        lda #0
+        sta vfl + NS,x
+        dex
+        bpl -
+        lda #255                    ; (parked below the screen until set up)
+        sta $d007
+        sta $d009
+        sta $d00b
+        sta $d00d
+        sta $d00f
+        lda #1
+        sta $d017
+        sta $d01d
+        lda #0
+        sta $d01b
+        sta bufoff
+        sta muxready
+        sta muxreq
+        sta muxbusy
+        sta flippend
+        sta targpend
         lda #$f9
         .else
         ; (the test: sprites 1-7 in the left border, where they can't be seen, but are fetched)
@@ -206,7 +266,7 @@ start   sei
         lda #0                      ; the stable raster that starts it)
         sta $d015
 
-        ; each row's tail, from the sprites on its line 4, and slide, from those on its line 3
+        ; each row's sprites on its lines 3 and 4 (buffer 0, until the multiplexer's first frame)
         ldx #ROWS - 1
 -       ldy masks,x
         lda masktl,y
@@ -216,6 +276,9 @@ start   sei
         ldy masks3,x
         lda maskjm,y
         sta rowimm,x
+        lda #0                      ; (and no sprites set up, until the multiplexer's first frame)
+        sta tcount,x
+        sta tcount + 32,x
         dex
         bpl -
 
@@ -280,6 +343,7 @@ start   sei
         lda #0
         sta scrx
         sta scrx+1
+        sta shx
         sta curc
         sta front
         sta frames
@@ -317,14 +381,30 @@ start   sei
         sta $d019
         cli
         .if MEASURE
-measure inc cnt                     ; (8 cycles a count, 16 every 256th)
+measure lda muxreq                  ; (the scroll and the multiplexer still run)
+        beq +
+        jsr nextframe
++       inc cnt                     ; (8 cycles a count, 16 every 256th)
         bne measure
         inc cnt+1
         jmp measure
         .endif
 
 ; The foreground: keep the hidden pair filled for the column the interrupt wants next
-main    lda target
+        .if MUXTIME
+        lda #$ff                    ; (debug: CIA 2's timer A free running, for muxframe's stamps)
+        sta $dd04
+        sta $dd05
+        lda #$11
+        sta $dd0e
+        .endif
+main    .if !TEST
+        lda muxreq                  ; once a frame: the next frame's scroll, the game's sprites
+        beq +                       ; and the multiplexer
+        jsr nextframe
++
+        .endif
+        lda target
         cmp working
         beq +
         sta working                 ; a new column: start again
@@ -354,6 +434,19 @@ idle    ldx #8
         dex
         bne -
         jmp main
+
+; Once a frame (after the border's switched to the last): the next frame's scroll, the game's
+; sprites and the multiplexer
+nextframe
+        lda #1                      ; (busy before the request's gone: the border mustn't ask again)
+        sta muxbusy
+        lda #0
+        sta muxreq
+        jsr decide
+        jsr muxframe
+        lda #0
+        sta muxbusy
+        rts
 
 ; Fill row prow of pair back for column working (tops and bottoms), then prow+1
 fillrow ldx prow
@@ -415,8 +508,16 @@ usefront
         sta rl0+2
         lda #<d18b0
         sta rlb+1
+        sta rlc+1
         lda #>d18b0
         sta rlb+2
+        sta rlc+2
+        lda #>(SCR0 + $3f8)         ; (the multiplexed sprites' pointers: this pair's)
+        sta aps0+2
+        sta apt0+2
+        lda #>(SCR1 + $3f8)
+        sta aps1+2
+        sta apt1+2
         rts
 +       lda #<d18a1
         sta rl0+1
@@ -427,8 +528,16 @@ usefront
         sta rl0+2
         lda #<d18b1
         sta rlb+1
+        sta rlc+1
         lda #>d18b1
         sta rlb+2
+        sta rlc+2
+        lda #>(SCR2 + $3f8)
+        sta aps0+2
+        sta apt0+2
+        lda #>(SCR3 + $3f8)
+        sta aps1+2
+        sta apt1+2
         rts
 
 nmi     rti
@@ -549,14 +658,71 @@ rtj     jmp tailend                   ; (the tail for line 4's fetches)
 ; forced bad line written on line 4's cycle 14 (or 15, where no delay can reach 14). Then:
 tailend lda #D011A                  ; (the CPU has waited out the bad line) YSCROLL back
         sta $d011
+        sty savy
         ldx row
 rla     lda d18a0+1,x               ; the next row's tops' screen (the same set)
         sta $d018
         inx
         stx row
-        cpx #ROWS
+        txa                         ; (x: the next row, in the buffer shown)
+        clc
+        adc bufoff
+        tax
+        .if !TEST
+        ldy u_n,x                   ; this tick's sprite set-up, if any (list row + 1: one at
+        bmi tnosu                   ; most), inline, as there's little time before the next
+        lda trch,x                  ; row's interrupt; the registers only if they change
+        beq tnreg
+        lda t010,x
+        sta $d010
+        lda t017,x
+        sta $d017
+        lda t01d,x
+        sta $d01d
+        lda t01b,x
+        sta $d01b
+tnreg   lda u_ptr,x
+apt0    sta SCR0 + $3f8,y
+apt1    sta SCR1 + $3f8,y
+        lda u_col,x
+        sta $d027,y
+        ldy u_reg,x
+        lda u_x,x
+        sta $d000,y
+        lda u_y,x
+        sta $d001,y
+tnosu
+        .endif
+        lda row
+        cmp #ROWS
         bcs +
-        jsr prep                    ; (the next row's interrupt)
+        lda rowtl,x                 ; the next row's interrupt's operands (prep, inline)
+        sta rtj+1
+        lda rowth,x
+        sta rtj+2
+        lda rowimm,x
+        sta rjm+1
+        ldx row
+        lda covery,x
+        sta rcy+1
+rlc     lda d18b0,x
+        sta rx+1
+        .if SLACK
+        ldx row                     ; (debug: each row's least slack before the next tick, and
+        lda $dc07                   ; how often there was none)
+        bne _sov
+        lda $dc06
+        cmp slacklo,x
+        bcs _sdn
+        sta slacklo,x
+        bcc _sdn
+_sov    lda $dc06                   ; (256-399 left: plenty; 400 on: the next tick's come)
+        cmp #400 - 256
+        bcc _sdn
+        inc slackhi,x
+_sdn
+        .endif
+        ldy savy
         ldx savx
         lda sava
         rti
@@ -564,6 +730,7 @@ rla     lda d18a0+1,x               ; the next row's tops' screen (the same set)
         sta $fffe
         lda #>bordirq
         sta $ffff
+        ldy savy
         ldx savx
         lda sava
         rti
@@ -573,11 +740,15 @@ prep    lda covery,x
         sta rcy+1
 rlb     lda d18b0,x
         sta rx+1
-        lda rowtl,x
+        txa
+        clc
+        adc bufoff
+        tay
+        lda rowtl,y                 ; (its tail, for its sprites on line 4)
         sta rtj+1
-        lda rowth,x
+        lda rowth,y
         sta rtj+2
-        lda rowimm,x
+        lda rowimm,y                ; (its slide's constant, for those on line 3)
         sta rjm+1
         rts
 
@@ -592,7 +763,31 @@ bordirq sta sava
         lda #COVERY0                ; (the cover sprite back to the top, for the next frame)
         sta $d001
         inc frames
+        .if !TEST
+        lda muxready                ; the next frame's scroll and sprites, together, once the
+        beq _nmux                   ; multiplexer has made them; and then the frame after wanted
+        lda bufoff                  ; (or, if it's not working on one, this one again)
+        eor #32
+        sta bufoff
+        lda #0
+        sta muxready
+        .if SLACK
+        inc nswap
+        .endif
         jsr frame
+        jmp _wmux
+_nmux   .if SLACK
+        inc nhold                   ; (debug: frames the multiplexer wasn't ready)
+        .endif
+        jsr setx
+        lda muxbusy
+        bne _dmux
+_wmux   lda #1
+        sta muxreq
+_dmux
+        .else
+        jsr frame
+        .endif
         .if MEASURE
         lda cnt
         sta last
@@ -614,6 +809,27 @@ bordirq sta sava
 +
 rl0     lda d18a0                   ; tick 38 (line 45): row 0's screen and set
         sta $d018
+        .if !TEST
+        lda #255                    ; sprites 3-7 parked below the screen, then those set up
+        sta $d007                   ; before the frame (list 0)
+        sta $d009
+        sta $d00b
+        sta $d00d
+        sta $d00f
+        ldy bufoff
+        lda t010,y
+        sta $d010
+        lda t017,y
+        sta $d017
+        lda t01d,y
+        sta $d01d
+        lda t01b,y
+        sta $d01b
+        lda tcount,y
+        beq +
+        jsr apply
++
+        .endif
         ldx #0
         stx row
         jsr prep
@@ -628,56 +844,54 @@ rl0     lda d18a0                   ; tick 38 (line 45): row 0's screen and set
 
         .include "tails.inc"
 
-; Move the scroll on a pixel (holding at the ends; holding if the next column isn't ready)
-frame   lda pause
+; The next frame's scroll (in the main program, with the multiplexer, during the frame before):
+; a pixel on (holding at the ends; holding if the next column isn't ready). A new column's pair
+; flip, and the column the hidden pair should be filled for next, are left for the border to make
+; (flippend, targpend), and $d016 for it to write
+decide  lda pause
         beq +
         dec pause
-        jmp setx
+        rts
 +       lda scrx                    ; the next position
         clc
         adc dir
-        sta ftmp
+        sta dtmp
         lda dir
         bpl +
         lda #$ff
         .byte $2c
 +       lda #0
         adc scrx+1
-        sta ftmp+1
-        lda ftmp+1                   ; its column
-        lsr
-        lda ftmp
+        sta dtmp+1
+        lsr                         ; its column
+        lda dtmp
         ror
         lsr
         lsr
         cmp curc
-        beq move
+        beq _move
         cmp prepared                ; a new column: is the hidden pair ready for it?
-        bne setx                    ; (no: hold)
+        bne _hold                   ; (no: hold)
         sta curc
-        lda front
-        eor #1
-        sta front
-        jsr usefront
-        lda curc                    ; ... and the next one wanted
-        clc
+        clc                         ; (the flip, and the next column wanted)
         adc dir
-        sta target
-move    lda ftmp
+        sta ntarget
+        lda #1
+        sta targpend
+        sta flippend
+_move   lda dtmp
         sta scrx
-        lda ftmp+1
+        lda dtmp+1
         sta scrx+1
-        ; at an end: turn round, hold, and want the column the other way
-        lda scrx
-        ora scrx+1
-        beq turn
+        ora scrx                    ; at an end: turn round, hold, and want the column the
+        beq _turn                   ; other way
         lda scrx
         cmp #<MAXX
-        bne setx
+        bne _hold
         lda scrx+1
         cmp #>MAXX
-        bne setx
-turn    lda dir
+        bne _hold
+_turn   lda dir
         eor #$fe
         sta dir
         lda #PAUSE
@@ -685,65 +899,66 @@ turn    lda dir
         lda curc
         clc
         adc dir
+        sta ntarget
+        lda #1
+        sta targpend
+_hold   rts
+
+; In the border: the scroll decided (the flip, the target, $d016 and the cover sprite's x)
+frame   lda scrx                    ; (the position the multiplexer's frame was made for)
+        sta shx
+        lda flippend
+        beq +
+        lda #0
+        sta flippend
+        lda front
+        eor #1
+        sta front
+        jsr usefront
+        .if SLACK
+        lda curc
+        sta frontc
+        .endif
++       lda targpend
+        beq +
+        lda #0
+        sta targpend
+        lda ntarget
         sta target
-setx    lda scrx
++
+        .if SLACK
+        lda scrx+1                  ; (debug: the column shown, against the fine scroll's)
+        lsr
+        lda scrx
+        ror
+        lsr
+        lsr
+        cmp frontc
+        beq setx
+        inc dbgn
+        ldx dbgn
+        sta dbgcol,x
+        lda frontc
+        sta dbgfc,x
+        lda curc
+        sta dbgcc,x
+        lda prepared
+        sta dbgpr,x
+        lda working
+        sta dbgwk,x
+        lda frames
+        sta dbgfr,x
+        .endif
+setx    lda shx
         and #7
         eor #7                      ; (38 columns)
         sta $d016
         clc                         ; the cover sprite follows the fine scroll
         adc #COVERX
         sta $d000
-        jmp scrubx                  ; (and the Scrubblies, the scroll)
-
-; The Scrubblies' sprites' x: their place in the level (sxlo/hi: 31 more, the screen's left edge
-; in sprite x at scroll 0, fine scroll 7) less the scroll; hidden in the right border once off
-; the screen, wrapped round (PAL: 504) when part off at the left
-scrubx  .if !TEST
-        lda #0
-        sta msb
-        ldx #4
--       txa
-        asl
-        tay
-        lda sxlo,x
-        sec
-        sbc scrx
-        sta ftmp
-        lda sxhi,x
-        sbc scrx+1
-        bmi _neg
-        bne _hi
-        lda ftmp                    ; 0-255
-        sta $d006,y
-        jmp _next
-_hi     cmp #1                      ; 256-343: on the screen
-        bne _hide
-        lda ftmp
-        cmp #344 - 256
-        bcs _hide
-        sta $d006,y
-        bcc _msb
-_neg    cmp #$ff                    ; -47 to -1: part on the screen, as 457-503
-        bne _hide
-        lda ftmp
-        cmp #256 - 47
-        bcc _hide
-        clc
-        adc #<504
-        sta $d006,y
-        jmp _msb
-_hide   lda #<400                   ; (in the right border)
-        sta $d006,y
-_msb    lda msb
-        ora bit3,x
-        sta msb
-_next   dex
-        bpl -
-        lda msb
-        sta $d010
-        .endif
         rts
-bit3    .byte 8, 16, 32, 64, 128
+
+        .include "mux.asm"
 
         .align $100
 d18a0   .fill ROWS + 1
@@ -768,9 +983,6 @@ bandset .binary "bandset.bin"
 junk    .fill 16
 hist    .fill 32
 sprscrub .binary "scrubspr.bin"
-rowimm  .fill ROWS
-rowtl   .fill ROWS
-rowth   .fill ROWS
 ; the cover sprite's y for each row's tick: the next piece's, once this one has started
 covery  .for i = 0, i < ROWS, i += 1
 _y      := COVERY0 + 42 * (1 + ((54 + 8 * i) - (COVERY0 + 1)) / 42)
