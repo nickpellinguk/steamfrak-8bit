@@ -60,6 +60,9 @@ Not done yet: the Pugwash tune (an easter egg in a settings screen that isn't he
 An Amstrad CPC 6128 version, the whole game ported to the Z80, is in [`cpc6128/`](cpc6128/README.md)
 (its disc image: `cpc6128/build/frak.dsk`).
 
+An experimental Commodore 64 version, so far a display demo of the first level in Extended Colour
+Mode with 4-line FLI, is in [`c64/`](c64/README.md) (its program: `c64/build/frak64.prg`).
+
 ## Building
 
 You need BeebAsm and Python 3 with Pillow, and the `steamfrak` repository alongside this one:
