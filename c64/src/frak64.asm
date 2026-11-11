@@ -101,7 +101,7 @@ s017    = zp + 51
 s01d    = zp + 52
 s01b    = zp + 53
 NS      = 5                         ; the Scrubblies
-NB      = 6                         ; the balls
+NB      = 6                         ; the balloons and daggers (at most)
 SPRBALL = $5480                     ; the balls' sprite
 flippend = zp + 54                  ; (the next frame's scroll, decided in the main program:
 targpend = zp + 55                  ;  a pair flip and a new target for the border to make)
@@ -211,7 +211,7 @@ start   sei
         sta vptr + NS,x
         lda #1
         sta vcol + NS,x
-        lda #0
+        lda #VHIDE
         sta vfl + NS,x
         dex
         bpl -

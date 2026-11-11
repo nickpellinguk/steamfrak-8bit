@@ -7,9 +7,8 @@ out by a sprite multiplexer, but no Trogg and no game.
 
 **Status: demo working in VICE (x64sc, PAL), with a sprite multiplexer; the display an
 interrupt a row that stays on time whatever sprites are shown, leaving the main program about
-45% of the CPU. With the demo's 11 virtual sprites the multiplexer is ready in about 60% of
-frames, so for now the scroll (which waits for it) runs at about 0.6 of its speed: see the
-multiplexer's section. Not yet tried on a real machine.**
+45% of the CPU. With Frak's balloons and daggers (Hard) the multiplexer is ready for about 90%
+of frames, and the scroll waits for it the rest: see the multiplexer's section. Not yet tried on a real machine.**
 
 ## The idea
 
@@ -107,7 +106,7 @@ Memory (VIC bank 1): screen pairs at `$4000`/`$4400` and `$4800`/`$4c00`, charac
 | --- | --- |
 | 0 | The cover over the FLI bug's columns: X- and Y-expanded with 16 pixels set (32 wide, so it also hides a fourth character when the write lands a cycle late), cyan, following the fine scroll, moved down the screen every 42 lines from the row ticks. In front of every other sprite |
 | 1, 2 | (Trogg: `tools/trogg.mjs`) |
-| 3-7 | Multiplexed: the Scrubblies' bodies (their x following the scroll, wrapped round when part off at the left) and six balls |
+| 3-7 | Multiplexed: the Scrubblies' bodies (their x following the scroll, wrapped round when part off at the left), balloons and daggers |
 
 Other sprites move the critical write. The VIC fetches the sprites shown on a line at the end of
 the line before (sprites 0-2) and the start of the line (3-7), holding BA low from 3 cycles
@@ -179,22 +178,24 @@ how many frames the multiplexer was ready. For exact CPU cycles, memory snapshot
 at the multiplexer's start are run in a 6502 emulator (py65), counting cycles by routine and
 by source line (`tools/profile.py [FRAMES [SECONDS [LINES]]]`, on the last build).
 
-| The multiplexer's CPU time, 11 virtual sprites (9 shown), 12 frames in the emulator | Cycles a frame |
-| --- | --- |
-| Rows (finding and marking the rows that change, and their operands) | ~2,400 |
-| The update pass's own work (checks, last lines, settings) | ~2,000 |
-| Copying the last frame's changes to the other buffer | ~1,250 |
-| Writing x and y, and noting what changed | ~830 |
-| game (the Scrubblies' x, the balls) | ~820 |
-| sort | ~650 |
-| Registers (when a sprite is placed or crosses x 256: about every third frame) | ~740 |
-| Placing | ~650 |
-| total | 9,429 (7,358 to 12,981) |
+The demo's load is Frak's: besides the five Scrubblies (only their x moves, with the scroll),
+balloons and daggers at the CPC port's speeds and timings, a game tick a frame (`--insane` for
+Insane, else Hard): a balloon every 120 frames (60) rising 1.3 pixels a frame (1.5), a dagger
+every 132 (75) falling 0.66 (0.78) and going left 0.88 (1.04), each held still 55 frames (45)
+first, in the level's x. (An earlier test, six balls bouncing 1 to 3 pixels a frame up and down,
+cost 9,400 cycles a frame on average: most of it rows, as every ball crossed a row's line 3 or 4
+most frames.)
 
-The balls move 1 to 3 pixels a frame up and down, so most of them cross a row's line 3 or 4
-most frames (each sprite has four such edges). With the main program's 9,000 cycles a frame
-and the foreground's 2,600 to fill the hidden screens, the multiplexer is ready in about 60% of
-frames, and the scroll goes at about 0.6 pixels a frame.
+| The multiplexer's CPU time (`tools/profile.py`, 24 frames) | Hard | Insane |
+| --- | --- | --- |
+| Average | 4,536 | 6,224 |
+| Most frames | 3,100 to 4,100 | 4,000 to 5,600 |
+| Frames that place a sprite (and sweep the registers) | 7,600 to 8,800 | 8,400 to 10,100 |
+| Frames the multiplexer was ready (the display) | 87-90% | 64-81% |
+
+In most frames the cost is game (650-850), sort (650), copying the last frame's changes (600),
+and the update pass (850-1,150); placing a sprite and sweeping the registers make the
+expensive frames.
 
 ## Next
 

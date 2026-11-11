@@ -25,6 +25,21 @@ VEXPX   = 2                     ;  ... across,
 VBEHIND = 4                     ;  ... behind the characters,
 VFIRST  = $40                   ;  ... kept before others,
 VHIDE   = $80                   ;  ... not shown)
+        .if INSANE              ; (the CPC port's settings: Hard, or Insane)
+BTIME   = 60
+DTIME   = 75
+MPAUSE  = 45
+BV      = 384                   ; (8.8 fixed point, a frame)
+DX      = 266
+DY      = 200
+        .else
+BTIME   = 120
+DTIME   = 132
+MPAUSE  = 55
+BV      = 333
+DX      = 225
+DY      = 169
+        .endif
 PLACES  = 4                     ; sprites placed a frame, at most
 NONE    = 25                    ; (rows: none, from 25 to 0)
 
@@ -339,67 +354,153 @@ _hide   lda #VEXPY | VEXPX | VBEHIND | VFIRST | VHIDE
 _fl     sta vfl,x
         dex
         bpl -
-        ; the balls: across between 24 and 320 (sprite x), down between 48 and 229 (y)
-        ldx #NB - 1
--       lda bdx,x
-        bmi _left
+        ; balloons and daggers (the CPC port's speeds and timings: one tick a frame): a balloon
+        ; every BTIME frames at the bottom, rising; a dagger every DTIME at the top, falling and
+        ; going left; each held still PAUSE frames first; in the level's x, scrolling with it
+        dec btim
+        bne +
+        lda #BTIME
+        sta btim
+        lda #1
+        jsr spawn
++       dec dtim
+        bne +
+        lda #DTIME
+        sta dtim
+        lda #2
+        jsr spawn
++       ldx #NB - 1
+_m      lda oact,x
+        bne +
+        jmp _hid
++       lda opause,x
+        beq +
+        dec opause,x
+        jmp _pos
++       lda oact,x
+        cmp #2
+        beq _dag
+        lda oyf,x               ; a balloon: up
+        sec
+        sbc #<BV
+        sta oyf,x
+        lda oy,x
+        sbc #>BV
+        sta oy,x
+        cmp #20
+        bcs _pos
+        bcc _gone
+_dag    lda oyf,x               ; a dagger: down, and left
         clc
-        adc bxlo,x
-        sta bxlo,x
-        lda bxhi,x
+        adc #<DY
+        sta oyf,x
+        lda oy,x
+        adc #>DY
+        sta oy,x
+        cmp #251
+        bcs _gone
+        lda oxf,x
+        sec
+        sbc #<DX
+        sta oxf,x
+        lda oxl,x
+        sbc #>DX
+        sta oxl,x
+        lda oxh,x
+        sbc #0
+        sta oxh,x
+_pos    lda oxl,x               ; its sprite x: 31 + x - the scroll
+        sec
+        sbc scrx
+        sta mt
+        lda oxh,x
+        sbc scrx+1
+        sta mh
+        lda mt
+        clc
+        adc #31
+        sta vxlo + NS,x
+        lda mh
         adc #0
-        sta bxhi,x
-        beq _y
-        lda bxlo,x
-        cmp #320 - 256
-        bcc _y
-        bcs _turnx
-_left   clc
-        adc bxlo,x
-        sta bxlo,x
-        lda bxhi,x
-        adc #$ff
-        sta bxhi,x
-        bne _y
-        lda bxlo,x
-        cmp #24
-        bcs _y
-_turnx  lda bdx,x
-        eor #$ff
-        clc
-        adc #1
-        sta bdx,x
-_y      lda by,x
-        clc
-        adc bdy,x
-        sta by,x
-        cmp #229
-        bcs _turny
-        cmp #48
-        bcs _put
-_turny  lda bdy,x
-        eor #$ff
-        clc
-        adc #1
-        sta bdy,x
-_put    lda by,x
+        bmi _left
+        beq _on
+        cmp #1
+        bne _hid
+        lda vxlo + NS,x
+        cmp #344 - 256
+        bcs _hid
+        lda #1
+        bne _on
+_left   lda oact,x              ; (off at the left: a dagger's gone, a balloon hidden)
+        cmp #2
+        beq _gone
+        bne _hid
+_on     sta vxhi + NS,x
+        lda oy,x
         sta vy + NS,x
-        .if NOBALLS
-        lda #VHIDE              ; (NOBALLS: the balls not shown)
-        sta vfl + NS,x
-        .endif
         .if BALLTEST
         lda #0                  ; (BALLTEST: in the left border, unseen but fetched)
         sta vxlo + NS,x
         sta vxhi + NS,x
-        .else
-        lda bxlo,x
-        sta vxlo + NS,x
-        lda bxhi,x
-        sta vxhi + NS,x
         .endif
+        lda #0
+        .if NOBALLS
+        lda #VHIDE
+        .endif
+        sta vfl + NS,x
+        jmp _nm
+_gone   lda #0
+        sta oact,x
+_hid    lda #VHIDE
+        sta vfl + NS,x
+_nm     dex
+        bmi +
+        jmp _m
++       rts
+
+; A balloon (a = 1) or dagger (2) in a free slot, if there is one: x somewhere across the screen
+spawn   ldx #NB - 1
+-       ldy oact,x
+        beq +
         dex
         bpl -
+        rts
++       sta oact,x
+        lda rnd                 ; (a random 0-255: an 8-bit Galois LFSR)
+        asl
+        bcc +
+        eor #$1d
++       sta rnd
+        clc
+        adc #16
+        sta mt
+        lda #0
+        adc #0
+        sta mh
+        lda scrx
+        clc
+        adc mt
+        sta oxl,x
+        lda scrx+1
+        adc mh
+        sta oxh,x
+        lda #0
+        sta oxf,x
+        sta oyf,x
+        lda #MPAUSE
+        sta opause,x
+        lda oact,x
+        cmp #2
+        beq +
+        lda #250                ; a balloon: at the bottom, red
+        sta oy,x
+        lda #2
+        sta vcol + NS,x
+        rts
++       lda #47                 ; a dagger: at the top, white
+        sta oy,x
+        lda #1
+        sta vcol + NS,x
         rts
 
 ; ---- Sort: the virtual sprites down the screen (order, kept from frame to frame, so nearly in
@@ -1343,12 +1444,18 @@ vfl     .fill NV
 order   .for i = 0, i < NV, i += 1
         .byte i
         .endfor
-; (the balls)
-bxlo    .byte 40, 90, 140, 190, 240, 30
-bxhi    .byte 0, 0, 0, 0, 0, 1
-by      .byte 60, 100, 140, 180, 220, 80
-bdx     .byte 1, $ff, 2, $fe, 1, $ff
-bdy     .byte 1, 2, $ff, 1, $fe, 3
+; (the balloons and daggers: kind (0 none, 1 balloon, 2 dagger), x in the level (and a fraction),
+; y (and a fraction), frames still to wait at the start)
+oact    .fill NB
+oxl     .fill NB
+oxh     .fill NB
+oxf     .fill NB
+oy      .fill NB
+oyf     .fill NB
+opause  .fill NB
+btim    .byte 1
+dtim    .byte 30
+rnd     .byte 1
 ; (tables: the latest tick for a y; the line a hardware sprite's last use must end by, for a
 ; tick; the first and last rows shown on line 4 and line 3, for a y and a last line)
         .align $100
