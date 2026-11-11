@@ -1,10 +1,11 @@
 // Assembles the demo (../build/frak64.prg, for a real C64 or an emulator with its ROMs) with
 // 64tass, and the stand-in ROMs for testing it in a VICE without Commodore's (basic.rom,
 // kernal.rom, chargen.rom); with --run, runs VICE (x64sc, headless) and takes a screenshot.
-// PRE, D1 and D2 are the display loop's delays in cycles (see ../src/frak64.asm), found by
-// sweeping them in VICE with compare.py: D1 201 is the earliest the forced bad line works (200
-// breaks the picture, 202 widens the FLI bug to 4 characters), PRE 310 lines the first row up.
-//   node build.mjs [--pre N] [--d1 N] [--d2 N] [--nopack] [--run] [--cycles N] [--shot file.png]
+// TS (cycles from the stable raster to starting the row timer) and RD (cycles at the start of
+// the timer's interrupt before it reads the timer; not 1) are found by sweeping them in VICE
+// with compare.py (see ../src/frak64.asm). --measure and --hist build its MEASURE and HIST
+// versions.
+//   node build.mjs [--ts N] [--rd N] [--measure] [--hist] [--nopack] [--run] [--cycles N] [--shot file.png]
 import { execFileSync } from 'child_process';
 import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'fs';
 const DIR = new URL('../build/', import.meta.url).pathname, SRC = new URL('../src/', import.meta.url).pathname;
@@ -20,14 +21,21 @@ function split(n) {
     }
     throw new Error(`no delay of ${n}`);
 }
-export const PARAMS = { PRE: +arg('pre', 310), D1: +arg('d1', 201), D2: +arg('d2', 185) };
+export const PARAMS = { TS: +arg('ts', 24), RD: +arg('rd', 0) };
+const JM = +arg('jm', 5);
 const defs = [];
-for (const [name, n] of Object.entries(PARAMS)) { const s = split(n); defs.push('-D', `${name}K=${s.K}`, '-D', `${name}N=${s.N}`, '-D', `${name}B=${s.B}`); }
+for (const [name, n] of Object.entries(PARAMS)) {
+    // (RD in nops and a bit zp only: no loop, as the interrupt has no register free for one)
+    const s = name === 'RD' ? { K: 0, B: n & 1, N: (n - 3 * (n & 1)) / 2 } : split(n);
+    if (s.N < 0) throw new Error(`no delay of ${n}`);
+    defs.push('-D', `${name}K=${s.K}`, '-D', `${name}N=${s.N}`, '-D', `${name}B=${s.B}`);
+}
+defs.push('-D', `JM=${JM}`, '-D', `MEASURE=${process.argv.includes('--measure') ? 1 : 0}`, '-D', `HIST=${process.argv.includes('--hist') ? 1 : 0}`);
 if (!process.argv.includes('--nopack')) execFileSync('node', [TOOLS + 'pack.mjs'], { stdio: 'inherit' });
 execFileSync('64tass', ['-q', '-a', '-C', ...defs, '-I', DIR, '--labels=' + DIR + 'frak64.lbl', '-o', DIR + 'frak64.prg', SRC + 'frak64.asm'], { cwd: DIR, stdio: 'inherit' });
 const lbl = Object.fromEntries(readFileSync(DIR + 'frak64.lbl', 'utf8').split('\n').map(l => l.match(/^(\w+)\s*=\s*\$([0-9a-f]+)/i)).filter(Boolean).map(m => [m[1], parseInt(m[2], 16)]));
 const prg = readFileSync(DIR + 'frak64.prg');
-console.log(`frak64.prg: $0801-$${(0x0801 + prg.length - 3).toString(16)} (${prg.length - 2} bytes), start $${lbl.start.toString(16)}, row loop $${lbl.row.toString(16)}; PRE ${PARAMS.PRE} D1 ${PARAMS.D1} D2 ${PARAMS.D2}`);
+console.log(`frak64.prg: $0801-$${(0x0801 + prg.length - 3).toString(16)} (${prg.length - 2} bytes), start $${lbl.start.toString(16)}, row interrupt $${lbl.rowirq.toString(16)}; TS ${PARAMS.TS} RD ${PARAMS.RD}`);
 writeFileSync(DIR + 'rom.inc', `START = $${lbl.start.toString(16)}\nLENGTH = ${prg.length - 2}\n`);
 execFileSync('64tass', ['-q', '-a', '-C', '-b', '-I', DIR, '-o', DIR + 'rom.bin', SRC + 'rom.asm'], { cwd: DIR, stdio: 'inherit' });
 const rom = readFileSync(DIR + 'rom.bin');          // $a000-$bfff, then $e000-$ffff
