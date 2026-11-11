@@ -802,16 +802,11 @@ _dmux
         cpx #39
         bcs +
         stx row
-        ldy savy
-        ldx savx
-        lda sava
-        rti
-+
-rl0     lda d18a0                   ; tick 38 (line 45): row 0's screen and set
-        sta $d018
         .if !TEST
-        lda #255                    ; sprites 3-7 parked below the screen, then those set up
-        sta $d007                   ; before the frame (list 0)
+        cpx #38                     ; tick 37 (line 37): sprites 3-7 parked below the screen, then
+        bne t37n                    ; those set up before the frame (tick 0's slots), and the
+        lda #255                    ; registers (in time for sprites from line 47, and leaving
+        sta $d007                   ; tick 38 little to do before row 0's)
         sta $d009
         sta $d00b
         sta $d00d
@@ -826,10 +821,27 @@ rl0     lda d18a0                   ; tick 38 (line 45): row 0's screen and set
         lda t01b,y
         sta $d01b
         jsr apply0
+t37n
         .endif
+        ldy savy
+        ldx savx
+        lda sava
+        rti
++
+rl0     lda d18a0                   ; tick 38 (line 45): row 0's screen and set
+        sta $d018
         ldx #0
         stx row
         jsr prep
+        .if SLACK
+        lda $dc07                   ; (debug: tick 38's least slack before row 0's tick)
+        bne +
+        lda $dc06
+        cmp slacklo
+        bcs +
+        sta slacklo
++
+        .endif
         lda #<rowirq
         sta $fffe
         lda #>rowirq
@@ -923,29 +935,6 @@ frame   lda scrx                    ; (the position the multiplexer's frame was 
         lda ntarget
         sta target
 +
-        .if SLACK
-        lda scrx+1                  ; (debug: the column shown, against the fine scroll's)
-        lsr
-        lda scrx
-        ror
-        lsr
-        lsr
-        cmp frontc
-        beq setx
-        inc dbgn
-        ldx dbgn
-        sta dbgcol,x
-        lda frontc
-        sta dbgfc,x
-        lda curc
-        sta dbgcc,x
-        lda prepared
-        sta dbgpr,x
-        lda working
-        sta dbgwk,x
-        lda frames
-        sta dbgfr,x
-        .endif
 setx    lda shx
         and #7
         eor #7                      ; (38 columns)

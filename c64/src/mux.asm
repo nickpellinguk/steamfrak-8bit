@@ -43,6 +43,9 @@ ms      = zp + 78
 bp      = zp + 79
 bn      = zp + 80
 mpass   = zp + 81
+n3c     = zp + 82
+n3d     = zp + 83
+mwait   = zp + 84
 
 ; Once a frame, in the main program
 muxframe
@@ -50,6 +53,7 @@ muxframe
         sei                     ; (debug: the multiplexer's own cycles; the display suffers)
         lda #0
         sta stampi
+        sta it
         ldx #7
 -       sta cnt0,x
         dex
@@ -90,10 +94,24 @@ stamp   ldx stampi              ; (debug: CIA 2's timer A, free running, at each
         ldy $dd05
         sta mux0,x
         tya
-        sta mux0+8,x
+        sta mux0+16,x
         inc stampi
         rts
 stampi  .byte 0
+stamp2  ldx it                  ; (debug: the time at each sprite of update's)
+        lda $dd04
+        ldy $dd05
+        sta itlo,x
+        tya
+        sta ithi,x
+        lda #0
+        sta itp,x
+        inc it
+        rts
+it      .byte 0
+itlo    .fill 24
+ithi    .fill 24
+itp     .fill 24
 cnt0    .fill 8
         .endif
 
@@ -188,12 +206,10 @@ _t      cpy tdn
         ldx #3                  ; tick 0: its four slots
 _s      stx mt
         txa
-        clc
-        adc bufoff
+        ora bufoff
         tay
         txa
-        clc
-        adc nb
+        ora nb
         tax
         lda e_x,y
         sta e_x,x
@@ -220,21 +236,19 @@ _s      stx mt
         ldx nb
         jsr cpregs
         jmp _nx
-_u      sta mt
-        clc
-        adc bufoff
-        tay
-        lda mt
-        clc
-        adc nb
-        tax
+_u      ora nb
+        tax                     ; (to)
+        eor #32
+        tay                     ; (from)
         lda u_x,y
         sta u_x,x
         lda u_y,y
         sta u_y,x
         lda mflg
-        and #2
-        beq +
+        lsr
+        beq _nx                 ; (x and y only)
+        lsr
+        bcc +
         lda u_n,y
         sta u_n,x
         lda u_reg,y
@@ -257,12 +271,10 @@ _rl     cpy rdn
         lda #0
         sta rdf,x
         txa
-        clc
-        adc bufoff
+        ora bufoff
         sta mt
         txa
-        clc
-        adc nb
+        ora nb
         tax
         sty mj
         ldy mt
@@ -427,16 +439,59 @@ _done   rts
 ; registers if a hardware sprite's settings changed, and the rows' operands where they changed
 update  lda #0
         sta regdirty
+        sta mwait
         sta mo
-_v      ldx mo
+_v
+        .if MUXTIME
+        jsr stamp2
+        .endif
+        ldx mo
         cpx #NV
         bcc +
         jmp pplace
 +       ldy order,x
         sty mv
         lda vh,y
-        bmi _nx
+        bmi _un
         sta mh
+        .if MUXTIME
+        lda #1                  ; (debug: the path taken, 1 unchanged, 2 checked)
+        ldx it
+        sta itp-1,x
+        ldy mv
+        .endif
+        lda vfl,y               ; y and settings as they were: nothing to check, only x, x's bit 8,
+        cmp vflp,y              ; the pointer and the colour to see to (a clash with the sprites
+        bne _ck                 ; around it is caught by theirs)
+        lda vy,y
+        cmp vyp,y
+        bne _ck
+        lda vxhi,y
+        cmp vxhp,y
+        beq +
+        sta vxhp,y
+        jsr attrof
+        ldy mv
+        sta va,y
+        lda #1
+        sta regdirty
++       jmp _chg
+_un     lda vfl,y               ; (not shown: waiting to be placed?)
+        bmi _nx
+        lda vy,y
+        cmp #47
+        bcc _nx
+        cmp #251
+        bcs _nx
+        inc mwait
+        jmp _nx
+_ck
+        .if MUXTIME
+        lda #2
+        ldx it
+        sta itp-1,x
+        ldy mv
+        .endif
         lda vfl,y
         bmi _rm
         lda vy,y
@@ -472,6 +527,7 @@ _np     ldy mv                  ; it ends before the one after it is set up
         stx mi
         jmp _clash
 _rm     jsr remove
+        inc mwait
 _nx     inc mo
         jmp _v
 _ok     ldy mv                  ; kept: its rows, and what's changed
@@ -485,7 +541,11 @@ _ok     ldy mv                  ; kept: its rows, and what's changed
         sta va,y
         lda #1
         sta regdirty
-+       lda vptr,y
++       lda vfl,y
+        sta vflp,y
+        lda vxhi,y
+        sta vxhp,y
+_chg    lda vptr,y
         cmp vpp,y
         bne _full
         lda vcol,y
@@ -519,7 +579,14 @@ _clash  ldy mv                  ; sprite mv and mi clash: mi goes if it isn't ke
 
 ; Those not shown placed (at most PLACES), kept before others first; a sprite kept before others
 ; that can't be may drop the nearest that isn't
-pplace  lda #PLACES
+pplace
+        .if MUXTIME
+        jsr stamp
+        .endif
+        lda mwait
+        bne +
+        jmp _done
++       lda #PLACES
         sta mbud
         lda #VFIRST
         sta mpass
@@ -559,10 +626,18 @@ _pe     lda mpass
         lda #0
         sta mpass
         jmp _p
-_done   lda regdirty
+_done
+        .if MUXTIME
+        jsr stamp
+        .endif
+        lda regdirty
         beq +
         jsr sweep
-+       jmp rowsfin
++
+        .if MUXTIME
+        jsr stamp
+        .endif
+        jmp rowsfin
 
 ; Place sprite mv (c set if it is): the latest tick without a set-up, from the latest early
 ; enough for it up the screen (tick 0's slots last); then of the hardware sprites whose sprite
@@ -695,6 +770,10 @@ _hn     ldx mh
         jsr attrof
         ldy mv
         sta va,y
+        lda vfl,y
+        sta vflp,y
+        lda vxhi,y
+        sta vxhp,y
         lda #1
         sta regdirty
         jsr writerec
@@ -765,8 +844,7 @@ remove
         lda #$ff
         sta slotv,x
         txa
-        clc
-        adc nb
+        ora nb
         tax
         lda #$ff
         sta e_n,x
@@ -777,8 +855,7 @@ remove
 _u      lda #$ff
         sta tinst,x
         txa
-        clc
-        adc nb
+        ora nb
         tay
         lda #$ff
         sta u_n,y
@@ -824,23 +901,42 @@ attrof  ldy mv
 
 ; Sprite mv's rows (on hardware sprite mh), from its rows before (v3lo ... v4hi) to those from my
 ; to ml: only the rows that change touched
-rngs    ldx mh
+rngs    ldy mv
+        ldx my
+        lda r4lo,x
+        sta nc
+        lda r3lo,x
+        sta n3c
+        ldx ml
+        lda r4hi,x
+        sta nd
+        lda r3hi,x
+        sta n3d
+        lda nc
+        cmp v4lo,y
+        bne _ch
+        lda nd
+        cmp v4hi,y
+        bne _ch
+        lda n3c
+        cmp v3lo,y
+        bne _ch
+        lda n3d
+        cmp v3hi,y
+        bne _ch
+        rts
+_ch     ldx mh
         lda bits,x
         sta mbit
         eor #$ff
         sta mkey
-        ldy mv
         lda v4lo,y
         sta oa
         lda v4hi,y
         sta ob
-        ldx my
-        lda r4lo,x
-        sta nc
+        lda nc
         sta v4lo,y
-        ldx ml
-        lda r4hi,x
-        sta nd
+        lda nd
         sta v4hi,y
         lda oa
         cmp nc
@@ -858,12 +954,10 @@ _l3     ldy mv
         sta oa
         lda v3hi,y
         sta ob
-        ldx my
-        lda r3lo,x
+        lda n3c
         sta nc
         sta v3lo,y
-        ldx ml
-        lda r3hi,x
+        lda n3d
         sta nd
         sta v3hi,y
         lda oa
@@ -879,39 +973,100 @@ _l3     ldy mv
         jmp rng
 _x      rts
 
-; Rows oa to ob not in nc to nd: bit mbit cleared; rows nc to nd not in oa to ob: set (mptr: mk3
-; or mk4); each marked as changed
-rng     ldy oa
-_c      cpy ob
+; Rows oa to ob (before) to nc to nd (now), bit mbit in mptr's rows (mk3 or mk4): when they
+; overlap, only the ends that moved (a row or so); else the old cleared and the new set
+rng     lda oa
+        cmp #NONE
+        bne +
+        lda nc                  ; (none before)
+        sta mlo
+        lda nd
+        sta mhi
+        jmp rset
++       lda nc
+        cmp #NONE
+        bne +
+        lda oa                  ; (none now)
+        sta mlo
+        lda ob
+        sta mhi
+        jmp rclr
++       lda nc
+        cmp ob
         beq +
-        bcs _s
-+       cpy nc
-        bcc _cl
-        cpy nd
-        beq _cn
-        bcc _cn
-_cl     lda (mptr),y
+        bcs _dis
++       lda nd
+        cmp oa
+        bcc _dis
+        lda oa                  ; the top: down (cleared), or up (set)
+        cmp nc
+        bcs +
+        sta mlo
+        ldx nc
+        dex
+        stx mhi
+        jsr rclr
++       lda nc
+        cmp oa
+        bcs +
+        sta mlo
+        ldx oa
+        dex
+        stx mhi
+        jsr rset
++       lda nd                  ; the bottom: up (cleared), or down (set)
+        cmp ob
+        bcs +
+        tax
+        inx
+        stx mlo
+        lda ob
+        sta mhi
+        jsr rclr
++       lda ob
+        cmp nd
+        bcs +
+        tax
+        inx
+        stx mlo
+        lda nd
+        sta mhi
+        jmp rset
++       rts
+_dis    lda oa
+        sta mlo
+        lda ob
+        sta mhi
+        jsr rclr
+        lda nc
+        sta mlo
+        lda nd
+        sta mhi
+        jmp rset
+
+rclr    ldy mlo                 ; (rows mlo to mhi: bit mbit cleared, and marked as changed)
+-       cpy mhi
+        beq +
+        bcs ++
++       lda (mptr),y
         and mkey
         sta (mptr),y
         jsr rdirty
-_cn     iny
-        bne _c
-_s      ldy nc
-_sl     cpy nd
+        iny
+        bne -
++       rts
+
+rset    ldy mlo                 ; (... set)
+-       cpy mhi
         beq +
-        bcs _x
-+       cpy oa
-        bcc _st
-        cpy ob
-        beq _sn
-        bcc _sn
-_st     lda (mptr),y
+        bcs ++
++       lda (mptr),y
         ora mbit
         sta (mptr),y
         jsr rdirty
-_sn     iny
-        bne _sl
-_x      rts
+        iny
+        bne -
++       rts
 
 rdirty  lda rdf,y               ; (row y changed)
         bne +
@@ -950,8 +1105,7 @@ writerec
         ldx vt,y
         bne _u
         lda vs,y
-        clc
-        adc nb
+        ora nb
         tax
         lda vh,y
         sta e_n,x
@@ -969,8 +1123,7 @@ writerec
         lda #3
         jmp dirtyt
 _u      txa
-        clc
-        adc nb
+        ora nb
         tax
         lda vh,y
         sta u_n,x
@@ -996,8 +1149,7 @@ writexy ldy mv
         ldx vt,y
         bne _u
         lda vs,y
-        clc
-        adc nb
+        ora nb
         tax
         lda vy,y
         sta e_y,x
@@ -1007,8 +1159,7 @@ writexy ldy mv
         lda #1
         jmp dirtyt
 _u      txa
-        clc
-        adc nb
+        ora nb
         tax
         lda vy,y
         sta u_y,x
@@ -1058,8 +1209,7 @@ _t      ldx mt
         sty mv
         jsr setattr
         lda mt
-        clc
-        adc nb
+        ora nb
         tax
         lda mcur
         sta trch,x
@@ -1134,8 +1284,7 @@ rowsfin ldy #0
         ldx rdl,y
         stx mi
         txa
-        clc
-        adc nb
+        ora nb
         tay
         lda mk3,x
         tax
@@ -1175,7 +1324,7 @@ aps1    sta SCR1 + $3f8,y
         rts
 
 bits    .byte 1, 2, 4, 8, 16, 32, 64, 128
-mux0    .fill 16
+mux0    .fill 32
         .if SLACK
 slackhi .fill 32
 slacklo .fill 32, 255
@@ -1235,6 +1384,8 @@ v3hi    .fill NV
 v4lo    .fill NV
 v4hi    .fill NV
 va      .fill NV
+vflp    .fill NV
+vxhp    .fill NV
 vyp     .fill NV
 vxp     .fill NV
 vpp     .fill NV

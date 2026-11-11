@@ -7,9 +7,9 @@ out by a sprite multiplexer, but no Trogg and no game.
 
 **Status: demo working in VICE (x64sc, PAL), with a sprite multiplexer; the display an
 interrupt a row that stays on time whatever sprites are shown, leaving the main program about
-45% of the CPU. With the demo's 11 virtual sprites the multiplexer needs about 1.4 frames of
-that, so for now the scroll (which waits for it) runs at half speed: see the multiplexer's
-section. Not yet tried on a real machine.**
+45% of the CPU. With the demo's 11 virtual sprites the multiplexer is ready in about 60% of
+frames, so for now the scroll (which waits for it) runs at about 0.6 of its speed: see the
+multiplexer's section. Not yet tried on a real machine.**
 
 ## The idea
 
@@ -154,42 +154,45 @@ sets the constraints:
 - Every row interrupt must know which sprites are shown on its lines 3 and 4 (its masks), for
   its slide constant and tail.
 
-Once a frame, in the main program, for the frame after (double-buffered: the border switches
-buffers once the next is ready, together with the scroll it was made for):
-
-1. **game**: the Scrubblies' x from the scroll, the balls bounce;
-2. **sort**: the virtual sprites down the screen (an insertion sort, kept from frame to frame);
-3. **alloc**: for each, the latest tick without a set-up, from the latest early enough for it up
-   the screen, and of the hardware sprites free by then, the one free latest (best fit). If none
-   is, a sprite kept before others (the Scrubblies) takes the place of one that isn't. Sprites
-   that don't fit aren't shown that frame;
-4. **build**: each tick's set-up, the registers where they change, and each row's masks, slide
-   constant and tail.
+It's incremental. A sprite keeps its hardware sprite and tick from frame to frame while they
+still work (its tick early enough for its y; the sprites before and after it on its hardware
+sprite out of its way), and only what changes is written: its x and y, its record, the rows
+whose masks change (only the rows at the ends that moved), and the registers (swept down the
+ticks only when a hardware sprite's settings change). A sprite whose place stops working is
+dropped (the Scrubblies win against balls) and placed again with new ones, at most four a frame,
+the Scrubblies first. The results go to the buffer not shown, which the border switches to,
+with the scroll it was made for, once it's ready; each frame starts by copying the last frame's
+changes across, so the two buffers keep step. The four set-ups before the frame are made in
+border tick 37, leaving tick 38 time for row 0.
 
 Checked in VICE: the balls put in the left border (`--balltest`: fetched, so they move the
-critical writes, but unseen) and every row compared with the mock-up while it scrolls; a
-breakpoint after each frame's build checks the masks against the set-ups and that no hardware
-sprite is set up while shown, and that the registers in force match every sprite shown on every
-line. What's left is screenshot tearing and a few pixels where a ladder meets the lower
-Scrubbly's antenna (as before the multiplexer).
+critical writes, but unseen), and every row compared with the mock-up while it scrolls (all
+match but for a few pixels where a ladder meets the lower Scrubbly's antenna, as before the
+multiplexer); and a breakpoint after each frame checks the buffer made against the sprites:
+each set-up early enough, no hardware sprite set up while shown, each row's slide constant and
+tail, and the registers in force for every sprite on every line.
 
-Debugging builds: `--slack` records each row tail's least time to spare before the next tick
-(the least is about 25 cycles) and frames the multiplexer wasn't ready; `--muxtime` times each
-stage with interrupts off.
+Measuring: `--muxtime` times its stages in VICE with interrupts off, and counts what happened;
+`--slack` records each tick's least time to spare before the next (21 cycles at the least) and
+how many frames the multiplexer was ready. For exact CPU cycles, memory snapshots taken in VICE
+at the multiplexer's start are run in a 6502 emulator (py65), counting cycles by routine.
 
-| The multiplexer's CPU time (11 virtual sprites, about 9 shown) | Cycles |
+| The multiplexer's CPU time, 11 virtual sprites (9 shown), 12 frames in the emulator | Cycles a frame |
 | --- | --- |
-| game | 950 |
-| sort | 700 |
-| alloc | 4,100 |
-| build | 7,600 |
-| total | 13,400 |
+| Rows (finding and marking the rows that change, and their operands) | ~2,400 |
+| The update pass's own work (checks, last lines, settings) | ~2,000 |
+| Copying the last frame's changes to the other buffer | ~1,250 |
+| Writing x and y, and noting what changed | ~830 |
+| game (the Scrubblies' x, the balls) | ~820 |
+| sort | ~650 |
+| Registers (when a sprite is placed or crosses x 256: about every third frame) | ~740 |
+| Placing | ~650 |
+| total | 9,429 (7,358 to 12,981) |
 
-With 7 virtual sprites it's about 7,500. The main program has about 9,000 cycles a frame, and
-the foreground needs about 2,600 a frame to fill the hidden pair of screens at a pixel a frame,
-so at 11 sprites the multiplexer is ready every other frame and the scroll goes at half speed.
-Ways on: a leaner build (most of it is the rows' masks and operands), running the whole
-multiplexer every other frame with only the sprites' x refreshed in between, or fewer sprites.
+The balls move 1 to 3 pixels a frame up and down, so most of them cross a row's line 3 or 4
+most frames (each sprite has four such edges). With the main program's 9,000 cycles a frame
+and the foreground's 2,600 to fill the hidden screens, the multiplexer is ready in about 60% of
+frames, and the scroll goes at about 0.6 pixels a frame.
 
 ## Next
 
