@@ -134,9 +134,10 @@ e.lad_x.forEach((lx, k) => {
 
 // ---- The geometry for Trogg's physics, where the C64 draws it (level coordinates, as the CPC
 // port's): each platform as its piece was snapped (left end to 8, top to a half's last line); each
-// ladder's middle where it's redrawn, its top a line below its platform's top as in the original,
-// its bottom as far from the top of the platform under it as in the original; Trogg's start
-// moved with the platform he starts on
+// ladder moved with the platform it hangs from (its top a line below that platform's top, as in
+// the original, and its height the original's, so the physics sees the original's objects moved),
+// its x to the middle of the ladder as redrawn, less 2; Trogg's start moved with the platform he
+// starts on
 const snapX = x => Math.round(x / 8) * 8;
 const plats = e.plat_x.map((x, k) => ({ x: snapX(x), y: snapTop(e.plat_y[k]), w: e.plat_w[k] }));
 const under = (x, y) => {            // (the platform under x whose top is nearest y, within 16)
@@ -145,17 +146,16 @@ const under = (x, y) => {            // (the platform under x whose top is neare
     return best;
 };
 const lads = e.lad_x.map((x, k) => {
-    const y = e.lad_y[k], bot = y + e.lad_h[k], t = under(x, y - 1), b = under(x, bot);
+    const y = e.lad_y[k], t = under(x, y - 1);
     if (t < 0 || e.plat_y[t] !== y - 1) throw new Error(`ladder ${k}: no platform at its top`);
-    const ny = plats[t].y + 1, nb = b < 0 ? bot : plats[b].y + (bot - e.plat_y[b]);
-    return { x: ladMid[k] - 2, y: ny, h: nb - ny, ext: e.lad_ext[k], top: t, under: b, dx: ladMid[k] - 2 - x, dy: ny - y, dbot: nb - bot };
+    return { x: ladMid[k] - 2, y: plats[t].y + 1, h: e.lad_h[k], ext: e.lad_ext[k], top: t, dx: ladMid[k] - 2 - x, dy: plats[t].y + 1 - y };
 });
 const start = e.trogg, sp = under(start[0], start[1]);
 const troggStart = sp < 0 ? start : [start[0] + plats[sp].x - e.plat_x[sp], plats[sp].y + start[1] - e.plat_y[sp]];
 if (!SUF) {
     writeFileSync(`${OUT}/geometry.json`, JSON.stringify({ plats, lads, trogg: troggStart, w: e.w, h: e.h, row0: ROW0 }, null, 1));
     console.log(`geometry: ${plats.length} platforms (moved ${[...new Set(plats.map((p, k) => `${p.x - e.plat_x[k]},${p.y - e.plat_y[k]}`))].join(' ')}), ` +
-        `${lads.length} ladders (moved ${[...new Set(lads.map(l => `${l.dx},${l.dy}/${l.dbot}`))].join(' ')}), Trogg from ${start} to ${troggStart}`);
+        `${lads.length} ladders (moved ${[...new Set(lads.map(l => `${l.dx},${l.dy}`))].join(' ')}), Trogg from ${start} to ${troggStart}`);
 }
 
 // ---- The objects

@@ -455,6 +455,7 @@ nextframe
         sta muxbusy
         lda #0
         sta muxreq
+        jsr gametick                ; (a game tick: the keys, Trogg)
         jsr decide
         jsr trogset                 ; (Trogg's sprites, for the next frame's scroll)
         jsr muxframe
@@ -876,7 +877,10 @@ rl0     lda d18a0                   ; tick 38 (line 45): row 0's screen and set
 ; a pixel on (holding at the ends; holding if the next column isn't ready). A new column's pair
 ; flip, and the column the hidden pair should be filled for next, are left for the border to make
 ; (flippend, targpend), and $d016 for it to write
-decide  lda pause
+decide  .if !SCROLLDEMO
+        rts                         ; (held at the left while Trogg's played, till the camera)
+        .endif
+        lda pause
         beq +
         dec pause
         rts
@@ -966,6 +970,7 @@ setx    lda shx
 
         .include "mux.asm"
         .include "trogg.asm"
+        .include "play.asm"
 
         .align $100
 d18a0   .fill ROWS + 1

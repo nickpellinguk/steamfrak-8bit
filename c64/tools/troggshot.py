@@ -2,7 +2,8 @@
 # matches best near where he should be (his place in the level: x, y as trogg.asm keeps them),
 # and reports how far that is from where he should be, the pixels of him that differ, and anything
 # but the background in the 8 lines below his feet (where the second instances' rows 13-20 would
-# show without the change to P3). Only what's in the display window counts; the scroll is the one
+# show without the change to P3). Only what's in the display window, and not under the cover
+# sprite at the left, counts; the scroll is the one
 # that fits the rows round him.
 #   python3 troggshot.py shot.png X Y FRAME
 import json, os, subprocess, sys
@@ -39,7 +40,8 @@ best = None
 for oy in range(-6, 7):
     for ox in range(-12, 13):
         bad = sum(1 for r in range(34) for c in range(24) if shown[r][c] >= 0 and 0 <= top + oy + r - 24 < 200
-                  and cls(left + ox + c, top + oy + r) != shown[r][c])     # (in the display window)
+                  and at(left + ox + c, 0)[0] >= X0 + dx + 32
+                  and cls(left + ox + c, top + oy + r) != shown[r][c])     # (in the display window, not under the cover)
         if best is None or bad < best[0]: best = (bad, ox, oy)
 bad, ox, oy = best
 below = 0

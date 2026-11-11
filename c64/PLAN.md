@@ -1,6 +1,6 @@
 # Plan: a playable A_1
 
-Status: **milestones 1 and 2 done** (the data; Trogg shown, standing). Each milestone is checked before the next, and this
+Status: **milestones 1-3 done** (the data; Trogg shown; his movement and the keys). Each milestone is checked before the next, and this
 file is updated as they're done.
 
 ## Scope
@@ -31,17 +31,18 @@ Check: the exported rectangles drawn over the mock-up.
 
 ## 2. Trogg's movement
 
-A line-by-line 6502 port of `trogg_standing`, `trogg_falling` and `trogg_climbing`, with
-`platform_find` and `ladder_find` (`../cpc6128/src/trogg.asm`, `../cpc6128/src/level.asm`),
-with the same exact arithmetic in twentieths of a pixel (a jump 25, terminal speed 80, a ladder
-grabbed only while slower than 25) and the same debouncing.
+A port of the BBC version's `trogg_standing`, `trogg_falling` and `trogg_climbing`, with
+`platform_find` and `ladder_find` (`../src/frak.asm`: 65C02, so mostly its few 65C02
+instructions replaced), with the same exact arithmetic in twentieths of a pixel (a jump 25,
+terminal speed 80, a ladder grabbed only while slower than 25) and the same debouncing.
 
 Keys, read once a frame from CIA 1's keyboard matrix: Z / X walk, O / K climb and jump, Space
 or P yoyo; joystick 2 as well.
 
-Checked without VICE: a Python model transcribed from `trogg.asm`, and a py65 harness running
-the 6502 routines against it tick by tick for random key sequences on A_1's geometry (and, if
-it's practical, the model against the BBC version's `--trace` on the original geometry).
+Checked without VICE as the BBC version is (`../tools/emu/connections8.mjs`): the steamfrak
+repository's transcription of the original's scripts, on the original's own room with its
+objects moved to the C64's places, against the 6502 code itself on an interpreter, from every
+start, holding every key.
 
 Its cost is measured with `tools/profile.py`, not guessed. `platform_find` scans 41 platforms
 and `ladder_find` 19 ladders; if that's too slow, tables by column (there's memory to spare).
@@ -156,8 +157,30 @@ often everything is ready in time.
      him mid-screen on Insane: 12 cycles (the interrupt allows for up to 15 late; before him, 21).
      The multiplexer with him standing: Hard 4,000-4,200 cycles a frame on average, Insane
      3,700-5,600.
-3. **Movement and keys**: the 6502 physics against the Python model in py65; a build with
+3. **Movement and keys** (done): the 6502 physics checked against the original's; a build with
    scripted keys for VICE runs. Restarting the level on death.
+   - `src/play.asm`: the BBC version's movement as plain 6502 (A_1 has no moving or bouncy
+     platforms, so those parts are left out; the yoyo's key is read but not used yet); the keys
+     from the keyboard matrix (Z / X, O / K, P / Space) and joystick 2; a game tick a frame;
+     death restarts the level after a second. The scroll is held at the left till the camera
+     (`--scrolldemo` for the old back and forth).
+   - The geometry: each ladder now moves with the platform it hangs from, keeping the original's
+     height (its bottom moves up to 3 pixels against the platform below it; every one that ended
+     above or below it still does), so the physics sees the original's objects moved.
+   - `tools/conn64.mjs`: the steamfrak repository's `connections.js` (the original's scripts
+     transcribed, with GameMaker's epsilon comparisons) on a copy of A_1's room with every
+     platform and ladder moved to the C64's place, against the C64's 6502 code on the BBC
+     version's 6502 interpreter: all 10,484 starts end the same way, all 140 connections the same
+     (and a jump speed of 24 instead of 25 shows up as 852 starts that differ).
+   - `tools/keytest.py`: a key script (`build.mjs --keys`) played by the program's own game tick
+     in py65 and in VICE: the same place and state in both, and `troggshot.py` finds him drawn
+     exactly there; five scripts (climbing up, stopping halfway, walking, a jump, two deaths and
+     restarts).
+   - Cost of a game tick: `platform_find` looked at all 41 platforms, 1,700 of 2,600 cycles; now
+     only those over his 8-pixel column (tables by column from `build.mjs`, and the ladders too),
+     the same results: a tick 1,100-1,450 cycles (437 of them reading the keyboard). With him
+     climbing up and down the row tails' least time to spare is 36 cycles, and the frame checker
+     finds no problems.
 4. **Camera**: the scroll following him, turning round included, with the fill keeping up.
 5. **Yoyo**: the string and the yoyo, then knocking a Scrubbly off.
 6. **Budget**: the whole frame profiled, readiness and slack measured with everything running,
@@ -169,5 +192,5 @@ often everything is ready in time.
   alone (milestone 2). Little margin: to watch when he moves.
 - Whether two character sets still do, with the string and yoyoed-off glyphs: yes, but set 0 is
   full again, so any more glyphs would mean a third set.
-- What the physics costs (milestone 3).
+- What the physics costs: 1,100-1,450 cycles a tick (milestone 3).
 - How long the fill takes after turning round, and so the dead zone (milestone 4).

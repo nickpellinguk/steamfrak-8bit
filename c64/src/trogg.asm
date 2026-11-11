@@ -26,7 +26,11 @@ TSET    = 9
 ; multiplexer, the rows of his ticks (tra; trb the next), the ticks it's to leave alone (lists
 ; tres1 to tres2: the rows whose tails, lines 55 + 8r to 61 + 8r, run while he's drawn, lines y + 1
 ; to y + 42), and bit 8 of his x
-trogset lda ty                      ; y = the line before his top: (ty - 34) + 27 - 1
+trogset lda ty+1                    ; y = the line before his top: (ty - 34) + 27 - 1
+        beq +
+        lda #255                    ; (fallen off the bottom: under the screen)
+        .byte $2c
++       lda ty
         sec
         sbc #8
         sta tpen + TY1
@@ -173,8 +177,8 @@ tpair   sta tq0+2
         rts
 
 ; ---- Data
-tx      .word TROGGX ? TROGGX : 41  ; (his place in the level: the start, from geometry.json)
-ty      .byte TROGGY ? TROGGY : 207
+tx      .word TROGGX ? TROGGX : TSTARTX     ; (his place in the level: x, and his feet's y;
+ty      .word TROGGY ? TROGGY : TSTARTY     ;  the start, from geometry.json)
 tfr     .byte TROGGF
 tpen    .fill TSET
 tact    .fill TSET, 255             ; (parked below the screen until the first frame)

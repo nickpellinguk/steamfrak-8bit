@@ -1,9 +1,11 @@
 # Frak! for the Commodore 64 (experimental)
 
 An experiment in showing Frak's graphics on an unexpanded C64 (and a C128 in C64 mode) at their
-own resolution, without doubling the pixels' width. So far it's a display demo: level A_1
-("FRAK!") scrolling left and right, with the Scrubblies' sprites and balloons and daggers shared
-out by a sprite multiplexer, but no Trogg and no game.
+own resolution, without doubling the pixels' width. So far it's level A_1 ("FRAK!"), on its way
+to being playable ([`PLAN.md`](PLAN.md)): Trogg walks, climbs, jumps and falls to the keys (Z / X,
+O / K, or joystick 2), as in the original, and dies and starts again; the Scrubblies, balloons and
+daggers are shared out among sprites by a multiplexer. The screen doesn't follow him yet (it's held
+at the left: `--scrolldemo` for the old scrolling demo), and there's no yoyo yet.
 
 **Status: demo working in VICE (x64sc, PAL), with a sprite multiplexer; the display an
 interrupt a row that stays on time whatever sprites are shown, leaving the main program about
@@ -57,6 +59,9 @@ ROM routines.
 | `tools/compare.py` | Checks a VICE screenshot against the mock-up, pixel by pixel, character row by row |
 | `tools/vice.py` | Drives VICE through its remote monitor (screenshots while it runs, breakpoints, memory) |
 | `tools/dump.py` | Runs the demo in VICE a while and prints memory at labels |
+| `src/play.asm` | Playing: Trogg's movement (the BBC version's, as plain 6502), the keys, a game tick a frame, the level restarted when he dies |
+| `tools/conn64.mjs` | Checks Trogg's movement against the original's, from every start holding every key, on A_1 as the C64 has it |
+| `tools/keytest.py` | Plays a key script in py65 and in VICE and checks where Trogg ends up, and that he's drawn there |
 | `tools/troggshot.py` | Finds Trogg in a screenshot and checks his place and every pixel, and nothing below his feet |
 | `tools/muxcheck.py` | Checks the multiplexer's buffer, frame by frame, in VICE: set-ups, hardware sprites, rows' operands, registers, Trogg's ticks |
 | `tools/profile.py` | Exact CPU cycles of the multiplexer, by routine and source line: VICE memory snapshots at its start, run in a 6502 emulator (py65) |
