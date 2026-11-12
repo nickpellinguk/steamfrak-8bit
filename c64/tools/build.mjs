@@ -97,6 +97,36 @@ const sx = scrub.placed.map(p => 31 + p.x);
 writeFileSync(DIR + 'masks.inc', `; made by tools/build.mjs\nmasks   .byte ${masks.join(', ')}\nmasks3  .byte ${masks3.join(', ')}\n` +
     `testy   .byte ${testy.join(', ')}\nTESTEXP = ${spr.reduce((m, s) => s.exp ? m | 1 << s.n : m, COVER)}\n` +
     `scruby  .byte ${scrub.placed.map(p => 50 + p.top).join(', ')}\nscl     .byte ${scrub.placed.map(p => (p.x + 8) & 255).join(', ')}\nsch     .byte ${scrub.placed.map(p => (p.x + 8) >> 8).join(', ')}\nsct     .byte ${scrub.placed.map(p => p.top + 24).join(', ')}\nsxlo    .byte ${sx.map(v => v & 255).join(', ')}\nsxhi    .byte ${sx.map(v => v >> 8).join(', ')}\n`);
+// The collision boxes (collide.asm): each of Trogg's frames' solid pixels' extent as shown, from
+// (tx, ty) (trogg.json: the frame's left at tx - left, its top at ty - 34); each Scrubbly's, gem's
+// and key's in the level, as the mock-up drew them (picks.json; the level's y is the mock-up's,
+// the map's line + 24); the ball sprite's from its sprite's corner (its top at its y - 26)
+{
+    const tj = JSON.parse(readFileSync(DIR + 'trogg.json')), pj = JSON.parse(readFileSync(DIR + 'picks.json'));
+    const box = g => { let x0 = 99, x1 = -1, y0 = 99, y1 = -1; g.forEach((r, y) => r.forEach((p, x) => { if (p >= 0) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); } })); return { x0, x1, y0, y1 }; };
+    const tb = tj.map(f => { const b = box(f.shown); return { x0: b.x0 - f.left, x1: b.x1 - f.left, y0: b.y0 - 34, y1: b.y1 - 34 }; });
+    const sgn = v => v & 255, B = (n, a) => `${n.padEnd(8)}.byte ${a.join(', ')}\n`;
+    const sbx = pj.scrubBox, sl = scrub.placed.map(p => p.x + 8 + sbx.x0), sr = scrub.placed.map(p => p.x + 8 + sbx.x1);
+    const ball = readFileSync(SRC + 'mux.asm', 'utf8').match(/^sprball +\.byte .*(\n +\.byte .*)*/m)[0].match(/\$[0-9a-f]{2}|\b0\b/g).map(v => v === '0' ? 0 : parseInt(v.slice(1), 16));
+    const bg = []; for (let y = 0; y < 21; y++) { const r = []; for (let x = 0; x < 24; x++) r.push((ball[y * 3 + (x >> 3)] >> (7 - (x & 7))) & 1 ? 1 : -1); bg.push(r); }
+    const bb = box(bg), pk = pj.picks;
+    writeFileSync(DIR + 'collide.inc', '; made by tools/build.mjs: the collision boxes (collide.asm)\n' +
+        B('tbx0', tb.map(b => sgn(b.x0))) + B('tbx1', tb.map(b => sgn(b.x1))) + B('tby0', tb.map(b => sgn(b.y0))) + B('tby1', tb.map(b => sgn(b.y1))) +
+        B('scbll', sl.map(v => v & 255)) + B('scblh', sl.map(v => v >> 8)) + B('scbrl', sr.map(v => v & 255)) + B('scbrh', sr.map(v => v >> 8)) +
+        B('scbc0', sl.map(v => v >> 3)) + B('scbc1', sr.map(v => v >> 3)) + B('scbt', scrub.placed.map(p => p.top + 24 + sbx.y0)) + B('scbb', scrub.placed.map(p => p.top + 24 + sbx.y1)) +
+        `NP      = ${pk.length}\n` + B('pkll', pk.map(p => (p.left + p.box.x0) & 255)) + B('pklh', pk.map(p => (p.left + p.box.x0) >> 8)) +
+        B('pkrl', pk.map(p => (p.left + p.box.x1) & 255)) + B('pkrh', pk.map(p => (p.left + p.box.x1) >> 8)) +
+        B('pkc0', pk.map(p => (p.left + p.box.x0) >> 3)) + B('pkc1', pk.map(p => (p.left + p.box.x1) >> 3)) + B('pkt', pk.map(p => p.top + p.box.y0)) + B('pkb', pk.map(p => p.top + p.box.y1)) + B('pkkind', pk.map(p => p.name === 'IMG_Key' ? 2 : 1)) +
+        `BBX0    = ${bb.x0}\nBBX1    = ${bb.x1}\nBBY0    = ${bb.y0}\nBBY1    = ${bb.y1}\n` +
+        // (each column's objects, bit k: Scrubbly k, then gem or key k - NS: the quick first test)
+        (() => { const m = Array(96).fill(0), rng = [...sl.map((l, i) => [l >> 3, sr[i] >> 3]), ...pk.map(p => [(p.left + p.box.x0) >> 3, (p.left + p.box.x1) >> 3])];
+                 if (rng.length > 16) throw new Error('more than 16 static objects for the column masks');
+                 rng.forEach(([a, b], k) => { for (let c = a; c <= b; c++) m[c] |= 1 << k; });
+                 // (and each band of 32 lines' objects: his columns' and his bands' in common)
+                 const bm = Array(8).fill(0), ys = [...scrub.placed.map(p => [p.top + 24 + sbx.y0, p.top + 24 + sbx.y1]), ...pk.map(p => [p.top + p.box.y0, p.top + p.box.y1])];
+                 ys.forEach(([t, b], k) => { for (let c = t >> 5; c <= b >> 5; c++) bm[c] |= 1 << k; });
+                 return B('colml', m.map(v => v & 255)) + B('colmh', m.map(v => v >> 8)) + B('bandml', bm.map(v => v & 255)) + B('bandmh', bm.map(v => v >> 8)); })());
+}
 const sb = Buffer.alloc(64);
 scrub.sprite.forEach((row, y) => { for (let k = 0; k < 3; k++) sb[y * 3 + k] = parseInt(row.slice(k * 8, k * 8 + 8), 2); });
 writeFileSync(DIR + 'scrubspr.bin', sb);

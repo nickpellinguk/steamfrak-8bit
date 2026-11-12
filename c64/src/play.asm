@@ -38,6 +38,7 @@ gametick
         jmp restart
 +       jsr read_keys
         jsr trogg_update
+        jsr collide                 ; (and what he's touching)
 +       jmp trogg_frame
 
 ; The level from the start again: Trogg, the Scrubblies, no balloons or daggers

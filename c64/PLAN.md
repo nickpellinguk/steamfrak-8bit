@@ -1,6 +1,6 @@
 # Plan: a playable A_1
 
-Status: **part 1 done** (milestones 1-5: the data; Trogg shown; his movement and the keys; the
+Status: **part 1 done, part 2 under way (milestone 7 done)** (milestones 1-5: the data; Trogg shown; his movement and the keys; the
 camera, scrolling by VSP; the yoyo and knocking Scrubblies off): 95.7% of frames ready on Hard
 scrolling all the time, the camera never waiting; packed onto `build/frak64.d64`. **Part 2**
 (below): A_1 played as the BBC version plays it. Each milestone is checked before the next, and
@@ -257,13 +257,23 @@ reference for everything else is that code (`../src/frak.asm`): `check_collision
 `check_checkpoint`, `save_checkpoint`, `restore_checkpoint`. Until milestone 12, death restarts
 the level.
 
-7. **Collisions, by box.** Trogg against the Scrubblies (deadly), the balloons and daggers (all
-   deadly), the gems and keys (picked up): first by box, as `check_collisions` does (the
-   objects' character columns against his, then the images' tight boxes). Everything in the
-   C64's places: the Scrubblies, gems and keys where the mock-up drew them (snapped), so
-   `mockup.mjs` exports the gems' and keys' places with the Scrubblies'; the balloons and
-   daggers where their sprites are. Check: key scripts walking him into each kind, in py65 and
-   VICE alike; a test build drawing the boxes.
+7. **Collisions, by box** (done: src/collide.asm). Trogg's box (his frame's solid pixels' extent
+   as shown, from trogg.json) against each object's in the level's coordinates, all made by the
+   build (`build/collide.inc`): the Scrubblies (deadly, unless yoyoed off) and the gems and keys
+   (touched: `ptouch`, for milestone 9) as the mock-up drew them (`mockup.mjs` now writes
+   `picks.json`: A_1's 4 keys and 7 gems, and the Scrubbly's box), the balloons and daggers by
+   the ball sprite's box (deadly). Run each tick after his movement, until he dies. Signed
+   comparisons (his box reaches above the level when he jumps). Cost: first 1,900-2,400 cycles a
+   tick on average; now only the objects both in his columns and in his 32-line bands (a mask a
+   column and a mask a band, from the build, ANDed) are tested, and a ball by y first: 770 on
+   average with no balls out, 1,160 with six (`tools/collidecost.py`). In play (a key script,
+   invincible, so the game goes the same): the multiplexer ready for 94.3% of frames (96.9%
+   without the check). Checked: `tools/collidetest.py` runs collide in py65 on 5,000 random
+   situations near every kind of object against a Python reference from the same tables: none
+   differ (647 Scrubbly deaths, 378 balls, 425 gems or keys); key scripts walking into the
+   Scrubbly at the top of the F (he dies, the level restarts) and onto the gem on its middle
+   platform (touched), the same in py65 and VICE; in VICE, the balloons and daggers kill him
+   standing at the start (4 times in 25 s).
 8. **Collisions, by pixel.** After the box, `hit_test`'s spans: each image's leftmost and
    rightmost solid pixel on each row, Trogg's and the object's compared on their shared rows (as
    GameMaker's precise collisions). The spans are made by the build from the images as the C64
