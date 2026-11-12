@@ -4,6 +4,8 @@
 ; or key touched is noted (ptouch: picking them up is to come). Only the Scrubblies, gems and keys
 ; in his columns are looked at (a mask a column, from the build), the balloons and daggers by y
 ; first. The comparisons are signed: his box can reach above the level's top, jumping.
+sp1     = zp + 94                   ; (2: his spans, the second stage's)
+sp2     = zp + 96                   ; (2: its)
         .section high
         .include "collide.inc"      ; tbx0 ... (Trogg's frames), scbll ... (the Scrubblies), pkll ...
                                     ; (the gems and keys), BBX0 ... (the ball sprite)
@@ -96,7 +98,9 @@ _b      lda oact,x                  ; y from its top (oy - 26): first, as a byte
         sbc obt
         lda ctb+1
         sbc obt+1
-        bmi _bn
+        bpl +
+        jmp _bn
++
         lda oy,x
         sec
         sbc #26 - BBY1
@@ -109,7 +113,9 @@ _b      lda oact,x                  ; y from its top (oy - 26): first, as a byte
         sbc ctt
         lda obb+1
         sbc ctt+1
-        bmi _bn
+        bpl +
+        jmp _bn
++
         lda oxl,x                   ; then x
         clc
         adc #BBX0
@@ -122,7 +128,9 @@ _b      lda oact,x                  ; y from its top (oy - 26): first, as a byte
         sbc obl
         lda ctr+1
         sbc obl+1
-        bmi _bn
+        bpl +
+        jmp _bn
++
         lda oxl,x
         clc
         adc #BBX1
@@ -135,7 +143,30 @@ _b      lda oact,x                  ; y from its top (oy - 26): first, as a byte
         sbc ctl
         lda obr+1
         sbc ctl+1
-        bmi _bn
+        bpl +
+        jmp _bn
++
+        lda oxl,x                   ; the boxes touch: then the spans (its image: the ball sprite,
+        sta oil                     ; its corner (ox, oy - 26))
+        lda oxh,x
+        sta oil+1
+        lda oy,x
+        sec
+        sbc #26
+        sta oit
+        lda #0
+        sbc #0
+        sta oit+1
+        lda #<ballsp
+        sta osp
+        lda #>ballsp
+        sta osp+1
+        lda #BALLH
+        sta oh
+        stx ck
+        jsr spans
+        ldx ck
+        bcc _bn
         jmp trogg_dies
 _bn     dex
         bmi +
@@ -207,12 +238,16 @@ _none   rts                         ; (none)
 +       ldx #0
 _k      lsr cmh
         ror cml
-        bcc _kn
+        bcs +
+        jmp _kn
++
         stx ck
         cpx #NS
         bcs _pk
         lda knocked,x               ; a Scrubbly (not yoyoed off): deadly
-        bne _kr
+        beq +
+        jmp _kr
++
         lda scbll,x
         sta obl
         lda scblh,x
@@ -229,7 +264,27 @@ _k      lsr cmh
         sta obt+1
         sta obb+1
         jsr overlap
-        bcc _kr
+        bcs +
+        jmp _kr
++
+        lda scil,x                  ; (then the spans)
+        sta oil
+        lda scih,x
+        sta oil+1
+        lda scit,x
+        sta oit
+        lda #0
+        sta oit+1
+        lda #<scrsp
+        sta osp
+        lda #>scrsp
+        sta osp+1
+        lda #SCRH
+        sta oh
+        jsr spans
+        bcs +
+        jmp _kr
++
         jmp trogg_dies
 _pk     txa                         ; a gem or key: touched
         sec
@@ -251,7 +306,29 @@ _pk     txa                         ; a gem or key: touched
         sta obt+1
         sta obb+1
         jsr overlap
-        bcc _kr
+        bcs +
+        jmp _kr
++
+        lda pkil,x                  ; (then the spans)
+        sta oil
+        lda pkih,x
+        sta oil+1
+        lda pkit,x
+        sta oit
+        lda #0
+        sta oit+1
+        lda pkspl,x
+        sta osp
+        lda pksph,x
+        sta osp+1
+        lda pkh,x
+        sta oh
+        stx ckp
+        jsr spans
+        ldx ckp
+        bcs +
+        jmp _kr
++
         stx ptouch
         inc ptouchn
 _kr     ldx ck
@@ -270,6 +347,142 @@ _c8     sty tc1                     ; ((a, y) / 8: a column)
         ror tc1
         lda tc1
         rts
+; The second stage (the BBC version's hit_test, as GameMaker's precise collisions): his frame's
+; spans (each row's leftmost and rightmost solid pixel, as the C64 shows him) and the object's
+; (osp, oh rows), its image's corner (oil, oit) against his (tx - tleft, ty - 34): carry set if on
+; some row they share, his extent and its overlap. (The boxes touching, the images are within 64
+; of each other; positions biased by 128, so the comparisons are unsigned.)
+spno    clc                         ; (no: the images too far apart, or no rows shared)
+        rts
+spans   ldx tfr
+        lda tspl,x
+        sta sp1
+        lda tsph,x
+        sta sp1+1
+        lda oil                     ; dx = its left - his: oil - tx + tleft
+        sec
+        sbc tx
+        sta sdx
+        lda oil+1
+        sbc tx+1
+        sta sdy                     ; (the high byte, for now)
+        lda sdx
+        clc
+        adc tleft,x
+        sta sdx
+        tax
+        lda sdy
+        adc #0
+        jsr r64
+        bne spno
+        lda oit                     ; dy = its top - his: oit - ty + 34
+        sec
+        sbc ty
+        sta sdy
+        lda oit+1
+        sbc ty+1
+        sta srs                     ; (the high byte, for now)
+        lda sdy
+        clc
+        adc #34
+        sta sdy
+        tax
+        lda srs
+        adc #0
+        jsr r64
+        beq _sh
+_e      clc                         ; (no)
+        rts
+_sh     lda sdy                     ; the shared rows, his: max(0, dy) to min(34, dy + oh)
+        bpl +
+        lda #0
++       sta srs
+        lda sdy
+        clc
+        adc oh
+        bmi _e
+        beq _e
+        cmp #34
+        bcc +
+        lda #34
++       sec
+        sbc srs
+        beq _e
+        bcc _e
+        sta srows
+        lda srs                     ; his spans from his row srs, its from its row srs - dy
+        asl
+        clc
+        adc sp1
+        sta sp1
+        bcc +
+        inc sp1+1
++       lda srs
+        sec
+        sbc sdy
+        asl
+        clc
+        adc osp
+        sta sp2
+        lda osp+1
+        adc #0
+        sta sp2+1
+        lda sdx
+        eor #$80
+        sta sdxb
+        ldy #0
+_row    lda (sp1),y
+        cmp #$ff
+        beq _skip                   ; (his row empty)
+        sta stl
+        lda (sp2),y
+        cmp #$ff
+        beq _skip                   ; (its)
+        clc
+        adc sdxb
+        sta sto                     ; (its left)
+        iny
+        lda (sp1),y
+        ora #$80
+        cmp sto
+        bcc _miss                   ; (his right < its left)
+        lda (sp2),y
+        clc
+        adc sdxb
+        sta sto                     ; (its right)
+        lda stl
+        ora #$80
+        sta stl
+        lda sto
+        cmp stl
+        bcs _shit                   ; (its right >= his left: they meet)
+_miss   iny
+        bne _nr
+_skip   iny
+        iny
+_nr     dec srows
+        bne _row
+_sno    clc
+        rts
+_shit   sec
+        rts
+
+; (a, x: a signed 16-bit number, high, low) -64 to 63? Z set if so
+r64     cmp #0
+        beq _p
+        cmp #$ff
+        bne _bad
+        cpx #$c0
+        bcc _bad
+        lda #0
+        rts
+_p      cpx #$40
+        bcs _bad
+        lda #0
+        rts
+_bad    lda #1
+        rts
+
 ; Do [obl, obr] x [obt, obb] and Trogg's box overlap? Carry set if so (x kept)
 overlap lda ctr                     ; obl <= ctr
         sec
@@ -314,6 +527,18 @@ ck      .byte 0
 bml     .byte 0                     ; (the objects in his bands)
 bmh     .byte 0
 cband1     .byte 0
+ckp     .byte 0
+oil     .word 0                     ; (the second stage: the object's image's corner, spans, rows)
+oit     .word 0
+osp     .word 0
+oh      .byte 0
+sdx     .byte 0                     ; (its image from his: x, y, signed)
+sdy     .byte 0
+sdxb    .byte 0
+srs     .byte 0
+srows   .byte 0
+stl     .byte 0
+sto     .byte 0
 tc0     .byte 0                     ; (his columns)
 tc1     .byte 0
 ptouch  .byte $ff                   ; (the gem or key last touched; $ff: none yet)
