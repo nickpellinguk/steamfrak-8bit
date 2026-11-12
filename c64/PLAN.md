@@ -1,7 +1,7 @@
 # Plan: a playable A_1
 
 Status: **milestones 1-4 done** (the data; Trogg shown; his movement and the keys; the camera),
-with the CPU budget trimmed to 96% ready on Hard while the screen scrolls (see milestone 4), and the fill replaced by a column renderer. Each milestone is checked before the next, and this
+with the CPU budget trimmed to 96% ready on Hard while the screen scrolls (see milestone 4). Each milestone is checked before the next, and this
 file is updated as they're done.
 
 ## Scope
@@ -215,15 +215,10 @@ often everything is ready in time.
      would hardly help (1.35 of a window's 25 rows are empty on average, 4 at most).
      The fill's loop unrolled once (columns 2-39 taken in twos) with its addresses from tables:
      956 cycles a row (was 989); the camera waits in 19.4% of frames; the screenshots the same.
-   - **The column renderer** (src/jit.asm): a cache of 40 slots (map column c in slot c mod 40),
-     each fixed code for both pairs (80 pages: from the program's end, and under the KERNAL):
-     lda #value, sta cell,x for each of the column's 50 cells. Compiling a column is writing its
-     values into the lda #s: 1,306 cycles, once for each column the screen moves. A column drawn
-     in about 415 cycles (356 the code, 59 the call); a screen's fill about 15,800 plus a compile,
-     against 23,900. (Grouping the cells by value first drew a column in 340 but took 4,900 to
-     compile: no better overall, and more complicated.) Hard, scrolling all the time: the
-     multiplexer ready for 96.0% of frames, the camera waiting in 10.0% (was 19.4%). A changed
-     column (jdirty) is compiled again when next drawn.
+     (Tried and taken out: a column renderer, each map column compiled into a cache of 40 slots
+     of code, lda #value, sta cell,x for each cell, a copy per screen pair. A screen's fill about
+     17,100 cycles against 23,900, the camera waiting in 10% of frames, but 20.9K of RAM: the
+     cache can't be smaller than a screen's 38 columns, and the pairs, $800 apart, can't share code.)
 5. **Yoyo**: the string and the yoyo, then knocking a Scrubbly off.
 6. **Budget**: the whole frame profiled, readiness and slack measured with everything running,
    and whatever that shows fixed.
