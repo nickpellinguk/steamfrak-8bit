@@ -136,7 +136,25 @@ if (!process.argv.includes('--nopack')) execFileSync('node', [TOOLS + 'pack.mjs'
 }
 execFileSync('64tass', ['-q', '-a', '-C', ...defs, '-I', DIR, '--labels=' + DIR + 'frak64.lbl', '-L', DIR + 'frak64.lst', '-o', DIR + 'frak64.prg', SRC + 'frak64.asm'], { cwd: DIR, stdio: 'inherit' });
 const lbl = Object.fromEntries(readFileSync(DIR + 'frak64.lbl', 'utf8').split('\n').map(l => l.match(/^(\w+)\s*=\s*\$([0-9a-f]+)/i)).filter(Boolean).map(m => [m[1], parseInt(m[2], 16)]));
-const prg = readFileSync(DIR + 'frak64.prg');
+// The release: frak64.prg packed by Exomizer into a self-unpacking program (frak64.exo.prg, started
+// by RUN like the original), on a disk image (frak64.d64), for a plain build only. --packtest puts
+// the packed program in the test cartridge instead, so a run in VICE checks the unpacking.
+const EXO = process.env.EXOMIZER || '/opt/frak-tools/exomizer-src/src/exomizer';
+const plain = process.argv.slice(2).every(a => a === '--nopack');
+const packtest = process.argv.includes('--packtest');
+if ((plain || packtest) && existsSync(EXO)) {
+    execFileSync(EXO, ['sfx', 'sys', '-q', '-o', DIR + 'frak64.exo.prg', DIR + 'frak64.prg'], { stdio: 'inherit' });
+    const n = readFileSync(DIR + 'frak64.exo.prg').length - 2;
+    if (plain) {
+        if (existsSync(DIR + 'frak64.d64')) unlinkSync(DIR + 'frak64.d64');
+        execFileSync('c1541', ['-format', 'frak64,64', 'd64', DIR + 'frak64.d64', '-write', DIR + 'frak64.exo.prg', 'frak64'], { stdio: 'ignore' });
+        console.log(`frak64.d64: FRAK64, packed to ${n} bytes (${Math.ceil(n / 254)} blocks)`);
+    }
+} else if (plain || packtest) console.log(`(no Exomizer at ${EXO}: frak64.d64 not made)`);
+if (packtest && !existsSync(DIR + 'frak64.exo.prg')) throw new Error('--packtest needs Exomizer');
+const prg = readFileSync(DIR + (packtest ? 'frak64.exo.prg' : 'frak64.prg'));
+const sysAt = p => { const i = p.indexOf(0x9e, 6); return parseInt(p.subarray(i + 1, i + 8).toString('latin1').match(/\d+/)[0], 10); };
+if (packtest) lbl.start = sysAt(prg);
 console.log(`frak64.prg: $0801-$${(0x0801 + prg.length - 3).toString(16)} (${prg.length - 2} bytes), start $${lbl.start.toString(16)}, row interrupt $${lbl.rowirq.toString(16)}; TS ${PARAMS.TS}`);
 writeFileSync(DIR + 'rom.inc', `START = $${lbl.start.toString(16)}\nPAGES = ${Math.ceil((prg.length - 2) / 256)}\n`);
 // (the cartridge for the stand-in ROMs: a Magic Desk CRT, the PRG in 8K banks)
