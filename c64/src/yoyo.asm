@@ -555,8 +555,8 @@ _hide   lda #VFIRST | VHIDE
         rts
 
 ; The FRAK! bubble (while he's dead, as the BBC version): its image's corner at (tx + 12 - FRAKXO,
-; ty - 26 - FRAKYO), as 4 virtual sprites (FV: its black left and right, its yellow left and
-; right), kept before others
+; ty - 26 - FRAKYO), as 2 virtual sprites, x-expanded (FV: its black, its yellow), kept before
+; others
 FV      = YV + 1
 frakset lda dead
         beq _hide
@@ -582,7 +582,7 @@ frakset lda dead
         lda ty+1
         sbc #0
         bne _hide
-        ldx #3
+        ldx #1
 -       tya
         sta vy + FV,x
         lda fkdx,x                  ; (the right ones 24 on)
@@ -600,22 +600,22 @@ frakset lda dead
         bcs _h1
         lda #1
 +       sta vxhi + FV,x
-        lda #VFIRST
+        lda #VFIRST | VEXPX
         .byte $2c
-_h1     lda #VFIRST | VHIDE
+_h1     lda #VFIRST | VEXPX | VHIDE
         sta vfl + FV,x
         dex
         bpl -
         rts
-_hide   ldx #3
-        lda #VFIRST | VHIDE
+_hide   ldx #1
+        lda #VFIRST | VEXPX | VHIDE
 -       sta vfl + FV,x
         dex
         bpl -
         rts
-fkdx    .byte 0, 24, 0, 24
-fkblk   .byte 0, 1, 2, 3
-fkcol   .byte 0, 0, 7, 7
+fkdx    .byte 0, 0
+fkblk   .byte 0, 1
+fkcol   .byte 0, 7
 
 ; The string, for the next frame: a line on map line ty - 36 (level y yo_y - 1), from the
 ; character under his hand (tx + 12, or tx - 12) to the one under the yoyo's near edge, in the

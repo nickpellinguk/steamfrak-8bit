@@ -104,7 +104,7 @@ NS      = 5                         ; the Scrubblies
 NB      = 6                         ; the balloons and daggers (at most)
 SPRBALLOON = $5480                  ; the balloon's sprite (hazards.asm)
 SPRDAGGER = $55c0                   ; the dagger's
-SPRFRAK = $5600                     ; the FRAK! bubble's 4 (its black, left and right; its yellow)
+SPRFRAK = $5600                     ; the FRAK! bubble's 2 (its black, its yellow)
 flippend = zp + 54                  ; (the next frame's scroll, decided in the main program: a pair
 wanto   = zp + 55                   ;  flip for the border to make; the hidden pair's origin wanted;
 nvs     = zp + 56                   ;  the VSP offset)
@@ -226,18 +226,20 @@ start   sei
         ldx #0                      ; the yoyo's frames (yoyo.asm): black, kept before others; the
 -       lda yoyospr,x               ; FRAK! bubble's
         sta SPRYOYO,x
+        cpx #128
+        bcs +
         lda frakspr,x
         sta SPRFRAK,x
-        inx
++       inx
         bne -
-        ldx #3
+        ldx #1
 -       lda #(SPRFRAK & $3fff) / 64
         clc
         adc fkblk,x
         sta vptr + FV,x
         lda fkcol,x
         sta vcol + FV,x
-        lda #VHIDE | VFIRST
+        lda #VHIDE | VFIRST | VEXPX
         sta vfl + FV,x
         dex
         bpl -
