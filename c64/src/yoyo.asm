@@ -302,7 +302,8 @@ pickup  lda #1
         bne ++
         lda #1                      ; (all the keys: the level complete)
         sta allkeys
-        bne ++
+        jsr level_complete
+        jmp ++
 +       inc gemsgot
 +       lda pkpi,x
         ldy pkpn,x

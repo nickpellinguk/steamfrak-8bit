@@ -36,6 +36,16 @@ gametick
         dec dead
         bne ++
         jmp restart
++       lda won                     ; the level complete (all the keys): everything still, then
+        beq +                       ; A_1 again from the start (the only level), as the BBC
+        lda wint                    ; version's game_tick
+        bne _wd
+        dec wint+1
+_wd     dec wint
+        lda wint
+        ora wint+1
+        bne ++
+        jmp restart
 +       jsr read_keys
         jsr trogg_update
         jsr hazards                 ; (the balloons and daggers)
@@ -67,6 +77,8 @@ restart lda #<TSTARTX
         sta ud_db
         sta lr_db
         sta jumping                 ; (and the camera back to the start)
+        lda #0
+        sta won
         lda #0
         sta yo_len
         sta yo_len+1
@@ -498,6 +510,8 @@ trogg_dies
         .if INVINCIBLE
         rts
         .endif
+        lda won                     ; (nothing kills him once he's won: the last key and a balloon
+        bne +                       ; in the same tick win, as in GameMaker)
         lda dead
         bne +
         lda #50                     ; (the level restarts in a second: 50 ticks)
@@ -1244,6 +1258,22 @@ CAMSAVE = 4                         ; (tx, ty: saved)
 camsv   .fill CAMSAVE
 camst   .byte 0
         .endif
+
+; The level complete (the last key): as the BBC version's level_complete, a pause of 7 seconds
+; (less one for each restart from a checkpoint, when there are checkpoints), then A_1 again
+WINTICKS = 7 * 50
+level_complete
+        lda #1
+        sta won
+        lda #0                      ; (a death touched earlier in the tick doesn't count)
+        sta dead
+        lda #<WINTICKS
+        sta wint
+        lda #>WINTICKS
+        sta wint+1
+        rts
+won     .byte 0
+wint    .word 0
 
 ; ---- Data
 tyf     .byte 0                     ; (his y's twentieths: tx, ty in trogg.asm)
