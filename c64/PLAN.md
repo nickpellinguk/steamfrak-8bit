@@ -215,6 +215,15 @@ often everything is ready in time.
      would hardly help (1.35 of a window's 25 rows are empty on average, 4 at most).
      The fill's loop unrolled once (columns 2-39 taken in twos) with its addresses from tables:
      956 cycles a row (was 989); the camera waits in 19.4% of frames; the screenshots the same.
+   - **The column renderer** (src/jit.asm): each map column compiled, when first needed, into
+     code that writes it to a screen column, a value at a time (lda #value, then sta to each cell
+     with it; A_1's columns have 9 values on average, and 3 cells in 4 are 0), kept in a cache of
+     40 columns with both pairs' code (80 pages: from the program's end, and under the KERNAL).
+     Measured: a column drawn in about 340 cycles (279 the code, 59 the call), a compile about
+     4,900, one a column the screen moves; a screen's fill about 12,800 cycles plus the compile,
+     against 23,900. A compile gives way to a frame's work between values. Hard, scrolling all
+     the time: the multiplexer ready for 95.5% of frames, the camera waiting in 10.9% (was 19.4%).
+     A changed column (jdirty) is compiled again when next drawn.
 5. **Yoyo**: the string and the yoyo, then knocking a Scrubbly off.
 6. **Budget**: the whole frame profiled, readiness and slack measured with everything running,
    and whatever that shows fixed.

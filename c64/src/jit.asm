@@ -12,6 +12,7 @@ jp1     = zp + 92                   ; (2: pair 1's)
 jnd     = zp + 94                   ; (the column's values found)
 jk      = zp + 95                   ; (the slot)
 jt      = zp + 96
+jy      = zp + 97
 
 ; Fill screen column prow of pair back for column working, then prow+1
 fillcol lda prow
@@ -74,7 +75,12 @@ _old    sta jnxt,y
         dey
         bpl _g
         ldy #0                      ; then the code: each value, and its cells
-_v      ldx jnd
+_v      lda muxreq                  ; (a frame's work wanted: that first, so a compile doesn't
+        beq +                       ; hold it up)
+        sty jy
+        jsr nextframe
+        ldy jy
++       ldx jnd
         dex
         bmi _end
         stx jnd
