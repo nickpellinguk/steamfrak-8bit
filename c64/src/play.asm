@@ -22,6 +22,8 @@ ST_STAND = 0
 ST_WALK  = 1
 ST_FALL  = 2
 ST_CLIMB = 3
+ST_YOYO_OUT = 4
+ST_YOYO_BACK = 5
 X_MAX    = LEVEL_W - 10
 
 ; ---- A game tick: the keys, then Trogg (or, dead, the count to the restart), then his frame
@@ -63,6 +65,10 @@ restart lda #<TSTARTX
         sta ud_db
         sta lr_db
         sta jumping                 ; (and the camera back to the start)
+        lda #0
+        sta yo_len
+        sta yo_len+1
+        jsr unknock                 ; (the Scrubblies back)
         ldx #NB - 1
 -       lda #0
         sta oact,x
@@ -170,8 +176,6 @@ _yo_live
         lda k_yoyo
         sta doyoyo
 _yo_done
-        lda #0                      ; (no yoyo yet)
-        sta doyoyo
         ; ymove (+1 = up), with debounce after landing or climbing
         lda ud_db
         beq _ud_live
@@ -241,8 +245,14 @@ trogg_move
         bne +
         jmp trogg_falling
 +       cmp #ST_CLIMB
-        bne trogg_standing
+        bne +
         jmp trogg_climbing
++       cmp #ST_YOYO_OUT
+        bne +
+        jmp yoyo_out
++       cmp #ST_YOYO_BACK
+        bne trogg_standing
+        jmp yoyo_back
 
 trogg_standing
         ; nx = tx + xmove; PlatformFind(nx, y, y + 1)
@@ -303,7 +313,10 @@ _no_ladder
         sta tstate
         rts
 _walk   jsr move_to_qx
-        lda xmove
+        lda doyoyo
+        beq +
+        jmp start_yoyo
++       lda xmove
         beq _stand
         bmi _face_left
         lda #0
@@ -1075,7 +1088,16 @@ trogg_frame
         beq _walk
         cmp #ST_CLIMB
         beq _climb
-        lda tface                   ; (standing, falling: the first walking frame)
+        cmp #ST_YOYO_OUT
+        bcc +
+        lda tface                   ; (yoyoing: Trogg_yl, _yr)
+        beq _yr
+        lda #5
+        .byte $2c
+_yr     lda #6
+        sta tfr
+        rts
++        lda tface                   ; (standing, falling: the first walking frame)
         beq +
         lda #11                     ; (Trogg_wl_0)
         .byte $2c

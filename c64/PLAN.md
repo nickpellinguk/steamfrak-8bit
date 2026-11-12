@@ -1,6 +1,6 @@
 # Plan: a playable A_1
 
-Status: **milestones 1-4 done** (the data; Trogg shown; his movement and the keys; the camera),
+Status: **milestones 1-5 done** (the data; Trogg shown; his movement and the keys; the camera),
 with the CPU budget trimmed to 96% ready on Hard while the screen scrolls (see milestone 4). Each milestone is checked before the next, and this
 file is updated as they're done.
 
@@ -222,7 +222,23 @@ often everything is ready in time.
    - **VSP** (see VSP.md): the screen scrolled by whole characters by DMA delay on line 50, a
      column written a step and the other pair refilled in the background for swaps. Camera test:
      the camera waits in 0% of frames, the multiplexer ready for 96.6%.
-5. **Yoyo**: the string and the yoyo, then knocking a Scrubbly off.
+5. **Yoyo** (done: src/yoyo.asm): the BBC version's start_yoyo, yoyo_out, yoyo_back, yoyo_longer,
+   yoyo_position and yoyo_collide ported (A_1 has no movable platforms: no carrying; only the
+   Scrubblies are hit). Trogg in his yoyo pose; the yoyo a virtual sprite (YV, kept before
+   others), hi-res black, its 4 frames turning with the length (its yellow highlight shows as
+   the background: multicolour would need $d01c in the multiplexer's register writes); the
+   string a line of string characters (60-63) on map line ty - 36, from his hand to the yoyo's
+   near edge, in the pair shown, the last frame's cells put back from the map first (strset in
+   the main program, strapply in border tick 26: at tick 25, with the frame's other work, it
+   could take over two ticks, a tick was lost and every row after was a tick late). A Scrubbly
+   hit: its sprite hidden, its cells patched (scrpatch.inc, now with rows and columns) in the
+   map and in each pair up to date for a window they're in (a pair being filled starts again);
+   a restart puts them back. Checked in VICE: a throw's yoyo and string where they should be;
+   Scrubbly 3 knocked off from the top of the F (screenshot against the yoyoed-off mock-up;
+   both pairs against the map in memory, tools/scrcheck.py), and back after Trogg dies; key
+   scripts the same in py65 and VICE. Camera test: multiplexer ready 95.7%, the camera never
+   waits; the frame checker (now taking the virtual sprites' number from the labels) finds no
+   problems.
 6. **Budget**: the whole frame profiled, readiness and slack measured with everything running,
    and whatever that shows fixed.
 

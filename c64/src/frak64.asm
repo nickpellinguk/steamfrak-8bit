@@ -219,6 +219,15 @@ start   sei
         sta vfl,x
         dex
         bpl -
+        ldx #0                      ; the yoyo's frames (yoyo.asm): black, kept before others
+-       lda yoyospr,x
+        sta SPRYOYO,x
+        inx
+        bne -
+        lda #0
+        sta vcol + YV
+        lda #VHIDE | VFIRST
+        sta vfl + YV
         ldx #NB - 1
 -       lda #(SPRBALL & $3fff) / 64
         sta vptr + NS,x
@@ -444,6 +453,8 @@ nextframe
         jsr gametick                ; (a game tick: the keys, Trogg)
         jsr decide
         jsr trogset                 ; (Trogg's sprites, for the next frame's scroll)
+        jsr yoyoset                 ; (the yoyo's sprite, and its string)
+        jsr strset
         jsr muxframe
         lda #0
         sta muxbusy
@@ -826,6 +837,14 @@ _dmux
         cpx #39
         bcs +
         stx row
+        cpx #ROWS + 2               ; tick 26: the yoyo's string, if the frame's changed (strapply:
+        bne t26n                    ; not at tick 25, whose work, with it, could take over two
+        lda strpend                 ; ticks, and one would be lost)
+        beq t26n
+        lda #0
+        sta strpend
+        jsr strapply
+t26n
         .if !TEST
         cpx #38                     ; tick 37 (line 37): sprites 3-7 parked below the screen, then
         bne t37n                    ; those set up before the frame (tick 0's slots), and the
@@ -1095,6 +1114,8 @@ frame   lda scrx                    ; (the position the multiplexer's frame was 
         sta frontc
         .endif
 +       jsr setvsp                  ; (the VSP offset)
+        lda #1                      ; (and the yoyo's string, at the next tick: strapply)
+        sta strpend
 setx    lda shx
         and #7
         eor #7                      ; (38 columns)
@@ -1105,6 +1126,7 @@ setx    lda shx
         rts
 
         .include "scroll.asm"
+        .include "yoyo.asm"
         .include "mux.asm"
         .include "trogg.asm"
         .include "play.asm"

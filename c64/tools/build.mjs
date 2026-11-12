@@ -96,7 +96,7 @@ const testy = TEST ? spr.map(s => s.y) : [0];
 const sx = scrub.placed.map(p => 31 + p.x);
 writeFileSync(DIR + 'masks.inc', `; made by tools/build.mjs\nmasks   .byte ${masks.join(', ')}\nmasks3  .byte ${masks3.join(', ')}\n` +
     `testy   .byte ${testy.join(', ')}\nTESTEXP = ${spr.reduce((m, s) => s.exp ? m | 1 << s.n : m, COVER)}\n` +
-    `scruby  .byte ${scrub.placed.map(p => 50 + p.top).join(', ')}\nsxlo    .byte ${sx.map(v => v & 255).join(', ')}\nsxhi    .byte ${sx.map(v => v >> 8).join(', ')}\n`);
+    `scruby  .byte ${scrub.placed.map(p => 50 + p.top).join(', ')}\nscl     .byte ${scrub.placed.map(p => (p.x + 8) & 255).join(', ')}\nsch     .byte ${scrub.placed.map(p => (p.x + 8) >> 8).join(', ')}\nsct     .byte ${scrub.placed.map(p => p.top + 24).join(', ')}\nsxlo    .byte ${sx.map(v => v & 255).join(', ')}\nsxhi    .byte ${sx.map(v => v >> 8).join(', ')}\n`);
 const sb = Buffer.alloc(64);
 scrub.sprite.forEach((row, y) => { for (let k = 0; k < 3; k++) sb[y * 3 + k] = parseInt(row.slice(k * 8, k * 8 + 8), 2); });
 writeFileSync(DIR + 'scrubspr.bin', sb);

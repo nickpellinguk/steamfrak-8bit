@@ -19,7 +19,7 @@
 ; once it's ready (muxready). Each frame starts by copying the last frame's changes across from the
 ; buffer now shown, so the two keep step.
 
-NV      = NS + NB               ; virtual sprites: the Scrubblies, the balls
+NV      = NS + NB + 1           ; virtual sprites: the Scrubblies, the balls, the yoyo
 VEXPY   = 1                     ; (vfl: expanded down,
 VEXPX   = 2                     ;  ... across,
 VBEHIND = 4                     ;  ... behind the characters,
@@ -326,7 +326,9 @@ cpregs  lda trch,y              ; (a tick's registers, list y to list x)
 
 ; ---- The game, such as it is: the Scrubblies follow the scroll; the balls bounce
 game    ldx #NS - 1
--       lda sxlo,x              ; (the Scrubbly's place in the level, as sprite x at scroll 0)
+-       lda knocked,x           ; (yoyoed off: gone)
+        bne _hide
+        lda sxlo,x              ; (the Scrubbly's place in the level, as sprite x at scroll 0)
         sec
         sbc scrx
         sta vxlo,x

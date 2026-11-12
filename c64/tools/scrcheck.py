@@ -1,7 +1,8 @@
 # Checks the screen memory the VIC shows against the map, in VICE: after SECONDS (each given),
 # the pair shown (front), its origin (po), the coarse position (curc) and the VSP offset (vson)
 # read from memory, and every cell of screen columns 2-39 of both screens compared with the level
-# (tops.bin, bottoms.bin). Also the hidden pair, against the window it says it's up to date for.
+# as it is in memory (tops, bottoms: changed where a Scrubbly's been yo-yoed off). Also the hidden
+# pair, against the window it says it's up to date for.
 #   python3 scrcheck.py SECONDS...      (the build as last made)
 import os, re, subprocess, sys
 DIR = os.path.dirname(os.path.abspath(__file__)); B = os.path.join(DIR, '..', 'build')
@@ -12,7 +13,7 @@ for line in open(os.path.join(B, 'frak64.lbl')):
 t = open(os.path.join(B, 'tops.bin'), 'rb').read(); b = open(os.path.join(B, 'bottoms.bin'), 'rb').read()
 NC = len(t) // 25
 def run(secs):
-    cmds = ['m %04x %04x' % (a, a + n - 1) for a, n in ((0x4000, 0x1000), (lbl['po'], 2), (lbl['pvw'], 2), (lbl['vson'], 1), (2, 128))]
+    cmds = ['m %04x %04x' % (a, a + n - 1) for a, n in ((0x4000, 0x1000), (lbl['po'], 2), (lbl['pvw'], 2), (lbl['vson'], 1), (2, 128), (lbl['tops'], len(t)), (lbl['bottoms'], len(b)))]
     out = subprocess.run(['python3', os.path.join(DIR, 'vice.py'), str(secs)] + cmds, capture_output=True, text=True).stdout
     blocks = []
     for blk in out.split('> m ')[1:]:
@@ -23,7 +24,8 @@ def run(secs):
         blocks.append(v)
     return blocks
 for secs in sys.argv[1:]:
-    mem, po, pvw, vson, zp = run(secs)
+    mem, po, pvw, vson, zp, tm, bm = run(secs)          # (the map as it is in memory: Scrubblies yo-yoed off changed)
+    if tm != list(t) or bm != list(b): print(f'  (the map in memory differs from the files in {sum(x != y for x, y in zip(tm + bm, list(t) + list(b)))} cells: Scrubblies yo-yoed off)')
     z = lambda name: zp[lbl[name] - 2]
     front, lfront, curc = z('front'), z('lfront'), z('curc')
     sgn = lambda v: v - 256 if v > 127 else v
@@ -31,7 +33,7 @@ for secs in sys.argv[1:]:
     for p, w in ((front, curc), (front ^ 1, pvw[front ^ 1])):
         if w == 255: msgs.append(f'pair {p}: being filled'); continue
         o = sgn(po[p]); s = w - o; bad = []
-        for scr, src in ((0, t), (1, b)):
+        for scr, src in ((0, tm), (1, bm)):
             base = (p * 2 + scr) * 0x400
             for r in range(25):
                 for c in range(2, 40):

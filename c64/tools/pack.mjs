@@ -83,10 +83,11 @@ const patches = placed.map(p => {
     return g;
 });
 if (patches.flat().length !== diff.size || new Set(patches.flat()).size !== diff.size) throw new Error('the patches and the Scrubblies don\'t match one to one');
-let inc = `; made by tools/pack.mjs: each Scrubbly's patch knocking it off (cells: level map offset,\n; top code, bottom code)\nSTRING = ${STRING}\n`;
+let inc = `; made by tools/pack.mjs: each Scrubbly's patch knocking it off (cells: level map offset, row,\n; column, top code, bottom code)\nSTRING = ${STRING}\n`;
 inc += `scrpn   .byte ${patches.map(g => g.length).join(', ')}\n`;
 inc += `scrpi   .byte ${patches.reduce((a, g) => (a.push(a[a.length - 1] + g.length), a), [0]).slice(0, -1).join(', ')}\n`;
 inc += `scrplo  .byte ${patches.flat().map(q => q & 255).join(', ')}\nscrphi  .byte ${patches.flat().map(q => q >> 8).join(', ')}\n`;
+inc += `scrpr   .byte ${patches.flat().map(q => (q / NC) | 0).join(', ')}\nscrpc   .byte ${patches.flat().map(q => q % NC).join(', ')}\n`;
 inc += `scrpt   .byte ${patches.flat().map(q => topsOff[q]).join(', ')}\nscrpb   .byte ${patches.flat().map(q => bottomsOff[q]).join(', ')}\n`;
 writeFileSync(DIR + 'scrpatch.inc', inc);
 console.log(`Scrubbly patches: ${patches.map(g => g.length).join(', ')} cells`);
