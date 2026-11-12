@@ -1127,6 +1127,7 @@ setx    lda shx
 
         .include "scroll.asm"
         .include "yoyo.asm"
+        .include "collide.asm"
         .include "mux.asm"
         .include "trogg.asm"
         .include "play.asm"
