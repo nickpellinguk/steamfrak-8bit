@@ -179,9 +179,9 @@ _valid  jsr _tw                     ; up to date: a step towards the window want
         rts
 _idle   sec
         rts
-_tw     lda jumping                 ; (the window wanted: the restart's, 0, or the one shown)
+_tw     lda jumping                 ; (the window wanted: the restart's, jumpw, or the one shown)
         beq +
-        lda #0
+        lda jumpw
         rts
 +       lda curc
         rts
