@@ -13,7 +13,7 @@ lbl = {}
 for line in open(os.path.join(B, 'frak64.lbl')):
     m = re.match(r'^(\w+)\s*=\s*(\$?)([0-9a-fA-F]+)', line)
     if m: lbl[m.group(1)] = int(m.group(3), 16 if m.group(2) else 10)
-NAMES = ['tx', 'ty', 'tyf', 'tstate', 'tfr', 'dead'] + [n for n in ('knocked', 'ptouch') if re.search(r'^' + n + r'\b', open(os.path.join(B, 'frak64.lbl')).read(), re.M)]
+NAMES = ['tx', 'ty', 'tyf', 'tstate', 'tfr', 'dead'] + [n for n in ('knocked', 'ptouch', 'gemsgot', 'keysgot') if re.search(r'^' + n + r'\b', open(os.path.join(B, 'frak64.lbl')).read(), re.M)]
 SIZE = {'tx': 2, 'ty': 2}
 def state(rd):
     v = {n: rd(lbl[n]) | (rd(lbl[n] + 1) << 8 if SIZE.get(n) == 2 else 0) for n in NAMES}
@@ -24,7 +24,7 @@ ticks = sum(int(s.split(':')[0]) for s in keys.split(',')) + 50 + 60   # (a rest
 prg = open(os.path.join(B, 'frak64.prg'), 'rb').read()
 mem = bytearray(65536); mem[0x0801:0x0801 + len(prg) - 2] = prg[2:]
 mem[0xdc00] = mem[0xdc01] = 0xff                    # (no keys, no joystick)
-stub = 0x7f00; mem[stub:stub + 3] = bytes([0x20, lbl['gametick'] & 255, lbl['gametick'] >> 8])
+stub = 0x033c; mem[stub:stub + 3] = bytes([0x20, lbl['gametick'] & 255, lbl['gametick'] >> 8])
 for t in range(ticks):
     mpu = MPU(memory=mem); mpu.pc = stub; mpu.sp = 0xf0
     n = 0

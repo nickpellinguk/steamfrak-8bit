@@ -286,10 +286,14 @@ _k      lsr cmh
         jmp _kr
 +
         jmp trogg_dies
-_pk     txa                         ; a gem or key: touched
+_pk     txa                         ; a gem or key (not picked up yet): touched, picked up
         sec
         sbc #NS
         tax
+        lda picked,x
+        beq +
+        jmp _kr
++
         lda pkll,x
         sta obl
         lda pklh,x
@@ -331,6 +335,7 @@ _pk     txa                         ; a gem or key: touched
 +
         stx ptouch
         inc ptouchn
+        jsr pickup
 _kr     ldx ck
 _kn     inx
         lda cml

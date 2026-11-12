@@ -51,7 +51,7 @@ pkimg = [(p['left'], p['top'], KS[p['name']]) for p in PJ['picks']]
 
 prg = open(os.path.join(B, 'frak64.prg'), 'rb').read()
 base = bytearray(65536); base[0x0801:0x0801 + len(prg) - 2] = prg[2:]
-stub = 0x7f00; base[stub:stub + 3] = bytes([0x20, lbl['collide'] & 255, lbl['collide'] >> 8])
+stub = 0x033c; base[stub:stub + 3] = bytes([0x20, lbl['collide'] & 255, lbl['collide'] >> 8])
 random.seed(1)
 bad = 0; hits = {'scrubbly': 0, 'ball': 0, 'pick': 0, 'none': 0}
 for n in range(N):

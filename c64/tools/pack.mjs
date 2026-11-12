@@ -8,7 +8,8 @@
 // OFF=1 mockup.mjs) in the same sets, and characters 60-63 of each set kept for the yoyo's string
 // (a black line at line 0-3 of both halves).
 //   node pack.mjs  ->  ../build: charsets.bin (2 x 512), bandset.bin (26), tops.bin, bottoms.bin,
-//                      scrpatch.inc (each Scrubbly's cells knocked off, and STRING)
+//                      scrpatch.inc (each Scrubbly's cells knocked off, each gem's and key's picked up,
+//                      and STRING)
 //                      (25 x 94), level.inc
 import { readFileSync, writeFileSync } from 'fs';
 const DIR = new URL('../build/', import.meta.url).pathname;
@@ -19,11 +20,15 @@ if (d.F.some(f => f !== 3)) throw new Error('a cell whose foreground is not blac
 // a Scrubbly knocked off is only new screen codes)
 const off = JSON.parse(readFileSync(DIR + 'level_off.json'));
 if (off.NC !== NC || off.ROWS !== ROWS) throw new Error('level_off.json is another size');
+// (and with the gems and keys picked up, mockup.mjs's GONE=1: a gem or key picked up is only new
+// screen codes too)
+const gone = JSON.parse(readFileSync(DIR + 'level_gone.json'));
+if (gone.NC !== NC || gone.ROWS !== ROWS) throw new Error('level_gone.json is another size');
 const STRING = 60, CAP = STRING;      // (characters 60-63 of every set: the yoyo's string)
 const rowT = [], rowB = [];
 for (let r = 0; r < ROWS; r++) {
-    rowT.push(new Set([...d.T.slice(r * NC, r * NC + NC), ...off.T.slice(r * NC, r * NC + NC)]));
-    rowB.push(new Set([...d.B.slice(r * NC, r * NC + NC), ...off.B.slice(r * NC, r * NC + NC)]));
+    rowT.push(new Set([...d.T.slice(r * NC, r * NC + NC), ...off.T.slice(r * NC, r * NC + NC), ...gone.T.slice(r * NC, r * NC + NC)]));
+    rowB.push(new Set([...d.B.slice(r * NC, r * NC + NC), ...off.B.slice(r * NC, r * NC + NC), ...gone.B.slice(r * NC, r * NC + NC)]));
 }
 const bandT = [...rowT, new Set()], bandB = [new Set(), ...rowB];
 const sets = [], order = bandT.map((t, k) => k).sort((a, b) => (bandT[b].size + bandB[b].size) - (bandT[a].size + bandB[a].size));
@@ -60,7 +65,7 @@ const codes = v => {
     }
     return [t, b];
 };
-const [tops, bottoms] = codes(d), [topsOff, bottomsOff] = codes(off);
+const [tops, bottoms] = codes(d), [topsOff, bottomsOff] = codes(off), [topsGone, bottomsGone] = codes(gone);
 
 // Each Scrubbly's patch, knocking it off: the cells that change (a connected group of them for
 // each, in the order of scrub.json's placed), as offset in the level map, top code, bottom code
@@ -83,14 +88,26 @@ const patches = placed.map(p => {
     return g;
 });
 if (patches.flat().length !== diff.size || new Set(patches.flat()).size !== diff.size) throw new Error('the patches and the Scrubblies don\'t match one to one');
-let inc = `; made by tools/pack.mjs: each Scrubbly's patch knocking it off (cells: level map offset, row,\n; column, top code, bottom code)\nSTRING = ${STRING}\n`;
-inc += `scrpn   .byte ${patches.map(g => g.length).join(', ')}\n`;
-inc += `scrpi   .byte ${patches.reduce((a, g) => (a.push(a[a.length - 1] + g.length), a), [0]).slice(0, -1).join(', ')}\n`;
-inc += `scrplo  .byte ${patches.flat().map(q => q & 255).join(', ')}\nscrphi  .byte ${patches.flat().map(q => q >> 8).join(', ')}\n`;
-inc += `scrpr   .byte ${patches.flat().map(q => (q / NC) | 0).join(', ')}\nscrpc   .byte ${patches.flat().map(q => q % NC).join(', ')}\n`;
-inc += `scrpt   .byte ${patches.flat().map(q => topsOff[q]).join(', ')}\nscrpb   .byte ${patches.flat().map(q => bottomsOff[q]).join(', ')}\n`;
+// Each gem's and key's patch, picking it up, the same way (in the order of picks.json's picks)
+const gdiff = new Set();
+for (let q = 0; q < ROWS * NC; q++) if (tops[q] !== topsGone[q] || bottoms[q] !== bottomsGone[q]) gdiff.add(q);
+for (const q of gdiff) if (diff.has(q)) throw new Error(`cell ${q % NC},${(q / NC) | 0} is a Scrubbly's and a gem's or key's`);
+const picks = JSON.parse(readFileSync(DIR + 'picks.json')).picks;
+const ppatches = picks.map(p => [...gdiff].filter(q => { const c = q % NC, y = ((q / NC) | 0) * 8 + 24; return c >= (p.left >> 3) - 1 && c <= (p.left + 22) >> 3 && y + 8 > p.top - 8 && y < p.top + 18; }).sort((a, b) => a - b));
+if (ppatches.flat().length !== gdiff.size || new Set(ppatches.flat()).size !== gdiff.size) throw new Error('the patches and the gems and keys don\'t match one to one');
+// (one set of cell tables: the Scrubblies' patches, then the gems' and keys'; scrpi, pkpi index it)
+const cells = [...patches.flat(), ...ppatches.flat()], ns = patches.flat().length;
+const newT = q => gdiff.has(q) ? topsGone[q] : topsOff[q], newB = q => gdiff.has(q) ? bottomsGone[q] : bottomsOff[q];
+const starts = (gs, base) => gs.reduce((a, g) => (a.push(a[a.length - 1] + g.length), a), [base]).slice(0, -1);
+if (cells.length > 256) throw new Error('more than 256 patch cells');
+let inc = `; made by tools/pack.mjs: each Scrubbly's patch knocking it off, then each gem's and key's\n; picking it up (in picks.json's order): cells as level map offset, row, column, new top code,\n; new bottom code\nSTRING = ${STRING}\n`;
+inc += `scrpn   .byte ${patches.map(g => g.length).join(', ')}\nscrpi   .byte ${starts(patches, 0).join(', ')}\n`;
+inc += `pkpn    .byte ${ppatches.map(g => g.length).join(', ')}\npkpi    .byte ${starts(ppatches, ns).join(', ')}\n`;
+inc += `scrplo  .byte ${cells.map(q => q & 255).join(', ')}\nscrphi  .byte ${cells.map(q => q >> 8).join(', ')}\n`;
+inc += `scrpr   .byte ${cells.map(q => (q / NC) | 0).join(', ')}\nscrpc   .byte ${cells.map(q => q % NC).join(', ')}\n`;
+inc += `scrpt   .byte ${cells.map(newT).join(', ')}\nscrpb   .byte ${cells.map(newB).join(', ')}\n`;
 writeFileSync(DIR + 'scrpatch.inc', inc);
-console.log(`Scrubbly patches: ${patches.map(g => g.length).join(', ')} cells`);
+console.log(`Scrubbly patches: ${patches.map(g => g.length).join(', ')} cells; gems' and keys': ${ppatches.map(g => g.length).join(', ')}`);
 writeFileSync(DIR + 'charsets.bin', cs); writeFileSync(DIR + 'bandset.bin', bandset);
 writeFileSync(DIR + 'tops.bin', tops); writeFileSync(DIR + 'bottoms.bin', bottoms);
 writeFileSync(DIR + 'level.inc', `NC = ${NC}\nROWS = ${ROWS}\n`);

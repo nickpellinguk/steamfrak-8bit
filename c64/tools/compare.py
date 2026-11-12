@@ -7,8 +7,8 @@ from PIL import Image
 W, HS = 752, 200
 import os
 # (SPRITES=1: against the picture with the Scrubblies' sprites, charsspr.bin; OFF=1: the Scrubblies
-# yo-yoed off, chars_off.bin, charsspr_off.bin)
-exp = open(__file__.rsplit('/', 1)[0] + ('/../build/charsspr' if os.environ.get('SPRITES') else '/../build/chars') + ('_off' if os.environ.get('OFF') else '') + '.bin', 'rb').read()
+# yo-yoed off, chars_off.bin, charsspr_off.bin; GONE=1: the gems and keys picked up)
+exp = open(__file__.rsplit('/', 1)[0] + ('/../build/charsspr' if os.environ.get('SPRITES') else '/../build/chars') + ('_off' if os.environ.get('OFF') else '_gone' if os.environ.get('GONE') else '') + '.bin', 'rb').read()
 im = Image.open(sys.argv[1]).convert('RGB')
 scroll = int(sys.argv[2]) if len(sys.argv) > 2 else 0
 PAL = {(145, 245, 220): 0, (255, 255, 92): 1, (184, 85, 246): 2, (0, 0, 0): 3, (160, 70, 220): 2}

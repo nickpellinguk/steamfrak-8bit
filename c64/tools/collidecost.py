@@ -9,7 +9,7 @@ for line in open(os.path.join(B, 'frak64.lbl')):
     m = re.match(r'^(\w+)\s*=\s*(\$?)([0-9a-fA-F]+)', line)
     if m: lbl[m.group(1)] = int(m.group(3), 16 if m.group(2) else 10)
 prg = open(os.path.join(B, 'frak64.prg'), 'rb').read(); base = bytearray(65536); base[0x801:0x801 + len(prg) - 2] = prg[2:]
-stub = 0x7f00; base[stub:stub + 3] = bytes([0x20, lbl['collide'] & 255, lbl['collide'] >> 8])
+stub = 0x033c; base[stub:stub + 3] = bytes([0x20, lbl['collide'] & 255, lbl['collide'] >> 8])
 random.seed(2)
 for nb in (0, 3, 6):
     v = []

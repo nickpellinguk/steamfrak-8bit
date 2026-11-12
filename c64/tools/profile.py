@@ -45,7 +45,7 @@ subprocess.run(['python3', os.path.join(DIR, 'vice.py'), START] + cmds, capture_
 byr, byl, tot, each = collections.Counter(), collections.Counter(), [], []
 for f in sorted(glob.glob(os.path.join(snap, 'm*.bin'))):
     mem = bytearray(open(f, 'rb').read()[2:])
-    stub = 0x7f00                        # (jsr muxframe, in memory nothing else uses)
+    stub = 0x033c                        # (jsr muxframe, in memory nothing else uses)
     mem[stub:stub + 3] = bytes([0x20, lbl[ENTRY] & 255, lbl[ENTRY] >> 8])
     mpu = MPU(memory=mem); mpu.pc = stub; mpu.sp = 0xf0
     c0, n, fr, calls = mpu.processorCycles, 0, collections.Counter(), collections.Counter()
