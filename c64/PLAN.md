@@ -213,6 +213,8 @@ often everything is ready in time.
      work about 4,800 cycles (3,800-6,300), the fill 989 cycles a row. The frame checker finds no
      problems. What's left is the fill's rate when he walks without stopping; skipping empty rows
      would hardly help (1.35 of a window's 25 rows are empty on average, 4 at most).
+     The fill's loop unrolled once (columns 2-39 taken in twos) with its addresses from tables:
+     956 cycles a row (was 989); the camera waits in 19.4% of frames; the screenshots the same.
 5. **Yoyo**: the string and the yoyo, then knocking a Scrubbly off.
 6. **Budget**: the whole frame profiled, readiness and slack measured with everything running,
    and whatever that shows fixed.

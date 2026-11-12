@@ -463,52 +463,60 @@ nextframe
         sta muxbusy
         rts
 
-; Fill row prow of pair back for column working (tops and bottoms), then prow+1
+; Fill row prow of pair back for column working (tops and bottoms), then prow+1: columns 2-39
+; (0-2 are the FLI bug's, never seen, under the cover sprite; 2 is filled too so the loop, unrolled
+; once, takes the columns in twos), from tables of each row's addresses
 fillrow ldx prow
-        lda mul94lo,x               ; source: the level's row, from the column
+        lda fstlo,x                 ; source: the level's row, from the column
         clc
         adc working
-        sta tmp
-        lda mul94hi,x
-        adc #0
-        sta tmp+1
-        lda tmp
-        clc
-        adc #<(tops + 3)            ; (from column 3: columns 0-2 are the FLI bug's, never seen,
-        sta _st+1                   ; under the cover sprite)
-        lda tmp+1
-        adc #>(tops + 3)
-        sta _st+2
-        lda tmp
-        clc
-        adc #<(bottoms + 3)
+        sta _sa+1
         sta _sb+1
-        lda tmp+1
-        adc #>(bottoms + 3)
+        lda fsthi,x
+        adc #0
+        sta _sa+2
         sta _sb+2
-        lda back                    ; destination: the pair's screens, the row
-        asl
-        tay
-        lda mul40lo,x               ; (+ 3 never carries: a row's offset's low byte is at most 248)
+        lda fsblo,x
         clc
-        adc #3
-        sta _dt+1
-        sta _db+1
-        lda mul40hi,x
-        clc
-        adc pairhi,y
-        sta _dt+2
-        lda mul40hi,x
-        clc
-        adc pairhi+1,y
-        sta _db+2
-        ldx #36
-_st     lda $ffff,x
-_dt     sta $ffff,x
-_sb     lda $ffff,x
-_db     sta $ffff,x
+        adc working
+        sta _ba+1
+        sta _bb+1
+        lda fsbhi,x
+        adc #0
+        sta _ba+2
+        sta _bb+2
+        lda fdlo,x                  ; destination: the pair's screens, the row (tops and bottoms
+        sta _ta+1                   ; the same but for the high byte)
+        sta _tb+1
+        sta _ua+1
+        sta _ub+1
+        lda back
+        bne _p1
+        lda fdt0,x
+        sta _ta+2
+        sta _tb+2
+        lda fdb0,x
+        sta _ua+2
+        sta _ub+2
+        bne _go                     ; (always)
+_p1     lda fdt1,x
+        sta _ta+2
+        sta _tb+2
+        lda fdb1,x
+        sta _ua+2
+        sta _ub+2
+_go     ldx #37
+_sa     lda $ffff,x
+_ta     sta $ffff,x
+_ba     lda $ffff,x
+_ua     sta $ffff,x
         dex
-        bpl _st
+_sb     lda $ffff,x
+_tb     sta $ffff,x
+_bb     lda $ffff,x
+_ub     sta $ffff,x
+        dex
+        bpl _sa
         inc prow
         rts
 
@@ -1094,18 +1102,32 @@ d18b0   .fill ROWS + 1
 d18a1   .fill ROWS + 1
 d18b1   .fill ROWS + 1
 csbits  .byte ((CS0 & $3800) >> 10), ((CS1 & $3800) >> 10)
-pairhi  .byte >SCR0, >SCR1, >SCR2, >SCR3
-mul94lo .for i = 0, i < ROWS, i += 1
-        .byte <(i * NC)
+fstlo   .for i = 0, i < ROWS, i += 1   ; (fillrow's: each row's source and destination, from column 2)
+        .byte <(tops + 2 + i * NC)
         .endfor
-mul94hi .for i = 0, i < ROWS, i += 1
-        .byte >(i * NC)
+fsthi   .for i = 0, i < ROWS, i += 1
+        .byte >(tops + 2 + i * NC)
         .endfor
-mul40lo .for i = 0, i < ROWS, i += 1
-        .byte <(i * 40)
+fsblo   .for i = 0, i < ROWS, i += 1
+        .byte <(bottoms + 2 + i * NC)
         .endfor
-mul40hi .for i = 0, i < ROWS, i += 1
-        .byte >(i * 40)
+fsbhi   .for i = 0, i < ROWS, i += 1
+        .byte >(bottoms + 2 + i * NC)
+        .endfor
+fdlo    .for i = 0, i < ROWS, i += 1
+        .byte <(i * 40 + 2)
+        .endfor
+fdt0    .for i = 0, i < ROWS, i += 1
+        .byte >(SCR0 + i * 40 + 2)
+        .endfor
+fdb0    .for i = 0, i < ROWS, i += 1
+        .byte >(SCR1 + i * 40 + 2)
+        .endfor
+fdt1    .for i = 0, i < ROWS, i += 1
+        .byte >(SCR2 + i * 40 + 2)
+        .endfor
+fdb1    .for i = 0, i < ROWS, i += 1
+        .byte >(SCR3 + i * 40 + 2)
         .endfor
 bandset .binary "bandset.bin"
 junk    .fill 16
