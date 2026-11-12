@@ -1,2 +1,3 @@
 build/*
 !build/frak64.prg
+!build/frak64.d64

@@ -1,9 +1,11 @@
 # Frak! for the Commodore 64 (experimental)
 
 An experiment in showing Frak's graphics on an unexpanded C64 (and a C128 in C64 mode) at their
-own resolution, without doubling the pixels' width. So far it's a display demo: level A_1
-("FRAK!") scrolling left and right, with the Scrubblies' sprites and balloons and daggers shared
-out by a sprite multiplexer, but no Trogg and no game.
+own resolution, without doubling the pixels' width. So far it's level A_1 ("FRAK!"), on its way
+to being playable ([`PLAN.md`](PLAN.md)): Trogg walks, climbs, jumps and falls to the keys (Z / X,
+O / K, or joystick 2), as in the original, and dies and starts again; the Scrubblies, balloons and
+daggers are shared out among sprites by a multiplexer. The screen doesn't follow him yet (it's held
+at the left: `--scrolldemo` for the old scrolling demo), and there's no yoyo yet.
 
 **Status: demo working in VICE (x64sc, PAL), with a sprite multiplexer; the display an
 interrupt a row that stays on time whatever sprites are shown, leaving the main program about
@@ -38,24 +40,39 @@ black outline with yellow eyes and teeth in the characters, and a magenta sprite
 ## Building and testing
 
     ../build.sh            # the BBC version first: the levels and graphics come from it
-    ./build.sh [--run]     # build/frak64.prg (LOAD"FRAK64.PRG",8,1 and RUN)
+    ./build.sh [--run]     # build/frak64.prg, and build/frak64.d64 (packed: see below)
+
+**To play it**: `build/frak64.d64` in VICE (drag it onto the window, or `x64sc build/frak64.d64`),
+or on a C64: `LOAD"FRAK64",8` and `RUN`. It's the program packed by
+[Exomizer](https://bitbucket.org/magli143/exomizer) (`sfx sys`: 40,143 bytes to 11,300, 45 blocks),
+unpacking itself when run; unpacked it runs from `$0801` to `$a4cf`, past BASIC's memory, which
+packing keeps out of BASIC's way. The build makes the disk image when Exomizer is at
+`/opt/frak-tools/exomizer-src/src/exomizer` (or `$EXOMIZER`): built from its source (here,
+commit `ba91318`, `make` in `src`). `build.mjs --packtest` puts the packed program in the test
+cartridge (below), so a run in VICE checks the unpacking.
 
 It needs node and [64tass](https://sourceforge.net/projects/tass64/); `--run` needs VICE's
 `x64sc` and `xvfb-run`. VICE's Debian package comes without Commodore's ROMs, so `--run` boots a
-stand-in ROM (`src/rom.asm`) that copies the program into memory and starts it. The demo uses no
+stand-in ROM (`src/rom.asm`) that copies the program into memory from a cartridge image of it
+(`build/frak64.crt`, made by `build.mjs`) and starts it. The demo uses no
 ROM routines.
 
 | File | |
 | --- | --- |
-| `tools/mockup.mjs` | Redraws A_1 for the 8x4 grid and works out what ECM + 4-line FLI shows: `build/mockup.png`, and the data for `pack.mjs` |
+| `tools/mockup.mjs` | Redraws A_1 for the 8x4 grid and works out what ECM + 4-line FLI shows: `build/mockup.png`, the data for `pack.mjs`, and the platforms and ladders where it draws them, for Trogg's physics (`build/geometry.json`) |
 | `tools/trogg.mjs` | Trogg's frames as sprites: a hi-res black outline over a multicolour infill, 24 wide, each sprite used twice down his 34 lines (`build/trogg.png`, `trogg.txt`, `trogg.bin`) |
-| `tools/pack.mjs` | Packs the glyphs into two character sets (by band: a row's bottoms and the next row's tops) and writes the screen codes (glyph + background) for the 94 x 25 level |
+| `tools/pack.mjs` | Packs the glyphs into two character sets (by band: a row's bottoms and the next row's tops), with the level's yo-yoed-off variant and 4 characters per set kept for the yoyo's string, and writes the screen codes (glyph + background) for the 94 x 25 level and each Scrubbly's patch knocking it off |
 | `src/frak64.asm` | The demo: the timer interrupt a row, double-buffered screens, scrolling |
 | `src/mux.asm` | The sprite multiplexer, and the demo's "game" (the Scrubblies following the scroll, the balls) |
 | `tools/build.mjs` | Assembles it and the stand-in ROMs, and runs VICE headless for a screenshot |
 | `tools/compare.py` | Checks a VICE screenshot against the mock-up, pixel by pixel, character row by row |
 | `tools/vice.py` | Drives VICE through its remote monitor (screenshots while it runs, breakpoints, memory) |
 | `tools/dump.py` | Runs the demo in VICE a while and prints memory at labels |
+| `src/play.asm` | Playing: Trogg's movement (the BBC version's, as plain 6502), the keys, a game tick a frame, the level restarted when he dies |
+| `tools/conn64.mjs` | Checks Trogg's movement against the original's, from every start holding every key, on A_1 as the C64 has it |
+| `tools/keytest.py` | Plays a key script in py65 and in VICE and checks where Trogg ends up, and that he's drawn there |
+| `tools/troggshot.py` | Finds Trogg in a screenshot and checks his place and every pixel, and nothing below his feet |
+| `tools/muxcheck.py` | Checks the multiplexer's buffer, frame by frame, in VICE: set-ups, hardware sprites, rows' operands, registers, Trogg's ticks |
 | `tools/profile.py` | Exact CPU cycles of the multiplexer, by routine and source line: VICE memory snapshots at its start, run in a 6502 emulator (py65) |
 
 ## How the display works
@@ -98,14 +115,17 @@ Of a frame's 19,656 cycles, the VIC takes about 2,100 (50 bad lines); the interr
 rest. The border ticks could be switched off to save about 600 more.
 
 Memory (VIC bank 1): screen pairs at `$4000`/`$4400` and `$4800`/`$4c00`, character sets at
-`$5000` and `$5800`, the program and level from `$0801`.
+`$5000` and `$5800`, the multiplexer's RAM at `$6000`, Trogg's sprites at `$6800`; the program
+from `$0801` (below `$4000`), and the level map from `$7e80`. The program file runs on through the
+VIC bank (what's there set up at the start), so the stand-in ROMs carry it as a cartridge image
+(`build/frak64.crt`).
 
 ## Sprites and the critical write
 
 | Sprite | |
 | --- | --- |
 | 0 | The cover over the FLI bug's columns: X- and Y-expanded with 16 pixels set (32 wide, so it also hides a fourth character when the write lands a cycle late), cyan, following the fine scroll, moved down the screen every 42 lines from the row ticks. In front of every other sprite |
-| 1, 2 | (Trogg: `tools/trogg.mjs`) |
+| 1, 2 | Trogg (`src/trogg.asm`): his black outline (hi-res) and his infill (multicolour, yellow and magenta), each used three times down him (`tools/trogg.mjs`) |
 | 3-7 | Multiplexed: the Scrubblies' bodies (their x following the scroll, wrapped round when part off at the left), balloons and daggers |
 
 Other sprites move the critical write. The VIC fetches the sprites shown on a line at the end of
@@ -207,4 +227,5 @@ about 1,500) makes the expensive frames.
 
 ## Next
 
-Make the multiplexer fit a frame, then Trogg.
+A playable A_1: Trogg walking, climbing, jumping and falling, the scroll following him, and
+the yoyo (knocking Scrubblies off). The plan: [`PLAN.md`](PLAN.md).

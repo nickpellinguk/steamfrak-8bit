@@ -2,7 +2,8 @@
 # time muxframe starts, then runs muxframe from each snapshot in a 6502 emulator (py65), counting
 # CPU cycles (the VIC's stolen cycles not included) by routine and by source line.
 #   python3 profile.py [FRAMES [SECONDS [LINES]]]    (defaults 12 frames, from 10 s, 30 lines)
-# (WORST=n: also each routine's cycles in the n costliest frames)
+# (WORST=n: also each routine's cycles in the n costliest frames; ENTRY=label: that routine, each
+# time it's called, instead of muxframe)
 # Needs py65 (pip install py65); build.mjs writes the listing (build/frak64.lst) it maps cycles to.
 import bisect, collections, glob, os, re, subprocess, sys
 from py65.devices.mpu6502 import MPU
@@ -36,7 +37,8 @@ def routine(pc):
 snap = os.path.join(B, 'snap')
 os.makedirs(snap, exist_ok=True)
 for f in glob.glob(os.path.join(snap, 'm*.bin')): os.remove(f)
-cmds = ['break %04x' % lbl['muxframe']]
+ENTRY = os.environ.get('ENTRY', 'muxframe')
+cmds = ['break %04x' % lbl[ENTRY]]
 for i in range(FRAMES): cmds += ['x', 'save "%s" 0 0000 ffff' % os.path.join(snap, 'm%02d.bin' % i)]
 subprocess.run(['python3', os.path.join(DIR, 'vice.py'), START] + cmds, capture_output=True)
 
@@ -44,7 +46,7 @@ byr, byl, tot, each = collections.Counter(), collections.Counter(), [], []
 for f in sorted(glob.glob(os.path.join(snap, 'm*.bin'))):
     mem = bytearray(open(f, 'rb').read()[2:])
     stub = 0x7f00                        # (jsr muxframe, in memory nothing else uses)
-    mem[stub:stub + 3] = bytes([0x20, lbl['muxframe'] & 255, lbl['muxframe'] >> 8])
+    mem[stub:stub + 3] = bytes([0x20, lbl[ENTRY] & 255, lbl[ENTRY] >> 8])
     mpu = MPU(memory=mem); mpu.pc = stub; mpu.sp = 0xf0
     c0, n, fr, calls = mpu.processorCycles, 0, collections.Counter(), collections.Counter()
     while mpu.pc != stub + 3 and n < 500000:

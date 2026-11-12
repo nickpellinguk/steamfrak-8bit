@@ -65,8 +65,15 @@ const delayCode = d => { const out = []; let r = d; if (r & 1) { out.push('bit $
 let inc = '; made by tools/build.mjs: for each mask of sprites shown (0, the cover, always), the row\n; interrupt\'s tail (line 4\'s fetches) and its slide\'s constant (line 3\'s); the tails\n';
 inc += 'masktl  .byte ' + tailFor.map(d => `<tail${d}`).join(', ') + '\n';
 inc += 'maskth  .byte ' + tailFor.map(d => `>tail${d}`).join(', ') + '\n';
+// (the same tails, then Trogg's second instances (a: y + 21 and P2) or third blocks (b: P3), for
+// the rows whose ticks change his sprites)
+for (const v of 'ab') {
+    inc += `masktl${v} .byte ` + tailFor.map(d => `<tail${d}${v}`).join(', ') + '\n';
+    inc += `maskth${v} .byte ` + tailFor.map(d => `>tail${d}${v}`).join(', ') + '\n';
+}
 inc += 'maskjm  .byte ' + jmFor.join(', ') + '\n';
-for (const d of delays) inc += `tail${d}  stx $d018\n` + delayCode(d).map(c => `        ${c}\n`).join('') + '        sta $d011\n        jmp tailend\n';
+for (const [v, to] of [['', 'tailend'], ['a', 'trogga'], ['b', 'troggb']])
+    for (const d of delays) inc += `tail${d}${v}  stx $d018\n` + delayCode(d).map(c => `        ${c}\n`).join('') + `        sta $d011\n        jmp ${to}\n`;
 writeFileSync(DIR + 'tails.inc', inc);
 
 // ---- The sprites shown on each row's lines 3 and 4. A sprite whose y is Y shows on lines
@@ -84,22 +91,86 @@ if (PM !== null) spr = [1, 2, 3, 4, 5, 6, 7].map(n => ({ n, y: (+PM >> n & 1) ? 
 const maskOn = line => spr.reduce((m, s) => line >= s.y + CONV && line < s.y + CONV + (s.exp ? 42 : 21) ? m | 1 << s.n : m, COVER);
 const masks = [], masks3 = [];
 for (let r = 0; r < 25; r++) { masks3.push(maskOn(54 + 8 * r)); masks.push(maskOn(55 + 8 * r)); }
-defs.push('-D', `TEST=${TEST ? 1 : 0}`, '-D', `BALLTEST=${process.argv.includes('--balltest') ? 1 : 0}`, '-D', `NOBALLS=${process.argv.includes('--noballs') ? 1 : 0}`, '-D', `MUXTIME=${process.argv.includes('--muxtime') ? 1 : 0}`, '-D', `SLACK=${process.argv.includes('--slack') ? 1 : 0}`, '-D', `INSANE=${process.argv.includes('--insane') ? 1 : 0}`);
+defs.push('-D', `TEST=${TEST ? 1 : 0}`, '-D', `BALLTEST=${process.argv.includes('--balltest') ? 1 : 0}`, '-D', `NOBALLS=${process.argv.includes('--noballs') ? 1 : 0}`, '-D', `MUXTIME=${process.argv.includes('--muxtime') ? 1 : 0}`, '-D', `SLACK=${process.argv.includes('--slack') ? 1 : 0}`, '-D', `INSANE=${process.argv.includes('--insane') ? 1 : 0}`, '-D', `TROGGX=${arg('troggx', 0)}`, '-D', `TROGGY=${arg('troggy', 0)}`, '-D', `TROGGF=${arg('troggf', 7)}`, '-D', `KEYTEST=${process.argv.includes('--keys') ? 1 : 0}`, '-D', `SCROLLDEMO=${process.argv.includes('--scrolldemo') ? 1 : 0}`, '-D', `CAMTEST=${process.argv.includes('--camtest') ? 1 : 0}`, '-D', `INVINCIBLE=${process.argv.includes('--invincible') ? 1 : 0}`);
 const testy = TEST ? spr.map(s => s.y) : [0];
 const sx = scrub.placed.map(p => 31 + p.x);
 writeFileSync(DIR + 'masks.inc', `; made by tools/build.mjs\nmasks   .byte ${masks.join(', ')}\nmasks3  .byte ${masks3.join(', ')}\n` +
     `testy   .byte ${testy.join(', ')}\nTESTEXP = ${spr.reduce((m, s) => s.exp ? m | 1 << s.n : m, COVER)}\n` +
-    `scruby  .byte ${scrub.placed.map(p => 50 + p.top).join(', ')}\nsxlo    .byte ${sx.map(v => v & 255).join(', ')}\nsxhi    .byte ${sx.map(v => v >> 8).join(', ')}\n`);
+    `scruby  .byte ${scrub.placed.map(p => 50 + p.top).join(', ')}\nscl     .byte ${scrub.placed.map(p => (p.x + 8) & 255).join(', ')}\nsch     .byte ${scrub.placed.map(p => (p.x + 8) >> 8).join(', ')}\nsct     .byte ${scrub.placed.map(p => p.top + 24).join(', ')}\nsxlo    .byte ${sx.map(v => v & 255).join(', ')}\nsxhi    .byte ${sx.map(v => v >> 8).join(', ')}\n`);
 const sb = Buffer.alloc(64);
 scrub.sprite.forEach((row, y) => { for (let k = 0; k < 3; k++) sb[y * 3 + k] = parseInt(row.slice(k * 8, k * 8 + 8), 2); });
 writeFileSync(DIR + 'scrubspr.bin', sb);
 console.log(`row masks (line 3/4): ${masks.map((m, r) => masks3[r] === m ? m.toString(16) : masks3[r].toString(16) + '/' + m.toString(16)).join(' ')}; tails ${masks.map(m => tailFor[m]).join(' ')}`);
 if (!process.argv.includes('--nopack')) execFileSync('node', [TOOLS + 'pack.mjs'], { stdio: 'inherit' });
+// (--keys T:K,T:K...: for a test build, the keys held for T ticks each, K of L R U D Y or -)
+{
+    const steps = String(arg('keys', '1:-')).split(',').map(s => s.split(':'));
+    const bit = k => [...k].reduce((v, c) => v | ({ L: 1, R: 2, U: 4, D: 8, Y: 16 }[c] || 0), 0);
+    writeFileSync(DIR + 'keys.inc', `; made by tools/build.mjs (--keys)\nKSCRN = ${steps.length}\n` +
+        `kscrn   .byte ${steps.map(s => +s[0]).join(', ')}\nkscrk   .byte ${steps.map(s => bit(s[1])).join(', ')}\n`);
+}
+// (the platforms and ladders for Trogg's physics, as the BBC version's tables: geometry.json, by
+// mockup.mjs)
+{
+    const g = JSON.parse(readFileSync(DIR + 'geometry.json', 'utf8'));
+    const t = (name, v) => `${name.padEnd(8)}.byte ${v.join(', ')}\n`;
+    const P = g.plats, L = g.lads;
+    writeFileSync(DIR + 'geometry.inc', `; made by tools/build.mjs from geometry.json (mockup.mjs)\nNPLATS = ${P.length}\nNLADS = ${L.length}\n` +
+        `LEVEL_W = ${g.w}\nLEVEL_H = ${g.h}\nTSTARTX = ${g.trogg[0]}\nTSTARTY = ${g.trogg[1]}\n` +
+        t('plat_xl', P.map(p => p.x & 255)) + t('plat_xh', P.map(p => p.x >> 8)) + t('plat_yl', P.map(p => p.y & 255)) +
+        t('plat_yh', P.map(p => p.y >> 8)) + t('plat_w', P.map(p => p.w)) +
+        t('lad_xl', L.map(l => l.x & 255)) + t('lad_xh', L.map(l => l.x >> 8)) + t('lad_yl', L.map(l => l.y & 255)) +
+        t('lad_yh', L.map(l => l.y >> 8)) + t('lad_hl', L.map(l => l.h & 255)) + t('lad_hh', L.map(l => l.h >> 8)) + t('lad_ext', L.map(l => l.ext)) +
+        cols('pcol', 'plist', P.map((p, i) => [p.x, p.x + p.w - 1, i]).sort((a, b) => b[2] - a[2])) +
+        cols('lcol', 'llist', L.map((l, i) => [l.x - 6, l.x + 6, i])));
+    // (by 8-pixel column, the platforms over it (last first, as platform_find goes), and the
+    // ladders within 6 pixels of it (first first): each column's from xcol[c] to xcol[c + 1] in
+    // the list)
+    function cols(xcol, list, items) {
+        const NCOL = Math.ceil(g.w / 8) + 2, idx = [], lst = [];
+        for (let c = 0; c < NCOL; c++) { idx.push(lst.length); for (const [a, b, i] of items) if (a <= c * 8 + 7 && b >= c * 8) lst.push(i); }
+        idx.push(lst.length);
+        if (lst.length > 255) throw new Error(`${list}: too long`);
+        return `NCOL = ${NCOL}\n`.replace('NCOL', xcol.toUpperCase() + 'N') + t(xcol, idx) + t(list, lst);
+    }
+}
 execFileSync('64tass', ['-q', '-a', '-C', ...defs, '-I', DIR, '--labels=' + DIR + 'frak64.lbl', '-L', DIR + 'frak64.lst', '-o', DIR + 'frak64.prg', SRC + 'frak64.asm'], { cwd: DIR, stdio: 'inherit' });
 const lbl = Object.fromEntries(readFileSync(DIR + 'frak64.lbl', 'utf8').split('\n').map(l => l.match(/^(\w+)\s*=\s*\$([0-9a-f]+)/i)).filter(Boolean).map(m => [m[1], parseInt(m[2], 16)]));
-const prg = readFileSync(DIR + 'frak64.prg');
+// The release: frak64.prg packed by Exomizer into a self-unpacking program (frak64.exo.prg, started
+// by RUN like the original), on a disk image (frak64.d64), for a plain build only. --packtest puts
+// the packed program in the test cartridge instead, so a run in VICE checks the unpacking.
+const EXO = process.env.EXOMIZER || '/opt/frak-tools/exomizer-src/src/exomizer';
+const plain = process.argv.slice(2).every(a => a === '--nopack');
+const packtest = process.argv.includes('--packtest');
+if ((plain || packtest) && existsSync(EXO)) {
+    execFileSync(EXO, ['sfx', 'sys', '-q', '-o', DIR + 'frak64.exo.prg', DIR + 'frak64.prg'], { stdio: 'inherit' });
+    const n = readFileSync(DIR + 'frak64.exo.prg').length - 2;
+    if (plain) {
+        if (existsSync(DIR + 'frak64.d64')) unlinkSync(DIR + 'frak64.d64');
+        execFileSync('c1541', ['-format', 'frak64,64', 'd64', DIR + 'frak64.d64', '-write', DIR + 'frak64.exo.prg', 'frak64'], { stdio: 'ignore' });
+        console.log(`frak64.d64: FRAK64, packed to ${n} bytes (${Math.ceil(n / 254)} blocks)`);
+    }
+} else if (plain || packtest) console.log(`(no Exomizer at ${EXO}: frak64.d64 not made)`);
+if (packtest && !existsSync(DIR + 'frak64.exo.prg')) throw new Error('--packtest needs Exomizer');
+const prg = readFileSync(DIR + (packtest ? 'frak64.exo.prg' : 'frak64.prg'));
+const sysAt = p => { const i = p.indexOf(0x9e, 6); return parseInt(p.subarray(i + 1, i + 8).toString('latin1').match(/\d+/)[0], 10); };
+if (packtest) lbl.start = sysAt(prg);
 console.log(`frak64.prg: $0801-$${(0x0801 + prg.length - 3).toString(16)} (${prg.length - 2} bytes), start $${lbl.start.toString(16)}, row interrupt $${lbl.rowirq.toString(16)}; TS ${PARAMS.TS}`);
-writeFileSync(DIR + 'rom.inc', `START = $${lbl.start.toString(16)}\nLENGTH = ${prg.length - 2}\n`);
+writeFileSync(DIR + 'rom.inc', `START = $${lbl.start.toString(16)}\nPAGES = ${Math.ceil((prg.length - 2) / 256)}\n`);
+// (the cartridge for the stand-in ROMs: a Magic Desk CRT, the PRG in 8K banks)
+{
+    const body = prg.subarray(2), banks = Math.ceil(body.length / 0x2000), hd = Buffer.alloc(0x40);
+    if (Math.ceil(body.length / 256) > 255) throw new Error('the program is too long for the stand-in loader');
+    hd.write('C64 CARTRIDGE   ', 0, 'latin1'); hd.writeUInt32BE(0x40, 0x10); hd.writeUInt16BE(0x0100, 0x14);
+    hd.writeUInt16BE(19, 0x16); hd[0x18] = 0; hd[0x19] = 1; hd.write('FRAK64', 0x20, 'latin1');
+    const chips = [];
+    for (let b = 0; b < banks; b++) {
+        const c = Buffer.alloc(0x10 + 0x2000); c.write('CHIP', 0, 'latin1'); c.writeUInt32BE(0x2010, 4);
+        c.writeUInt16BE(0, 8); c.writeUInt16BE(b, 10); c.writeUInt16BE(0x8000, 12); c.writeUInt16BE(0x2000, 14);
+        body.copy(c, 0x10, b * 0x2000, Math.min(body.length, (b + 1) * 0x2000)); chips.push(c);
+    }
+    writeFileSync(DIR + 'frak64.crt', Buffer.concat([hd, ...chips]));
+}
 execFileSync('64tass', ['-q', '-a', '-C', '-b', '-I', DIR, '-o', DIR + 'rom.bin', SRC + 'rom.asm'], { cwd: DIR, stdio: 'inherit' });
 const rom = readFileSync(DIR + 'rom.bin');          // $a000-$bfff, then $e000-$ffff
 writeFileSync(DIR + 'basic.rom', rom.subarray(0, 0x2000)); writeFileSync(DIR + 'kernal.rom', rom.subarray(0x2000, 0x4000));
@@ -108,7 +179,7 @@ if (process.argv.includes('--run')) {
     const shot = arg('shot', DIR + 'shot.png');
     if (existsSync(shot)) unlinkSync(shot);
     try {
-        execFileSync('xvfb-run', ['-a', 'x64sc', '-default', '-kernal', DIR + 'kernal.rom', '-basic', DIR + 'basic.rom', '-chargen', DIR + 'chargen.rom',
+        execFileSync('xvfb-run', ['-a', 'x64sc', '-default', '-kernal', DIR + 'kernal.rom', '-basic', DIR + 'basic.rom', '-chargen', DIR + 'chargen.rom', '-cartcrt', DIR + 'frak64.crt',
             '-drive8type', '0', '-sounddev', 'dummy', '-VICIIfilter', '0', '-limitcycles', arg('cycles', '800000'), '-exitscreenshot', shot],
             { cwd: DIR, stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000 });
     } catch (e) { if (!existsSync(shot)) { console.log(String(e.stderr || e).slice(-2000)); throw e; } }

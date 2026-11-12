@@ -55,13 +55,13 @@ zp      = $02
 scrx    = zp + 0                    ; scroll position, pixels (16 bits)
 dir     = zp + 2                    ; +1 or -1 ($ff)
 pause   = zp + 3
-curc    = zp + 4                    ; the coarse position (column) shown
+curc    = zp + 4                    ; the coarse position (map column at screen column 0) shown
 front   = zp + 5                    ; the pair shown (0/1)
-target  = zp + 6                    ; the column the hidden pair should show ($ff: none)
-working = zp + 7                    ; the column the foreground is filling the hidden pair for
-prepared = zp + 8                   ; the column the hidden pair is ready for ($ff: not ready)
+lfront  = zp + 6                    ; the pair shown from the next frame on (front: now)
+working = zp + 7                    ; the window the foreground is filling the hidden pair for
+fsh     = zp + 8                    ; ... its VSP offset there
 prow    = zp + 9                    ; the next row to fill
-back    = zp + 10                   ; the hidden pair being filled
+back    = zp + 10                   ; the hidden pair (lfront's other)
 frames  = zp + 11
 tmp     = zp + 12                   ; (2: the foreground's)
 row     = zp + 14                   ; the timer's tick: 0-24 the rows, 25-38 the border
@@ -103,9 +103,9 @@ s01b    = zp + 53
 NS      = 5                         ; the Scrubblies
 NB      = 6                         ; the balloons and daggers (at most)
 SPRBALL = $5480                     ; the balls' sprite
-flippend = zp + 54                  ; (the next frame's scroll, decided in the main program:
-targpend = zp + 55                  ;  a pair flip and a new target for the border to make)
-ntarget = zp + 56
+flippend = zp + 54                  ; (the next frame's scroll, decided in the main program: a pair
+wanto   = zp + 55                   ;  flip for the border to make; the hidden pair's origin wanted;
+nvs     = zp + 56                   ;  the VSP offset)
 muxbusy = zp + 57
 dtmp    = zp + 58                   ; (2)
 mt0     = zp + 60
@@ -184,6 +184,19 @@ start   sei
         sta $d010
         sta $d01c                   ; (all hi-res)
         .if !TEST
+        lda #0                      ; Trogg (trogg.asm): sprite 1 his black outline, sprite 2 his
+        sta $d028                   ; infill (multicolour: yellow, magenta)
+        lda #4
+        sta $d01c
+        lda #7
+        sta $d025
+        lda #4
+        sta $d026
+        lda #255                    ; (parked below the screen until the first frame)
+        sta $d003
+        sta $d005
+        .endif
+        .if !TEST
         ; Sprites 3-7: shared out by the multiplexer (mux.asm) among the virtual sprites: the
         ; Scrubblies' bodies (expanded both ways, magenta, behind the characters, so their black
         ; and the eyes' and teeth's yellow are in front, their x following the scroll) and some
@@ -206,6 +219,15 @@ start   sei
         sta vfl,x
         dex
         bpl -
+        ldx #0                      ; the yoyo's frames (yoyo.asm): black, kept before others
+-       lda yoyospr,x
+        sta SPRYOYO,x
+        inx
+        bne -
+        lda #0
+        sta vcol + YV
+        lda #VHIDE | VFIRST
+        sta vfl + YV
         ldx #NB - 1
 -       lda #(SPRBALL & $3fff) / 64
         sta vptr + NS,x
@@ -231,8 +253,7 @@ start   sei
         sta muxreq
         sta muxbusy
         sta flippend
-        sta targpend
-        lda #$f9
+        lda #$ff
         .else
         ; (the test: sprites 1-7 in the left border, where they can't be seen, but are fetched)
         ldx #2
@@ -339,13 +360,15 @@ start   sei
         cpx #ROWS + 1
         bne -
 
-        ; pair 0 filled for column 0 and shown; pair 1 to be filled for column 1
+        ; pair 0 filled for window 0 with origin -8 (VSP offset 8) and shown; pair 1 then filled
+        ; the same in the background (po, pvw: scroll.asm)
         lda #0
         sta scrx
         sta scrx+1
         sta shx
         sta curc
         sta front
+        sta lfront
         sta frames
         lda #1
         sta dir
@@ -355,16 +378,21 @@ start   sei
         sta back
         sta working
         sta prow
+        lda #8
+        sta fsh
+        sta nvs
 -       jsr fillrow
         lda prow
         cmp #ROWS
         bne -
         jsr usefront
+        jsr setvsp
         lda #1
-        sta target
-        lda #$ff
-        sta working
-        sta prepared
+        sta back
+        lda #$f8
+        sta wanto
+        lda #0
+        sta prow
 
         lda #IRQLINE
         sta $d012
@@ -390,7 +418,7 @@ measure lda muxreq                  ; (the scroll and the multiplexer still run)
         jmp measure
         .endif
 
-; The foreground: keep the hidden pair filled for the column the interrupt wants next
+; The foreground: the hidden pair kept filled and up to date for the next swap (bgwork)
         .if MUXTIME
         lda #$ff                    ; (debug: CIA 2's timer A free running, for muxframe's stamps)
         sta $dd04
@@ -404,28 +432,8 @@ main    .if !TEST
         jsr nextframe
 +
         .endif
-        lda target
-        cmp working
-        beq +
-        sta working                 ; a new column: start again
-        ldx #$ff
-        stx prepared
-        ldx #0
-        stx prow
-        lda front
-        eor #1
-        sta back
-+       lda working
-        cmp #$ff
-        beq idle
-        lda prow
-        cmp #ROWS
-        bcc +
-        lda working                 ; done
-        sta prepared
-        jmp idle
-+       jsr fillrow
-        jmp main
+        jsr bgwork                  ; the hidden pair's work, a piece
+        bcc main
 ; (nothing to do: a mix of long instructions and taken branches, as the game will have, to
 ; give the interrupt every lateness it can meet)
 idle    ldx #8
@@ -442,56 +450,79 @@ nextframe
         sta muxbusy
         lda #0
         sta muxreq
+        jsr gametick                ; (a game tick: the keys, Trogg)
         jsr decide
+        jsr trogset                 ; (Trogg's sprites, for the next frame's scroll)
+        jsr yoyoset                 ; (the yoyo's sprite, and its string)
+        jsr strset
         jsr muxframe
         lda #0
         sta muxbusy
         rts
 
-; Fill row prow of pair back for column working (tops and bottoms), then prow+1
+; Fill row prow of pair back for window working at VSP offset fsh (tops and bottoms), then prow+1:
+; screen columns 2-39 (0-2 are the FLI bug's, never seen, under the cover sprite; 2 is filled too
+; so the loop, unrolled once, takes the columns in twos), from tables of each row's addresses
 fillrow ldx prow
-        lda mul94lo,x               ; source: the level's row, from the column
+        lda fstlo,x                 ; source: the level's row, from the column
         clc
         adc working
-        sta tmp
-        lda mul94hi,x
-        adc #0
-        sta tmp+1
-        lda tmp
-        clc
-        adc #<tops
-        sta _st+1
-        lda tmp+1
-        adc #>tops
-        sta _st+2
-        lda tmp
-        clc
-        adc #<bottoms
+        sta _sa+1
         sta _sb+1
-        lda tmp+1
-        adc #>bottoms
+        lda fsthi,x
+        adc #0
+        sta _sa+2
         sta _sb+2
-        lda back                    ; destination: the pair's screens, the row
-        asl
-        tay
-        lda mul40lo,x
-        sta _dt+1
-        sta _db+1
-        lda mul40hi,x
+        lda fsblo,x
         clc
-        adc pairhi,y
-        sta _dt+2
-        lda mul40hi,x
-        clc
-        adc pairhi+1,y
-        sta _db+2
-        ldx #39
-_st     lda $ffff,x
-_dt     sta $ffff,x
-_sb     lda $ffff,x
-_db     sta $ffff,x
+        adc working
+        sta _ba+1
+        sta _bb+1
+        lda fsbhi,x
+        adc #0
+        sta _ba+2
+        sta _bb+2
+        lda fdlo,x                  ; destination: the pair's screens, the row, the offset (tops and
+        clc                         ; bottoms the same but for the high byte)
+        adc fsh
+        sta _ta+1
+        sta _tb+1
+        sta _ua+1
+        sta _ub+1
+        lda #0
+        rol
+        sta tmp
+        lda back
+        bne _p1
+        lda fdt0,x
+        adc tmp                     ; (carry clear)
+        sta _ta+2
+        sta _tb+2
+        lda fdb0,x
+        adc tmp
+        sta _ua+2
+        sta _ub+2
+        bne _go                     ; (always)
+_p1     lda fdt1,x
+        adc tmp
+        sta _ta+2
+        sta _tb+2
+        lda fdb1,x
+        adc tmp
+        sta _ua+2
+        sta _ub+2
+_go     ldx #37
+_sa     lda $ffff,x
+_ta     sta $ffff,x
+_ba     lda $ffff,x
+_ua     sta $ffff,x
         dex
-        bpl _st
+_sb     lda $ffff,x
+_tb     sta $ffff,x
+_bb     lda $ffff,x
+_ub     sta $ffff,x
+        dex
+        bpl _sa
         inc prow
         rts
 
@@ -518,7 +549,9 @@ usefront
         lda #>(SCR1 + $3f8)
         sta aps1+2
         sta apt1+2
-        rts
+        lda #>(SCR0 + $3f8)         ; (and Trogg's)
+        ldx #>(SCR1 + $3f8)
+        jmp tpair
 +       lda #<d18a1
         sta rl0+1
         lda #<(d18a1+1)
@@ -538,7 +571,9 @@ usefront
         lda #>(SCR3 + $3f8)
         sta aps1+2
         sta apt1+2
-        rts
+        lda #>(SCR2 + $3f8)
+        ldx #>(SCR3 + $3f8)
+        jmp tpair
 
 nmi     rti
 
@@ -802,6 +837,14 @@ _dmux
         cpx #39
         bcs +
         stx row
+        cpx #ROWS + 2               ; tick 26: the yoyo's string, if the frame's changed (strapply:
+        bne t26n                    ; not at tick 25, whose work, with it, could take over two
+        lda strpend                 ; ticks, and one would be lost)
+        beq t26n
+        lda #0
+        sta strpend
+        jsr strapply
+t26n
         .if !TEST
         cpx #38                     ; tick 37 (line 37): sprites 3-7 parked below the screen, then
         bne t37n                    ; those set up before the frame (tick 0's slots), and the
@@ -821,6 +864,7 @@ _dmux
         lda t01b,y
         sta $d01b
         jsr apply0
+        jsr tick37                  ; (Trogg's sprites' first instances)
 t37n
         .endif
         ldy savy
@@ -842,6 +886,7 @@ rl0     lda d18a0                   ; tick 38 (line 45): row 0's screen and set
         sta slacklo
 +
         .endif
+        jsr vspline                 ; (VSP: the screen shown from offset s)
         lda #<rowirq
         sta $fffe
         lda #>rowirq
@@ -851,13 +896,61 @@ rl0     lda d18a0                   ; tick 38 (line 45): row 0's screen and set
         lda sava
         rti
 
+; VSP: a bad line forced on line 50 (in the top border, before row 0's at 51), n = 40 - s cycles
+; after cycle 14: the VIC fetches 40 - n = s characters fewer in it, and every row after starts s
+; on: the screen shown from offset s (vson; 0: no VSP). The timer polled until line 50, then read
+; once more, and a slide to land the write on cycle 54 - s (Bauer's numbering, from 1). The read
+; comes on cycle 9-17, or, if sprites 3-7 are fetched on line 50 (cycles 1-10), up to cycle 21,
+; but always after their fetches: nothing stops the CPU between it and the write (sprites 0-2's
+; are at the line's end). From the read to the write is 11 cycles and the slide's (3 at the
+; least), so offset 16 (the write on cycle 38) can be reached from a read as late as 21: hence X
+; for the write, and no sec (the poll leaves carry clear). (VSPT: the timer at line 50's cycle 0,
+; as VICE's monitor counts cycles, from 0; measured. The slide's constant VSPT - 7 + s: from the
+; offset seen, measured.)
+VSPT    = 200
+VSPB    = VSPT + 2
+        .align $80
+        .page
+vspline lda vson
+        beq vspx
+        ldx #(D011A & $f8) | 2      ; (YSCROLL 2: line 50 a bad line, from the write)
+-       lda $dc07                   ; (the timer under 256: line 49)
+        bne -
+-       lda $dc06                   ; (until line 50: read on its cycle -1 to 7)
+        cmp #VSPB
+        bcs -
+vsk     lda #0                      ; (VSPT - 7 + s, less the timer and the carry (clear): the
+        sbc $dc06                   ; slide's bytes skipped, 2 + s to 13 + s)
+        sta _br+1
+_br     bpl _sl
+_sl     .fill 31, $c9               ; (a cycle for each byte skipped)
+        .byte $c5, $ea
+        stx $d011
+        lda #D011A                  ; (back, before line 51)
+        sta $d011
+vspx    rts
+        .endpage
+vson    .byte 0
+
+; The VSP offset from nvs (in the border, or at the start)
+setvsp  lda nvs
+        sta vson
+        clc
+        adc #VSPT - 7
+        sta vsk+1
+        rts
+
         .include "tails.inc"
 
 ; The next frame's scroll (in the main program, with the multiplexer, during the frame before):
-; a pixel on (holding at the ends; holding if the next column isn't ready). A new column's pair
-; flip, and the column the hidden pair should be filled for next, are left for the border to make
-; (flippend, targpend), and $d016 for it to write
-decide  lda pause
+; a pixel on (holding at the ends; holding if a new column can't be had yet: cstep). The scroll
+; and the VSP offset, and any pair flip, are left for the border to make (frame)
+decide  .if !SCROLLDEMO
+        jmp camera
+        .endif
+        lda dir                     ; (the hidden pair for a swap the way it's going)
+        jsr wantdir
+        lda pause
         beq +
         dec pause
         rts
@@ -879,21 +972,14 @@ decide  lda pause
         lsr
         cmp curc
         beq _move
-        cmp prepared                ; a new column: is the hidden pair ready for it?
-        bne _hold                   ; (no: hold)
-        sta curc
-        clc                         ; (the flip, and the next column wanted)
-        adc dir
-        sta ntarget
-        lda #1
-        sta targpend
-        sta flippend
+        jsr cstep                   ; a new column (if it can't be had yet: hold)
+        bcs _hold
 _move   lda dtmp
         sta scrx
         lda dtmp+1
         sta scrx+1
-        ora scrx                    ; at an end: turn round, hold, and want the column the
-        beq _turn                   ; other way
+        ora scrx                    ; at an end: turn round, and hold
+        beq _turn
         lda scrx
         cmp #<MAXX
         bne _hold
@@ -905,17 +991,116 @@ _turn   lda dir
         sta dir
         lda #PAUSE
         sta pause
-        lda curc
-        clc
-        adc dir
-        sta ntarget
-        lda #1
-        sta targpend
 _hold   rts
 
-; In the border: the scroll decided (the flip, the target, $d016 and the cover sprite's x)
+; The camera (for the next frame, in the main program, with the multiplexer): Trogg kept between
+; VL and VR across the screen (his x less the scroll), the scroll moving a pixel a frame (his
+; walking speed) when he's past one; the hidden pair filled for a swap on the side of the middle
+; he's on (wantdir), so it's ready when the scroll gets there (if it isn't, the scroll waits).
+; After a restart (jumping), it jumps to window 0: the hidden pair filled for it (origin -8,
+; offset 8), then that shown, the scroll 0.
+VL      = 112
+VR      = 192
+MAXC    = MAXX / 8
+camera  lda jumping
+        beq _go
+        lda curc                    ; (a restart: window 0)
+        bne +
+        sta scrx                    ; (there already)
+        sta scrx+1
+        sta jumping
+        rts
++       lda #$f8
+        sta wanto
+        ldx back
+        cmp po,x
+        bne _x
+        lda pvw,x                   ; (filled, and up to date, for window 0: shown)
+        bne _x
+        sta curc
+        sta scrx
+        sta scrx+1
+        sta jumping
+        lda #8
+        sta nvs
+        stx lfront
+        txa
+        eor #1
+        sta back
+        lda #1
+        sta flippend
+_x      rts
+_go     lda tx                      ; where he is on the screen
+        sec
+        sbc scrx
+        sta dtmp
+        lda tx+1
+        sbc scrx+1
+        sta dtmp+1
+        bmi _wl                     ; the hidden pair for a swap on his side of the middle
+        bne _wr
+        lda dtmp
+        cmp #(VL + VR) / 2
+        bcc _wl
+_wr     lda #1
+        .byte $2c
+_wl     lda #$ff
+        jsr wantdir
+        lda dtmp+1                  ; past one end of the zone: a pixel that way
+        bmi _ml
+        bne _mr
+        lda dtmp
+        cmp #VR + 1
+        bcs _mr
+        cmp #VL
+        bcc _ml
+        rts
+_mr     lda scrx
+        cmp #<MAXX
+        lda scrx+1
+        sbc #>MAXX
+        bcs _x
+        lda #1
+        bne _step
+_ml     lda scrx
+        ora scrx+1
+        beq _x
+        lda #$ff
+_step   sta dir
+        clc
+        adc scrx
+        sta dtmp
+        lda dir
+        bpl +
+        lda #$ff
+        .byte $2c
++       lda #0
+        adc scrx+1
+        sta dtmp+1
+        lsr                         ; its column
+        lda dtmp
+        ror
+        lsr
+        lsr
+        cmp curc
+        beq _same
+        jsr cstep                   ; a new column (if it can't be had yet: wait)
+        bcc _same
+        .if SLACK
+        inc cwait                   ; (debug: frames the camera waited for the hidden pair)
+        .endif
+        rts
+_same   lda dtmp
+        sta scrx
+        lda dtmp+1
+        sta scrx+1
+        rts
+jumping .byte 0
+
+; In the border: the scroll decided (the flip, the VSP offset, $d016 and the cover sprite's x)
 frame   lda scrx                    ; (the position the multiplexer's frame was made for)
         sta shx
+        jsr tswitch                 ; (and Trogg's settings)
         lda flippend
         beq +
         lda #0
@@ -928,13 +1113,9 @@ frame   lda scrx                    ; (the position the multiplexer's frame was 
         lda curc
         sta frontc
         .endif
-+       lda targpend
-        beq +
-        lda #0
-        sta targpend
-        lda ntarget
-        sta target
-+
++       jsr setvsp                  ; (the VSP offset)
+        lda #1                      ; (and the yoyo's string, at the next tick: strapply)
+        sta strpend
 setx    lda shx
         and #7
         eor #7                      ; (38 columns)
@@ -944,7 +1125,11 @@ setx    lda shx
         sta $d000
         rts
 
+        .include "scroll.asm"
+        .include "yoyo.asm"
         .include "mux.asm"
+        .include "trogg.asm"
+        .include "play.asm"
 
         .align $100
 d18a0   .fill ROWS + 1
@@ -952,18 +1137,32 @@ d18b0   .fill ROWS + 1
 d18a1   .fill ROWS + 1
 d18b1   .fill ROWS + 1
 csbits  .byte ((CS0 & $3800) >> 10), ((CS1 & $3800) >> 10)
-pairhi  .byte >SCR0, >SCR1, >SCR2, >SCR3
-mul94lo .for i = 0, i < ROWS, i += 1
-        .byte <(i * NC)
+fstlo   .for i = 0, i < ROWS, i += 1   ; (fillrow's: each row's source and destination, from column 2)
+        .byte <(tops + 2 + i * NC)
         .endfor
-mul94hi .for i = 0, i < ROWS, i += 1
-        .byte >(i * NC)
+fsthi   .for i = 0, i < ROWS, i += 1
+        .byte >(tops + 2 + i * NC)
         .endfor
-mul40lo .for i = 0, i < ROWS, i += 1
-        .byte <(i * 40)
+fsblo   .for i = 0, i < ROWS, i += 1
+        .byte <(bottoms + 2 + i * NC)
         .endfor
-mul40hi .for i = 0, i < ROWS, i += 1
-        .byte >(i * 40)
+fsbhi   .for i = 0, i < ROWS, i += 1
+        .byte >(bottoms + 2 + i * NC)
+        .endfor
+fdlo    .for i = 0, i < ROWS, i += 1
+        .byte <(i * 40 + 2)
+        .endfor
+fdt0    .for i = 0, i < ROWS, i += 1
+        .byte >(SCR0 + i * 40 + 2)
+        .endfor
+fdb0    .for i = 0, i < ROWS, i += 1
+        .byte >(SCR1 + i * 40 + 2)
+        .endfor
+fdt1    .for i = 0, i < ROWS, i += 1
+        .byte >(SCR2 + i * 40 + 2)
+        .endfor
+fdb1    .for i = 0, i < ROWS, i += 1
+        .byte >(SCR3 + i * 40 + 2)
         .endfor
 bandset .binary "bandset.bin"
 junk    .fill 16
@@ -976,7 +1175,13 @@ _y      := COVERY0 + 42 * (1 + ((54 + 8 * i) - (COVERY0 + 1)) / 42)
         .endfor
         .include "masks.inc"
 charsets .binary "charsets.bin"
-tops    .binary "tops.bin"
-bottoms .binary "bottoms.bin"
 end
         .cerror end > SCR0, "the program runs into the screens"
+        ; (then the VIC bank: the screens, character sets, sprites and the multiplexer's RAM, all
+        ; set up at the start; and what's loaded straight into it)
+        .fill $6800 - *, 0
+TROGG   .binary "trogg.bin"         ; Trogg's sprites: per frame outline P1-P3, infill P1-P3
+        .cerror * > $8000, "Trogg's sprites run out of the VIC bank"
+tops    .binary "tops.bin"          ; (the level map, past the VIC bank)
+bottoms .binary "bottoms.bin"
+        .dsection high              ; (tables that needn't be low: mux.asm's, play.asm's)
