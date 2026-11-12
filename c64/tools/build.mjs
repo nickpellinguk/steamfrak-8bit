@@ -114,7 +114,7 @@ writeFileSync(DIR + 'masks.inc', `; made by tools/build.mjs\nmasks   .byte ${mas
         B('tbx0', tb.map(b => sgn(b.x0))) + B('tbx1', tb.map(b => sgn(b.x1))) + B('tby0', tb.map(b => sgn(b.y0))) + B('tby1', tb.map(b => sgn(b.y1))) +
         B('scbll', sl.map(v => v & 255)) + B('scblh', sl.map(v => v >> 8)) + B('scbrl', sr.map(v => v & 255)) + B('scbrh', sr.map(v => v >> 8)) +
         B('scbc0', sl.map(v => v >> 3)) + B('scbc1', sr.map(v => v >> 3)) + B('scbt', scrub.placed.map(p => p.top + 24 + sbx.y0)) + B('scbb', scrub.placed.map(p => p.top + 24 + sbx.y1)) +
-        `NP      = ${pk.length}\n` + B('pkll', pk.map(p => (p.left + p.box.x0) & 255)) + B('pklh', pk.map(p => (p.left + p.box.x0) >> 8)) +
+        `NP      = ${pk.length}\nNKEYS   = ${pk.filter(p => p.name === 'IMG_Key').length}\n` + B('pkll', pk.map(p => (p.left + p.box.x0) & 255)) + B('pklh', pk.map(p => (p.left + p.box.x0) >> 8)) +
         B('pkrl', pk.map(p => (p.left + p.box.x1) & 255)) + B('pkrh', pk.map(p => (p.left + p.box.x1) >> 8)) +
         B('pkc0', pk.map(p => (p.left + p.box.x0) >> 3)) + B('pkc1', pk.map(p => (p.left + p.box.x1) >> 3)) + B('pkt', pk.map(p => p.top + p.box.y0)) + B('pkb', pk.map(p => p.top + p.box.y1)) + B('pkkind', pk.map(p => p.name === 'IMG_Key' ? 2 : 1)) +
         `BBX0    = ${bb.x0}\nBBX1    = ${bb.x1}\nBBY0    = ${bb.y0}\nBBY1    = ${bb.y1}\n` +

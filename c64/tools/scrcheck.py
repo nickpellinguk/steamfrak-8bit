@@ -25,7 +25,7 @@ def run(secs):
     return blocks
 for secs in sys.argv[1:]:
     mem, po, pvw, vson, zp, tm, bm = run(secs)          # (the map as it is in memory: Scrubblies yo-yoed off changed)
-    if tm != list(t) or bm != list(b): print(f'  (the map in memory differs from the files in {sum(x != y for x, y in zip(tm + bm, list(t) + list(b)))} cells: Scrubblies yo-yoed off)')
+    if tm != list(t) or bm != list(b): print(f'  (the map in memory differs from the files in {sum(x != y for x, y in zip(tm + bm, list(t) + list(b)))} cells: Scrubblies yo-yoed off, gems or keys picked up)')
     z = lambda name: zp[lbl[name] - 2]
     front, lfront, curc = z('front'), z('lfront'), z('curc')
     sgn = lambda v: v - 256 if v > 127 else v

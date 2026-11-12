@@ -1,6 +1,6 @@
 # Plan: a playable A_1
 
-Status: **part 1 done, part 2 under way (milestones 7-8 done)** (milestones 1-5: the data; Trogg shown; his movement and the keys; the
+Status: **part 1 done, part 2 under way (milestones 7-9 done)** (milestones 1-5: the data; Trogg shown; his movement and the keys; the
 camera, scrolling by VSP; the yoyo and knocking Scrubblies off): 95.7% of frames ready on Hard
 scrolling all the time, the camera never waiting; packed onto `build/frak64.d64`. **Part 2**
 (below): A_1 played as the BBC version plays it. Each milestone is checked before the next, and
@@ -287,13 +287,20 @@ the level.
    six, at worst about 3,700 (several objects' rows compared); in play, invincible (so balloons
    pass through him, compared every tick; in a real game the first touch kills him), 92.1% of
    frames ready (94.3% with boxes alone). For the budget pass.
-9. **Gems and keys.** One touched is picked up: gone from the level map and from both pairs, by
-   the Scrubblies' patching (`pcell`), and back at a restart; gems counted; the last key
-   completes the level. The packer makes each one's removed cells, as it does the Scrubblies'.
-   Risk: room in the character sets (set 0 is full): measured first, by packing the variant
-   with them all gone; if it doesn't fit, a third set at `$7000` (the plan's fallback since part
-   1). Check: the screenshots against a mock-up variant with them gone, and screen memory
-   against the map (scrcheck.py).
+9. **Gems and keys** (done). One Trogg touches is picked up (`pickup`, src/yoyo.asm): its cells
+   patched to what's behind it in the level map and in each pair that shows them, as the
+   Scrubblies are knocked off (one routine now: `patchon`, `patchoff`), counted (`gemsgot`,
+   `keysgot`), and the last key noted (`allkeys`, for milestone 11); a restart puts them back.
+   The data: `mockup.mjs`'s `GONE=1` variant (the gems and keys left out, what's behind them
+   showing), packed with the others: the two sets still do, with not a glyph more (60 tops and
+   60 bottoms, 46 and 38: what's behind them was in the sets already); the packer's patch
+   tables now hold the Scrubblies' cells then the gems' and keys' (8, 8, 8, 7 for the keys, 4
+   for each gem; 192 in all). Checked: in py65 and VICE, Trogg picks up the gem on the F's middle
+   platform (the map in memory changed in its 6 cells, both pairs as the map, the screenshot as
+   the picked-up mock-up there), and dying puts it back; `tools/picktest.py` picks up all 11 in
+   random orders in py65 (the counts, the level complete exactly at the last key, every cell's
+   new codes) and puts them back (every cell as built): no problems. (The py65 harnesses' call
+   stub moved from $7f00, inside the level map, to $033c.)
 10. **Balloons and daggers, properly.** Spawned as `spawn_balloon` and `spawn_dagger` do: a
     balloon at the level's bottom at a random x within half the spread (280 on Hard) of Trogg,
     rising at 1.3 pixels a tick after its pause; a dagger at the top, aimed at x + h * 4/3 (h:

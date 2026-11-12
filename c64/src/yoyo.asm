@@ -211,9 +211,31 @@ _nx     dex
 knock   lda #1
         sta knocked,x
         lda scrpi,x
-        sta yk
+        ldy scrpn,x
+        jmp patchon
+
+; Gem or key x picked up: the same (its cells: what's behind it); counted, and the last key noted
+pickup  lda #1
+        sta picked,x
+        lda pkkind,x
+        cmp #2
+        bne +
+        inc keysgot
+        lda keysgot
+        cmp #NKEYS
+        bne ++
+        lda #1                      ; (all the keys: the level complete)
+        sta allkeys
+        bne ++
++       inc gemsgot
++       lda pkpi,x
+        ldy pkpn,x
+
+; Patch cells a to a + y - 1 (scrplo ...): the codes there saved (scrsvt, scrsvb), the new ones in
+patchon sta yk
+        sty ytmp
         clc
-        adc scrpn,x
+        adc ytmp
         sta yke
 -       ldx yk
         lda scrplo,x                ; (the codes there now saved)
@@ -246,17 +268,12 @@ knock   lda #1
         bne -
         rts
 
-; Every Scrubbly back (at a restart)
-unknock ldx #NS - 1
-_s      lda knocked,x
-        beq _n
-        lda #0
-        sta knocked,x
-        stx ysi
-        lda scrpi,x
+; ... and back: the codes saved put back
+patchoff
         sta yk
+        sty ytmp
         clc
-        adc scrpn,x
+        adc ytmp
         sta yke
 -       ldx yk
         lda scrsvt,x
@@ -268,9 +285,37 @@ _s      lda knocked,x
         lda yk
         cmp yke
         bne -
+        rts
+
+; Every Scrubbly, gem and key back (at a restart)
+unknock ldx #NS - 1
+_s      lda knocked,x
+        beq _n
+        lda #0
+        sta knocked,x
+        stx ysi
+        lda scrpi,x
+        ldy scrpn,x
+        jsr patchoff
         ldx ysi
 _n      dex
         bpl _s
+        ldx #NP - 1
+_g      lda picked,x
+        beq _gn
+        lda #0
+        sta picked,x
+        stx ysi
+        lda pkpi,x
+        ldy pkpn,x
+        jsr patchoff
+        ldx ysi
+_gn     dex
+        bpl _g
+        lda #0
+        sta gemsgot
+        sta keysgot
+        sta allkeys
         rts
 
 ; Patch cell yk to ytop, ybot: in the level map, and in each pair up to date for a window it's in
@@ -679,6 +724,10 @@ ybot    .byte 0
 yr      .byte 0
 yj      .byte 0
 knocked .fill NS
+picked  .fill NP                    ; (each gem and key: picked up)
+gemsgot .byte 0
+keysgot .byte 0
+allkeys .byte 0                     ; (all the keys picked up: the level complete)
 scrsvt  .fill 256                   ; (the knocked-off cells' codes before)
 scrsvb  .fill 256
 sp_on   .byte 0                     ; (the string for the next frame: strset's)

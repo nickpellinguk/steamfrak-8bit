@@ -23,7 +23,7 @@ import { background, refPlot, images, at } from '../../cpc6128/tools/emu/render.
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { deflateSync } from 'zlib';
 
-const OUT = new URL('../build', import.meta.url).pathname, SUF = process.env.OFF ? '_off' : '';
+const OUT = new URL('../build', import.meta.url).pathname, SUF = process.env.OFF ? '_off' : process.env.GONE ? '_gone' : '';   // (GONE: the gems and keys picked up)
 mkdirSync(OUT, { recursive: true });
 const name = 'room_A_1', DROP = [127, 144], ROW0 = 3, ROWS = 25;
 const e = JSON.parse(readFileSync(new URL('../../build/levels.json', import.meta.url), 'utf8'))[name];
@@ -198,6 +198,7 @@ e.draw_img.forEach((img, k) => {
         // (nothing behind it: a ladder's top or bottom between its feet, say)
         for (let y = 0; y < SH; y++) for (let x = 0; x < 40; x++) if (inside(left + x, top + y)) art[at2(left + x, top + y)] = 0;   // (its 5 characters' width, its 42 lines)
     } else {
+        if (process.env.GONE) return;                                    // (GONE: picked up, what's behind showing)
         // A key or gem: centred on the 16-pixel platform unit nearest it (the units from the piece's
         // left end, on a character boundary), its last line just above the platform's top line; so
         // each sits the same way on every platform (x mod 16 from the unit, y mod 4)
