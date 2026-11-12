@@ -554,6 +554,69 @@ _hide   lda #VFIRST | VHIDE
         sta vfl + YV
         rts
 
+; The FRAK! bubble (while he's dead, as the BBC version): its image's corner at (tx + 12 - FRAKXO,
+; ty - 26 - FRAKYO), as 4 virtual sprites (FV: its black left and right, its yellow left and
+; right), kept before others
+FV      = YV + 1
+frakset lda dead
+        beq _hide
+        lda tx                      ; x: 31 + its left - the scroll
+        clc
+        adc #12 - FRAKXO + 31
+        sta ytmp
+        lda tx+1
+        adc #0
+        sta ytmp+1
+        lda ytmp
+        sec
+        sbc scrx
+        sta ytmp
+        lda ytmp+1
+        sbc scrx+1
+        sta ytmp+1
+        bmi _hide
+        lda ty                      ; y: its top + 26 (ty - 26 - FRAKYO + 26)
+        sec
+        sbc #FRAKYO
+        tay
+        lda ty+1
+        sbc #0
+        bne _hide
+        ldx #3
+-       tya
+        sta vy + FV,x
+        lda fkdx,x                  ; (the right ones 24 on)
+        clc
+        adc ytmp
+        sta vxlo + FV,x
+        lda ytmp+1
+        adc #0
+        cmp #2
+        bcs _h1
+        cmp #1
+        bne +
+        lda vxlo + FV,x
+        cmp #344 - 256
+        bcs _h1
+        lda #1
++       sta vxhi + FV,x
+        lda #VFIRST
+        .byte $2c
+_h1     lda #VFIRST | VHIDE
+        sta vfl + FV,x
+        dex
+        bpl -
+        rts
+_hide   ldx #3
+        lda #VFIRST | VHIDE
+-       sta vfl + FV,x
+        dex
+        bpl -
+        rts
+fkdx    .byte 0, 24, 0, 24
+fkblk   .byte 0, 1, 2, 3
+fkcol   .byte 0, 0, 7, 7
+
 ; The string, for the next frame: a line on map line ty - 36 (level y yo_y - 1), from the
 ; character under his hand (tx + 12, or tx - 12) to the one under the yoyo's near edge, in the
 ; tops' screen if it's on lines 0-3 of its row, else the bottoms', as string character 60-63

@@ -142,7 +142,17 @@ writeFileSync(DIR + 'masks.inc', `; made by tools/build.mjs\nmasks   .byte ${mas
                  const K = (n, f) => B(n, [0, ...H.map(f)]);
                  return B('hazspr', spr) + K('kxo', h => h.xo) + K('kyo', h => h.yo) + K('kw', h => h.grid[0].length) + K('kh', h => h.grid.length) +
                      B('kbx0', [0, ...hb.map(b => b.x0)]) + B('kbx1', [0, ...hb.map(b => b.x1)]) + B('kby0', [0, ...hb.map(b => b.y0)]) + B('kby1', [0, ...hb.map(b => b.y1)]) +
-                     B('balsp', sp(H[0].grid)) + B('dagsp', sp(H[1].grid)) + `kspl    .byte 0, <balsp, <dagsp\nksph    .byte 0, >balsp, >dagsp\n`; })());
+                     B('balsp', sp(H[0].grid)) + B('dagsp', sp(H[1].grid)) + `kspl    .byte 0, <balsp, <dagsp\nksph    .byte 0, >balsp, >dagsp\n`; })() +
+        // (the FRAK! bubble, 52 wide, narrowed to 48 (two sprites): in each row, two pixels out of the
+        // longest run in its first 6 columns and in its last 6 (the padding and outline, so the
+        // letters keep their places); then 4 sprites: its black, left and right, its yellow)
+        (() => { const F = pj.hazards.IMG_Frak, cut = (r, a, b, right) => { const runs = []; for (let x = a; x < b;) { let y = x; while (y < b && r[y] === r[x]) y++; runs.push([x, y]); x = y; }
+                     const best = runs.reduce((m, q) => (q[1] - q[0] > m[1] - m[0] || (q[1] - q[0] === m[1] - m[0] && right)) ? q : m); return best[1] - best[0] >= 2 ? [best[0], best[0] + 1] : []; };
+                 const W = F.grid[0].length, n = F.grid.map(r => { const d = new Set([...cut(r, 0, 6, true), ...cut(r, W - 6, W, false)]); return r.filter((p, x) => !d.has(x)); });
+                 if (n.some(r => r.length !== 48)) throw new Error('the FRAK! bubble did not narrow to 48');
+                 writeFileSync(DIR + 'frak.txt', '; the FRAK! bubble as the C64 shows it (narrowed from the BBC\'s 52 to 48: build.mjs)\n' + n.map(r => r.map(p => ' .YMB'[p + 1]).join('')).join('\n') + '\n');
+                 const blk = (col, x0) => { const b = Array(64).fill(0); n.forEach((r, y) => { for (let x = 0; x < 24; x++) if (r[x0 + x] === col) b[y * 3 + (x >> 3)] |= 0x80 >> (x & 7); }); return b; };
+                 return B('frakspr', [...blk(3, 0), ...blk(3, 24), ...blk(1, 0), ...blk(1, 24)]) + `FRAKXO  = ${F.xo}\nFRAKYO  = ${F.yo}\n`; })());
 }
 const sb = Buffer.alloc(64);
 scrub.sprite.forEach((row, y) => { for (let k = 0; k < 3; k++) sb[y * 3 + k] = parseInt(row.slice(k * 8, k * 8 + 8), 2); });

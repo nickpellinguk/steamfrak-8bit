@@ -19,7 +19,7 @@
 ; once it's ready (muxready). Each frame starts by copying the last frame's changes across from the
 ; buffer now shown, so the two keep step.
 
-NV      = NS + NB + 1           ; virtual sprites: the Scrubblies, the balls, the yoyo
+NV      = NS + NB + 1 + 4       ; virtual sprites: the Scrubblies, the balls, the yoyo, the FRAK! bubble
 VEXPY   = 1                     ; (vfl: expanded down,
 VEXPX   = 2                     ;  ... across,
 VBEHIND = 4                     ;  ... behind the characters,

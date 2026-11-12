@@ -31,26 +31,26 @@ gametick
         .if CAMTEST
         jmp camtest
         .endif
-        lda dead
-        beq +
+        lda dead                    ; dead: everything still, then the level again
+        beq _alive
         dec dead
-        bne ++
+        bne _still
         jmp restart
-+       lda won                     ; the level complete (all the keys): everything still, then
-        beq +                       ; A_1 again from the start (the only level), as the BBC
+_alive  lda won                     ; the level complete (all the keys): everything still, then
+        beq _play                   ; A_1 again from the start (the only level), as the BBC
         lda wint                    ; version's game_tick
         bne _wd
         dec wint+1
 _wd     dec wint
         lda wint
         ora wint+1
-        bne ++
+        bne _still
         jmp restart
-+       jsr read_keys
+_play   jsr read_keys
         jsr trogg_update
         jsr hazards                 ; (the balloons and daggers)
         jsr collide                 ; (and what he's touching)
-+       jmp trogg_frame
+_still  jmp trogg_frame
 
 ; The level from the start again: Trogg, the Scrubblies, no balloons or daggers
 restart lda #<TSTARTX

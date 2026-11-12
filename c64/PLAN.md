@@ -1,6 +1,6 @@
 # Plan: a playable A_1
 
-Status: **part 1 done, part 2 under way (milestones 7-10 done)** (milestones 1-5: the data; Trogg shown; his movement and the keys; the
+Status: **part 1 done, part 2 under way (milestones 7-11 done)** (milestones 1-5: the data; Trogg shown; his movement and the keys; the
 camera, scrolling by VSP; the yoyo and knocking Scrubblies off): 95.7% of frames ready on Hard
 scrolling all the time, the camera never waiting; packed onto `build/frak64.d64`. **Part 2**
 (below): A_1 played as the BBC version plays it. Each milestone is checked before the next, and
@@ -322,11 +322,23 @@ the level.
     dagger black with a yellow blade. Faithful would need multicolour for sprites 3-7 (`$d01c` in
     the multiplexer's register writes, which the row tails may not have the time for) or two
     sprites each (twice the multiplexer's load): a decision to make.
-11. **Death and the level's end.** Dying: Trogg stops, the "FRAK!" bubble at (x + 12, y - 26)
-    for the 50 ticks before the restart. The last key: the level complete (`level_complete`), a
-    pause, then A_1 again (the only level). The timer (m:ss) and rating that `draw_hud` draws
-    are left for later: there's no spare character row for them, and sprites for them would
-    take from the multiplexer, so how is a separate decision.
+11. **Death and the level's end** (done). Dying: the game still (as the BBC version's game_tick:
+    nothing moves, nothing spawns) for the 50 ticks before the restart, and the FRAK! bubble at
+    its place (its image's corner at (x + 12, y - 44)). The bubble is 52 wide in the original;
+    the build narrows it to 48 (`build/frak.txt`: in each row, two pixels out of the longest run in
+    its first and last 6 columns, the padding and outline, so the letters keep their places) and
+    makes it 4 virtual sprites (FV: its black and its yellow, each two 24-wide halves), kept
+    before others, shown while he's dead (`frakset`). The last key: the level complete (`won`), as
+    `level_complete`: nothing kills him, everything still for 7 seconds, then A_1 from the start.
+    The timer and rating (`draw_hud`) left for later. Checked: in VICE, a death at the bottom of
+    the level shows the bubble exactly (610 of its 610 pixels, its 324 yellow ones included); in
+    py65 (picktest.py), the level complete at the last key, Trogg still through the pause (a key
+    held), then the level from the start, everything back; key scripts the same in py65 and VICE.
+    (Found on the way and fixed: adding the level-complete state had made a dead Trogg walk on.)
+    Two limits: on the top row, with both Scrubblies there on the screen, their bodies and the
+    bubble need 6 multiplexed sprites on the same lines, and there are 5: the bubble's yellow is
+    left out there (the black, and its letters, shown); and the 4 hidden virtual sprites cost the
+    multiplexer every frame: the camera test 89.2% ready (91.2% before). For the budget pass.
 12. **Checkpoints.** After Trogg picks up a key that isn't the last, the level's state is saved
     once he's standing (or walking) on a platform, and not dying in the same tick, as
     `check_checkpoint` does: which gems, keys and Scrubblies are gone (and the counts), his place
