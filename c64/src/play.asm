@@ -38,6 +38,7 @@ gametick
         jmp restart
 +       jsr read_keys
         jsr trogg_update
+        jsr hazards                 ; (the balloons and daggers)
         jsr collide                 ; (and what he's touching)
 +       jmp trogg_frame
 
@@ -70,11 +71,13 @@ restart lda #<TSTARTX
         sta yo_len
         sta yo_len+1
         jsr unknock                 ; (the Scrubblies back)
-        ldx #NB - 1
+        ldx #NB - 1                 ; (no balloons or daggers; the next at the next tick)
 -       lda #0
         sta oact,x
         dex
         bpl -
+        sta btim
+        sta dtim
         jmp trogg_frame
 
 ; ---- The keys (the BBC version's: Z / X walk, O / K climb and jump, P or Space the yoyo; and
@@ -1181,7 +1184,8 @@ kticks  .byte 0
 ; (a test of the camera: Trogg walked across the level and back, a pixel a tick, turning round at
 ; each of camturn's x's in turn; the keys read and his movement worked out as well, for what they
 ; cost, but then left out)
-camtest ldx #CAMSAVE - 1
+camtest jsr hazards                 ; (the balloons and daggers, for the multiplexer's load)
+        ldx #CAMSAVE - 1
 -       lda tx,x
         sta camsv,x
         dex

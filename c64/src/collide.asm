@@ -1,7 +1,7 @@
 ; ---- Collisions, by box (the first stage of the BBC version's check_collisions): Trogg's box (his
 ; frame's solid pixels' extent, as shown) against each object's, in the level's coordinates, all
 ; from the build (collide.inc). A Scrubbly (not yoyoed off) or a balloon or dagger kills him; a gem
-; or key touched is noted (ptouch: picking them up is to come). Only the Scrubblies, gems and keys
+; or key touched is picked up. Only the Scrubblies, gems and keys
 ; in his columns are looked at (a mask a column, from the build), the balloons and daggers by y
 ; first. The comparisons are signed: his box can reach above the level's top, jumping.
 sp1     = zp + 94                   ; (2: his spans, the second stage's)
@@ -83,15 +83,30 @@ collide lda dead
 +       sta ctb+1
         .if !NOBALLS
         ldx #NB - 1                 ; the balloons and daggers: x from their sprite's left (oxl, oxh),
-_b      lda oact,x                  ; y from its top (oy - 26): first, as a byte goes further
+_b      lda oact,x                  ; (its kind: 1 balloon, 2 dagger)
         bne +
         jmp _bn
-+       lda oy,x
++       tay
+        lda oy,x                    ; its image's corner: its origin less (kxo, kyo)
         sec
-        sbc #26 - BBY0
-        sta obt
-        lda #0
+        sbc kyo,y
+        sta oit
+        lda oyh,x
         sbc #0
+        sta oit+1
+        lda oxl,x
+        sec
+        sbc kxo,y
+        sta oil
+        lda oxh,x
+        sbc #0
+        sta oil+1
+        lda oit                     ; its box: y first
+        clc
+        adc kby0,y
+        sta obt
+        lda oit+1
+        adc #0
         sta obt+1
         lda ctb                     ; (its top <= his bottom)
         sec
@@ -100,13 +115,12 @@ _b      lda oact,x                  ; y from its top (oy - 26): first, as a byte
         sbc obt+1
         bpl +
         jmp _bn
-+
-        lda oy,x
-        sec
-        sbc #26 - BBY1
++       lda oit
+        clc
+        adc kby1,y
         sta obb
-        lda #0
-        sbc #0
+        lda oit+1
+        adc #0
         sta obb+1
         lda obb                     ; (its bottom >= his top)
         sec
@@ -115,12 +129,11 @@ _b      lda oact,x                  ; y from its top (oy - 26): first, as a byte
         sbc ctt+1
         bpl +
         jmp _bn
-+
-        lda oxl,x                   ; then x
++       lda oil                     ; then x
         clc
-        adc #BBX0
+        adc kbx0,y
         sta obl
-        lda oxh,x
+        lda oil+1
         adc #0
         sta obl+1
         lda ctr                     ; (its left <= his right)
@@ -130,12 +143,11 @@ _b      lda oact,x                  ; y from its top (oy - 26): first, as a byte
         sbc obl+1
         bpl +
         jmp _bn
-+
-        lda oxl,x
++       lda oil
         clc
-        adc #BBX1
+        adc kbx1,y
         sta obr
-        lda oxh,x
+        lda oil+1
         adc #0
         sta obr+1
         lda obr                     ; (its right >= his left)
@@ -145,23 +157,11 @@ _b      lda oact,x                  ; y from its top (oy - 26): first, as a byte
         sbc ctl+1
         bpl +
         jmp _bn
-+
-        lda oxl,x                   ; the boxes touch: then the spans (its image: the ball sprite,
-        sta oil                     ; its corner (ox, oy - 26))
-        lda oxh,x
-        sta oil+1
-        lda oy,x
-        sec
-        sbc #26
-        sta oit
-        lda #0
-        sbc #0
-        sta oit+1
-        lda #<ballsp
++       lda kspl,y                  ; the boxes touch: then the spans
         sta osp
-        lda #>ballsp
+        lda ksph,y
         sta osp+1
-        lda #BALLH
+        lda kh,y
         sta oh
         stx ck
         jsr spans

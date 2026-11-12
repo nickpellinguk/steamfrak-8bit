@@ -102,7 +102,8 @@ s01d    = zp + 52
 s01b    = zp + 53
 NS      = 5                         ; the Scrubblies
 NB      = 6                         ; the balloons and daggers (at most)
-SPRBALL = $5480                     ; the balls' sprite
+SPRBALLOON = $5480                  ; the balloon's sprite (hazards.asm)
+SPRDAGGER = $55c0                   ; the dagger's
 flippend = zp + 54                  ; (the next frame's scroll, decided in the main program: a pair
 wanto   = zp + 55                   ;  flip for the border to make; the hidden pair's origin wanted;
 nvs     = zp + 56                   ;  the VSP offset)
@@ -199,13 +200,15 @@ start   sei
         .if !TEST
         ; Sprites 3-7: shared out by the multiplexer (mux.asm) among the virtual sprites: the
         ; Scrubblies' bodies (expanded both ways, magenta, behind the characters, so their black
-        ; and the eyes' and teeth's yellow are in front, their x following the scroll) and some
-        ; balls bouncing about
-        ldx #62
+        ; and the eyes' and teeth's yellow are in front, their x following the scroll), the
+        ; balloons and daggers (hazards.asm: their sprites made by build.mjs) and the yoyo
+        ldx #63
 -       lda sprscrub,x
         sta SPRSCRUB,x
-        lda sprball,x
-        sta SPRBALL,x
+        lda hazspr,x
+        sta SPRBALLOON,x
+        lda hazspr + 64,x
+        sta SPRDAGGER,x
         dex
         bpl -
         ldx #NS - 1
@@ -229,11 +232,7 @@ start   sei
         lda #VHIDE | VFIRST
         sta vfl + YV
         ldx #NB - 1
--       lda #(SPRBALL & $3fff) / 64
-        sta vptr + NS,x
-        lda #1
-        sta vcol + NS,x
-        lda #VHIDE
+-       lda #VHIDE
         sta vfl + NS,x
         dex
         bpl -
@@ -1128,6 +1127,7 @@ setx    lda shx
         .include "scroll.asm"
         .include "yoyo.asm"
         .include "collide.asm"
+        .include "hazards.asm"
         .include "mux.asm"
         .include "trogg.asm"
         .include "play.asm"
