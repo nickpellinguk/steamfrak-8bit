@@ -40,7 +40,16 @@ black outline with yellow eyes and teeth in the characters, and a magenta sprite
 ## Building and testing
 
     ../build.sh            # the BBC version first: the levels and graphics come from it
-    ./build.sh [--run]     # build/frak64.prg (LOAD"FRAK64.PRG",8,1 and RUN)
+    ./build.sh [--run]     # build/frak64.prg, and build/frak64.d64 (packed: see below)
+
+**To play it**: `build/frak64.d64` in VICE (drag it onto the window, or `x64sc build/frak64.d64`),
+or on a C64: `LOAD"FRAK64",8` and `RUN`. It's the program packed by
+[Exomizer](https://bitbucket.org/magli143/exomizer) (`sfx sys`: 40,143 bytes to 11,300, 45 blocks),
+unpacking itself when run; unpacked it runs from `$0801` to `$a4cf`, past BASIC's memory, which
+packing keeps out of BASIC's way. The build makes the disk image when Exomizer is at
+`/opt/frak-tools/exomizer-src/src/exomizer` (or `$EXOMIZER`): built from its source (here,
+commit `ba91318`, `make` in `src`). `build.mjs --packtest` puts the packed program in the test
+cartridge (below), so a run in VICE checks the unpacking.
 
 It needs node and [64tass](https://sourceforge.net/projects/tass64/); `--run` needs VICE's
 `x64sc` and `xvfb-run`. VICE's Debian package comes without Commodore's ROMs, so `--run` boots a
