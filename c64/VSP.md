@@ -1,6 +1,6 @@
 # Design: scrolling with VSP (DMA delay), designed against the VSP crash
 
-Status: **step 1 done** (the mechanism, proved in VICE: section 6). Replaces the column fill as the way the screen scrolls by
+Status: **built** (steps 1, 3 and 4 done, in VICE; step 2, the hardware crash test, not done). Replaces the column fill as the way the screen scrolls by
 whole characters. Sources: Christian Bauer's VIC-II article (sections 3.7.2, 3.14.6) and Linus
 Åkesson's "Safe VSP" (2013).
 
@@ -121,6 +121,24 @@ VSP, not the crash). So:
    multiplexer ready for 94.7% of frames (96.0% without), the camera waiting in 22.0% (19.4%).
 2. **Hardware crash test** (section 5.1), as a separate small program, for whoever has a prone
    machine.
-3. **The scroller:** fixed-address cells, column writes, re-centring between the pairs, the
-   camera's coarse position as s and K.
-4. **Measure** against the current fill (readiness and camera waits in the camera test).
+3. **The scroller** (done: src/scroll.asm). Each pair has an origin; a step writes one column
+   (colstep: unrolled, 25 rows of tops and bottoms, a copy for each pair, about 600 bytes), where
+   it can't be seen: walking right the cells shown as column 0 of the row below, walking left as
+   column 1, both under the cover sprite (so column 39 isn't needed after all). The camera's step
+   (cstep) stays in the pair shown while its offset is 0-16, or swaps to the hidden pair if it's
+   up to date and in range, or waits. The hidden pair is filled in the background (the row fill,
+   with the offset added) for an origin 8 columns on (or 9 back) on the side of the middle Trogg
+   is on (wantdir), then kept up to date a column at a time (bgwork). A restart fills it for
+   window 0 at offset 8 and swaps to it. The VSP offset goes with the scroll's other settings at
+   tick 25 (setvsp). Measured in VICE: the trigger's timer read could come up to 10 cycles late
+   when sprites 3-7 are fetched on line 50 (balloons at the top), which broke offsets near 16 for
+   a frame; with X for the write and no sec, there's room for it (the slide's least, at offset 16).
+   Checks: tools/scrcheck.py reads both pairs' screens from VICE and compares every cell with the
+   map, for the window each says it's up to date for: all right at 6 times in the scroll demo and
+   6 in the camera test; screenshots of the scroll demo and the camera test against the mock-up
+   differ only where the previous build's do (626 cells in 24 camera-test shots, both); key
+   scripts (Trogg's restart included) the same in py65 and VICE; the frame checker finds no
+   problems.
+4. **Measured** (Hard, the camera test, scrolling all the time): the camera waits in **0%** of
+   frames (19.4% with the fill), the multiplexer ready for 96.6% (96.0%). Memory: the program ends
+   at $3c30 (was $3830; the column writes), the rest as before.

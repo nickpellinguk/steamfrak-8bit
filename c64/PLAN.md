@@ -219,6 +219,9 @@ often everything is ready in time.
      of code, lda #value, sta cell,x for each cell, a copy per screen pair. A screen's fill about
      17,100 cycles against 23,900, the camera waiting in 10% of frames, but 20.9K of RAM: the
      cache can't be smaller than a screen's 38 columns, and the pairs, $800 apart, can't share code.)
+   - **VSP** (see VSP.md): the screen scrolled by whole characters by DMA delay on line 50, a
+     column written a step and the other pair refilled in the background for swaps. Camera test:
+     the camera waits in 0% of frames, the multiplexer ready for 96.6%.
 5. **Yoyo**: the string and the yoyo, then knocking a Scrubbly off.
 6. **Budget**: the whole frame profiled, readiness and slack measured with everything running,
    and whatever that shows fixed.

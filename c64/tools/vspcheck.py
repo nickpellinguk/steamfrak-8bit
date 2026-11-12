@@ -1,4 +1,5 @@
-# Checks a VICE screenshot of a VSP build (build.mjs --vsp S) at scroll 0: the screen should show
+# Checks a VICE screenshot of a fixed-offset VSP build at scroll 0 (step 1 of VSP.md; the build
+# option for it, --vsp S, has gone since the scroller uses VSP itself): the screen should show
 # its memory from offset S, so cell (r, c) shows map cell (r, c + S), or, past the row's end,
 # (r + 1, c + S - 40), the next row's start. Compared with the mock-up's characters
 # (../build/chars.bin, no sprites); cells whose source is unknown (the next row's columns 0-1,
