@@ -872,6 +872,9 @@ rl0     lda d18a0                   ; tick 38 (line 45): row 0's screen and set
         sta slacklo
 +
         .endif
+        .if VSP
+        jsr vspline                 ; (VSP: the screen shown from offset VSP)
+        .endif
         lda #<rowirq
         sta $fffe
         lda #>rowirq
@@ -880,6 +883,40 @@ rl0     lda d18a0                   ; tick 38 (line 45): row 0's screen and set
         ldx savx
         lda sava
         rti
+
+        .if VSP
+; VSP (a fixed offset, for now): a bad line forced on line 50 (in the top border, before row 0's
+; at 51), n = 40 - VSP cycles after cycle 14: the VIC fetches 40 - n = VSP characters fewer in
+; it, and every row after starts VSP on: the screen shown from offset VSP. The timer polled until line 50 (after its sprite fetches, cycles 1-10), then read once
+; more, and a slide to land the write on cycle 54 - VSP (Bauer's numbering, from 1). (VSPT: the
+; timer at line 50's cycle 0, as VICE's monitor counts cycles, from 0; measured. VSPK: measured,
+; from the offset seen, 3 cycles on from what VICE's count gives.)
+VSPT    = 200
+VSPK    = VSPT - 4 + VSP
+VSPB    = VSPT + 2
+        .align $80
+        .page
+vspline
+-       lda $dc07                   ; (the timer under 256: line 49)
+        bne -
+-       lda $dc06                   ; (until line 50: read on its cycle -1 to 7)
+        cmp #VSPB
+        bcs -
+        lda #VSPK                   ; (read on cycle 11-19: no DMA from there to the write)
+        sec
+        sbc $dc06
+        and #31
+        sta _br+1
+_br     bpl _sl
+_sl     .fill 31, $c9               ; (a cycle for each byte skipped)
+        .byte $c5, $ea
+        lda #(D011A & $f8) | 2      ; YSCROLL 2: line 50 a bad line, from now
+vspw    sta $d011
+        lda #D011A                  ; (back, before line 51)
+        sta $d011
+        rts
+        .endpage
+        .endif
 
         .include "tails.inc"
 

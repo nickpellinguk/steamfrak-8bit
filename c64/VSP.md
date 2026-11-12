@@ -1,6 +1,6 @@
 # Design: scrolling with VSP (DMA delay), designed against the VSP crash
 
-Status: **design**, nothing built yet. Replaces the column fill as the way the screen scrolls by
+Status: **step 1 done** (the mechanism, proved in VICE: section 6). Replaces the column fill as the way the screen scrolls by
 whole characters. Sources: Christian Bauer's VIC-II article (sections 3.7.2, 3.14.6) and Linus
 Åkesson's "Safe VSP" (2013).
 
@@ -42,8 +42,8 @@ address, K + 40r + m: a coarse step is just s ± 1, and one new column to write:
   column 0 of the row below, under the cover sprite, so they can be written before the step with
   nothing seen. 25 cells in the tops screen, 25 in the bottoms.
 - **Walking left** (s - 1): the new left-hand column. Before the step its cells are shown as
-  column 39 of the row above; in 38-column mode that column is under the right border at the
-  step's XSCROLL (**to check in VICE**). If it isn't, the writes go in after the raster's passed.
+  column 39 of the row above, which in 38-column mode is always under the right border (its
+  pixels start at 344 + XSCROLL in VICE's screenshot; the border at 343).
 
 **Re-centring.** When s would leave 0-16, the display swaps to the other pair, filled for the
 same view with s = 8, and the pair it leaves is refilled in the background for the next swap.
@@ -108,9 +108,17 @@ VSP, not the crash). So:
 
 ## 6. Steps
 
-1. **VICE proof of the mechanism:** a build option (`--vsp N`) that applies a fixed offset s,
-   0-16, to the current display; screenshots checked against the screen memory shown from
-   offset s, all 17 offsets, with sprites. Also check column 39 under the right border.
+1. **VICE proof of the mechanism** (done). `build.mjs --vsp S` applies a fixed offset S (1-16) in
+   tick 38 (vspline): the timer polled into line 50, read again after the line's sprite fetches,
+   and a slide to the `$d011` write. Measured: at line 50's cycle 0 (VICE's count, from 0) the
+   timer reads 200; the write lands on the same cycle every frame. `tools/vspcheck.py` checks a
+   screenshot against the memory shown from offset S (cell (r, c) from map cell (r, c + S), or
+   the next row's past the row's end). All 16 offsets fit exactly, the picture where XSCROLL 7
+   puts it; the only cells that differ are the sprites' (they stay put on the screen, and the
+   moving ones are elsewhere in each run), as in a run without VSP. The FLI rows follow the
+   offset, the FLI bug's columns stay under the cover sprite. The wait for line 50 costs about
+   300 cycles a frame: in the camera test (with the old fill still doing all its work), the
+   multiplexer ready for 94.7% of frames (96.0% without), the camera waiting in 22.0% (19.4%).
 2. **Hardware crash test** (section 5.1), as a separate small program, for whoever has a prone
    machine.
 3. **The scroller:** fixed-address cells, column writes, re-centring between the pairs, the
