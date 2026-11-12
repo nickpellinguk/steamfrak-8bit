@@ -1,8 +1,10 @@
-# Checks collide (src/collide.asm, the box test) against a reference in Python: thousands of random
+# Checks collide (src/collide.asm: boxes, then spans) against a reference in Python: thousands of random
 # situations, Trogg (any frame) near a random Scrubbly, gem, key or ball, some Scrubblies yo-yoed
 # off, some balls out; the program's collide run in a 6502 emulator (py65) on each, and whether he
-# dies and which gem or key he's touching compared with the reference's, from the same tables
-# (build/collide.inc). Also counts the hits of each kind, so the test is seen to reach them.
+# dies and which gem or key he's touching compared with the reference's: its boxes from the same
+# tables (build/collide.inc), its spans from the images themselves. Also counts the hits of each
+# kind (so the test is seen to reach them), the boxes that touch with no spans meeting, and the
+# situations where spans and an exact pixel test disagree (what the spans approximate).
 #   python3 collidetest.py [N]      (the build as last made, with the balls: not --noballs)
 import os, random, re, sys
 from py65.devices.mpu6502 import MPU
@@ -15,7 +17,7 @@ for line in open(os.path.join(B, 'frak64.lbl')):
 tab, const = {}, {}
 for line in open(os.path.join(B, 'collide.inc')):
     m = re.match(r'^(\w+)\s+\.byte (.*)', line)
-    if m: tab[m.group(1)] = [int(v) for v in m.group(2).split(',')]
+    if m and re.fullmatch(r'[\d, ]+', m.group(2).strip()): tab[m.group(1)] = [int(v) for v in m.group(2).split(',')]
     m = re.match(r'^(\w+)\s*=\s*(\d+)', line)
     if m: const[m.group(1)] = int(m.group(2))
 s8 = lambda v: v - 256 if v > 127 else v
@@ -24,6 +26,28 @@ NB = int(re.search(r'^NB\s*=\s*(\d+)', open(os.path.join(DIR, '..', 'src', 'frak
 scrub = [(tab['scbll'][i] | tab['scblh'][i] << 8, tab['scbrl'][i] | tab['scbrh'][i] << 8, tab['scbt'][i], tab['scbb'][i]) for i in range(NS)]
 picks = [(tab['pkll'][i] | tab['pklh'][i] << 8, tab['pkrl'][i] | tab['pkrh'][i] << 8, tab['pkt'][i], tab['pkb'][i]) for i in range(NP)]
 ov = lambda a, b: a[0] <= b[1] and b[0] <= a[1] and a[2] <= b[3] and b[2] <= a[3]
+# the second stage, from the images themselves (not the build's tables): Trogg's frames as the C64
+# shows them, the Scrubbly, gem and key as the mock-up draws them, the ball sprite
+import json
+TJ = json.load(open(os.path.join(B, 'trogg.json'))); PJ = json.load(open(os.path.join(B, 'picks.json')))
+SJ = json.load(open(os.path.join(B, 'scrub.json')))
+ballb = [int(v[1:], 16) if v != '0' else 0 for v in re.findall(r'\$[0-9a-f]{2}|\b0\b', re.search(r'^sprball +\.byte .*(\n +\.byte .*)*', open(os.path.join(DIR, '..', 'src', 'mux.asm')).read(), re.M).group(0))]
+BALLG = [[1 if (ballb[y * 3 + (x >> 3)] >> (7 - (x & 7))) & 1 else -1 for x in range(24)] for y in range(21)]
+def solid(g):                                   # (each row's solid columns)
+    return [[x for x, p in enumerate(r) if p >= 0] for r in g]
+TS = [solid(fr['shown']) for fr in TJ]; SS = solid(PJ['grids']['IMG_Scrubbly']); BS = solid(BALLG)
+KS = {k: solid(v) for k, v in PJ['grids'].items()}
+def hit(f, tx, ty, os_, ol, ot, exact=False):  # spans (or, exact: pixels) of his frame f and the object's image at (ol, ot)
+    hl, ht = tx - TJ[f]['left'], ty - 34
+    for r, xs in enumerate(TS[f]):
+        orow = ht + r - ot
+        if not xs or not (0 <= orow < len(os_)) or not os_[orow]: continue
+        if exact:
+            if set(x + hl for x in xs) & set(x + ol for x in os_[orow]): return True
+        elif xs[0] + hl <= os_[orow][-1] + ol and os_[orow][0] + ol <= xs[-1] + hl: return True
+    return False
+scrimg = [(p['x'] + 8, p['top'] + 24) for p in SJ['placed']]
+pkimg = [(p['left'], p['top'], KS[p['name']]) for p in PJ['picks']]
 
 prg = open(os.path.join(B, 'frak64.prg'), 'rb').read()
 base = bytearray(65536); base[0x0801:0x0801 + len(prg) - 2] = prg[2:]
@@ -56,11 +80,19 @@ for n in range(N):
     got = (mem[lbl['dead']] != 0, mem[lbl['ptouch']], mem[lbl['ptouchn']])
     # the reference
     t = (tx + s8(tab['tbx0'][f]), tx + s8(tab['tbx1'][f]), ty + s8(tab['tby0'][f]), ty + s8(tab['tby1'][f]))
-    dies = any(not knocked[i] and ov(t, scrub[i]) for i in range(NS))
-    if not dies: dies = any(ov(t, (bx + const['BBX0'], bx + const['BBX1'], by - 26 + const['BBY0'], by - 26 + const['BBY1'])) for i, bx, by in balls)
-    touched = [] if dies else [i for i in range(NP) if ov(t, picks[i])]           # (the last noted: the highest)
+    sd = [i for i in range(NS) if not knocked[i] and ov(t, scrub[i])]
+    bd = [(bx, by) for i, bx, by in balls if ov(t, (bx + const['BBX0'], bx + const['BBX1'], by - 26 + const['BBY0'], by - 26 + const['BBY1']))]
+    pd = [i for i in range(NP) if ov(t, picks[i])]
+    boxed = bool(sd or bd or pd)
+    sh = [i for i in sd if hit(f, tx, ty, SS, *scrimg[i])]
+    dies = bool(sh) or any(hit(f, tx, ty, BS, bx, by - 26) for bx, by in bd)
+    touched = [] if dies else [i for i in pd if hit(f, tx, ty, pkimg[i][2], pkimg[i][0], pkimg[i][1])]   # (the last noted: the highest)
     want = (dies, touched[-1] if touched else 0xff, len(touched))
-    hits['scrubbly' if dies and any(not knocked[i] and ov(t, scrub[i]) for i in range(NS)) else 'ball' if dies else 'pick' if touched else 'none'] += 1
+    hits['scrubbly' if sh else 'ball' if dies else 'pick' if touched else 'none'] += 1
+    if boxed and not (dies or touched): hits['boxes only'] = hits.get('boxes only', 0) + 1
+    xd = [i for i in sd if hit(f, tx, ty, SS, *scrimg[i], True)] or [1 for bx, by in bd if hit(f, tx, ty, BS, bx, by - 26, True)]
+    xt = [] if xd else [i for i in pd if hit(f, tx, ty, pkimg[i][2], pkimg[i][0], pkimg[i][1], True)]
+    if (bool(xd), xt[-1] if xt else 0xff) != want[:2]: hits['spans not pixels'] = hits.get('spans not pixels', 0) + 1
     if got != want:
         bad += 1
         if bad <= 10: print(f'tx {tx} ty {ty} frame {f} knocked {knocked} balls {balls}: program {got}, reference {want}')

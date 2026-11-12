@@ -125,7 +125,18 @@ writeFileSync(DIR + 'masks.inc', `; made by tools/build.mjs\nmasks   .byte ${mas
                  // (and each band of 32 lines' objects: his columns' and his bands' in common)
                  const bm = Array(8).fill(0), ys = [...scrub.placed.map(p => [p.top + 24 + sbx.y0, p.top + 24 + sbx.y1]), ...pk.map(p => [p.top + p.box.y0, p.top + p.box.y1])];
                  ys.forEach(([t, b], k) => { for (let c = t >> 5; c <= b >> 5; c++) bm[c] |= 1 << k; });
-                 return B('colml', m.map(v => v & 255)) + B('colmh', m.map(v => v >> 8)) + B('bandml', bm.map(v => v & 255)) + B('bandmh', bm.map(v => v >> 8)); })());
+                 return B('colml', m.map(v => v & 255)) + B('colmh', m.map(v => v >> 8)) + B('bandml', bm.map(v => v & 255)) + B('bandmh', bm.map(v => v >> 8)); })() +
+        // (the second stage: each image's spans, a row's leftmost and rightmost solid pixel, 255
+        // for an empty row; and each object's image's corner)
+        (() => { const sp = g => g.flatMap(r => { const xs = r.map((p, x) => p >= 0 ? x : -1).filter(x => x >= 0); return xs.length ? [xs[0], xs[xs.length - 1]] : [255, 255]; });
+                 const g = pj.grids, kinds = { IMG_Key: 'keysp', IMG_Gem: 'gemsp' };
+                 return B('tleft', tj.map(f => f.left)) + `tspl    .byte ${tj.map((f, i) => `<(tspan + ${i * 68})`).join(', ')}\ntsph    .byte ${tj.map((f, i) => `>(tspan + ${i * 68})`).join(', ')}\n` +
+                     B('tspan', tj.flatMap(f => sp(f.shown))) + B('scrsp', sp(g.IMG_Scrubbly)) + `SCRH    = ${g.IMG_Scrubbly.length}\n` +
+                     B('keysp', sp(g.IMG_Key)) + B('gemsp', sp(g.IMG_Gem)) + B('ballsp', sp(bg)) + `BALLH   = ${bg.length}\n` +
+                     B('scil', scrub.placed.map(p => (p.x + 8) & 255)) + B('scih', scrub.placed.map(p => (p.x + 8) >> 8)) + B('scit', scrub.placed.map(p => p.top + 24)) +
+                     B('pkil', pk.map(p => p.left & 255)) + B('pkih', pk.map(p => p.left >> 8)) + B('pkit', pk.map(p => p.top)) +
+                     `pkspl   .byte ${pk.map(p => '<' + kinds[p.name]).join(', ')}\npksph   .byte ${pk.map(p => '>' + kinds[p.name]).join(', ')}\n` +
+                     B('pkh', pk.map(p => g[p.name].length)); })());
 }
 const sb = Buffer.alloc(64);
 scrub.sprite.forEach((row, y) => { for (let k = 0; k < 3; k++) sb[y * 3 + k] = parseInt(row.slice(k * 8, k * 8 + 8), 2); });

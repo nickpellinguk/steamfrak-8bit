@@ -186,7 +186,7 @@ if (fromTxt) SCRUB = readFileSync(TXT, 'utf8').split('\n').filter(l => /^\s*\d+ 
 const tag = new Uint8Array(W * H), ovl = new Int8Array(W * H).fill(-1);   // (ovl: the keys' yellow, a sprite behind them when one's free)
 const SH = SCRUB.length, placed = [];   // (tag: 1 a Scrubbly's, 2 its teeth's yellow, 4 its eyes')         // 1 a Scrubbly's, 2 its teeth's cells (lines 24-31, columns 8-23), 3 its feet (lines 40-43)
 // (each gem's and key's place, as drawn, and its tight box: the solid pixels' extent; picks.json)
-const picks = [], tightBox = g => { let x0 = 99, x1 = -1, y0 = 99, y1 = -1; g.forEach((r, y) => r.forEach((p, x) => { if (p >= 0) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); } })); return { x0, x1, y0, y1 }; };
+const picks = [], pickGrids = {}, tightBox = g => { let x0 = 99, x1 = -1, y0 = 99, y1 = -1; g.forEach((r, y) => r.forEach((p, x) => { if (p >= 0) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); } })); return { x0, x1, y0, y1 }; };
 e.draw_img.forEach((img, k) => {
     const { im, out } = imagePixels(img);
     let pix = out, left = Math.round((e.draw_x[k] - im.xo) / 8) * 8, top = Math.round((e.draw_y[k] - im.yo) / 4) * 4;
@@ -213,6 +213,7 @@ e.draw_img.forEach((img, k) => {
         // (nothing behind it either: a ladder's foot, say)
         for (let y = 0; y < im.h; y++) for (let x = 0; x < im.w; x++) if (inside(left + x, top + y)) art[at2(left + x, top + y)] = 0;
         picks.push({ name: im.name, left, top, box: tightBox(pix) });
+        pickGrids[im.name] = pix;                    // (its pixels: -1 clear; for the collision spans)
         console.log(`${im.name} ${k}: left ${left} (from its unit ${band >= 0 ? left - (left - Math.floor((16 - im.w) / 2)) : '?'}, mod 8 ${left & 7}), top ${top} (mod 4 ${top & 3})`);
     }
     pix.forEach((row, y) => row.forEach((p, x) => {
@@ -343,7 +344,7 @@ for (const { left, top } of placed) for (let y = 0; y < 42; y++) for (let x = 0;
 writeFileSync(`${OUT}/sprite.txt`, '; The Scrubbly\'s sprite, 24 x 21 (# solid magenta, . clear), shown expanded to 48 x 42\n' + SPR.map(r => r.map(v => v ? '#' : '.').join('')).join('\n') + '\n');
 // (for the demo: where the Scrubblies' sprites go, the sprite, and the picture with them but
 // without the keys' sprites)
-if (!SUF) writeFileSync(`${OUT}/picks.json`, JSON.stringify({ picks, scrubBox: tightBox(SCRUB) }, null, 1));
+if (!SUF) writeFileSync(`${OUT}/picks.json`, JSON.stringify({ picks, scrubBox: tightBox(SCRUB), grids: { IMG_Scrubbly: SCRUB, ...pickGrids } }));
 writeFileSync(`${OUT}/scrub${SUF}.json`, JSON.stringify({ placed: placed.map(({ left, top }) => ({ x: left - 8, top })), sprite: SPR.map(r => r.join('')) }));
 writeFileSync(`${OUT}/charsspr${SUF}.bin`, shown.subarray(0, W * HS));
 // ---- The picture (the keys and gems drawn over the juggled art and the result)

@@ -1,6 +1,6 @@
 # Plan: a playable A_1
 
-Status: **part 1 done, part 2 under way (milestone 7 done)** (milestones 1-5: the data; Trogg shown; his movement and the keys; the
+Status: **part 1 done, part 2 under way (milestones 7-8 done)** (milestones 1-5: the data; Trogg shown; his movement and the keys; the
 camera, scrolling by VSP; the yoyo and knocking Scrubblies off): 95.7% of frames ready on Hard
 scrolling all the time, the camera never waiting; packed onto `build/frak64.d64`. **Part 2**
 (below): A_1 played as the BBC version plays it. Each milestone is checked before the next, and
@@ -274,12 +274,19 @@ the level.
    Scrubbly at the top of the F (he dies, the level restarts) and onto the gem on its middle
    platform (touched), the same in py65 and VICE; in VICE, the balloons and daggers kill him
    standing at the start (4 times in 25 s).
-8. **Collisions, by pixel.** After the box, `hit_test`'s spans: each image's leftmost and
-   rightmost solid pixel on each row, Trogg's and the object's compared on their shared rows (as
-   GameMaker's precise collisions). The spans are made by the build from the images as the C64
-   shows them (Trogg's 15 frames as trogg.mjs cuts them, the Scrubbly as juggled, the balloon,
-   the dagger, the gem, the key), not the BBC's. Check: against a brute-force pixel test in
-   Python over every frame and every offset in range; then the key scripts.
+8. **Collisions, by pixel** (done: `spans` in src/collide.asm). After the boxes touch, the BBC
+   version's `hit_test`: on each row the two images share, his solid pixels' extent (leftmost to
+   rightmost) against the object's; positions biased by 128 so the comparisons are unsigned. The
+   spans made by the build from the images as the C64 shows them: Trogg's 15 frames (trogg.json),
+   the Scrubbly, gem and key as the mock-up draws them (`picks.json` now carries their grids),
+   the ball sprite. Checked: `tools/collidetest.py`, its reference now taking the spans from the
+   images themselves (not the build's tables), on 5,000 random situations: none differ; the boxes
+   touched without the spans meeting in 285 of them; spans and an exact pixel test disagree in 1.
+   Key scripts as in 7, the same in py65 and VICE (walking into the Scrubbly on top of the F, he
+   now dies at x 64, not 62). Cost: 880 cycles a tick on average with no balls out, 1,430 with
+   six, at worst about 3,700 (several objects' rows compared); in play, invincible (so balloons
+   pass through him, compared every tick; in a real game the first touch kills him), 92.1% of
+   frames ready (94.3% with boxes alone). For the budget pass.
 9. **Gems and keys.** One touched is picked up: gone from the level map and from both pairs, by
    the Scrubblies' patching (`pcell`), and back at a restart; gems counted; the last key
    completes the level. The packer makes each one's removed cells, as it does the Scrubblies'.
