@@ -134,6 +134,12 @@ if (!process.argv.includes('--nopack')) execFileSync('node', [TOOLS + 'pack.mjs'
         return `NCOL = ${NCOL}\n`.replace('NCOL', xcol.toUpperCase() + 'N') + t(xcol, idx) + t(list, lst);
     }
 }
+{   // the level map a column at a time (jit.asm): each column's 25 tops, then its 25 bottoms
+    const t = readFileSync(DIR + 'tops.bin'), b = readFileSync(DIR + 'bottoms.bin'), nc = t.length / 25;
+    const m = Buffer.alloc(t.length * 2);
+    for (let c = 0; c < nc; c++) for (let r = 0; r < 25; r++) { m[c * 50 + r] = t[r * nc + c]; m[c * 50 + 25 + r] = b[r * nc + c]; }
+    writeFileSync(DIR + 'colmap.bin', m);
+}
 execFileSync('64tass', ['-q', '-a', '-C', ...defs, '-I', DIR, '--labels=' + DIR + 'frak64.lbl', '-L', DIR + 'frak64.lst', '-o', DIR + 'frak64.prg', SRC + 'frak64.asm'], { cwd: DIR, stdio: 'inherit' });
 const lbl = Object.fromEntries(readFileSync(DIR + 'frak64.lbl', 'utf8').split('\n').map(l => l.match(/^(\w+)\s*=\s*\$([0-9a-f]+)/i)).filter(Boolean).map(m => [m[1], parseInt(m[2], 16)]));
 const prg = readFileSync(DIR + 'frak64.prg');

@@ -367,10 +367,11 @@ start   sei
         lda #0
         sta back
         sta working
+        lda #2                      ; (screen columns 2-39: 0-2 are under the cover sprite)
         sta prow
--       jsr fillrow
+-       jsr fillcol
         lda prow
-        cmp #ROWS
+        cmp #40
         bne -
         jsr usefront
         lda #1
@@ -423,7 +424,7 @@ main    .if !TEST
         sta working                 ; a new column: start again
         ldx #$ff
         stx prepared
-        ldx #0
+        ldx #2
         stx prow
         lda front
         eor #1
@@ -432,12 +433,12 @@ main    .if !TEST
         cmp #$ff
         beq idle
         lda prow
-        cmp #ROWS
+        cmp #40
         bcc +
         lda working                 ; done
         sta prepared
         jmp idle
-+       jsr fillrow
++       jsr fillcol
         jmp main
 ; (nothing to do: a mix of long instructions and taken branches, as the game will have, to
 ; give the interrupt every lateness it can meet)
@@ -463,62 +464,7 @@ nextframe
         sta muxbusy
         rts
 
-; Fill row prow of pair back for column working (tops and bottoms), then prow+1: columns 2-39
-; (0-2 are the FLI bug's, never seen, under the cover sprite; 2 is filled too so the loop, unrolled
-; once, takes the columns in twos), from tables of each row's addresses
-fillrow ldx prow
-        lda fstlo,x                 ; source: the level's row, from the column
-        clc
-        adc working
-        sta _sa+1
-        sta _sb+1
-        lda fsthi,x
-        adc #0
-        sta _sa+2
-        sta _sb+2
-        lda fsblo,x
-        clc
-        adc working
-        sta _ba+1
-        sta _bb+1
-        lda fsbhi,x
-        adc #0
-        sta _ba+2
-        sta _bb+2
-        lda fdlo,x                  ; destination: the pair's screens, the row (tops and bottoms
-        sta _ta+1                   ; the same but for the high byte)
-        sta _tb+1
-        sta _ua+1
-        sta _ub+1
-        lda back
-        bne _p1
-        lda fdt0,x
-        sta _ta+2
-        sta _tb+2
-        lda fdb0,x
-        sta _ua+2
-        sta _ub+2
-        bne _go                     ; (always)
-_p1     lda fdt1,x
-        sta _ta+2
-        sta _tb+2
-        lda fdb1,x
-        sta _ua+2
-        sta _ub+2
-_go     ldx #37
-_sa     lda $ffff,x
-_ta     sta $ffff,x
-_ba     lda $ffff,x
-_ua     sta $ffff,x
-        dex
-_sb     lda $ffff,x
-_tb     sta $ffff,x
-_bb     lda $ffff,x
-_ub     sta $ffff,x
-        dex
-        bpl _sa
-        inc prow
-        rts
+        .include "jit.asm"
 
 ; The pair shown: point the interrupt at its $d018 tables
 usefront
@@ -1102,33 +1048,6 @@ d18b0   .fill ROWS + 1
 d18a1   .fill ROWS + 1
 d18b1   .fill ROWS + 1
 csbits  .byte ((CS0 & $3800) >> 10), ((CS1 & $3800) >> 10)
-fstlo   .for i = 0, i < ROWS, i += 1   ; (fillrow's: each row's source and destination, from column 2)
-        .byte <(tops + 2 + i * NC)
-        .endfor
-fsthi   .for i = 0, i < ROWS, i += 1
-        .byte >(tops + 2 + i * NC)
-        .endfor
-fsblo   .for i = 0, i < ROWS, i += 1
-        .byte <(bottoms + 2 + i * NC)
-        .endfor
-fsbhi   .for i = 0, i < ROWS, i += 1
-        .byte >(bottoms + 2 + i * NC)
-        .endfor
-fdlo    .for i = 0, i < ROWS, i += 1
-        .byte <(i * 40 + 2)
-        .endfor
-fdt0    .for i = 0, i < ROWS, i += 1
-        .byte >(SCR0 + i * 40 + 2)
-        .endfor
-fdb0    .for i = 0, i < ROWS, i += 1
-        .byte >(SCR1 + i * 40 + 2)
-        .endfor
-fdt1    .for i = 0, i < ROWS, i += 1
-        .byte >(SCR2 + i * 40 + 2)
-        .endfor
-fdb1    .for i = 0, i < ROWS, i += 1
-        .byte >(SCR3 + i * 40 + 2)
-        .endfor
 bandset .binary "bandset.bin"
 junk    .fill 16
 hist    .fill 32
@@ -1147,6 +1066,7 @@ end
         .fill $6800 - *, 0
 TROGG   .binary "trogg.bin"         ; Trogg's sprites: per frame outline P1-P3, infill P1-P3
         .cerror * > $8000, "Trogg's sprites run out of the VIC bank"
-tops    .binary "tops.bin"          ; (the level map, past the VIC bank)
-bottoms .binary "bottoms.bin"
-        .dsection high              ; (tables that needn't be low: mux.asm's, play.asm's)
+colmap  .binary "colmap.bin"        ; (the level map, a column at a time: its tops, its bottoms)
+        .dsection high              ; (tables that needn't be low: mux.asm's, play.asm's, jit.asm's)
+hiend
+        .cerror $e0 + 2 * JCOLS - ($d0 - JPAGE) > $ff, "no room for the column renderer's code"
