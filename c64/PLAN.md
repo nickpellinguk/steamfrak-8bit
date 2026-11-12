@@ -1,9 +1,14 @@
 # Plan: a playable A_1
 
-Status: **milestones 1-5 done** (the data; Trogg shown; his movement and the keys; the camera,
-scrolling by VSP; the yoyo and knocking Scrubblies off): 95.7% of frames ready on Hard scrolling
-all the time, the camera never waiting. Next: milestone 6, the budget pass. Each milestone is checked before the next, and this
-file is updated as they're done.
+Status: **part 1 done** (milestones 1-5: the data; Trogg shown; his movement and the keys; the
+camera, scrolling by VSP; the yoyo and knocking Scrubblies off): 95.7% of frames ready on Hard
+scrolling all the time, the camera never waiting; packed onto `build/frak64.d64`. **Part 2**
+(below): A_1 played as the BBC version plays it. Each milestone is checked before the next, and
+this file is updated as they're done.
+
+The exit milestone is A_1 playable on a PAL C64: in VICE's `x64sc` (the reference: the other
+accurate emulators, Hoxs64, Denise and Micro64, and FPGA machines should do, untested), from
+`build/frak64.d64`.
 
 ## Scope
 
@@ -19,7 +24,8 @@ In:
   Trogg back at the start, the scroll back to the left, every Scrubbly back, the balloons and
   daggers gone. No checkpoints.
 
-Not yet: collisions with balloons, daggers, gems and keys; checkpoints; sound.
+Not yet (part 2, below): collisions with balloons, daggers, gems and keys; sound. No
+checkpoints.
 
 ## 1. The level's geometry, as the C64 draws it
 
@@ -240,8 +246,58 @@ often everything is ready in time.
    scripts the same in py65 and VICE. Camera test: multiplexer ready 95.7%, the camera never
    waits; the frame checker (now taking the virtual sprites' number from the labels) finds no
    problems.
-6. **Budget**: the whole frame profiled, readiness and slack measured with everything running,
-   and whatever that shows fixed.
+6. **Budget**: moved to part 2 (milestone 12), to be done with everything running.
+
+## Part 2: A_1 as the BBC version plays it
+
+The levels stay static, as in the BBC original: the Scrubblies stand where they are (the 65C02
+code here ports the Steam version, whose Scrubblies patrol; that part is left out). The
+reference for everything else is that code (`../src/frak.asm`): `check_collisions`, `hit_test`,
+`collide`, `spawn_balloon`, `spawn_dagger`, `trogg_dies`, `level_complete`, `draw_hud`. Still no
+checkpoints (the BBC version saves one at each key but the last): death restarts the level.
+
+7. **Collisions, by box.** Trogg against the Scrubblies (deadly), the balloons and daggers (all
+   deadly), the gems and keys (picked up): first by box, as `check_collisions` does (the
+   objects' character columns against his, then the images' tight boxes). Everything in the
+   C64's places: the Scrubblies, gems and keys where the mock-up drew them (snapped), so
+   `mockup.mjs` exports the gems' and keys' places with the Scrubblies'; the balloons and
+   daggers where their sprites are. Check: key scripts walking him into each kind, in py65 and
+   VICE alike; a test build drawing the boxes.
+8. **Collisions, by pixel.** After the box, `hit_test`'s spans: each image's leftmost and
+   rightmost solid pixel on each row, Trogg's and the object's compared on their shared rows (as
+   GameMaker's precise collisions). The spans are made by the build from the images as the C64
+   shows them (Trogg's 15 frames as trogg.mjs cuts them, the Scrubbly as juggled, the balloon,
+   the dagger, the gem, the key), not the BBC's. Check: against a brute-force pixel test in
+   Python over every frame and every offset in range; then the key scripts.
+9. **Gems and keys.** One touched is picked up: gone from the level map and from both pairs, by
+   the Scrubblies' patching (`pcell`), and back at a restart; gems counted; the last key
+   completes the level. The packer makes each one's removed cells, as it does the Scrubblies'.
+   Risk: room in the character sets (set 0 is full): measured first, by packing the variant
+   with them all gone; if it doesn't fit, a third set at `$7000` (the plan's fallback since part
+   1). Check: the screenshots against a mock-up variant with them gone, and screen memory
+   against the map (scrcheck.py).
+10. **Balloons and daggers, properly.** Spawned as `spawn_balloon` and `spawn_dagger` do: a
+    balloon at the level's bottom at a random x within half the spread (280 on Hard) of Trogg,
+    rising at 1.3 pixels a tick after its pause; a dagger at the top, aimed at x + h * 4/3 (h:
+    his height above it) so it arrives about where he is, going down and left (0.88, 0.66 a
+    tick); the CPC port's numbers for Hard, as now. Their own sprites (the BBC's IMG_Balloon and
+    IMG_DaggerLR, cut for the C64) in place of the ball. The yoyo pops them (`yoyo_collide`'s
+    second half), and comes back. Check: spawn places and paths against the 65C02 code run in
+    py65 with the same random numbers.
+11. **Death and the level's end.** Dying: Trogg stops, the "FRAK!" bubble at (x + 12, y - 26)
+    for the 50 ticks before the restart. The last key: the level complete (`level_complete`), a
+    pause, then A_1 again (the only level). The timer (m:ss) and rating that `draw_hud` draws
+    are left for later: there's no spare character row for them, and sprites for them would
+    take from the multiplexer, so how is a separate decision.
+12. **Budget**, with everything running: the whole frame profiled, readiness and slack measured
+    in the camera test and in play, and whatever that shows fixed.
+13. **Sound.** The sound effects on the SID (`SFX_CHING` for a pickup, `SFX_SQUEAL`, `SFX_DAGGER`,
+    `SFX_POP`, `SFX_THUD`), from the BBC version's definitions, played in the border; the music
+    (the victory tune) after. Its time measured against the budget from 12.
+
+Loose ends, not in the way of the exit milestone: the yoyo's yellow highlight (multicolour, so
+`$d01c` in the multiplexer's register writes); a PAL check at the start, with a message on an
+NTSC machine instead of a garbled screen; the VSP crash test on hardware (VSP.md, step 2).
 
 ## Unknowns, measured early rather than guessed
 
