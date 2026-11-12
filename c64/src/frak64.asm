@@ -367,6 +367,7 @@ start   sei
         lda #0
         sta back
         sta working
+        jsr jinit                   ; (the column renderer's code)
         lda #2                      ; (screen columns 2-39: 0-2 are under the cover sprite)
         sta prow
 -       jsr fillcol
