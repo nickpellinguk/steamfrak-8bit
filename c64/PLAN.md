@@ -253,8 +253,9 @@ often everything is ready in time.
 The levels stay static, as in the BBC original: the Scrubblies stand where they are (the 65C02
 code here ports the Steam version, whose Scrubblies patrol; that part is left out). The
 reference for everything else is that code (`../src/frak.asm`): `check_collisions`, `hit_test`,
-`collide`, `spawn_balloon`, `spawn_dagger`, `trogg_dies`, `level_complete`, `draw_hud`. Still no
-checkpoints (the BBC version saves one at each key but the last): death restarts the level.
+`collide`, `spawn_balloon`, `spawn_dagger`, `trogg_dies`, `level_complete`, `draw_hud`,
+`check_checkpoint`, `save_checkpoint`, `restore_checkpoint`. Until milestone 12, death restarts
+the level.
 
 7. **Collisions, by box.** Trogg against the Scrubblies (deadly), the balloons and daggers (all
    deadly), the gems and keys (picked up): first by box, as `check_collisions` does (the
@@ -289,11 +290,21 @@ checkpoints (the BBC version saves one at each key but the last): death restarts
     pause, then A_1 again (the only level). The timer (m:ss) and rating that `draw_hud` draws
     are left for later: there's no spare character row for them, and sprites for them would
     take from the multiplexer, so how is a separate decision.
-12. **Budget**, with everything running: the whole frame profiled, readiness and slack measured
+12. **Checkpoints.** After Trogg picks up a key that isn't the last, the level's state is saved
+    once he's standing (or walking) on a platform, and not dying in the same tick, as
+    `check_checkpoint` does: which gems, keys and Scrubblies are gone (and the counts), his place
+    and facing, the balloons' and daggers' timers. Dying then goes back to it (`restore_checkpoint`):
+    the map and both pairs put back to that state (the cells picked up or knocked off since
+    restored, those before kept), the balloons and daggers cleared, his movement reset, and a
+    restart counted; with no checkpoint yet, the level from the start, as now. The camera's
+    restart jumps to the window around him (the hidden pair filled for it), not only to window
+    0. Check: key scripts that pick up a key, land, die, and come back where they should, with
+    the map and screens checked (scrcheck.py), in py65 and VICE alike.
+13. **Budget**, with everything running: the whole frame profiled, readiness and slack measured
     in the camera test and in play, and whatever that shows fixed.
-13. **Sound.** The sound effects on the SID (`SFX_CHING` for a pickup, `SFX_SQUEAL`, `SFX_DAGGER`,
+14. **Sound.** The sound effects on the SID (`SFX_CHING` for a pickup, `SFX_SQUEAL`, `SFX_DAGGER`,
     `SFX_POP`, `SFX_THUD`), from the BBC version's definitions, played in the border; the music
-    (the victory tune) after. Its time measured against the budget from 12.
+    (the victory tune) after. Its time measured against the budget from 13.
 
 Loose ends, not in the way of the exit milestone: the yoyo's yellow highlight (multicolour, so
 `$d01c` in the multiplexer's register writes); a PAL check at the start, with a message on an
