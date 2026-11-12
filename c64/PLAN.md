@@ -1,7 +1,8 @@
 # Plan: a playable A_1
 
-Status: **milestones 1-5 done** (the data; Trogg shown; his movement and the keys; the camera),
-with the CPU budget trimmed to 96% ready on Hard while the screen scrolls (see milestone 4). Each milestone is checked before the next, and this
+Status: **milestones 1-5 done** (the data; Trogg shown; his movement and the keys; the camera,
+scrolling by VSP; the yoyo and knocking Scrubblies off): 95.7% of frames ready on Hard scrolling
+all the time, the camera never waiting. Next: milestone 6, the budget pass. Each milestone is checked before the next, and this
 file is updated as they're done.
 
 ## Scope
