@@ -345,7 +345,9 @@ for (const { left, top } of placed) for (let y = 0; y < 42; y++) for (let x = 0;
 writeFileSync(`${OUT}/sprite.txt`, '; The Scrubbly\'s sprite, 24 x 21 (# solid magenta, . clear), shown expanded to 48 x 42\n' + SPR.map(r => r.map(v => v ? '#' : '.').join('')).join('\n') + '\n');
 // (for the demo: where the Scrubblies' sprites go, the sprite, and the picture with them but
 // without the keys' sprites)
-if (!SUF) writeFileSync(`${OUT}/picks.json`, JSON.stringify({ picks, scrubBox: tightBox(SCRUB), grids: { IMG_Scrubbly: SCRUB, ...pickGrids } }));
+// (and the balloon, dagger and FRAK! bubble: their pixels, and their origins' place in them)
+const hazards = Object.fromEntries(['IMG_Balloon', 'IMG_DaggerLR', 'IMG_Frak'].map(n => { const { im, out } = imagePixels(images.findIndex(m => m.name === n)); return [n, { grid: out, xo: im.xo, yo: im.yo }]; }));
+if (!SUF) writeFileSync(`${OUT}/picks.json`, JSON.stringify({ picks, scrubBox: tightBox(SCRUB), grids: { IMG_Scrubbly: SCRUB, ...pickGrids }, hazards }));
 writeFileSync(`${OUT}/scrub${SUF}.json`, JSON.stringify({ placed: placed.map(({ left, top }) => ({ x: left - 8, top })), sprite: SPR.map(r => r.join('')) }));
 writeFileSync(`${OUT}/charsspr${SUF}.bin`, shown.subarray(0, W * HS));
 // ---- The picture (the keys and gems drawn over the juggled art and the result)

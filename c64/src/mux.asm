@@ -19,7 +19,7 @@
 ; once it's ready (muxready). Each frame starts by copying the last frame's changes across from the
 ; buffer now shown, so the two keep step.
 
-NV      = NS + NB + 1           ; virtual sprites: the Scrubblies, the balls, the yoyo
+NV      = NS + NB + 1 + 2       ; virtual sprites: the Scrubblies, the balls, the yoyo, the FRAK! bubble
 VEXPY   = 1                     ; (vfl: expanded down,
 VEXPX   = 2                     ;  ... across,
 VBEHIND = 4                     ;  ... behind the characters,
@@ -361,66 +361,25 @@ _hide   lda #VEXPY | VEXPX | VBEHIND | VFIRST | VHIDE
 _fl     sta vfl,x
         dex
         bpl -
-        ; balloons and daggers (the CPC port's speeds and timings: one tick a frame): a balloon
-        ; every BTIME frames at the bottom, rising; a dagger every DTIME at the top, falling and
-        ; going left; each held still PAUSE frames first; in the level's x, scrolling with it
-        dec btim
-        bne +
-        lda #BTIME
-        sta btim
-        lda #1
-        jsr spawn
-+       dec dtim
-        bne +
-        lda #DTIME
-        sta dtim
-        lda #2
-        jsr spawn
-+       ldx #NB - 1
+        ; the balloons and daggers (hazards.asm moves them): their sprites, the image's corner at
+        ; its origin less (kxo, kyo), x 31 + that - the scroll, y 26 + that
+        ldx #NB - 1
 _m      lda oact,x
         bne +
         jmp _hid
-+       lda opause,x
-        beq +
-        dec opause,x
-        jmp _pos
-+       lda oact,x
-        cmp #2
-        beq _dag
-        lda oyf,x               ; a balloon: up
-        sec
-        sbc #<BV
-        sta oyf,x
-        lda oy,x
-        sbc #>BV
-        sta oy,x
-        cmp #20
-        bcs _pos
-        bcc _gone
-_dag    lda oyf,x               ; a dagger: down, and left
-        clc
-        adc #<DY
-        sta oyf,x
-        lda oy,x
-        adc #>DY
-        sta oy,x
-        cmp #251
-        bcs _gone
-        lda oxf,x
-        sec
-        sbc #<DX
-        sta oxf,x
++       tay
         lda oxl,x
-        sbc #>DX
-        sta oxl,x
+        sec
+        sbc kxo,y
+        sta mt
         lda oxh,x
         sbc #0
-        sta oxh,x
-_pos    lda oxl,x               ; its sprite x: 31 + x - the scroll
+        sta mh
+        lda mt
         sec
         sbc scrx
         sta mt
-        lda oxh,x
+        lda mh
         sbc scrx+1
         sta mh
         lda mt
@@ -429,7 +388,7 @@ _pos    lda oxl,x               ; its sprite x: 31 + x - the scroll
         sta vxlo + NS,x
         lda mh
         adc #0
-        bmi _left
+        bmi _hid
         beq _on
         cmp #1
         bne _hid
@@ -437,16 +396,27 @@ _pos    lda oxl,x               ; its sprite x: 31 + x - the scroll
         cmp #344 - 256
         bcs _hid
         lda #1
-        bne _on
-_left   lda oact,x              ; (off at the left: a dagger's gone, a balloon hidden)
-        cmp #2
-        beq _gone
-        bne _hid
 _on     sta vxhi + NS,x
-        lda oy,x
+        lda oy,x                    ; (y: 26 + its top, on the screen's lines 0-255)
+        sec
+        sbc kyo,y
+        sta mt
+        lda oyh,x
+        sbc #0
+        sta mh
+        lda mt
+        clc
+        adc #26
         sta vy + NS,x
+        lda mh
+        adc #0
+        bne _hid
+        lda kptr,y                  ; (its sprite and colour)
+        sta vptr + NS,x
+        lda kcol,y
+        sta vcol + NS,x
         .if BALLTEST
-        lda #0                  ; (BALLTEST: in the left border, unseen but fetched)
+        lda #0                      ; (BALLTEST: in the left border, unseen but fetched)
         sta vxlo + NS,x
         sta vxhi + NS,x
         .endif
@@ -456,59 +426,14 @@ _on     sta vxhi + NS,x
         .endif
         sta vfl + NS,x
         jmp _nm
-_gone   lda #0
-        sta oact,x
 _hid    lda #VHIDE
         sta vfl + NS,x
 _nm     dex
         bmi +
         jmp _m
 +       rts
-
-; A balloon (a = 1) or dagger (2) in a free slot, if there is one: x somewhere across the screen
-spawn   ldx #NB - 1
--       ldy oact,x
-        beq +
-        dex
-        bpl -
-        rts
-+       sta oact,x
-        lda rnd                 ; (a random 0-255: an 8-bit Galois LFSR)
-        asl
-        bcc +
-        eor #$1d
-+       sta rnd
-        clc
-        adc #16
-        sta mt
-        lda #0
-        adc #0
-        sta mh
-        lda scrx
-        clc
-        adc mt
-        sta oxl,x
-        lda scrx+1
-        adc mh
-        sta oxh,x
-        lda #0
-        sta oxf,x
-        sta oyf,x
-        lda #MPAUSE
-        sta opause,x
-        lda oact,x
-        cmp #2
-        beq +
-        lda #250                ; a balloon: at the bottom, red
-        sta oy,x
-        lda #2
-        sta vcol + NS,x
-        rts
-+       lda #47                 ; a dagger: at the top, white
-        sta oy,x
-        lda #1
-        sta vcol + NS,x
-        rts
+kptr    .byte 0, (SPRBALLOON & $3fff) / 64, (SPRDAGGER & $3fff) / 64   ; (each kind's sprite: 1 balloon, 2 dagger)
+kcol    .byte 0, 4, 0                                                  ; (and colour: magenta, black)
 
 ; ---- Sort: the virtual sprites down the screen (order, kept from frame to frame, so nearly in
 ; order already: an insertion sort)
@@ -1770,10 +1695,11 @@ oxl     .fill NB
 oxh     .fill NB
 oxf     .fill NB
 oy      .fill NB
+oyh     .fill NB
 oyf     .fill NB
 opause  .fill NB
-btim    .byte 1
-dtim    .byte 30
+btim    .byte 0                 ; (the balloons' and daggers' timers: 0, one at the next tick)
+dtim    .byte 0
 rnd     .byte 1
         .section high               ; (placed past the level map: frak64.asm)
 ; (tables: the latest tick for a y; the line a hardware sprite's last use must end by, for a
@@ -1858,7 +1784,3 @@ rowtl   .fill 64
 rowth   .fill 64
 mdend
         .endv
-sprball .byte $00, $7e, $00, $01, $ff, $80, $07, $ff, $e0, $0f, $ff, $f0, $1f, $ff, $f8, $1f, $ff, $f8
-        .byte $3f, $ff, $fc, $3f, $ff, $fc, $7f, $ff, $fe, $7f, $ff, $fe, $7f, $ff, $fe, $7f, $ff, $fe
-        .byte $7f, $ff, $fe, $3f, $ff, $fc, $3f, $ff, $fc, $1f, $ff, $f8, $1f, $ff, $f8, $0f, $ff, $f0
-        .byte $07, $ff, $e0, $01, $ff, $80, $00, $7e, $00, 0

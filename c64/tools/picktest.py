@@ -2,6 +2,8 @@
 # emulator (py65): every gem and key picked up, in random orders; after each, the counts, the level
 # complete exactly when the last key is, each picked object's cells in the level map holding its
 # patch's codes (build/scrpatch.inc); then the restart's unknock, and every cell back as built.
+# Then the level complete: won at the last key, Trogg still through the pause, then the level
+# from the start.
 #   python3 picktest.py [ROUNDS]      (the build as last made)
 import os, random, re, sys
 from py65.devices.mpu6502 import MPU
@@ -45,4 +47,20 @@ for r in range(rounds):
     back = mem[lbl['tops']:lbl['tops'] + 2350] == tops0 and mem[lbl['bottoms']:lbl['bottoms'] + 2350] == bot0
     zero = (mem[lbl['gemsgot']], mem[lbl['keysgot']], mem[lbl['allkeys']]) == (0, 0, 0) and not any(mem[lbl['picked']:lbl['picked'] + NP])
     if not (back and zero): bad += 1; print(f'round {r}: after the restart, map back {back}, counts and flags cleared {zero}')
+# The level complete: after the last key, won, the pause; Trogg still through it (a key held), then
+# the level from the start again: him at the start, everything back
+mem = bytearray(base); mem[lbl['pvw']] = mem[lbl['pvw'] + 1] = 0xff
+tops0 = bytes(mem[lbl['tops']:lbl['tops'] + 2350])
+for k in range(NP): call(mem, 'pickup', k)
+w = mem[lbl['won']], mem[lbl['wint']] | mem[lbl['wint'] + 1] << 8
+mem[lbl['tx']] = 100; mem[lbl['tx'] + 1] = 0; still = True
+for t in range(w[1]):
+    mem[0xdc00] = 0xff ^ 8; mem[0xdc01] = 0xff            # (joystick right held)
+    call(mem, 'gametick')
+    if t < w[1] - 1 and (mem[lbl['tx']] != 100 or not mem[lbl['won']]): still = False
+end = (mem[lbl['won']], mem[lbl['tx']] | mem[lbl['tx'] + 1] << 8, any(mem[lbl['picked']:lbl['picked'] + NP]), mem[lbl['tops']:lbl['tops'] + 2350] == tops0)
+want_x = int(re.search(r'TSTARTX\s*=\s*(\d+)', open(os.path.join(B, 'geometry.inc')).read()).group(1))
+ok = w == (1, 350) and still and end == (0, want_x, False, True)
+if not ok: bad += 1
+print(f'the level complete: won {w[0]}, pause {w[1]} ticks, still through it {still}; after it, won {end[0]}, his x {end[1]} (start {want_x}), anything still picked up {end[2]}, the map as built {end[3]}')
 print(f'{rounds} rounds of all {NP} gems and keys ({NKEYS} keys) picked up in random orders, then put back: {bad} problems')

@@ -31,15 +31,26 @@ gametick
         .if CAMTEST
         jmp camtest
         .endif
-        lda dead
-        beq +
+        lda dead                    ; dead: everything still, then the level again
+        beq _alive
         dec dead
-        bne ++
+        bne _still
         jmp restart
-+       jsr read_keys
+_alive  lda won                     ; the level complete (all the keys): everything still, then
+        beq _play                   ; A_1 again from the start (the only level), as the BBC
+        lda wint                    ; version's game_tick
+        bne _wd
+        dec wint+1
+_wd     dec wint
+        lda wint
+        ora wint+1
+        bne _still
+        jmp restart
+_play   jsr read_keys
         jsr trogg_update
+        jsr hazards                 ; (the balloons and daggers)
         jsr collide                 ; (and what he's touching)
-+       jmp trogg_frame
+_still  jmp trogg_frame
 
 ; The level from the start again: Trogg, the Scrubblies, no balloons or daggers
 restart lda #<TSTARTX
@@ -67,14 +78,18 @@ restart lda #<TSTARTX
         sta lr_db
         sta jumping                 ; (and the camera back to the start)
         lda #0
+        sta won
+        lda #0
         sta yo_len
         sta yo_len+1
         jsr unknock                 ; (the Scrubblies back)
-        ldx #NB - 1
+        ldx #NB - 1                 ; (no balloons or daggers; the next at the next tick)
 -       lda #0
         sta oact,x
         dex
         bpl -
+        sta btim
+        sta dtim
         jmp trogg_frame
 
 ; ---- The keys (the BBC version's: Z / X walk, O / K climb and jump, P or Space the yoyo; and
@@ -495,6 +510,8 @@ trogg_dies
         .if INVINCIBLE
         rts
         .endif
+        lda won                     ; (nothing kills him once he's won: the last key and a balloon
+        bne +                       ; in the same tick win, as in GameMaker)
         lda dead
         bne +
         lda #50                     ; (the level restarts in a second: 50 ticks)
@@ -1181,7 +1198,8 @@ kticks  .byte 0
 ; (a test of the camera: Trogg walked across the level and back, a pixel a tick, turning round at
 ; each of camturn's x's in turn; the keys read and his movement worked out as well, for what they
 ; cost, but then left out)
-camtest ldx #CAMSAVE - 1
+camtest jsr hazards                 ; (the balloons and daggers, for the multiplexer's load)
+        ldx #CAMSAVE - 1
 -       lda tx,x
         sta camsv,x
         dex
@@ -1240,6 +1258,22 @@ CAMSAVE = 4                         ; (tx, ty: saved)
 camsv   .fill CAMSAVE
 camst   .byte 0
         .endif
+
+; The level complete (the last key): as the BBC version's level_complete, a pause of 7 seconds
+; (less one for each restart from a checkpoint, when there are checkpoints), then A_1 again
+WINTICKS = 7 * 50
+level_complete
+        lda #1
+        sta won
+        lda #0                      ; (a death touched earlier in the tick doesn't count)
+        sta dead
+        lda #<WINTICKS
+        sta wint
+        lda #>WINTICKS
+        sta wint+1
+        rts
+won     .byte 0
+wint    .word 0
 
 ; ---- Data
 tyf     .byte 0                     ; (his y's twentieths: tx, ty in trogg.asm)

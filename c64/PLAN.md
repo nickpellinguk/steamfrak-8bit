@@ -1,6 +1,6 @@
 # Plan: a playable A_1
 
-Status: **part 1 done, part 2 under way (milestones 7-9 done)** (milestones 1-5: the data; Trogg shown; his movement and the keys; the
+Status: **part 1 done, part 2 under way (milestones 7-11 done)** (milestones 1-5: the data; Trogg shown; his movement and the keys; the
 camera, scrolling by VSP; the yoyo and knocking Scrubblies off): 95.7% of frames ready on Hard
 scrolling all the time, the camera never waiting; packed onto `build/frak64.d64`. **Part 2**
 (below): A_1 played as the BBC version plays it. Each milestone is checked before the next, and
@@ -301,19 +301,44 @@ the level.
    random orders in py65 (the counts, the level complete exactly at the last key, every cell's
    new codes) and puts them back (every cell as built): no problems. (The py65 harnesses' call
    stub moved from $7f00, inside the level map, to $033c.)
-10. **Balloons and daggers, properly.** Spawned as `spawn_balloon` and `spawn_dagger` do: a
-    balloon at the level's bottom at a random x within half the spread (280 on Hard) of Trogg,
-    rising at 1.3 pixels a tick after its pause; a dagger at the top, aimed at x + h * 4/3 (h:
-    his height above it) so it arrives about where he is, going down and left (0.88, 0.66 a
-    tick); the CPC port's numbers for Hard, as now. Their own sprites (the BBC's IMG_Balloon and
-    IMG_DaggerLR, cut for the C64) in place of the ball. The yoyo pops them (`yoyo_collide`'s
-    second half), and comes back. Check: spawn places and paths against the 65C02 code run in
-    py65 with the same random numbers.
-11. **Death and the level's end.** Dying: Trogg stops, the "FRAK!" bubble at (x + 12, y - 26)
-    for the 50 ticks before the restart. The last key: the level complete (`level_complete`), a
-    pause, then A_1 again (the only level). The timer (m:ss) and rating that `draw_hud` draws
-    are left for later: there's no spare character row for them, and sprites for them would
-    take from the multiplexer, so how is a separate decision.
+10. **Balloons and daggers, properly** (done: src/hazards.asm). The BBC version's spawn_hazards,
+    spawn_balloon, spawn_dagger, random_x, random (xorshift) and update_movers ported, Hard's
+    numbers, run each tick in the game tick while Trogg's alive (and in the camera test, for the
+    multiplexer's load); their places kept as the BBC version keeps them (the image's origin, 16.8,
+    in the level), mux.asm's `game` only making sprites of them. Their own sprites (`mockup.mjs`
+    exports the BBC's IMG_Balloon and IMG_DaggerLR; the build makes the sprites, `hazspr`), for now
+    hi-res silhouettes: the balloon magenta, the dagger black (each is 3 colours in the original:
+    see below). Trogg against them by each kind's box and spans; the yoyo pops them (its square
+    against their whole image, as yoyo_collide) and comes back. Checked: `tools/hazardtest.py` runs
+    the BBC version's own BANK6 (from frak.ssd) in a 65C02 emulator beside the C64's hazards, the
+    same seed, Trogg wandering: 12 runs of 800 ticks, every balloon and dagger the same (kind,
+    place to the fraction, pause) every tick; at most 6 out at once (the C64's slots: none missed,
+    but no margin). `tools/collidetest.py` (now with both kinds): 4,000 situations, none differ.
+    `tools/poptest.py`: 3,000, none differ. In VICE, the daggers drawn where they are (42 of 42
+    pixels, a tick behind the state read). Camera test (now with them spawning about Trogg, as
+    the original): the multiplexer ready for 91.2% of frames (95.7% with the balls spread across
+    the screen); the frame checker finds no problems. For the budget pass.
+    Colour: the original's balloon is magenta with a black outline and a yellow highlight, the
+    dagger black with a yellow blade. Faithful would need multicolour for sprites 3-7 (`$d01c` in
+    the multiplexer's register writes, which the row tails may not have the time for) or two
+    sprites each (twice the multiplexer's load): a decision to make.
+11. **Death and the level's end** (done). Dying: the game still (as the BBC version's game_tick:
+    nothing moves, nothing spawns) for the 50 ticks before the restart, and the FRAK! bubble at
+    its place (its image's corner at (x + 12, y - 44)). The bubble is 52 wide in the original,
+    black on yellow; the C64's is redrawn at half width, 24 x 19 (`build/frak.txt`), shown as 2
+    x-expanded virtual sprites (FV): its black, and its yellow only where the black isn't (so
+    either can be in front: the multiplexer chooses the hardware sprites). The letters come from
+    the BBC's image, each 2-pixel stroke one pixel (its F on even columns, the rest on odd ones), the
+    F 3 wide so the bubble fits 24; the outline, corners and tail drawn in build.mjs. Kept before
+    others, shown while he's dead (`frakset`). The last key: the level complete (`won`), as
+    `level_complete`: nothing kills him, everything still for 7 seconds, then A_1 from the start.
+    The timer and rating (`draw_hud`) left for later. Checked: in
+    py65 (picktest.py), the level complete at the last key, Trogg still through the pause (a key
+    held), then the level from the start, everything back; key scripts the same in py65 and VICE.
+    (Found on the way and fixed: adding the level-complete state had made a dead Trogg walk on.)
+    In VICE, the bubble exactly as frak.txt (each pixel 2 wide), black and yellow, both for a
+    death on the top row beside a Scrubbly (674 of 674 pixels; two sprites and the two Scrubblies'
+    bodies fit the 5) and after a fall at the bottom (604 of 604). Camera test: 90.1% ready.
 12. **Checkpoints.** After Trogg picks up a key that isn't the last, the level's state is saved
     once he's standing (or walking) on a platform, and not dying in the same tick, as
     `check_checkpoint` does: which gems, keys and Scrubblies are gone (and the counts), his place

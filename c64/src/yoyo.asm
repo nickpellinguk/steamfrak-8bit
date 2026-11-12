@@ -1,6 +1,6 @@
 ; ---- The yoyo: a port of the BBC version's start_yoyo, yoyo_out, yoyo_back, yoyo_longer,
-; yoyo_position and yoyo_collide. A_1 has no movable platforms, so the carrying is left out, and
-; only the Scrubblies are hit yet (no balloons, daggers, gems or keys). yo_len is the string's
+; yoyo_position and yoyo_collide. A_1 has no movable platforms, so the carrying is left out; the
+; yoyo knocks Scrubblies off and pops balloons and daggers. yo_len is the string's
 ; length, tenths of a pixel then pixels: 1.3 a tick out while the key's held, to 80, then back at
 ; the same rate. The yoyo is virtual sprite YV (hi-res black: its yellow highlight shows the
 ; background); its string is a line of characters in the pair shown (strset works it out in the
@@ -203,6 +203,82 @@ _lp     lda knocked,x
         ldx ysi
 _nx     dex
         bpl _lp
+        .if !NOBALLS
+        ldx #NB - 1                 ; the balloons and daggers: popped (their images' boxes)
+_m      lda oact,x
+        bne +
+        jmp _mn
++
+        tay
+        lda oxl,x                   ; (left: its origin less kxo; right: + kw - 1)
+        sec
+        sbc kxo,y
+        sta yhl
+        lda oxh,x
+        sbc #0
+        sta yhl+1
+        lda yb_r                    ; yoyo right >= its left ?
+        sec
+        sbc yhl
+        lda yb_r+1
+        sbc yhl+1
+        bpl +
+        jmp _mn
++
+        lda yhl
+        clc
+        adc kw,y
+        sta yhl
+        lda yhl+1
+        adc #0
+        sta yhl+1                   ; (its right + 1)
+        lda yb_l                    ; yoyo left < its right + 1 ?
+        sec
+        sbc yhl
+        lda yb_l+1
+        sbc yhl+1
+        bmi +
+        jmp _mn
++
+        lda oy,x                    ; (top: its origin less kyo; bottom: + kh - 1)
+        sec
+        sbc kyo,y
+        sta yhl
+        lda oyh,x
+        sbc #0
+        sta yhl+1
+        lda yo_y                    ; yoyo bottom >= its top ?
+        sec
+        sbc yhl
+        lda yo_y+1
+        sbc yhl+1
+        bpl +
+        jmp _mn
++
+        lda yhl
+        clc
+        adc kh,y
+        sta yhl
+        lda yhl+1
+        adc #0
+        sta yhl+1
+        lda yb_t                    ; yoyo top < its bottom + 1 ?
+        sec
+        sbc yhl
+        lda yb_t+1
+        sbc yhl+1
+        bmi +
+        jmp _mn
++
+        lda #0                      ; popped
+        sta oact,x
+        lda #1
+        sta yo_hit
+_mn     dex
+        bmi +
+        jmp _m
++
+        .endif
         lda yo_hit
         cmp #1                      ; (carry set if hit)
         rts
@@ -226,7 +302,8 @@ pickup  lda #1
         bne ++
         lda #1                      ; (all the keys: the level complete)
         sta allkeys
-        bne ++
+        jsr level_complete
+        jmp ++
 +       inc gemsgot
 +       lda pkpi,x
         ldy pkpn,x
@@ -477,6 +554,69 @@ _hide   lda #VFIRST | VHIDE
         sta vfl + YV
         rts
 
+; The FRAK! bubble (while he's dead, as the BBC version): its image's corner at (tx + 12 - FRAKXO,
+; ty - 26 - FRAKYO), as 2 virtual sprites, x-expanded (FV: its black, its yellow), kept before
+; others
+FV      = YV + 1
+frakset lda dead
+        beq _hide
+        lda tx                      ; x: 31 + its left - the scroll
+        clc
+        adc #12 - FRAKXO + 31
+        sta ytmp
+        lda tx+1
+        adc #0
+        sta ytmp+1
+        lda ytmp
+        sec
+        sbc scrx
+        sta ytmp
+        lda ytmp+1
+        sbc scrx+1
+        sta ytmp+1
+        bmi _hide
+        lda ty                      ; y: its top + 26 (ty - 26 - FRAKYO + 26)
+        sec
+        sbc #FRAKYO
+        tay
+        lda ty+1
+        sbc #0
+        bne _hide
+        ldx #1
+-       tya
+        sta vy + FV,x
+        lda fkdx,x                  ; (the right ones 24 on)
+        clc
+        adc ytmp
+        sta vxlo + FV,x
+        lda ytmp+1
+        adc #0
+        cmp #2
+        bcs _h1
+        cmp #1
+        bne +
+        lda vxlo + FV,x
+        cmp #344 - 256
+        bcs _h1
+        lda #1
++       sta vxhi + FV,x
+        lda #VFIRST | VEXPX
+        .byte $2c
+_h1     lda #VFIRST | VEXPX | VHIDE
+        sta vfl + FV,x
+        dex
+        bpl -
+        rts
+_hide   ldx #1
+        lda #VFIRST | VEXPX | VHIDE
+-       sta vfl + FV,x
+        dex
+        bpl -
+        rts
+fkdx    .byte 0, 0
+fkblk   .byte 0, 1
+fkcol   .byte 0, 7
+
 ; The string, for the next frame: a line on map line ty - 36 (level y yo_y - 1), from the
 ; character under his hand (tx + 12, or tx - 12) to the one under the yoyo's near edge, in the
 ; tops' screen if it's on lines 0-3 of its row, else the bottoms', as string character 60-63
@@ -715,6 +855,7 @@ yb_l    .word 0
 yb_r    .word 0
 yb_t    .word 0
 yo_hit  .byte 0
+yhl     .word 0                     ; (a balloon's or dagger's edge)
 ytmp    .word 0
 ysi     .byte 0
 yk      .byte 0

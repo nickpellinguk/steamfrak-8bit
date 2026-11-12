@@ -100,16 +100,14 @@ writeFileSync(DIR + 'masks.inc', `; made by tools/build.mjs\nmasks   .byte ${mas
 // The collision boxes (collide.asm): each of Trogg's frames' solid pixels' extent as shown, from
 // (tx, ty) (trogg.json: the frame's left at tx - left, its top at ty - 34); each Scrubbly's, gem's
 // and key's in the level, as the mock-up drew them (picks.json; the level's y is the mock-up's,
-// the map's line + 24); the ball sprite's from its sprite's corner (its top at its y - 26)
+// the map's line + 24); the balloon's and dagger's from their image's corner
 {
     const tj = JSON.parse(readFileSync(DIR + 'trogg.json')), pj = JSON.parse(readFileSync(DIR + 'picks.json'));
     const box = g => { let x0 = 99, x1 = -1, y0 = 99, y1 = -1; g.forEach((r, y) => r.forEach((p, x) => { if (p >= 0) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); } })); return { x0, x1, y0, y1 }; };
     const tb = tj.map(f => { const b = box(f.shown); return { x0: b.x0 - f.left, x1: b.x1 - f.left, y0: b.y0 - 34, y1: b.y1 - 34 }; });
     const sgn = v => v & 255, B = (n, a) => `${n.padEnd(8)}.byte ${a.join(', ')}\n`;
     const sbx = pj.scrubBox, sl = scrub.placed.map(p => p.x + 8 + sbx.x0), sr = scrub.placed.map(p => p.x + 8 + sbx.x1);
-    const ball = readFileSync(SRC + 'mux.asm', 'utf8').match(/^sprball +\.byte .*(\n +\.byte .*)*/m)[0].match(/\$[0-9a-f]{2}|\b0\b/g).map(v => v === '0' ? 0 : parseInt(v.slice(1), 16));
-    const bg = []; for (let y = 0; y < 21; y++) { const r = []; for (let x = 0; x < 24; x++) r.push((ball[y * 3 + (x >> 3)] >> (7 - (x & 7))) & 1 ? 1 : -1); bg.push(r); }
-    const bb = box(bg), pk = pj.picks;
+    const pk = pj.picks;
     writeFileSync(DIR + 'collide.inc', '; made by tools/build.mjs: the collision boxes (collide.asm)\n' +
         B('tbx0', tb.map(b => sgn(b.x0))) + B('tbx1', tb.map(b => sgn(b.x1))) + B('tby0', tb.map(b => sgn(b.y0))) + B('tby1', tb.map(b => sgn(b.y1))) +
         B('scbll', sl.map(v => v & 255)) + B('scblh', sl.map(v => v >> 8)) + B('scbrl', sr.map(v => v & 255)) + B('scbrh', sr.map(v => v >> 8)) +
@@ -117,7 +115,6 @@ writeFileSync(DIR + 'masks.inc', `; made by tools/build.mjs\nmasks   .byte ${mas
         `NP      = ${pk.length}\nNKEYS   = ${pk.filter(p => p.name === 'IMG_Key').length}\n` + B('pkll', pk.map(p => (p.left + p.box.x0) & 255)) + B('pklh', pk.map(p => (p.left + p.box.x0) >> 8)) +
         B('pkrl', pk.map(p => (p.left + p.box.x1) & 255)) + B('pkrh', pk.map(p => (p.left + p.box.x1) >> 8)) +
         B('pkc0', pk.map(p => (p.left + p.box.x0) >> 3)) + B('pkc1', pk.map(p => (p.left + p.box.x1) >> 3)) + B('pkt', pk.map(p => p.top + p.box.y0)) + B('pkb', pk.map(p => p.top + p.box.y1)) + B('pkkind', pk.map(p => p.name === 'IMG_Key' ? 2 : 1)) +
-        `BBX0    = ${bb.x0}\nBBX1    = ${bb.x1}\nBBY0    = ${bb.y0}\nBBY1    = ${bb.y1}\n` +
         // (each column's objects, bit k: Scrubbly k, then gem or key k - NS: the quick first test)
         (() => { const m = Array(96).fill(0), rng = [...sl.map((l, i) => [l >> 3, sr[i] >> 3]), ...pk.map(p => [(p.left + p.box.x0) >> 3, (p.left + p.box.x1) >> 3])];
                  if (rng.length > 16) throw new Error('more than 16 static objects for the column masks');
@@ -132,11 +129,36 @@ writeFileSync(DIR + 'masks.inc', `; made by tools/build.mjs\nmasks   .byte ${mas
                  const g = pj.grids, kinds = { IMG_Key: 'keysp', IMG_Gem: 'gemsp' };
                  return B('tleft', tj.map(f => f.left)) + `tspl    .byte ${tj.map((f, i) => `<(tspan + ${i * 68})`).join(', ')}\ntsph    .byte ${tj.map((f, i) => `>(tspan + ${i * 68})`).join(', ')}\n` +
                      B('tspan', tj.flatMap(f => sp(f.shown))) + B('scrsp', sp(g.IMG_Scrubbly)) + `SCRH    = ${g.IMG_Scrubbly.length}\n` +
-                     B('keysp', sp(g.IMG_Key)) + B('gemsp', sp(g.IMG_Gem)) + B('ballsp', sp(bg)) + `BALLH   = ${bg.length}\n` +
+                     B('keysp', sp(g.IMG_Key)) + B('gemsp', sp(g.IMG_Gem)) +
                      B('scil', scrub.placed.map(p => (p.x + 8) & 255)) + B('scih', scrub.placed.map(p => (p.x + 8) >> 8)) + B('scit', scrub.placed.map(p => p.top + 24)) +
                      B('pkil', pk.map(p => p.left & 255)) + B('pkih', pk.map(p => p.left >> 8)) + B('pkit', pk.map(p => p.top)) +
                      `pkspl   .byte ${pk.map(p => '<' + kinds[p.name]).join(', ')}\npksph   .byte ${pk.map(p => '>' + kinds[p.name]).join(', ')}\n` +
-                     B('pkh', pk.map(p => g[p.name].length)); })());
+                     B('pkh', pk.map(p => g[p.name].length)); })() +
+        // (the balloon (kind 1) and the dagger (2): their sprites, hi-res, the image at the sprite's
+        // corner; their origin in the image, size, tight box from the image's corner, spans)
+        (() => { const H = [pj.hazards.IMG_Balloon, pj.hazards.IMG_DaggerLR], hb = H.map(h => box(h.grid));
+                 const spr = H.flatMap(h => { const b = Array(64).fill(0); h.grid.forEach((r, y) => r.forEach((p, x) => { if (p >= 0) b[y * 3 + (x >> 3)] |= 0x80 >> (x & 7); })); return b; });
+                 const sp = gr => gr.flatMap(r => { const xs = r.map((p, x) => p >= 0 ? x : -1).filter(x => x >= 0); return xs.length ? [xs[0], xs[xs.length - 1]] : [255, 255]; });
+                 const K = (n, f) => B(n, [0, ...H.map(f)]);
+                 return B('hazspr', spr) + K('kxo', h => h.xo) + K('kyo', h => h.yo) + K('kw', h => h.grid[0].length) + K('kh', h => h.grid.length) +
+                     B('kbx0', [0, ...hb.map(b => b.x0)]) + B('kbx1', [0, ...hb.map(b => b.x1)]) + B('kby0', [0, ...hb.map(b => b.y0)]) + B('kby1', [0, ...hb.map(b => b.y1)]) +
+                     B('balsp', sp(H[0].grid)) + B('dagsp', sp(H[1].grid)) + `kspl    .byte 0, <balsp, <dagsp\nksph    .byte 0, >balsp, >dagsp\n`; })() +
+        // (the FRAK! bubble, redrawn at half width, 24 x 19, for two x-expanded sprites: its black, and
+        // its yellow where the black isn't (so either can be in front). The letters from the BBC's
+        // image, each stroke (2 pixels) one pixel: its F on even columns, the rest on odd ones (a
+        // pixel's gap between); the F 3 wide (its arms one shorter), so the bubble fits 24; the
+        // outline, corners and tail drawn here)
+        (() => { const F = pj.hazards.IMG_Frak, R = F.grid.map(r => r.map(p => ' .YMB'[p + 1]).join(''));
+                 const half = (row, a, b) => { let o = ''; for (let x = a; x < b; x += 2) { const p = row.slice(x, x + 2); o += p.includes('B') ? 'B' : p.includes('Y') ? 'Y' : ' '; } return o; };
+                 const letters = y => { const f = half(R[y], 6, 14); return f[0] + f[1] + f[3] + 'Y' + half(R[y], 15, 49).slice(0, -1); };
+                 const n = ['  ' + 'B'.repeat(20) + '  ', ' BB' + 'Y'.repeat(18) + 'BB ', ' B' + 'Y'.repeat(20) + 'B ',
+                            ...[3, 4, 5, 6, 7, 8, 9, 10, 11].map(y => 'BY' + letters(y) + 'YB'),
+                            ' B' + 'Y'.repeat(20) + 'B ', ' BB' + 'Y'.repeat(18) + 'BB ', '  BBYY' + 'B'.repeat(16) + '  ',
+                            '   BYBB' + ' '.repeat(17), '   BYB' + ' '.repeat(18), '  BYB' + ' '.repeat(19), ' BBB' + ' '.repeat(20)];
+                 if (n.some(r => r.length !== 24) || n.length !== F.grid.length) throw new Error('the FRAK! bubble is not 24 x ' + F.grid.length);
+                 writeFileSync(DIR + 'frak.txt', '; the FRAK! bubble as the C64 shows it: 24 wide, each pixel shown 2 wide (build.mjs)\n' + n.join('\n') + '\n');
+                 const blk = col => { const b = Array(64).fill(0); n.forEach((r, y) => { for (let x = 0; x < 24; x++) if (r[x] === col) b[y * 3 + (x >> 3)] |= 0x80 >> (x & 7); }); return b; };
+                 return B('frakspr', [...blk('B'), ...blk('Y')]) + `FRAKXO  = ${F.xo}\nFRAKYO  = ${F.yo}\n`; })());
 }
 const sb = Buffer.alloc(64);
 scrub.sprite.forEach((row, y) => { for (let k = 0; k < 3; k++) sb[y * 3 + k] = parseInt(row.slice(k * 8, k * 8 + 8), 2); });

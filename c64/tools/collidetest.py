@@ -1,6 +1,6 @@
 # Checks collide (src/collide.asm: boxes, then spans) against a reference in Python: thousands of random
-# situations, Trogg (any frame) near a random Scrubbly, gem, key or ball, some Scrubblies yo-yoed
-# off, some balls out; the program's collide run in a 6502 emulator (py65) on each, and whether he
+# situations, Trogg (any frame) near a random Scrubbly, gem, key, balloon or dagger, some Scrubblies
+# yo-yoed off, some balloons and daggers out; the program's collide run in a 6502 emulator (py65) on each, and whether he
 # dies and which gem or key he's touching compared with the reference's: its boxes from the same
 # tables (build/collide.inc), its spans from the images themselves. Also counts the hits of each
 # kind (so the test is seen to reach them), the boxes that touch with no spans meeting, and the
@@ -31,11 +31,14 @@ ov = lambda a, b: a[0] <= b[1] and b[0] <= a[1] and a[2] <= b[3] and b[2] <= a[3
 import json
 TJ = json.load(open(os.path.join(B, 'trogg.json'))); PJ = json.load(open(os.path.join(B, 'picks.json')))
 SJ = json.load(open(os.path.join(B, 'scrub.json')))
-ballb = [int(v[1:], 16) if v != '0' else 0 for v in re.findall(r'\$[0-9a-f]{2}|\b0\b', re.search(r'^sprball +\.byte .*(\n +\.byte .*)*', open(os.path.join(DIR, '..', 'src', 'mux.asm')).read(), re.M).group(0))]
-BALLG = [[1 if (ballb[y * 3 + (x >> 3)] >> (7 - (x & 7))) & 1 else -1 for x in range(24)] for y in range(21)]
+HZ = [PJ['hazards']['IMG_Balloon'], PJ['hazards']['IMG_DaggerLR']]     # (kinds 1 and 2)
 def solid(g):                                   # (each row's solid columns)
     return [[x for x, p in enumerate(r) if p >= 0] for r in g]
-TS = [solid(fr['shown']) for fr in TJ]; SS = solid(PJ['grids']['IMG_Scrubbly']); BS = solid(BALLG)
+TS = [solid(fr['shown']) for fr in TJ]; SS = solid(PJ['grids']['IMG_Scrubbly']); HS = [solid(h['grid']) for h in HZ]
+def hbox(h):                                     # (a kind's tight box, from its image's corner)
+    xs = [x for r in h['grid'] for x, p in enumerate(r) if p >= 0]; ys = [y for y, r in enumerate(h['grid']) if any(p >= 0 for p in r)]
+    return min(xs), max(xs), min(ys), max(ys)
+HB = [hbox(h) for h in HZ]
 KS = {k: solid(v) for k, v in PJ['grids'].items()}
 def hit(f, tx, ty, os_, ol, ot, exact=False):  # spans (or, exact: pixels) of his frame f and the object's image at (ol, ot)
     hl, ht = tx - TJ[f]['left'], ty - 34
@@ -67,30 +70,31 @@ for n in range(N):
     for i in range(NB):
         if random.random() < 0.4 or (kind == 'b' and i == 0):
             bx = o[0] + random.randrange(-30, 30) if kind == 'b' and i == 0 else random.randrange(0, 740)
-            by = o[2] + random.randrange(-20, 20) if kind == 'b' and i == 0 else random.randrange(20, 250)
-            balls.append((i, max(0, bx), max(0, min(255, by))))
+            by = o[2] + random.randrange(-20, 20) if kind == 'b' and i == 0 else random.randrange(0, 256)
+            balls.append((i, random.choice([1, 2]), max(0, bx), max(0, min(255, by))))
     for name, v in (('tx', tx), ('ty', ty)): mem[lbl[name]] = v & 255; mem[lbl[name] + 1] = v >> 8
     mem[lbl['tfr']] = f; mem[lbl['dead']] = 0; mem[lbl['ptouch']] = 0xff; mem[lbl['ptouchn']] = 0
     for i in range(NS): mem[lbl['knocked'] + i] = int(knocked[i])
     for i in range(NB): mem[lbl['oact'] + i] = 0
-    for i, bx, by in balls:
-        mem[lbl['oact'] + i] = 1; mem[lbl['oxl'] + i] = bx & 255; mem[lbl['oxh'] + i] = bx >> 8; mem[lbl['oy'] + i] = by
+    for i, k, bx, by in balls:
+        mem[lbl['oact'] + i] = k; mem[lbl['oxl'] + i] = bx & 255; mem[lbl['oxh'] + i] = bx >> 8; mem[lbl['oy'] + i] = by; mem[lbl['oyh'] + i] = 0
     mpu = MPU(memory=mem); mpu.pc = stub; mpu.sp = 0xf0; k = 0
     while mpu.pc != stub + 3 and k < 100000: mpu.step(); k += 1
     got = (mem[lbl['dead']] != 0, mem[lbl['ptouch']], mem[lbl['ptouchn']])
     # the reference
     t = (tx + s8(tab['tbx0'][f]), tx + s8(tab['tbx1'][f]), ty + s8(tab['tby0'][f]), ty + s8(tab['tby1'][f]))
     sd = [i for i in range(NS) if not knocked[i] and ov(t, scrub[i])]
-    bd = [(bx, by) for i, bx, by in balls if ov(t, (bx + const['BBX0'], bx + const['BBX1'], by - 26 + const['BBY0'], by - 26 + const['BBY1']))]
+    corner = lambda k, bx, by: (bx - HZ[k - 1]['xo'], by - HZ[k - 1]['yo'])
+    bd = [(k,) + corner(k, bx, by) for i, k, bx, by in balls if ov(t, (corner(k, bx, by)[0] + HB[k - 1][0], corner(k, bx, by)[0] + HB[k - 1][1], corner(k, bx, by)[1] + HB[k - 1][2], corner(k, bx, by)[1] + HB[k - 1][3]))]
     pd = [i for i in range(NP) if ov(t, picks[i])]
     boxed = bool(sd or bd or pd)
     sh = [i for i in sd if hit(f, tx, ty, SS, *scrimg[i])]
-    dies = bool(sh) or any(hit(f, tx, ty, BS, bx, by - 26) for bx, by in bd)
+    dies = bool(sh) or any(hit(f, tx, ty, HS[k - 1], cx, cy) for k, cx, cy in bd)
     touched = [] if dies else [i for i in pd if hit(f, tx, ty, pkimg[i][2], pkimg[i][0], pkimg[i][1])]   # (the last noted: the highest)
     want = (dies, touched[-1] if touched else 0xff, len(touched))
     hits['scrubbly' if sh else 'ball' if dies else 'pick' if touched else 'none'] += 1
     if boxed and not (dies or touched): hits['boxes only'] = hits.get('boxes only', 0) + 1
-    xd = [i for i in sd if hit(f, tx, ty, SS, *scrimg[i], True)] or [1 for bx, by in bd if hit(f, tx, ty, BS, bx, by - 26, True)]
+    xd = [i for i in sd if hit(f, tx, ty, SS, *scrimg[i], True)] or [1 for k, cx, cy in bd if hit(f, tx, ty, HS[k - 1], cx, cy, True)]
     xt = [] if xd else [i for i in pd if hit(f, tx, ty, pkimg[i][2], pkimg[i][0], pkimg[i][1], True)]
     if (bool(xd), xt[-1] if xt else 0xff) != want[:2]: hits['spans not pixels'] = hits.get('spans not pixels', 0) + 1
     if got != want:
