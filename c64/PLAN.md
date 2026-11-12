@@ -1,6 +1,6 @@
 # Plan: a playable A_1
 
-Status: **part 1 done, part 2 under way (milestones 7-11 done)** (milestones 1-5: the data; Trogg shown; his movement and the keys; the
+Status: **part 1 done, part 2 under way (milestones 7-12 done)** (milestones 1-5: the data; Trogg shown; his movement and the keys; the
 camera, scrolling by VSP; the yoyo and knocking Scrubblies off): 95.7% of frames ready on Hard
 scrolling all the time, the camera never waiting; packed onto `build/frak64.d64`. **Part 2**
 (below): A_1 played as the BBC version plays it. Each milestone is checked before the next, and
@@ -254,8 +254,7 @@ The levels stay static, as in the BBC original: the Scrubblies stand where they 
 code here ports the Steam version, whose Scrubblies patrol; that part is left out). The
 reference for everything else is that code (`../src/frak.asm`): `check_collisions`, `hit_test`,
 `collide`, `spawn_balloon`, `spawn_dagger`, `trogg_dies`, `level_complete`, `draw_hud`,
-`check_checkpoint`, `save_checkpoint`, `restore_checkpoint`. Until milestone 12, death restarts
-the level.
+`check_checkpoint`, `save_checkpoint`, `restore_checkpoint`.
 
 7. **Collisions, by box** (done: src/collide.asm). Trogg's box (his frame's solid pixels' extent
    as shown, from trogg.json) against each object's in the level's coordinates, all made by the
@@ -339,16 +338,25 @@ the level.
     In VICE, the bubble exactly as frak.txt (each pixel 2 wide), black and yellow, both for a
     death on the top row beside a Scrubbly (674 of 674 pixels; two sprites and the two Scrubblies'
     bodies fit the 5) and after a fall at the bottom (604 of 604). Camera test: 90.1% ready.
-12. **Checkpoints.** After Trogg picks up a key that isn't the last, the level's state is saved
-    once he's standing (or walking) on a platform, and not dying in the same tick, as
-    `check_checkpoint` does: which gems, keys and Scrubblies are gone (and the counts), his place
-    and facing, the balloons' and daggers' timers. Dying then goes back to it (`restore_checkpoint`):
-    the map and both pairs put back to that state (the cells picked up or knocked off since
-    restored, those before kept), the balloons and daggers cleared, his movement reset, and a
-    restart counted; with no checkpoint yet, the level from the start, as now. The camera's
-    restart jumps to the window around him (the hidden pair filled for it), not only to window
-    0. Check: key scripts that pick up a key, land, die, and come back where they should, with
-    the map and screens checked (scrcheck.py), in py65 and VICE alike.
+12. **Checkpoints** (done). A key picked up that isn't the last makes one due (`savecp`); it's
+    saved (`checkcp`, each tick after the collisions) once Trogg is standing or walking (on a
+    platform: A_1's don't move) and not dying, as `check_checkpoint`: his place and facing, the
+    balloons' and daggers' timers, what's gone (Scrubblies knocked off, gems and keys picked up)
+    and the counts. Dying goes back to it (`restart`, as `restore_checkpoint`): the cells of
+    anything gone since put back (`cprestore`; those gone before kept), the counts and timers as
+    saved, no balloons or daggers, his movement reset, a restart counted (the level complete's
+    pause a second shorter for each, to 4); with none yet, the level from the start as before.
+    The camera jumps to the scroll with him in the middle (x - 152, kept to 0-MAXX: `jumpx`,
+    `jumpw`), the hidden pair filled for that window at offset 8. The level complete starts A_1
+    afresh, no checkpoint (`newlevel`). Checked: `tools/cptest.py` in py65 (a key, standing, the
+    checkpoint; then a gem and a Scrubbly; dying: him back, the key still gone, the gem and
+    Scrubbly back, the map as at the checkpoint, the counts, timers, restart and camera's scroll;
+    then the level complete: the pause 300, and after it the level from the start): no
+    problems in 6 rounds. In py65 and VICE alike, Trogg starting beside the key on the R's bottom
+    platform (`--troggx 255 --troggy 207`) picks it up, walks into the Scrubbly and dies, and comes
+    back where he picked it up, the key still gone; in VICE the camera's at scroll 103 (window
+    12), Trogg drawn exactly there, both pairs as the map. (Found on the way: `level_complete`'s
+    pause by the restarts used x, which `pickup` still needed; it uses y.)
 13. **Budget**, with everything running: the whole frame profiled, readiness and slack measured
     in the camera test and in play, and whatever that shows fixed.
 14. **Sound.** The sound effects on the SID (`SFX_CHING` for a pickup, `SFX_SQUEAL`, `SFX_DAGGER`,

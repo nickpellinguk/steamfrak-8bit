@@ -295,17 +295,20 @@ pickup  lda #1
         sta picked,x
         lda pkkind,x
         cmp #2
-        bne +
+        bne _gem
         inc keysgot
         lda keysgot
         cmp #NKEYS
-        bne ++
-        lda #1                      ; (all the keys: the level complete)
+        beq _last
+        lda #1                      ; (a key, not the last: a checkpoint due)
+        sta savecp
+        bne _patch
+_last   lda #1                      ; (all the keys: the level complete)
         sta allkeys
         jsr level_complete
-        jmp ++
-+       inc gemsgot
-+       lda pkpi,x
+        jmp _patch
+_gem    inc gemsgot
+_patch  lda pkpi,x
         ldy pkpn,x
 
 ; Patch cells a to a + y - 1 (scrplo ...): the codes there saved (scrsvt, scrsvb), the new ones in
@@ -362,6 +365,60 @@ patchoff
         lda yk
         cmp yke
         bne -
+        rts
+
+; A checkpoint's: what's gone (knocked off, picked up) and the counts, saved; and put back, the
+; cells of anything gone since back as they were (those gone before kept)
+cpsave  ldx #NS - 1
+-       lda knocked,x
+        sta cpknk,x
+        dex
+        bpl -
+        ldx #NP - 1
+-       lda picked,x
+        sta cppck,x
+        dex
+        bpl -
+        lda gemsgot
+        sta cpgems
+        lda keysgot
+        sta cpkeys
+        rts
+cprestore
+        ldx #NS - 1
+_s      lda knocked,x
+        beq _n
+        lda cpknk,x
+        bne _n
+        lda #0
+        sta knocked,x
+        stx ysi
+        lda scrpi,x
+        ldy scrpn,x
+        jsr patchoff
+        ldx ysi
+_n      dex
+        bpl _s
+        ldx #NP - 1
+_g      lda picked,x
+        beq _gn
+        lda cppck,x
+        bne _gn
+        lda #0
+        sta picked,x
+        stx ysi
+        lda pkpi,x
+        ldy pkpn,x
+        jsr patchoff
+        ldx ysi
+_gn     dex
+        bpl _g
+        lda cpgems
+        sta gemsgot
+        lda cpkeys
+        sta keysgot
+        lda #0
+        sta allkeys
         rts
 
 ; Every Scrubbly, gem and key back (at a restart)
@@ -869,6 +926,10 @@ picked  .fill NP                    ; (each gem and key: picked up)
 gemsgot .byte 0
 keysgot .byte 0
 allkeys .byte 0                     ; (all the keys picked up: the level complete)
+cpknk   .fill NS                    ; (at the checkpoint: what was gone, the counts)
+cppck   .fill NP
+cpgems  .byte 0
+cpkeys  .byte 0
 scrsvt  .fill 256                   ; (the knocked-off cells' codes before)
 scrsvb  .fill 256
 sp_on   .byte 0                     ; (the string for the next frame: strset's)

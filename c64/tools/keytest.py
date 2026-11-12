@@ -13,7 +13,7 @@ lbl = {}
 for line in open(os.path.join(B, 'frak64.lbl')):
     m = re.match(r'^(\w+)\s*=\s*(\$?)([0-9a-fA-F]+)', line)
     if m: lbl[m.group(1)] = int(m.group(3), 16 if m.group(2) else 10)
-NAMES = ['tx', 'ty', 'tyf', 'tstate', 'tfr', 'dead'] + [n for n in ('knocked', 'ptouch', 'gemsgot', 'keysgot') if re.search(r'^' + n + r'\b', open(os.path.join(B, 'frak64.lbl')).read(), re.M)]
+NAMES = ['tx', 'ty', 'tyf', 'tstate', 'tfr', 'dead'] + [n for n in ('knocked', 'ptouch', 'gemsgot', 'keysgot', 'havecp', 'restarts') if re.search(r'^' + n + r'\b', open(os.path.join(B, 'frak64.lbl')).read(), re.M)]
 SIZE = {'tx': 2, 'ty': 2}
 def state(rd):
     v = {n: rd(lbl[n]) | (rd(lbl[n] + 1) << 8 if SIZE.get(n) == 2 else 0) for n in NAMES}

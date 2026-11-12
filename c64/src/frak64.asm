@@ -1013,29 +1013,40 @@ _hold   rts
 ; VL and VR across the screen (his x less the scroll), the scroll moving a pixel a frame (his
 ; walking speed) when he's past one; the hidden pair filled for a swap on the side of the middle
 ; he's on (wantdir), so it's ready when the scroll gets there (if it isn't, the scroll waits).
-; After a restart (jumping), it jumps to window 0: the hidden pair filled for it (origin -8,
-; offset 8), then that shown, the scroll 0.
+; After a restart (jumping), it jumps to the scroll the restart chose (jumpx: 0 for the level's
+; start, him in the middle for a checkpoint): the hidden pair filled for its window at offset 8,
+; then that shown.
 VL      = 112
 VR      = 192
 MAXC    = MAXX / 8
 camera  lda jumping
         beq _go
-        lda curc                    ; (a restart: window 0)
+        lda curc                    ; (a restart: to the scroll jumpx, window jumpw, play.asm)
+        cmp jumpw
         bne +
-        sta scrx                    ; (there already)
+        lda jumpx                   ; (in that window already: only the fine scroll)
+        sta scrx
+        lda jumpx+1
         sta scrx+1
+        lda #0
         sta jumping
         rts
-+       lda #$f8
++       lda jumpw                   ; (else the hidden pair filled for it, at offset 8, then shown)
+        sec
+        sbc #8
         sta wanto
         ldx back
         cmp po,x
         bne _x
-        lda pvw,x                   ; (filled, and up to date, for window 0: shown)
+        lda pvw,x
+        cmp jumpw
         bne _x
         sta curc
+        lda jumpx
         sta scrx
+        lda jumpx+1
         sta scrx+1
+        lda #0
         sta jumping
         lda #8
         sta nvs

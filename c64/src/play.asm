@@ -45,15 +45,27 @@ _wd     dec wint
         lda wint
         ora wint+1
         bne _still
-        jmp restart
+        jmp newlevel
 _play   jsr read_keys
         jsr trogg_update
         jsr hazards                 ; (the balloons and daggers)
         jsr collide                 ; (and what he's touching)
+        jsr checkcp                 ; (a checkpoint, if one's due)
 _still  jmp trogg_frame
 
-; The level from the start again: Trogg, the Scrubblies, no balloons or daggers
-restart lda #<TSTARTX
+; The level from the start (after it's complete): no checkpoint, no restarts counted
+newlevel
+        lda #0
+        sta havecp
+        sta savecp
+        sta restarts
+
+; Dying: back to the last checkpoint (the BBC version's restore_checkpoint): the state saved
+; after a key (not the last), the restart counted; or, with none yet, the level from the start.
+; Either way no balloons or daggers, his movement reset, and the camera jumped to show him.
+restart lda havecp
+        bne _cp
+        lda #<TSTARTX               ; (the start: Trogg, every Scrubbly, gem and key back)
         sta tx
         lda #>TSTARTX
         sta tx+1
@@ -63,8 +75,61 @@ restart lda #<TSTARTX
         sta ty+1
         lda #0
         sta tyf
-        sta tstate
         sta tface
+        sta btim
+        sta dtim
+        jsr unknock
+        lda #0
+        sta jumpx
+        sta jumpx+1
+        beq _all
+_cp     inc restarts
+        lda cptx                    ; (the checkpoint: his place, the timers, what's gone)
+        sta tx
+        lda cptx+1
+        sta tx+1
+        lda cpty
+        sta ty
+        lda cpty+1
+        sta ty+1
+        lda cptyf
+        sta tyf
+        lda cpface
+        sta tface
+        lda cpbtim
+        sta btim
+        lda cpdtim
+        sta dtim
+        jsr cprestore
+        lda tx                      ; (the scroll with him in the middle: x - 152, kept to 0-MAXX)
+        sec
+        sbc #152
+        sta jumpx
+        lda tx+1
+        sbc #0
+        sta jumpx+1
+        bpl +
+        lda #0
+        sta jumpx
+        sta jumpx+1
++       lda jumpx
+        cmp #<MAXX
+        lda jumpx+1
+        sbc #>MAXX
+        bcc _all
+        lda #<MAXX
+        sta jumpx
+        lda #>MAXX
+        sta jumpx+1
+_all    lda jumpx+1                 ; (its window)
+        lsr
+        lda jumpx
+        ror
+        lsr
+        lsr
+        sta jumpw
+        lda #0
+        sta tstate
         sta tclimb
         sta xvel
         sta tv
@@ -73,24 +138,64 @@ restart lda #<TSTARTX
         sta doyoyo
         sta dead
         sta anim
+        sta won
+        sta yo_len
+        sta yo_len+1
         lda #1                      ; (a key held through the restart does nothing till let go)
         sta ud_db
         sta lr_db
-        sta jumping                 ; (and the camera back to the start)
+        sta jumping                 ; (and the camera to him)
+        ldx #NB - 1                 ; (no balloons or daggers)
         lda #0
-        sta won
-        lda #0
-        sta yo_len
-        sta yo_len+1
-        jsr unknock                 ; (the Scrubblies back)
-        ldx #NB - 1                 ; (no balloons or daggers; the next at the next tick)
--       lda #0
-        sta oact,x
+-       sta oact,x
         dex
         bpl -
-        sta btim
-        sta dtim
         jmp trogg_frame
+
+; A checkpoint (the BBC version's check_checkpoint and save_checkpoint): once one's due (a key
+; picked up, not the last), when he's standing or walking (on a platform: A_1's don't move) and
+; not dying: his place, the timers, what's gone, the counts
+checkcp lda savecp
+        beq _x
+        lda dead
+        bne _x
+        lda tstate
+        cmp #ST_WALK + 1
+        bcs _x
+        lda #0
+        sta savecp
+        lda #1
+        sta havecp
+        lda tx
+        sta cptx
+        lda tx+1
+        sta cptx+1
+        lda ty
+        sta cpty
+        lda ty+1
+        sta cpty+1
+        lda tyf
+        sta cptyf
+        lda tface
+        sta cpface
+        lda btim
+        sta cpbtim
+        lda dtim
+        sta cpdtim
+        jmp cpsave
+_x      rts
+
+havecp  .byte 0                     ; (a checkpoint saved)
+savecp  .byte 0                     ; (one due: a key picked up)
+restarts .byte 0                    ; (from a checkpoint: the level complete's pause the shorter)
+cptx    .word 0
+cpty    .word 0
+cptyf   .byte 0
+cpface  .byte 0
+cpbtim  .byte 0
+cpdtim  .byte 0
+jumpx   .word 0                     ; (the scroll the camera jumps to, and its window)
+jumpw   .byte 0
 
 ; ---- The keys (the BBC version's: Z / X walk, O / K climb and jump, P or Space the yoyo; and
 ; joystick 2), with its debouncing: after landing or climbing off, up and down do nothing till
@@ -1260,18 +1365,24 @@ camst   .byte 0
         .endif
 
 ; The level complete (the last key): as the BBC version's level_complete, a pause of 7 seconds
-; (less one for each restart from a checkpoint, when there are checkpoints), then A_1 again
+; (less one for each restart from a checkpoint, to 4), then A_1 again
 WINTICKS = 7 * 50
 level_complete
         lda #1
         sta won
         lda #0                      ; (a death touched earlier in the tick doesn't count)
         sta dead
-        lda #<WINTICKS
+        ldy restarts                ; (7 seconds, less one for each restart, to 4; x kept)
+        cpy #3
+        bcc +
+        ldy #3
++       lda winlo,y
         sta wint
-        lda #>WINTICKS
+        lda winhi,y
         sta wint+1
         rts
+winlo   .byte <(7 * 50), <(6 * 50), <(5 * 50), <(4 * 50)
+winhi   .byte >(7 * 50), >(6 * 50), >(5 * 50), >(4 * 50)
 won     .byte 0
 wint    .word 0
 
