@@ -1,7 +1,7 @@
 // A_1 for the C64 demo, from the mock-up's export (../build/level.json, by mockup.mjs): two
 // 64-character sets, each character holding a top glyph (rows 0-3, shown from the first FLI
 // screen) and a bottom glyph (rows 4-7, from the second); the screen codes (glyph | the half's
-// ECM background << 6), row by row, 94 columns. Every cell's foreground is black.
+// ECM background << 6), row by row, 97 columns. Every cell's foreground is black.
 // The character set changes at the forced bad line (line 4 of a row), so a set serves a band:
 // band k is row k-1's bottoms and row k's tops (band 0 row 0's tops, band 25 row 24's bottoms).
 // The bands are packed into the sets, with the level's yo-yoed-off variant (level_off.json, by
@@ -10,7 +10,7 @@
 //   node pack.mjs  ->  ../build: charsets.bin (2 x 512), bandset.bin (26), tops.bin, bottoms.bin,
 //                      scrpatch.inc (each Scrubbly's cells knocked off, each gem's and key's picked up,
 //                      and STRING)
-//                      (25 x 94), level.inc
+//                      (25 x 97), level.inc
 import { readFileSync, writeFileSync } from 'fs';
 const DIR = new URL('../build/', import.meta.url).pathname;
 const d = JSON.parse(readFileSync(DIR + 'level.json'));

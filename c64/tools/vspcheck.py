@@ -6,9 +6,9 @@
 # which the fill doesn't write, and past row 24) and the cover sprite's columns are left out.
 # Prints the cells that differ; the sprites' cells differ at every offset alike (compare with S 0).
 #   python3 vspcheck.py shot.png S
-import os, sys
+import os, re, sys
 from PIL import Image
-W = 752
+W = 8 * int(re.search(r'^NC\s*=\s*(\d+)', open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'build', 'level.inc')).read(), re.M).group(1))
 exp = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'build', 'chars.bin'), 'rb').read()
 im = Image.open(sys.argv[1]).convert('RGB'); px = im.load()
 S = int(sys.argv[2])

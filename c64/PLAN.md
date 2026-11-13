@@ -422,6 +422,18 @@ reference for everything else is that code (`../src/frak.asm`): `check_collision
       changes (1,200, from 560). Visible side effects: a knock-off's or pickup's cells change
       when the tick runs, up to two frames before the sprites follow; the string is clipped to
       the newest window, so at the left edge it can lose a character or two for a frame.
+    - **Found playing it in VICE** (fixed):
+      - The level is 3 columns (24 pixels) further right (`mockup.mjs`'s `XOFF`, so all of it:
+        97 columns): the screen's first 3 columns are under the cover sprite, so at the scroll's
+        left end Trogg started half hidden. The tools read the width from `level.inc`.
+      - Garbage at the top left, Trogg jumping from the top platform: his sprites' y (the line
+        before his top) under 47 there, which `r4lo`/`r3lo` take as no rows (they mean that for
+        a sprite removed), so rows 0-4's interrupts didn't allow for his sprites' fetches.
+        `troggmux` now takes him from row 0 there (y 47).
+      - A knocked-off Scrubbly's magenta body lingered after its cells changed (the frames
+        already made still had it): `knock` now patches the cells, then points its sprite at a
+        blank block (`SPRBLANK`) in each buffer's record for it (still fetched, so the rows'
+        timing stands).
 14. **Sound.** The sound effects on the SID (`SFX_CHING` for a pickup, `SFX_SQUEAL`, `SFX_DAGGER`,
     `SFX_POP`, `SFX_THUD`), from the BBC version's definitions, played in the border; the music
     (the victory tune) after. Its time measured against the budget from 13.

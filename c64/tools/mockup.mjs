@@ -26,10 +26,16 @@ import { deflateSync } from 'zlib';
 const OUT = new URL('../build', import.meta.url).pathname, SUF = process.env.OFF ? '_off' : process.env.GONE ? '_gone' : '';   // (GONE: the gems and keys picked up)
 mkdirSync(OUT, { recursive: true });
 const name = 'room_A_1', DROP = [127, 144], ROW0 = 3, ROWS = 25;
-const e = JSON.parse(readFileSync(new URL('../../build/levels.json', import.meta.url), 'utf8'))[name];
+// (the level XOFF pixels right of the BBC's: the screen's first 3 columns are under the cover
+// sprite, so at the scroll's left end the level's first 3 would never be seen, Trogg's start
+// half hidden)
+const XOFF = 24;
+const e0 = JSON.parse(readFileSync(new URL('../../build/levels.json', import.meta.url), 'utf8'))[name];
+const sx = a => a.map(x => x + XOFF);
+const e = { ...e0, w: e0.w + XOFF, plat_x: sx(e0.plat_x), lad_x: sx(e0.lad_x), draw_x: sx(e0.draw_x), trogg: [e0.trogg[0] + XOFF, e0.trogg[1]] };
 const bg = background(name);
-const cols = Math.ceil(e.w / 4), rows = Math.ceil(e.h / 8);
-const W = Math.ceil(cols * 4 / 8) * 8 + 8, H = rows * 8;
+const cols = Math.ceil(e0.w / 4), rows = Math.ceil(e.h / 8);
+const W = Math.ceil((cols * 4 + XOFF) / 8) * 8 + 8, H = rows * 8;
 const at2 = (x, y) => y * W + x, inside = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
 
 // ---- The BBC background, as pixels (0 background, 1 yellow, 2 magenta, 3 black)
@@ -37,7 +43,7 @@ const src = new Uint8Array(W * H);
 for (let c = 0; c < cols; c++) for (let r = 0; r < rows; r++) {
     const cell = bg.vert ? bg.cell(r, c) : bg.cell(c, r);
     if (cell) for (let l = 0; l < 8; l++) for (let i = 0; i < 4; i++)
-        src[at2(c * 4 + i, r * 8 + l)] = ((cell[l] >> (7 - i)) & 1) << 1 | ((cell[l] >> (3 - i)) & 1);
+        src[at2(XOFF + c * 4 + i, r * 8 + l)] = ((cell[l] >> (7 - i)) & 1) << 1 | ((cell[l] >> (3 - i)) & 1);
 }
 // (a ledge's area: up to 13 lines below a magenta pixel)
 const ledgeArea = img => { const a = new Uint8Array(W * H); for (let x = 0; x < W; x++) for (let y = 0; y < H; y++) if (img[at2(x, y)] === 2) for (let d = -4; d <= 13; d++) if (inside(x, y + d)) a[at2(x, y + d)] = 1; return a; };

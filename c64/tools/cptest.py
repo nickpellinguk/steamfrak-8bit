@@ -20,7 +20,7 @@ for f in ('scrpatch.inc', 'collide.inc'):
         if m: tab[m.group(1)] = [int(v) for v in m.group(2).split(',')]
 const = {m.group(1): int(m.group(2)) for m in re.finditer(r'^(\w+)\s*=\s*(\d+)', open(os.path.join(B, 'geometry.inc')).read(), re.M)}
 NP, NS = len(tab['pkkind']), len(tab['scrpn'])
-MAXX = (94 - 40) * 8
+NC = int(re.search(r'^NC\s*=\s*(\d+)', open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'build', 'level.inc')).read(), re.M).group(1)); MAPN = 25 * NC     # (the level map's size: build/level.inc)
 prg = open(os.path.join(B, 'frak64.prg'), 'rb').read()
 base = bytearray(65536); base[0x0801:0x0801 + len(prg) - 2] = prg[2:]
 def call(mem, label, x=0):
@@ -35,7 +35,7 @@ random.seed(9); bad = 0
 rounds = int(sys.argv[1]) if len(sys.argv) > 1 else 6
 for rnd in range(rounds):
     mem = bytearray(base); mem[lbl['pvw']] = mem[lbl['pvw'] + 1] = 0xff
-    tops0, bot0 = bytes(mem[lbl['tops']:lbl['tops'] + 2350]), bytes(mem[lbl['bottoms']:lbl['bottoms'] + 2350])
+    tops0, bot0 = bytes(mem[lbl['tops']:lbl['tops'] + MAPN]), bytes(mem[lbl['bottoms']:lbl['bottoms'] + MAPN])
     k, gm, sc = random.choice(keys), random.choice(gems), random.randrange(NS)
     tx, ty, face, bt, dt = random.randrange(20, 720), random.randrange(40, 230), random.randrange(2), random.randrange(1, 100), random.randrange(1, 100)
     call(mem, 'pickup', k)
@@ -44,7 +44,7 @@ for rnd in range(rounds):
     due = mem[lbl['savecp']]
     call(mem, 'checkcp')
     saved = (due, mem[lbl['havecp']], mem[lbl['savecp']])
-    after = bytes(mem[lbl['tops']:lbl['tops'] + 2350])            # (the map at the checkpoint)
+    after = bytes(mem[lbl['tops']:lbl['tops'] + MAPN])            # (the map at the checkpoint)
     call(mem, 'pickup', gm); call(mem, 'knock', sc)
     w16(mem, lbl['tx'], 41); w16(mem, lbl['ty'], 207); mem[lbl['btim']] = 3; mem[lbl['dtim']] = 4
     mem[lbl['dead']] = 1
@@ -52,9 +52,9 @@ for rnd in range(rounds):
     got = dict(tx=r16(mem, lbl['tx']), ty=r16(mem, lbl['ty']), face=mem[lbl['tface']], btim=mem[lbl['btim']], dtim=mem[lbl['dtim']],
                keys=mem[lbl['keysgot']], gems=mem[lbl['gemsgot']], restarts=mem[lbl['restarts']], jumping=mem[lbl['jumping']],
                jumpx=r16(mem, lbl['jumpx']), jumpw=mem[lbl['jumpw']], key_gone=mem[lbl['picked'] + k], gem_gone=mem[lbl['picked'] + gm], scrub_gone=mem[lbl['knocked'] + sc])
-    jx = max(0, min(MAXX, tx - 152))
+    jx = max(0, min((NC - 40) * 8, tx - 152))
     want = dict(tx=tx, ty=ty, face=face, btim=bt, dtim=dt, keys=1, gems=0, restarts=1, jumping=1, jumpx=jx, jumpw=jx >> 3, key_gone=1, gem_gone=0, scrub_gone=0)
-    mapok = bytes(mem[lbl['tops']:lbl['tops'] + 2350]) == after
+    mapok = bytes(mem[lbl['tops']:lbl['tops'] + MAPN]) == after
     if saved != (1, 1, 0) or got != want or not mapok:
         bad += 1
         print(f'round {rnd} (key {k}, gem {gm}, Scrubbly {sc}): checkpoint (due, saved, still due) {saved}; map as at the checkpoint {mapok}')
@@ -65,7 +65,7 @@ for rnd in range(rounds):
         if not mem[lbl['picked'] + kk]: call(mem, 'pickup', kk)
     pause = r16(mem, lbl['wint'])
     for t in range(pause): mem[0xdc00] = mem[0xdc01] = 0xff; call(mem, 'gametick')
-    fresh = (mem[lbl['havecp']], mem[lbl['restarts']], r16(mem, lbl['tx']), bytes(mem[lbl['tops']:lbl['tops'] + 2350]) == tops0)
+    fresh = (mem[lbl['havecp']], mem[lbl['restarts']], r16(mem, lbl['tx']), bytes(mem[lbl['tops']:lbl['tops'] + MAPN]) == tops0)
     if pause != 300 or fresh != (0, 0, const['TSTARTX'], True):
         bad += 1; print(f'round {rnd}: the level complete: pause {pause} (want 300); after it (checkpoint, restarts, his x, the map as built) {fresh}')
 print(f'{rounds} rounds: {bad} problems')

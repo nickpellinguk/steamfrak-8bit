@@ -1353,7 +1353,7 @@ _cw     lda #ST_WALK
         sta tface
         jsr animate
         jmp trogg_frame
-CAMTURN = [400, 250, 700, 600, 650, 100, 300, 280, 320, 41]
+CAMTURN = [424, 274, 724, 624, 674, 124, 324, 304, 344, TSTARTX]    ; (24 on from the level's old place)
 CAMTN   = len(CAMTURN)
 camtl   .byte <CAMTURN
 camth   .byte >CAMTURN

@@ -118,6 +118,7 @@ NB      = 6                         ; the balloons and daggers (at most)
 SPRBALLOON = $5480                  ; the balloon's sprite (hazards.asm)
 SPRDAGGER = $55c0                   ; the dagger's
 SPRFRAK = $5600                     ; the FRAK! bubble's 2 (its black, its yellow)
+SPRBLANK = $5680                    ; a blank sprite (zeros: for a Scrubbly knocked off, yoyo.asm)
 flippend = zp + 54                  ; (the next frame's scroll, decided in the main program: a pair
 wanto   = zp + 55                   ;  flip for the border to make; the hidden pair's origin wanted;
 nvs     = zp + 56                   ;  the VSP offset)

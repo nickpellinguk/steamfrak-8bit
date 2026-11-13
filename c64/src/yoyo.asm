@@ -283,12 +283,48 @@ _mn     dex
         cmp #1                      ; (carry set if hit)
         rts
 
-; Scrubbly x knocked off: its cells' codes saved and changed to what's behind it
+; Scrubbly x knocked off: its cells' codes saved and changed to what's behind it; then its sprite
+; blank in the frames already made (its record's pointer to SPRBLANK: still fetched, so the rows'
+; timing stands), as soon as its cells have changed, not when the frame being made is shown
 knock   lda #1
         sta knocked,x
+        stx kx
         lda scrpi,x
         ldy scrpn,x
-        jmp patchon
+        jsr patchon
+        ldx kx
+        lda vh,x                    ; (shown: its tick's record, in each buffer that has it there)
+        bmi _kp
+        sta yk
+        lda vt,x
+        bne _ku
+        lda vs,x                    ; (tick 0: its slot)
+        tay
+-       lda e_n,y
+        cmp yk
+        bne +
+        lda #(SPRBLANK & $3fff) / 64
+        sta e_ptr,y
++       tya
+        clc
+        adc #32
+        tay
+        cpy #96
+        bcc -
+        bcs _kp
+_ku     tay
+-       lda u_n,y
+        cmp yk
+        bne +
+        lda #(SPRBLANK & $3fff) / 64
+        sta u_ptr,y
++       tya
+        clc
+        adc #32
+        tay
+        cpy #96
+        bcc -
+_kp     rts
 
 ; Gem or key x picked up: the same (its cells: what's behind it); counted, and the last key noted
 pickup  lda #1
@@ -926,6 +962,7 @@ ytop    .byte 0
 ybot    .byte 0
 yr      .byte 0
 yj      .byte 0
+kx      .byte 0                     ; (knock's Scrubbly)
 knocked .fill NS
 picked  .fill NP                    ; (each gem and key: picked up)
 gemsgot .byte 0

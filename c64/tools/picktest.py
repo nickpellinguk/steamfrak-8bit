@@ -18,6 +18,7 @@ for f in ('scrpatch.inc', 'collide.inc'):
         m = re.match(r'^(\w+)\s+\.byte ([\d, ]+)$', line.strip())
         if m: tab[m.group(1)] = [int(v) for v in m.group(2).split(',')]
 NP, NKEYS = len(tab['pkkind']), tab['pkkind'].count(2)
+NC = int(re.search(r'^NC\s*=\s*(\d+)', open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'build', 'level.inc')).read(), re.M).group(1)); MAPN = 25 * NC     # (the level map's size: build/level.inc)
 prg = open(os.path.join(B, 'frak64.prg'), 'rb').read()
 base = bytearray(65536); base[0x0801:0x0801 + len(prg) - 2] = prg[2:]
 def call(mem, label, x=0):
@@ -32,7 +33,7 @@ random.seed(3); bad = 0
 for r in range(rounds):
     mem = bytearray(base)
     for a in ('pvw',): mem[lbl[a]] = mem[lbl[a] + 1] = 0xff     # (no pair up to date: the map alone)
-    tops0, bot0 = bytes(mem[lbl['tops']:lbl['tops'] + 2350]), bytes(mem[lbl['bottoms']:lbl['bottoms'] + 2350])
+    tops0, bot0 = bytes(mem[lbl['tops']:lbl['tops'] + MAPN]), bytes(mem[lbl['bottoms']:lbl['bottoms'] + MAPN])
     order = random.sample(range(NP), NP); gems = keys = 0
     for n, k in enumerate(order):
         call(mem, 'pickup', k)
@@ -44,13 +45,13 @@ for r in range(rounds):
         if got != want or wrong:
             bad += 1; print(f'round {r}, after {n + 1} ({"key" if tab["pkkind"][k] == 2 else "gem"} {k}): counts {got}, want {want}; cells wrong {wrong[:5]}')
     call(mem, 'unknock')
-    back = mem[lbl['tops']:lbl['tops'] + 2350] == tops0 and mem[lbl['bottoms']:lbl['bottoms'] + 2350] == bot0
+    back = mem[lbl['tops']:lbl['tops'] + MAPN] == tops0 and mem[lbl['bottoms']:lbl['bottoms'] + MAPN] == bot0
     zero = (mem[lbl['gemsgot']], mem[lbl['keysgot']], mem[lbl['allkeys']]) == (0, 0, 0) and not any(mem[lbl['picked']:lbl['picked'] + NP])
     if not (back and zero): bad += 1; print(f'round {r}: after the restart, map back {back}, counts and flags cleared {zero}')
 # The level complete: after the last key, won, the pause; Trogg still through it (a key held), then
 # the level from the start again: him at the start, everything back
 mem = bytearray(base); mem[lbl['pvw']] = mem[lbl['pvw'] + 1] = 0xff
-tops0 = bytes(mem[lbl['tops']:lbl['tops'] + 2350])
+tops0 = bytes(mem[lbl['tops']:lbl['tops'] + MAPN])
 for k in range(NP): call(mem, 'pickup', k)
 w = mem[lbl['won']], mem[lbl['wint']] | mem[lbl['wint'] + 1] << 8
 mem[lbl['tx']] = 100; mem[lbl['tx'] + 1] = 0; still = True
@@ -58,7 +59,7 @@ for t in range(w[1]):
     mem[0xdc00] = 0xff ^ 8; mem[0xdc01] = 0xff            # (joystick right held)
     call(mem, 'gametick')
     if t < w[1] - 1 and (mem[lbl['tx']] != 100 or not mem[lbl['won']]): still = False
-end = (mem[lbl['won']], mem[lbl['tx']] | mem[lbl['tx'] + 1] << 8, any(mem[lbl['picked']:lbl['picked'] + NP]), mem[lbl['tops']:lbl['tops'] + 2350] == tops0)
+end = (mem[lbl['won']], mem[lbl['tx']] | mem[lbl['tx'] + 1] << 8, any(mem[lbl['picked']:lbl['picked'] + NP]), mem[lbl['tops']:lbl['tops'] + MAPN] == tops0)
 want_x = int(re.search(r'TSTARTX\s*=\s*(\d+)', open(os.path.join(B, 'geometry.inc')).read()).group(1))
 ok = w == (1, 350) and still and end == (0, want_x, False, True)
 if not ok: bad += 1
