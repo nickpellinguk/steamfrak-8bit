@@ -139,9 +139,9 @@ writeFileSync(DIR + 'masks.inc', `; made by tools/build.mjs\nmasks   .byte ${mas
         // (the balloon (kind 1) and the dagger (2): their sprites, hi-res, the image at the sprite's
         // corner; their origin in the image, size, tight box from the image's corner, spans)
         (() => { const H = [pj.hazards.IMG_Balloon, pj.hazards.IMG_DaggerLR], hb = H.map(h => box(h.grid));
-                 // (their sprites: the image's black alone, an outline; the balloon's yellow highlight black
-                 // too; the spans below are the whole image's)
-                 const spr = H.flatMap((h, k) => { const b = Array(64).fill(0); h.grid.forEach((r, y) => r.forEach((p, x) => { if (p === 3 || (k === 0 && p === 1)) b[y * 3 + (x >> 3)] |= 0x80 >> (x & 7); })); return b; });
+                 // (their sprites: the image's black alone, an outline; the balloon's yellow highlight
+                 // left out, see-through; the spans below are the whole image's)
+                 const spr = H.flatMap((h, k) => { const b = Array(64).fill(0); h.grid.forEach((r, y) => r.forEach((p, x) => { if (p === 3) b[y * 3 + (x >> 3)] |= 0x80 >> (x & 7); })); return b; });
                  // (and the balloon's infill, its magenta, twice: at the sprite's top, and at its
                  // bottom, BIDY lines down)
                  const BIDY = 21 - H[0].grid.length;
@@ -174,9 +174,12 @@ writeFileSync(DIR + 'masks.inc', `; made by tools/build.mjs\nmasks   .byte ${mas
                  for (let y = 3; y <= 11; y++) if (n[y].slice(2, 4) === 'BB') n[y] = n[y].slice(0, 4) + 'B' + n[y].slice(5);
                  if (n.some(r => r.length !== 24) || n.length !== F.grid.length) throw new Error('the FRAK! bubble is not 24 x ' + F.grid.length);
                  writeFileSync(DIR + 'frak.txt', '; the FRAK! bubble as the C64 shows it: 24 wide, each pixel shown 2 wide (build.mjs)\n' + n.join('\n') + '\n');
-                 const blk = col => { const b = Array(64).fill(0); n.forEach((r, y) => { for (let x = 0; x < 24; x++) if (r[x] === col) b[y * 3 + (x >> 3)] |= 0x80 >> (x & 7); }); return b; };
+                 // (bottom-justified: the image at the sprites' bottom, FRAKDY lines down, so they end
+                 // with it)
+                 const dy = 21 - n.length;
+                 const blk = col => { const b = Array(64).fill(0); n.forEach((r, y) => { for (let x = 0; x < 24; x++) if (r[x] === col) b[(y + dy) * 3 + (x >> 3)] |= 0x80 >> (x & 7); }); return b; };
                  writeFileSync(DIR + 'frakspr.bin', Buffer.from([...blk('B'), ...blk('Y')]));
-                 return `FRAKXO  = ${F.xo}\nFRAKYO  = ${F.yo}\n`; })());
+                 return `FRAKXO  = ${F.xo}\nFRAKYO  = ${F.yo}\nFRAKDY  = ${dy}\n`; })());
 }
 const sb = Buffer.alloc(64);
 scrub.sprite.forEach((row, y) => { for (let k = 0; k < 3; k++) sb[y * 3 + k] = parseInt(row.slice(k * 8, k * 8 + 8), 2); });

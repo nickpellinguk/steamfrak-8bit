@@ -671,9 +671,9 @@ frakset lda dead
         sbc scrx+1
         sta ytmp+1
         bmi _hide
-        lda ty                      ; y: its top + 26 (ty - 26 - FRAKYO + 26)
-        sec
-        sbc #FRAKYO
+        lda ty                      ; y: its top + 26 (ty - 26 - FRAKYO + 26), less FRAKDY (the
+        sec                         ; image at the sprites' bottom: their lines end with it)
+        sbc #FRAKYO + FRAKDY
         tay
         lda ty+1
         sbc #0

@@ -410,6 +410,33 @@ start   sei
         sta wanto
         lda #0
         sta prow
+        .if !TEST
+        ; the multiplexer's first frames made before anything's shown (it places 4 sprites a
+        ; frame at most): until every Scrubbly on the screen has its sprite (4 frames at most),
+        ; the last of them the first frame shown, so the characters never show without them
+        lda #4
+        sta pre
+-       jsr nextframe
+        dec pre
+        beq +
+        ldx #NS - 1
+_pr     lda vfl,x
+        bmi _pn
+        lda vy,x
+        cmp #47
+        bcc _pn
+        cmp #251
+        bcs _pn
+        lda vh,x
+        bmi -
+_pn     dex
+        bpl _pr
++       lda nlast
+        sta bufoff
+        lda #0
+        sta qn
+        jsr qapply
+        .endif
 
         lda #IRQLINE
         sta $d012
@@ -1298,8 +1325,9 @@ _same   lda dtmp
         sta scrx+1
         rts
 jumping .byte 0
+pre     .byte 0                     ; (the frames made before the start)
 
-; In the border: the scroll decided (the flip, the VSP offset, $d016 and the cover sprite's x)
+; In the border: the scroll decided (the flip, the VSP offset, $d016)
 frame   lda scrx                    ; (the position the multiplexer's frame was made for)
         sta shx
         jsr tswitch                 ; (and Trogg's settings)
@@ -1321,11 +1349,9 @@ frame   lda scrx                    ; (the position the multiplexer's frame was 
 setx    lda shx
         and #7
         eor #7                      ; (38 columns)
-        sta $d016
-        clc                         ; the cover sprite follows the fine scroll
-        adc #COVERX
-        sta $d000
-        rts
+        sta $d016                   ; (the cover sprite stays at COVERX + 7, hiding columns 0-2 at
+        rts                         ; any fine scroll: the screen's left edge still, the
+                                    ; characters scrolling in under it smoothly)
 
         .include "scroll.asm"
         .include "yoyo.asm"

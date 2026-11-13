@@ -535,6 +535,8 @@ _on     sta vxhi + NS,x
         ; tries both at once, the first preferred; once placed, the one it took
         dey
         bne _ih
+        lda vh + NS,x               ; (only with its outline placed: never the infill alone, and
+        bmi _ih                     ;  its hardware sprite free for the outline)
         lda vxlo + NS,x
         sta vxlo + BIV,x
         lda vxhi + NS,x
