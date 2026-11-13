@@ -451,6 +451,15 @@ reference for everything else is that code (`../src/frak.asm`): `check_collision
       Measured in VICE (`--still`, a test build keeping him where he's put; `troggshot.py`):
       0 pixels wrong at all 8 heights mod 8, x 40-200 both ways, and far right (x 688-720,
       across 256); at x 750 only the right border's.
+      A lost border tick: tick 26's string work (the old string put back, the new one drawn)
+      took over two ticks for a long string, so two of timer B's interrupts fell in one handler
+      and one was lost. The border's count was then a tick behind for good (a restart too): tick
+      38's work on line 53, not 45, the VSP write after line 50, the screen shown from offset 0.
+      Seen yoyoing full length from the A's left leg to the Scrubbly on its right (VICE: `rl0`
+      reached on line 53). Now the drawing is at tick 27 (`strdraw`), and tick 37's handler,
+      finding itself on line 41 or later, does tick 38's work instead (the count in step again
+      from it). Each was checked alone on the case: `rl0` on line 45, the screen right
+      (`keytest`: scroll 153, Trogg 0 pixels wrong). `--slack`: no overruns, least slack 50.
 14. **Sound.** The sound effects on the SID (`SFX_CHING` for a pickup, `SFX_SQUEAL`, `SFX_DAGGER`,
     `SFX_POP`, `SFX_THUD`), from the BBC version's definitions, played in the border; the music
     (the victory tune) after. Its time measured against the budget from 13.
