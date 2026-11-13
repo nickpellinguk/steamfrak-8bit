@@ -516,7 +516,7 @@ _nm     dex
         jmp _m
 +       rts
 kptr    .byte 0, (SPRBALLOON & $3fff) / 64, (SPRDAGGER & $3fff) / 64   ; (each kind's sprite: 1 balloon, 2 dagger)
-kcol    .byte 0, 4, 0                                                  ; (and colour: magenta, black)
+kcol    .byte 0, 0, 0                                                  ; (and colour: black, outlines)
 
 ; ---- Sort: the virtual sprites down the screen (order, kept from frame to frame, so nearly in
 ; order already: an insertion sort)
