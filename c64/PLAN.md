@@ -460,6 +460,18 @@ reference for everything else is that code (`../src/frak.asm`): `check_collision
       finding itself on line 41 or later, does tick 38's work instead (the count in step again
       from it). Each was checked alone on the case: `rl0` on line 45, the screen right
       (`keytest`: scroll 153, Trogg 0 pixels wrong). `--slack`: no overruns, least slack 50.
+      Balloon infill: each balloon a magenta hi-res infill virtual sprite, in a third, low rank
+      (VLOW: placed after all others, one try a frame, evicting nothing, evicted by any), with two
+      images, top-justified at the outline's y or bottom-justified 11 lines up, found in one
+      search (place: one tick scan for both, one walk down each hardware sprite's list for both
+      y's, the first preferred wherever it fits; Insane: 55 of 59 balloons with infill, 50 the
+      first, 5 the second). The multiplexer revisited for it (exact py65 profile of 60
+      frames of scripted play: 7,750 cycles a frame to 6,090): the hazards' x and y from each
+      kind's offset made once a frame; the Scrubblies' x only when the scroll changes or one is
+      knocked off or back; hidden virtual sprites passed over quickly; a kept sprite's settings
+      worked out only when its flags or x's bit 8 change; the sweep marking only ticks whose
+      registers change. Held frames (frameprof, the same script): 8.6% before the infill, 15.1%
+      with it, 10.9% now. muxcheck: 0 problems (plain, Insane).
 14. **Sound.** The sound effects on the SID (`SFX_CHING` for a pickup, `SFX_SQUEAL`, `SFX_DAGGER`,
     `SFX_POP`, `SFX_THUD`), from the BBC version's definitions, played in the border; the music
     (the victory tune) after. Its time measured against the budget from 13.

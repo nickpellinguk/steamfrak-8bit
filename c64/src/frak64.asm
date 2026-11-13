@@ -119,6 +119,7 @@ SPRBALLOON = $5480                  ; the balloon's sprite (hazards.asm)
 SPRDAGGER = $55c0                   ; the dagger's
 SPRFRAK = $5600                     ; the FRAK! bubble's 2 (its black, its yellow)
 SPRBLANK = $5680                    ; a blank sprite (zeros: for a Scrubbly knocked off, yoyo.asm)
+SPRBINF = $56c0                     ; the balloon's infill's 2 (top-justified, bottom-justified)
 flippend = zp + 54                  ; (the next frame's scroll, decided in the main program: a pair
 wanto   = zp + 55                   ;  flip for the border to make; the hidden pair's origin wanted;
 nvs     = zp + 56                   ;  the VSP offset)
@@ -251,6 +252,12 @@ start   sei
         ldx #NB - 1
 -       lda #VHIDE
         sta vfl + NS,x
+        lda #(SPRBINF & $3fff) / 64 ; (the balloons' infill: magenta, low priority, mux.asm)
+        sta vptr + BIV,x
+        lda #4
+        sta vcol + BIV,x
+        lda #VLOW | VHIDE
+        sta vfl + BIV,x
         dex
         bpl -
         lda #255                    ; (parked below the screen until set up)
@@ -1385,6 +1392,9 @@ end
         .binary "hazspr.bin", 64, 64
         .cerror * != SPRFRAK
         .binary "frakspr.bin"       ; (the FRAK! bubble's black, its yellow: build.mjs)
+        .fill 64, 0                 ; (SPRBLANK)
+        .cerror * != SPRBINF
+        .binary "hazspr.bin", 128, 128  ; (the balloon's infill, top- and bottom-justified)
         .fill CS1 - *, 0
         .binary "charsets.bin", 512, 512
         .fill $6800 - *, 0

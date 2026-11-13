@@ -288,6 +288,7 @@ _mn     dex
 ; timing stands), as soon as its cells have changed, not when the frame being made is shown
 knock   lda #1
         sta knocked,x
+        inc scrchg                  ; (the Scrubblies' sprites to see to: mux.asm's game)
         stx kx
         lda scrpi,x
         ldy scrpn,x
@@ -428,6 +429,7 @@ _s      lda knocked,x
         bne _n
         lda #0
         sta knocked,x
+        inc scrchg                  ; (the Scrubblies' sprites to see to: mux.asm's game)
         stx ysi
         lda scrpi,x
         ldy scrpn,x
@@ -463,6 +465,7 @@ _s      lda knocked,x
         beq _n
         lda #0
         sta knocked,x
+        inc scrchg                  ; (the Scrubblies' sprites to see to: mux.asm's game)
         stx ysi
         lda scrpi,x
         ldy scrpn,x

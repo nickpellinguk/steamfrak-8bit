@@ -21,10 +21,13 @@
 ; after nlast (nb), last made three frames ago: it starts by copying across from nlast what the
 ; two frames since changed, so the three keep step.
 
-NV      = NS + NB + 1 + 2       ; virtual sprites: the Scrubblies, the balls, the yoyo, the FRAK! bubble
+NV      = NS + NB + 1 + 2 + NB  ; virtual sprites: the Scrubblies, the balls, the yoyo, the FRAK!
+                                ; bubble, the balloons' infill (BIV)
+BIV     = NS + NB + 3
 VEXPY   = 1                     ; (vfl: expanded down,
 VEXPX   = 2                     ;  ... across,
 VBEHIND = 4                     ;  ... behind the characters,
+VLOW    = $20                   ;  ... placed after all others, and dropped for any of them,
 VFIRST  = $40                   ;  ... kept before others,
 VHIDE   = $80                   ;  ... not shown)
         .if INSANE              ; (the CPC port's settings: Hard, or Insane)
@@ -408,7 +411,21 @@ cpregs  lda trch,y              ; (a tick's registers, list y to list x)
         rts
 
 ; ---- The game, such as it is: the Scrubblies follow the scroll; the balls bounce
-game    ldx #NS - 1
+game    lda scrx                ; (the Scrubblies: again only if the scroll's changed, or one's
+        cmp gscx                ; been knocked off or put back: scrchg)
+        bne +
+        lda scrx+1
+        cmp gscx+1
+        bne +
+        lda scrchg
+        beq _bal
++       lda scrx
+        sta gscx
+        lda scrx+1
+        sta gscx+1
+        lda #0
+        sta scrchg
+        ldx #NS - 1
 -       lda knocked,x           ; (yoyoed off: gone)
         bne _hide
         lda sxlo,x              ; (the Scrubbly's place in the level, as sprite x at scroll 0)
@@ -445,32 +462,42 @@ _fl     sta vfl,x
         dex
         bpl -
         ; the balloons and daggers (hazards.asm moves them): their sprites, the image's corner at
-        ; its origin less (kxo, kyo), x 31 + that - the scroll, y 26 + that
+        ; its origin less (kxo, kyo), x 31 + that - the scroll, y 26 + that: x = its x - bx (each
+        ; kind's: the scroll + kxo - 31, made here once), y = its y + kyc (each kind's: 26 - kyo)
+_bal    ldy #2
+-       lda scrx
+        clc
+        adc kxo,y
+        sta mt
+        lda scrx+1
+        adc #0
+        sta mh
+        lda mt
+        sec
+        sbc #31
+        sta bxl,y
+        lda mh
+        sbc #0
+        sta bxh,y
+        dey
+        bne -
         ldx #NB - 1
-_m      lda oact,x
-        bne +
-        jmp _hid
-+       tay
+        bne _m
+_hid    lda #VHIDE
+        sta vfl + NS,x
+_ih     lda #VLOW | VHIDE
+        sta vfl + BIV,x
+_nm     dex
+        bpl _m
+        rts
+_m      ldy oact,x
+        beq _hid
         lda oxl,x
         sec
-        sbc kxo,y
-        sta mt
-        lda oxh,x
-        sbc #0
-        sta mh
-        lda mt
-        sec
-        sbc scrx
-        sta mt
-        lda mh
-        sbc scrx+1
-        sta mh
-        lda mt
-        clc
-        adc #31
+        sbc bxl,y
         sta vxlo + NS,x
-        lda mh
-        adc #0
+        lda oxh,x
+        sbc bxh,y
         bmi _hid
         beq _on
         cmp #1
@@ -481,42 +508,63 @@ _m      lda oact,x
         lda #1
 _on     sta vxhi + NS,x
         lda oy,x                    ; (y: 26 + its top, on the screen's lines 0-255)
-        sec
-        sbc kyo,y
-        sta mt
-        lda oyh,x
-        sbc #0
-        sta mh
-        lda mt
         clc
-        adc #26
+        adc kyc,y
         sta vy + NS,x
-        lda mh
-        adc #0
+        lda oyh,x
+        adc kych,y
         bne _hid
-        lda kptr,y                  ; (its sprite and colour)
+        lda kptr,y                  ; (its sprite; its colour black, as all start)
         sta vptr + NS,x
-        lda kcol,y
-        sta vcol + NS,x
         .if BALLTEST
         lda #0                      ; (BALLTEST: in the left border, unseen but fetched)
         sta vxlo + NS,x
         sta vxhi + NS,x
         .endif
-        lda #0
         .if NOBALLS
         lda #VHIDE
+        sta vfl + NS,x
+        bne _ih
+        .else
+        lda #0
+        sta vfl + NS,x
         .endif
-        sta vfl + NS,x
+        ; a balloon's infill (its magenta, hi-res: in front, as the outline is; their pixels
+        ; don't meet), low priority, in one of two images: the pixels at the sprite's top (at the
+        ; outline's y), or at its bottom (BIDY lines up), so there's a second place to try: place
+        ; tries both at once, the first preferred; once placed, the one it took
+        dey
+        bne _ih
+        lda vxlo + NS,x
+        sta vxlo + BIV,x
+        lda vxhi + NS,x
+        sta vxhi + BIV,x
+        lda vh + BIV,x              ; (not placed: shown as the first, for place to try both)
+        bpl +
+        lda #0
+        sta bivar,x
++       lda vy + NS,x
+        ldy bivar,x
+        beq +
+        sec
+        sbc #BIDY
+        bcs +
+        lda #0                      ; (off the top: the first)
+        sta bivar,x
+        lda vy + NS,x
++       sta vy + BIV,x
+        lda #(SPRBINF & $3fff) / 64
+        clc
+        adc bivar,x
+        sta vptr + BIV,x
+        lda #VLOW
+        sta vfl + BIV,x
         jmp _nm
-_hid    lda #VHIDE
-        sta vfl + NS,x
-_nm     dex
-        bmi +
-        jmp _m
-+       rts
+bxl     .fill 3
+bxh     .fill 3
+gscx    .word $ffff
+scrchg  .byte 1
 kptr    .byte 0, (SPRBALLOON & $3fff) / 64, (SPRDAGGER & $3fff) / 64   ; (each kind's sprite: 1 balloon, 2 dagger)
-kcol    .byte 0, 0, 0                                                  ; (and colour: black, outlines)
 
 ; ---- Sort: the virtual sprites down the screen (order, kept from frame to frame, so nearly in
 ; order already: an insertion sort)
@@ -573,18 +621,22 @@ _v
         jsr stamp2
         .endif
         ldx mo
-        cpx #NV
+_vx     cpx #NV
         bcc +
         jmp pplace
 +       ldy order,x
-        sty mv
         lda vh,y
         bpl _shown
-        lda vfl,y               ; (not shown, and hidden: nothing to do)
-        bpl +
-        jmp _nx
-+       jmp _un
-_shown  sta mh
+        lda vfl,y               ; (not shown, and hidden: nothing to do, quickly)
+        bmi _skip
+        stx mo
+        sty mv
+        jmp _un
+_skip   inx
+        bne _vx
+_shown  stx mo
+        sty mv
+        sta mh
         .if MUXTIME
         lda #1                  ; (debug: the path taken, 1 unchanged, 2 checked)
         ldx it
@@ -657,11 +709,18 @@ _rm     jsr remove
         jsr wadd
 _nx     inc mo
         jmp _v
-_ok     ldy mv                  ; kept: its rows, and what's changed
-        lda ml
+_ok     ldy mv                  ; kept: its rows, and what's changed (its settings only if they
+        lda ml                  ; could have: its flags or x's bit 8)
         sta vl,y
         jsr rngs
-        jsr attrof
+        ldy mv
+        lda vfl,y
+        cmp vflp,y
+        bne +
+        lda vxhi,y
+        cmp vxhp,y
+        beq _chg
++       jsr attrof
         ldy mv
         cmp va,y
         beq +
@@ -710,15 +769,18 @@ _xu     txa
         jmp _nx
 _full   jsr writerec
         jmp _nx
-_clash  ldy mv                  ; sprite mv and mi clash: mi goes if it isn't kept before others
-        lda vfl,y               ; and mv is, else mv; then mv again
-        and #VFIRST
-        beq _rmj
+_clash  ldy mv                  ; sprite mv and mi clash: mi goes if it ranks below mv (kept
+        lda vfl,y               ; before others, then the rest, then the low), else mv; then mv
+        and #VFIRST | VLOW      ; again (the rank: the flags, VLOW flipped)
+        eor #VLOW
+        sta mrank
         ldx mi
         lda vfl,x
-        and #VFIRST
-        beq +
-_rmj    jmp _rm
+        and #VFIRST | VLOW
+        eor #VLOW
+        cmp mrank
+        bcc +
+        jmp _rm
 +       lda mv
         pha
         stx mv
@@ -1002,8 +1064,8 @@ pplace
         jmp _done
 +       lda #PLACES
         sta mbud
-        lda #VFIRST
-        sta mpass
+        lda #VFIRST | VLOW      ; (the passes, by rank: kept before others ($60), the rest ($20),
+        sta mpass               ; the low (0), which evict nothing)
 _p      lda #0
         sta mo
 _pv     ldx mo
@@ -1014,7 +1076,8 @@ _pv     ldx mo
         lda vh,y
         bpl _pn
         lda vfl,y
-        and #VFIRST
+        and #VFIRST | VLOW
+        eor #VLOW
         cmp mpass
         bne _pn
         lda mbud
@@ -1031,8 +1094,15 @@ _pn     inc mo
         jmp _pv
 _pe     lda mpass
         beq _done
+        cmp #VLOW + 1           ; (the next rank down; the low get one try a frame, at most)
+        lda #VLOW
+        bcs +
+        lda mbud
+        beq _done
+        lda #1
+        sta mbud
         lda #0
-        sta mpass
++       sta mpass
         jmp _p
 _done
         .if MUXTIME
@@ -1061,83 +1131,104 @@ place
         tax
         lda mktab,x
         sta mk
-        jsr calcl
-        ldx mk
-        beq _t0
--       lda tinst,x
-        bpl +
-        cpx tres1
-        bcc _tk
-        cpx tres2
+        lda #0                  ; (pyb: the second image's y, for a balloon's infill; 0: none)
+        sta pyb
+        lda vfl,y
+        and #VLOW
         beq +
-        bcs _tk
-+       dex
-        bne -
-_t0     ldy #3
--       lda slotv,y
-        bmi _s0
-        dey
-        bpl -
+        lda my                  ; (the low: a balloon's infill, shown as its first image; its
+        sec                     ; second BIDY lines up, if that's on the screen)
+        sbc #BIDY
+        bcc +
+        cmp #47
+        bcc +
+        sta pyb
++       jsr calcl               ; (ml: the first's last line)
+        ldx mk
+        jsr ftick
+        lda #0
+        rol
+        sta pvt                 ; (the first's tick found)
+        stx mt
+        lda ms
+        sta pmst
+        lda #0
+        sta pvb
+        lda pyb
+        beq _nb
+        lda my                  ; the second's: its last line, its tick (the first's, if that's
+        pha                     ; early enough for it too; else the next one free up the
+        lda pyb                 ; screen from its own)
+        sta my
+        jsr calcl
+        lda ml
+        sta pmlb
+        pla
+        sta my
+        jsr calcl
+        ldx pyb
+        lda mktab,x
+        tax
+        lda pvt
+        beq +
+        cpx mt
+        bcc +
+        ldx mt                  ; (the same tick, and slot)
+        lda pmst
+        sta ms
+        sec
+        bcs ++
++       jsr ftick
++       lda #0
+        rol
+        sta pvb
+        stx ptb
+        lda ms
+        sta pmsb
+_nb     lda pvt
+        ora pvb
+        bne +
         clc
         rts
-_s0     sty ms
-_tk     stx mt
-        jsr attrof              ; (its settings: a hardware sprite whose sprite before it has the
++       jsr attrof              ; (its settings: a hardware sprite whose sprite before it has the
         sta matt                ; same is preferred, so its set-up changes no registers)
         lda #$ff
         sta mbest
+        sta bbest
+        lda mt
+        sta ptt
+        lda ml
+        sta pmlt
         ldx #3
 _h      stx mh
-        lda #$ff                ; (its neighbours down this hardware sprite)
-        sta mp
+        lda #$ff                ; (its neighbours down this hardware sprite: for the first, and
+        sta mp                  ; for the second, pmpb)
+        sta pmpb
         ldy hwhead,x
 _w      bmi _wd
         lda vy,y
         cmp my
         bcs _wd
-        sty mp
+        cmp pyb
+        bcs +
+        sty pmpb
++       sty mp
         lda vnxt,y
         tay
         jmp _w
 _wd     sty mn
-        ldy mp
-        bmi _p1
-        lda mt
-        beq _hn
-        ldx mt
-        lda lim,x
-        ldx mh
-        cmp vl,y
-        bcc _hn
-_p1     ldy mn
-        bmi _p2
-        ldx vt,y
-        lda lim,x
-        ldx mh
-        cmp ml
-        bcc _hn
-_p2     lda #0                  ; (the settings before it there: the same as its own?)
-        ldy mp
-        bmi +
-        lda va,y
-+       cmp matt
-        beq +
-        lda #0
-        .byte $2c
-+       lda #1
-        sta mcm
-        lda #0                  ; (the line the sprite before it ends on: the latest, of those
-        ldy mp                  ; matching as well, is best)
-        bmi +
-        lda vl,y
-+       ldx mbest
+        lda pvt
+        beq _hb2
+        jsr hfit                ; (the first here)
+        bcc _hb2
+        ldx mbest
         bmi _hb
         ldx mcm
         cpx mbm
-        bcc _hn
+        bcc _hb2
         bne _hb
         cmp mbl
-        bcc _hn
+        bcc _hb2
 _hb     sta mbl
         lda mcm
         sta mbm
@@ -1147,16 +1238,90 @@ _hb     sta mbl
         sta bp
         lda mn
         sta bn
+_hb2    lda pvb                 ; (the second here, unless the first fits somewhere already)
+        beq _hn
+        lda mbest
+        bpl _hn
+        ldy pmpb
+        bmi +
+        lda vnxt,y
+        tay
+        jmp ++
++       ldx mh
+        ldy hwhead,x
++       sty mn
+        sty pmnb
+        lda pmpb
+        sta mp
+        lda ptb
+        sta mt
+        lda pmlb
+        sta ml
+        jsr hfit
+        php
+        pha
+        lda ptt
+        sta mt
+        lda pmlt
+        sta ml
+        pla
+        plp
+        bcc _hn
+        ldx bbest
+        bmi _hbb
+        ldx mcm
+        cpx bbm
+        bcc _hn
+        bne _hbb
+        cmp bbl
+        bcc _hn
+_hbb    sta bbl
+        lda mcm
+        sta bbm
+        lda mh
+        sta bbest
+        lda pmpb
+        sta bbp
+        lda pmnb
+        sta bbn
 _hn     ldx mh
         inx
         cpx #8
         beq +
         jmp _h
 +       lda mbest
+        bpl _take
+        lda bbest               ; (the first fits nowhere: the second, if it fits)
         bpl +
         clc
         rts
-+
++       ldy mv                  ; (the second: its y, last line, tick, slot, image)
+        lda pyb
+        sta my
+        sta vy,y
+        lda pmlb
+        sta ml
+        lda ptb
+        sta mt
+        lda pmsb
+        sta ms
+        lda bbp
+        sta bp
+        lda bbn
+        sta bn
+        ldx mv
+        lda #1
+        sta bivar - BIV,x
+        lda vptr,x
+        clc
+        adc #1
+        sta vptr,x
+        lda bbest
+        jmp _tk2
+_take   lda pmst                ; (the first: its slot)
+        sta ms
+        lda mbest
+_tk2
         .if MUXTIME
         inc cnt0+1
         .endif
@@ -1227,6 +1392,66 @@ _hn     ldx mh
         sec
         rts
 
+; The first free tick from x up the screen (not one of Trogg's), else tick 0 with a free slot
+; (ms): x, carry set; carry clear if none
+ftick   cpx #0
+        beq _t0
+-       lda tinst,x
+        bpl +
+        cpx tres1
+        bcc _f
+        cpx tres2
+        beq +
+        bcs _f
++       dex
+        bne -
+_t0     ldy #3
+-       lda slotv,y
+        bmi _s0
+        dey
+        bpl -
+        clc
+        rts
+_s0     sty ms
+_f      sec
+        rts
+
+; Whether sprite mv fits on hardware sprite mh between mp and mn, set up at tick mt, ending on
+; line ml: carry set if so, then mcm (1: the sprite before has its settings) and a (the line the
+; sprite before ends on, 0 if none)
+hfit    ldy mp
+        bmi _p1
+        lda mt
+        beq _no
+        ldx mt
+        lda lim,x
+        cmp vl,y
+        bcc _no
+_p1     ldy mn
+        bmi _p2
+        ldx vt,y
+        lda lim,x
+        cmp ml
+        bcc _no
+_p2     lda #0                  ; (the settings before it there: the same as its own?)
+        ldy mp
+        bmi +
+        lda va,y
++       cmp matt
+        beq +
+        lda #0
+        .byte $2c
++       lda #1
+        sta mcm
+        lda #0
+        ldy mp
+        bmi +
+        lda vl,y
++       sec
+        rts
+_no     clc
+        rts
+
 ; Sprite mv not placed: drop the nearest shown that isn't kept before others (c set if one is)
 evict
         .if MUXTIME
@@ -1238,9 +1463,11 @@ evict
         ldx #NV - 1
 _e      lda vh,x
         bmi _en
-        lda vfl,x
-        and #VFIRST
-        bne _en
+        lda vfl,x               ; (only one ranking below the pass's)
+        and #VFIRST | VLOW
+        eor #VLOW
+        cmp mpass
+        bcs _en
         lda vy,x
         sec
         sbc my
@@ -1637,7 +1864,12 @@ _t      ldx mt
         ora nb
         tax
         lda mcur
-        sta trch,x
+        cmp trch,x
+        bne +
+        cmp #0                  ; (no writes there, before or now: nothing changed, nothing
+        beq _tn                 ; for replay to copy)
++       sta trch,x
+        cmp #0
         beq +
         jsr putregs
 +       ldx mt
@@ -1793,6 +2025,24 @@ vxhi    .fill NV
 vptr    .fill NV
 vcol    .fill NV
 vfl     .fill NV
+mrank   .byte 0
+bivar   .fill NB                ; (each balloon's infill's image: 0 top, 1 bottom)
+pyb     .byte 0                 ; (place's, for the infill's two images: the second's y, last
+pmlb    .byte 0                 ;  line, tick, slot; whether each has a tick; the first's tick,
+ptb     .byte 0                 ;  slot, last line; the second's neighbours; its best)
+pmsb    .byte 0
+pvt     .byte 0
+pvb     .byte 0
+ptt     .byte 0
+pmst    .byte 0
+pmlt    .byte 0
+pmpb    .byte 0
+pmnb    .byte 0
+bbest   .byte 0
+bbl     .byte 0
+bbm     .byte 0
+bbp     .byte 0
+bbn     .byte 0
 order   .for i = 0, i < NV, i += 1
         .byte i
         .endfor
