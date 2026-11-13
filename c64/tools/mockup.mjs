@@ -200,22 +200,22 @@ let SCRUB = [...scrub0.slice(0, 38), scrub0[37], scrub0[38], scrub0[39], scrub0[
 if (fromTxt) SCRUB = readFileSync(TXT, 'utf8').split('\n').filter(l => /^\s*\d+ /.test(l)).map(l => [...l.replace(/^\s*\d+ /, '').replace(/\|/g, '').padEnd(40)].slice(0, 40).map(c => ' .YM#'.indexOf(c) - 1));
 // The key, redrawn for the C64: 16 wide (two characters), its shaft two yellow lines between two
 // black, so that it fills a half (4 lines: the key's top is 10 lines above its platform's first
-// magenta line, a half's first, so its lines 2-5 are a half) and the ring's middle, round its
-// hole, the half beside it: the halves' background then yellow (KEYHALF: its lines there); the
-// rest of its yellow as before. Its teeth the BBC's, 4 lines, but 3 yellow columns wide, not 4
-// (the middle one not repeated): their last line in place of the
-// platform's top line, all of it under the key (KEYDROP: the key a line further down than its
-// height would put it)
+// magenta line, a half's first, so its lines 2-5 are a half) and the ring's middle, round its hole
+// (a column wide), the half beside it: the halves' background then yellow (KEYHALF: its lines
+// there); the rest of its yellow as before. Its teeth the BBC's, but 3 yellow columns wide, not 4
+// (the middle one not repeated), and 3 lines, not 4 (the two the same as one): clear of the
+// platform, whose top line is gone under all of the key (its last line, blank: KEYDROP, the key a
+// line further down than its height would put it)
 const KEY = ['..........BBBB..',
              '.........BBYYBB.',
              'BBBBBBBBBYYYYYYB',
-             'BYYYYYYYYYYBBYYB',
-             'BYYYYYYYYYYBBYYB',
+             'BYYYYYYYYYYYBYYB',
+             'BYYYYYYYYYYYBYYB',
              'BBBBBBBBBYYYYYYB',
              '.BYYYB...BBYYBB.',
-             '.BYYYB....BBBB..',
-             '.BYBYB..........',
-             '.BB.BB..........'].map(r => [...r].map(c => c === 'B' ? 3 : c === 'Y' ? 1 : -1));
+             '.BYBYB....BBBB..',
+             '.BB.BB..........',
+             '................'].map(r => [...r].map(c => c === 'B' ? 3 : c === 'Y' ? 1 : -1));
 const KEYHALF = [2, 5], KEYDROP = 1;
 const tag = new Uint8Array(W * H), ovl = new Int8Array(W * H).fill(-1);   // (ovl: the keys' yellow, a sprite behind them when one's free)
 const SH = SCRUB.length, placed = [];   // (tag: 1 a Scrubbly's, 2 its teeth's yellow, 4 its eyes')         // 1 a Scrubbly's, 2 its teeth's cells (lines 24-31, columns 8-23), 3 its feet (lines 40-43)

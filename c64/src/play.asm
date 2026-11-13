@@ -138,6 +138,7 @@ _all    lda jumpx+1                 ; (its window)
         sta doyoyo
         sta dead
         sta anim
+        sta animf
         sta won
         sta yo_len
         sta yo_len+1
@@ -478,9 +479,12 @@ move_to_qx
         sta tx+1
         rts
 
-animate lda anim                    ; (about 7 frames a second, as in GameMaker)
-        clc
-        adc #30
+animate lda animf                   ; (7 frames a second at GameMaker's 60 ticks: 7 x 64 / 60 =
+        clc                         ; 7.465 a tick, 7 + 119 / 256; a frame each 64. The BBC
+        adc #119                    ; version's 30 a tick was 4 times that)
+        sta animf
+        lda anim
+        adc #7
         sta anim
         rts
 
@@ -1247,7 +1251,8 @@ _climb  lda tclimb
         lda #2                      ; (Trogg_cn)
         sta tfr
         rts
-+       lda anim                    ; (its top bit: frame 0-1)
++       lda anim                    ; (its bit 6: frame 0-1, at the walk's rate, 7 a second as in
+        asl a                       ; GameMaker)
         asl a
         lda #0
         rol a
@@ -1392,6 +1397,7 @@ tstate  .byte ST_STAND
 tface   .byte 0                     ; (0 right, 1 left)
 tclimb  .byte 0                     ; (0 still, 1 up, 2 down)
 anim    .byte 0
+animf   .byte 0                     ; (its fraction)
 xmove   .byte 0                     ; (the keys: -1, 0, 1)
 ymove   .byte 0
 doyoyo  .byte 0
