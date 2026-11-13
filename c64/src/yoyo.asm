@@ -892,17 +892,22 @@ _o      sta ip0+1
         sta ip0+1
         rts
 
-; The yoyo's 4 frames (the BBC version's IMG_Yoyo_0-3, its black; 7 x 6)
         .include "scrpatch.inc"     ; STRING; each Scrubbly's patch (pack.mjs)
+        .send high
 
-yoyospr .byte $7c, 0, 0, $c6, 0, 0, $f2, 0, 0, $fa, 0, 0, $fe, 0, 0, $7c, 0, 0
+; The yoyo's 4 frames (the BBC version's IMG_Yoyo_0-3, its black; 7 x 6), loaded straight into
+; the VIC bank at SPRYOYO (frak64.asm)
+        .section yoyospr
+        .byte $7c, 0, 0, $c6, 0, 0, $f2, 0, 0, $fa, 0, 0, $fe, 0, 0, $7c, 0, 0
         .fill 46
         .byte $7c, 0, 0, $fe, 0, 0, $fa, 0, 0, $f2, 0, 0, $c6, 0, 0, $7c, 0, 0
         .fill 46
         .byte $7c, 0, 0, $fe, 0, 0, $be, 0, 0, $9e, 0, 0, $c6, 0, 0, $7c, 0, 0
         .fill 46
         .byte $7c, 0, 0, $c6, 0, 0, $9e, 0, 0, $be, 0, 0, $fe, 0, 0, $7c, 0, 0
-        .fill 46
+        .fill 46, 0
+        .send yoyospr
+        .section high
 
 yo_len  .word 0
 yo_turn .byte 0
@@ -930,8 +935,8 @@ cpknk   .fill NS                    ; (at the checkpoint: what was gone, the cou
 cppck   .fill NP
 cpgems  .byte 0
 cpkeys  .byte 0
-scrsvt  .fill 256                   ; (the knocked-off cells' codes before)
-scrsvb  .fill 256
+scrsvt  .fill NPATCH                ; (the knocked-off cells' codes before)
+scrsvb  .fill NPATCH
 sp_on   .byte 0                     ; (the string for the next frame: strset's)
 sp_r    .byte 0
 sp_h    .byte 0

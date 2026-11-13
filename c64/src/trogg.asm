@@ -13,7 +13,7 @@
 ; Trogg's (tact) when it switches to that frame (with the multiplexer's buffer, and the scroll).
 
         .include "trogg.inc"        ; TFRAMES, trleft
-TROGGP  = (TROGG & $3fff) / 64      ; (frame f's blocks: TROGGP + 6f + 0-2 outline, 3-5 infill)
+TROGGP  = (TROGG & $3fff) / 64      ; (the blocks; tblk: frame f's, 6f + 0-2 outline, 3-5 infill)
 TY1     = 0                         ; (tpen, tact: his sprites' y,
 TY2     = 1                         ;  the second instances' y,
 TXL     = 2                         ;  x (bit 8: tmsbb, in the multiplexer's registers),
@@ -74,13 +74,12 @@ trogset lda jumping                 ; (hidden while the camera jumps back to the
         asl
         sta mt
         asl
-        clc
-        adc mt
-        adc #TROGGP
+        adc mt                      ; (C clear: f < 43)
+        tay
         ldx #0
--       sta tpen + TP1O,x
-        clc
-        adc #1
+-       lda tblk,y                  ; (trogg.inc: frame f's six blocks)
+        sta tpen + TP1O,x
+        iny
         inx
         cpx #6
         bne -

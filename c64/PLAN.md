@@ -359,6 +359,17 @@ reference for everything else is that code (`../src/frak.asm`): `check_collision
     pause by the restarts used x, which `pickup` still needed; it uses y.)
 13. **Budget**, with everything running: the whole frame profiled, readiness and slack measured
     in the camera test and in play, and whatever that shows fixed.
+    - **Memory first** (done): `tools/memmap.py` sizes every item; the waste found and taken out,
+      2.5K off the program file, 1.8K more free below `$4000` (the README's memory map): the
+      row-tail tables in pairs, interleaved (only odd masks are read: the cover's bit 0 is always
+      set); Trogg's sprite blocks once each (60 of 90, `tblk` each frame's 6), his collision
+      spans likewise (12 of 15); the character sets and sprites loaded where the VIC reads them,
+      not copied; the patches' save areas cut to 192 cells. Checked: the tail tables the same
+      for every odd mask, each frame's blocks the same bytes, collisions, pickups, checkpoints,
+      hazards and pops as before (py65), the frame checker (30 frames, no problems), the screen
+      pixel for pixel the same as before in VICE (3 frames sooner: the start does less), the
+      packed program unpacking; readiness in the camera test 90.0% (90.2% before: noise).
+      Left: the alignment padding (0.45K), and `colw0`/`colw1` as a loop (0.55K, slower).
 14. **Sound.** The sound effects on the SID (`SFX_CHING` for a pickup, `SFX_SQUEAL`, `SFX_DAGGER`,
     `SFX_POP`, `SFX_THUD`), from the BBC version's definitions, played in the border; the music
     (the victory tune) after. Its time measured against the budget from 13.

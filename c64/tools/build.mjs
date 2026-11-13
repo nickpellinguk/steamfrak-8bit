@@ -63,15 +63,15 @@ if (PM !== null) tailFor.fill(PD);
 const delays = [...new Set(tailFor)].sort((a, b) => a - b);
 const delayCode = d => { const out = []; let r = d; if (r & 1) { out.push('bit $ea'); r -= 3; } while (r > 0) { out.push('nop'); r -= 2; } return out; };
 let inc = '; made by tools/build.mjs: for each mask of sprites shown (0, the cover, always), the row\n; interrupt\'s tail (line 4\'s fetches) and its slide\'s constant (line 3\'s); the tails\n';
-inc += 'masktl  .byte ' + tailFor.map(d => `<tail${d}`).join(', ') + '\n';
-inc += 'maskth  .byte ' + tailFor.map(d => `>tail${d}`).join(', ') + '\n';
+// Every mask has bit 0 (the cover) set, so only the odd entries are ever read: each pair of tables
+// shares one block, interleaved (masktl's at the even bytes, read as masktl = block - 1; maskth's
+// at the odd, maskth = block); maskjm's even bytes are spare
+const pair = (a, b, fa, fb) => `${b}  .byte ` + tailFor.flatMap((d, m) => m & 1 ? [] : [fa(m + 1), fb(m + 1)]).join(', ') + `\n${a} = ${b} - 1\n`;
+inc += pair('masktl', 'maskth', m => `<tail${tailFor[m]}`, m => `>tail${tailFor[m]}`);
 // (the same tails, then Trogg's second instances (a: y + 21 and P2) or third blocks (b: P3), for
 // the rows whose ticks change his sprites)
-for (const v of 'ab') {
-    inc += `masktl${v} .byte ` + tailFor.map(d => `<tail${d}${v}`).join(', ') + '\n';
-    inc += `maskth${v} .byte ` + tailFor.map(d => `>tail${d}${v}`).join(', ') + '\n';
-}
-inc += 'maskjm  .byte ' + jmFor.join(', ') + '\n';
+for (const v of 'ab') inc += pair(`masktl${v}`, `maskth${v}`, m => `<tail${tailFor[m]}${v}`, m => `>tail${tailFor[m]}${v}`);
+inc += 'maskjm  .byte ' + jmFor.filter((j, m) => m & 1).map(j => `0, ${j}`).join(', ') + '\n';
 for (const [v, to] of [['', 'tailend'], ['a', 'trogga'], ['b', 'troggb']])
     for (const d of delays) inc += `tail${d}${v}  stx $d018\n` + delayCode(d).map(c => `        ${c}\n`).join('') + `        sta $d011\n        jmp ${to}\n`;
 writeFileSync(DIR + 'tails.inc', inc);
@@ -127,8 +127,10 @@ writeFileSync(DIR + 'masks.inc', `; made by tools/build.mjs\nmasks   .byte ${mas
         // for an empty row; and each object's image's corner)
         (() => { const sp = g => g.flatMap(r => { const xs = r.map((p, x) => p >= 0 ? x : -1).filter(x => x >= 0); return xs.length ? [xs[0], xs[xs.length - 1]] : [255, 255]; });
                  const g = pj.grids, kinds = { IMG_Key: 'keysp', IMG_Gem: 'gemsp' };
-                 return B('tleft', tj.map(f => f.left)) + `tspl    .byte ${tj.map((f, i) => `<(tspan + ${i * 68})`).join(', ')}\ntsph    .byte ${tj.map((f, i) => `>(tspan + ${i * 68})`).join(', ')}\n` +
-                     B('tspan', tj.flatMap(f => sp(f.shown))) + B('scrsp', sp(g.IMG_Scrubbly)) + `SCRH    = ${g.IMG_Scrubbly.length}\n` +
+                 // (frames with the same spans share them: tsU, each different one once; tsAt, each frame's)
+                 const tsU = [], tsAt = tj.map(f => { const v = sp(f.shown), k = tsU.findIndex(u => u.join() === v.join()); return k >= 0 ? k : tsU.push(v) - 1; });
+                 return B('tleft', tj.map(f => f.left)) + `tspl    .byte ${tsAt.map(i => `<(tspan + ${i * 68})`).join(', ')}\ntsph    .byte ${tsAt.map(i => `>(tspan + ${i * 68})`).join(', ')}\n` +
+                     B('tspan', tsU.flat()) + B('scrsp', sp(g.IMG_Scrubbly)) + `SCRH    = ${g.IMG_Scrubbly.length}\n` +
                      B('keysp', sp(g.IMG_Key)) + B('gemsp', sp(g.IMG_Gem)) +
                      B('scil', scrub.placed.map(p => (p.x + 8) & 255)) + B('scih', scrub.placed.map(p => (p.x + 8) >> 8)) + B('scit', scrub.placed.map(p => p.top + 24)) +
                      B('pkil', pk.map(p => p.left & 255)) + B('pkih', pk.map(p => p.left >> 8)) + B('pkit', pk.map(p => p.top)) +
@@ -140,7 +142,8 @@ writeFileSync(DIR + 'masks.inc', `; made by tools/build.mjs\nmasks   .byte ${mas
                  const spr = H.flatMap(h => { const b = Array(64).fill(0); h.grid.forEach((r, y) => r.forEach((p, x) => { if (p >= 0) b[y * 3 + (x >> 3)] |= 0x80 >> (x & 7); })); return b; });
                  const sp = gr => gr.flatMap(r => { const xs = r.map((p, x) => p >= 0 ? x : -1).filter(x => x >= 0); return xs.length ? [xs[0], xs[xs.length - 1]] : [255, 255]; });
                  const K = (n, f) => B(n, [0, ...H.map(f)]);
-                 return B('hazspr', spr) + K('kxo', h => h.xo) + K('kyo', h => h.yo) + K('kw', h => h.grid[0].length) + K('kh', h => h.grid.length) +
+                 writeFileSync(DIR + 'hazspr.bin', Buffer.from(spr));
+                 return K('kxo', h => h.xo) + K('kyo', h => h.yo) + K('kw', h => h.grid[0].length) + K('kh', h => h.grid.length) +
                      B('kbx0', [0, ...hb.map(b => b.x0)]) + B('kbx1', [0, ...hb.map(b => b.x1)]) + B('kby0', [0, ...hb.map(b => b.y0)]) + B('kby1', [0, ...hb.map(b => b.y1)]) +
                      B('balsp', sp(H[0].grid)) + B('dagsp', sp(H[1].grid)) + `kspl    .byte 0, <balsp, <dagsp\nksph    .byte 0, >balsp, >dagsp\n`; })() +
         // (the FRAK! bubble, redrawn at half width, 24 x 19, for two x-expanded sprites: its black, and
@@ -158,7 +161,8 @@ writeFileSync(DIR + 'masks.inc', `; made by tools/build.mjs\nmasks   .byte ${mas
                  if (n.some(r => r.length !== 24) || n.length !== F.grid.length) throw new Error('the FRAK! bubble is not 24 x ' + F.grid.length);
                  writeFileSync(DIR + 'frak.txt', '; the FRAK! bubble as the C64 shows it: 24 wide, each pixel shown 2 wide (build.mjs)\n' + n.join('\n') + '\n');
                  const blk = col => { const b = Array(64).fill(0); n.forEach((r, y) => { for (let x = 0; x < 24; x++) if (r[x] === col) b[y * 3 + (x >> 3)] |= 0x80 >> (x & 7); }); return b; };
-                 return B('frakspr', [...blk('B'), ...blk('Y')]) + `FRAKXO  = ${F.xo}\nFRAKYO  = ${F.yo}\n`; })());
+                 writeFileSync(DIR + 'frakspr.bin', Buffer.from([...blk('B'), ...blk('Y')]));
+                 return `FRAKXO  = ${F.xo}\nFRAKYO  = ${F.yo}\n`; })());
 }
 const sb = Buffer.alloc(64);
 scrub.sprite.forEach((row, y) => { for (let k = 0; k < 3; k++) sb[y * 3 + k] = parseInt(row.slice(k * 8, k * 8 + 8), 2); });

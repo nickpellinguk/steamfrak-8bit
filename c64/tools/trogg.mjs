@@ -127,11 +127,14 @@ for (const f of out) {
     console.log(`${f.name.padEnd(22)} left ${String(f.xo - f.cut).padStart(2)}: cut off ${f.lost}, yellow/magenta pairs ${f.clash}, colour outside ${f.leak}, differ ${f.differ}`);
 }
 writeFileSync(`${OUT}/trogg.txt`, T.join('\n'));
-writeFileSync(`${OUT}/trogg.bin`, Buffer.concat(blocks));
+// (the blocks once each: frames share many; tblk, each frame's six blocks, outline P1-P3, infill P1-P3)
+const uniq = [], key = new Map(), blk = blocks.map(b => { const k = b.toString('hex'); if (!key.has(k)) { key.set(k, uniq.length); uniq.push(b); } return key.get(k); });
+writeFileSync(`${OUT}/trogg.bin`, Buffer.concat(uniq));
 writeFileSync(`${OUT}/trogg.inc`, `; made by tools/trogg.mjs: Trogg's frames (each 6 sprite blocks in trogg.bin): ${out.map((f, k) => `${k} ${f.name}`).join(', ')}\n` +
-    `TFRAMES = ${out.length}\ntrleft  .byte ${out.map(f => f.xo - f.cut).join(', ')}       ; (the sprites' left edge, left of his x)\n`);
-writeFileSync(`${OUT}/trogg.json`, JSON.stringify(out.map(f => ({ name: f.name, left: f.xo - f.cut, outline: [f.base, f.base + 1, f.base + 2], infill: [f.base + 3, f.base + 4, f.base + 5], shown: f.shown })), null, 1));
-console.log(`${out.length} frames, ${blocks.length} blocks (${blocks.length * 64} bytes); ${lostAll} pixels cut off in all; every pair of pointer changes (lines 13-21, 21-34) checked, nothing below his feet`);
+    `TFRAMES = ${out.length}\ntrleft  .byte ${out.map(f => f.xo - f.cut).join(', ')}       ; (the sprites' left edge, left of his x)\n` +
+    `tblk    .byte ${blk.map(b => `TROGGP + ${b}`).join(', ')}\n`);
+writeFileSync(`${OUT}/trogg.json`, JSON.stringify(out.map(f => ({ name: f.name, left: f.xo - f.cut, outline: blk.slice(f.base, f.base + 3), infill: blk.slice(f.base + 3, f.base + 6), shown: f.shown })), null, 1));
+console.log(`${out.length} frames, ${blocks.length} blocks, ${uniq.length} different (${uniq.length * 64} bytes); ${lostAll} pixels cut off in all; every pair of pointer changes (lines 13-21, 21-34) checked, nothing below his feet`);
 
 // ---- The picture: per frame, BBC original | outline | infill | together | differences, 6x
 const S = 6, GAP = 2, PW = 26, CW = (PW + GAP) * 5 + 6, CH = H + 4, PER = 5;

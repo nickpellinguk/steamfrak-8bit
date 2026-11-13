@@ -227,30 +227,37 @@ about 1,500) makes the expensive frames.
 
 ## Memory map
 
-As built now (`tools/build.mjs` prints the program's extent; the labels are in `build/frak64.lbl`).
-The program file loads from `$0801` to `$b6cf` (44,751 bytes; 13,765 packed on the disk image);
-the start sets `$01` to `$35` (RAM everywhere but I/O), so the KERNAL's and BASIC's areas are RAM.
+As built now (`tools/build.mjs` prints the program's extent; the labels are in `build/frak64.lbl`;
+`tools/memmap.py` sizes each item). The program file loads from `$0801` to `$accf` (42,191 bytes;
+13,736 packed on the disk image); the start sets `$01` to `$35` (RAM everywhere but I/O), so the
+KERNAL's and BASIC's areas are RAM.
 
 | From | To | What | Free |
 | --- | --- | --- | --- |
 | `$0002` | `$0063` | Zero page: the scroll, the row interrupt, the multiplexer, the yoyo and collisions' pointers | `$64`-`$ff` |
 | `$0100` | `$01ff` | Stack | |
 | `$0200` | `$07ff` | Unused (BASIC's and the KERNAL's areas) | 1.5K |
-| `$0801` | `$3d3f` | Low: code and tables that must be below the VIC bank or are timing-critical: the row interrupt and its tails (`$0d00`), the border ticks, VSP (`vspline`, `$0f00`), the fill, the column writes (`colw0`, `colw1`), the scroll (`scroll.asm`), the camera, the multiplexer (`mux.asm`), Trogg (`trogg.asm`), his physics (`play.asm`); the `$d018` tables (`$3700`); the character sets' copy (`$393f`, 1K: copied to `$5000`/`$5800` at the start, so reusable after it) | `$3d40`-`$3fff`, 0.7K |
+| `$0801` | `$35fe` | Low: code and tables that must be below the VIC bank or are timing-critical: the row interrupt and its tails (`$0d00`), the border ticks, VSP (`vspline`, `$0f00`), the fill, the column writes (`colw0`, `colw1`), the scroll (`scroll.asm`), the camera, the multiplexer (`mux.asm`), Trogg (`trogg.asm`), his physics (`play.asm`); the `$d018` tables (`$34e7`) | `$35ff`-`$3fff`, 2.5K |
 | `$4000` | `$4fff` | VIC bank 1: the 4 screens, pair 0 (`$4000` tops, `$4400` bottoms) and pair 1 (`$4800`, `$4c00`); `$3f8`-`$3ff` of each the sprite pointers | |
-| `$5000` | `$51ff` | Character set 0 (64 characters) | `$5200`-`$53ff`, 0.5K |
-| `$5400` | `$567f` | Sprites: the cover (`$5400`), the Scrubbly (`$5440`), the balloon (`$5480`), the yoyo's 4 (`$54c0`), the dagger (`$55c0`), the FRAK! bubble's 2 (`$5600`) | `$5680`-`$57ff`, 0.4K |
-| `$5800` | `$59ff` | Character set 1 | `$5a00`-`$5fff`, 1.5K |
+| `$5000` | `$51ff` | Character set 0 (64 characters; loaded in place) | `$5200`-`$53ff`, 0.5K |
+| `$5400` | `$567f` | Sprites: the cover (`$5400`, made at the start), the Scrubbly (`$5440`), the balloon (`$5480`), the yoyo's 4 (`$54c0`), the dagger (`$55c0`), the FRAK! bubble's 2 (`$5600`); all but the cover loaded in place | `$5680`-`$57ff`, 0.4K |
+| `$5800` | `$59ff` | Character set 1 (loaded in place) | `$5a00`-`$5fff`, 1.5K |
 | `$6000` | `$66c9` | The multiplexer's RAM (`.virtual`: its model, lists and both buffers, cleared at the start) | `$66ca`-`$67ff`, 0.3K |
-| `$6800` | `$7e7f` | Trogg's sprites: 15 frames, 6 blocks each | |
-| `$7e80` | `$90db` | The level map: `tops`, then `bottoms` (94 x 25 each; changed in place for what's knocked off and picked up) | |
-| `$90dc` | `$b6cf` | High (`.section high`): the yoyo and its string, knocking off and picking up (`yoyo.asm`, from `$9334`), collisions (`collide.asm`, from `$a817`, and its tables `collide.inc`), the balloons and daggers (`hazards.asm`, `$ace0`), the multiplexer's and the physics' tables (`mktab` `$af00`, `lim` `$b400`, `geometry.inc`), the patches' save areas | |
-| `$b6d0` | `$cfff` | | 6.3K |
+| `$6800` | `$76ff` | Trogg's sprites: 60 different blocks, shared among his 15 frames (`tblk`: each frame's 6) | |
+| `$7700` | `$895b` | The level map: `tops`, then `bottoms` (94 x 25 each; changed in place for what's knocked off and picked up) | |
+| `$895c` | `$accf` | High (`.section high`): the yoyo and its string, knocking off and picking up (`yoyo.asm`), collisions (`collide.asm`, `$9d4b`, and its tables `collide.inc`), the balloons and daggers (`hazards.asm`, `$a214`), the multiplexer's and the physics' tables (`mktab` `$a500`, `lim` `$aa00`, `geometry.inc`), the patches' save areas | |
+| `$acd0` | `$cfff` | | 8.8K |
 | `$d000` | `$dfff` | I/O (the RAM under it unused) | |
 | `$e000` | `$fff9` | RAM under the KERNAL (`$fffa`-`$ffff`: the NMI, reset and IRQ vectors) | 8K |
 
-Free in all: about 16K in the large pieces (`$b6d0`-`$cfff`, `$e000`-`$fff9`), and about 3.7K in
-the VIC bank's gaps (usable for sprites or tables, not code the VIC would see) and below `$4000`.
+Free in all: about 17K in the large pieces (`$acd0`-`$cfff`, `$e000`-`$fff9`), 2.5K below `$4000`,
+and about 2.7K in the VIC bank's gaps (usable for sprites or tables, not code the VIC would see).
+
+The budget pass (milestone 13) took 2.5K off the program file and freed 1.8K below `$4000`: each
+pair of row-tail tables shares a block (every row's mask has the cover's bit 0, so only odd entries
+are read: one table in the odd bytes, the other in the even), Trogg's repeated sprite blocks and
+collision spans once each, the character sets and sprites loaded where the VIC reads them instead
+of copied there, and the patches' save areas cut to the cells there are (192).
 
 ## Next
 

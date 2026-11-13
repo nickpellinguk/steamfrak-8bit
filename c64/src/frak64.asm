@@ -203,15 +203,6 @@ start   sei
         ; Scrubblies' bodies (expanded both ways, magenta, behind the characters, so their black
         ; and the eyes' and teeth's yellow are in front, their x following the scroll), the
         ; balloons and daggers (hazards.asm: their sprites made by build.mjs) and the yoyo
-        ldx #63
--       lda sprscrub,x
-        sta SPRSCRUB,x
-        lda hazspr,x
-        sta SPRBALLOON,x
-        lda hazspr + 64,x
-        sta SPRDAGGER,x
-        dex
-        bpl -
         ldx #NS - 1
 -       lda scruby,x
         sta vy,x
@@ -223,15 +214,6 @@ start   sei
         sta vfl,x
         dex
         bpl -
-        ldx #0                      ; the yoyo's frames (yoyo.asm): black, kept before others; the
--       lda yoyospr,x               ; FRAK! bubble's
-        sta SPRYOYO,x
-        cpx #128
-        bcs +
-        lda frakspr,x
-        sta SPRFRAK,x
-+       inx
-        bne -
         ldx #1
 -       lda #(SPRFRAK & $3fff) / 64
         clc
@@ -342,15 +324,6 @@ start   sei
         sta $d900,x
         sta $da00,x
         sta $db00,x
-        ; ... and the character sets in place
-        lda charsets,x
-        sta CS0,x
-        lda charsets+$100,x
-        sta CS0+$100,x
-        lda charsets+$200,x
-        sta CS1,x
-        lda charsets+$300,x
-        sta CS1+$100,x
         inx
         bne -
 
@@ -1196,18 +1169,29 @@ fdb1    .for i = 0, i < ROWS, i += 1
 bandset .binary "bandset.bin"
 junk    .fill 16
 hist    .fill 32
-sprscrub .binary "scrubspr.bin"
 ; the cover sprite's y for each row's tick: the next piece's, once this one has started
 covery  .for i = 0, i < ROWS, i += 1
 _y      := COVERY0 + 42 * (1 + ((54 + 8 * i) - (COVERY0 + 1)) / 42)
         .byte _y > COVERY0 + 4 * 42 ? COVERY0 + 4 * 42 : _y   ; (the last piece runs past the bottom)
         .endfor
         .include "masks.inc"
-charsets .binary "charsets.bin"
 end
         .cerror end > SCR0, "the program runs into the screens"
-        ; (then the VIC bank: the screens, character sets, sprites and the multiplexer's RAM, all
-        ; set up at the start; and what's loaded straight into it)
+        ; (then the VIC bank: the screens, the cover sprite and the multiplexer's RAM, set up at
+        ; the start; and what's loaded straight into it: the character sets, the other sprites)
+        .fill CS0 - *, 0
+        .binary "charsets.bin", 0, 512
+        .fill SPRSCRUB - *, 0
+        .binary "scrubspr.bin"      ; (the Scrubblies' bodies)
+        .binary "hazspr.bin", 0, 64 ; (SPRBALLOON: hazards.asm's, from build.mjs)
+        .cerror * != SPRYOYO
+        .dsection yoyospr           ; (the yoyo's frames: yoyo.asm)
+        .cerror * != SPRDAGGER
+        .binary "hazspr.bin", 64, 64
+        .cerror * != SPRFRAK
+        .binary "frakspr.bin"       ; (the FRAK! bubble's black, its yellow: build.mjs)
+        .fill CS1 - *, 0
+        .binary "charsets.bin", 512, 512
         .fill $6800 - *, 0
 TROGG   .binary "trogg.bin"         ; Trogg's sprites: per frame outline P1-P3, infill P1-P3
         .cerror * > $8000, "Trogg's sprites run out of the VIC bank"
