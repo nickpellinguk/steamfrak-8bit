@@ -21,10 +21,13 @@
 ; after nlast (nb), last made three frames ago: it starts by copying across from nlast what the
 ; two frames since changed, so the three keep step.
 
-NV      = NS + NB + 1 + 2       ; virtual sprites: the Scrubblies, the balls, the yoyo, the FRAK! bubble
+NV      = NS + NB + 1 + 2 + NB  ; virtual sprites: the Scrubblies, the balls, the yoyo, the FRAK!
+                                ; bubble, the balloons' infill (BIV)
+BIV     = NS + NB + 3
 VEXPY   = 1                     ; (vfl: expanded down,
 VEXPX   = 2                     ;  ... across,
 VBEHIND = 4                     ;  ... behind the characters,
+VLOW    = $20                   ;  ... placed after all others, and dropped for any of them,
 VFIRST  = $40                   ;  ... kept before others,
 VHIDE   = $80                   ;  ... not shown)
         .if INSANE              ; (the CPC port's settings: Hard, or Insane)
@@ -514,7 +517,46 @@ _hid    lda #VHIDE
 _nm     dex
         bmi +
         jmp _m
-+       rts
+        ; each balloon's infill (its magenta, hi-res: in front, as the outline is; their pixels
+        ; don't meet), low priority, in one of two images: the pixels at the sprite's top (at the
+        ; outline's y), or at its bottom (BIDY lines up), so there's a second place to try: while
+        ; it isn't placed, the two in turn, a frame each; once it is, the one that was
++       ldx #NB - 1
+_i      lda vfl + NS,x
+        bne _ih
+        lda oact,x
+        cmp #1
+        bne _ih
+        lda vxlo + NS,x
+        sta vxlo + BIV,x
+        lda vxhi + NS,x
+        sta vxhi + BIV,x
+        lda vh + BIV,x
+        bpl +
+        lda bivar,x                 ; (not placed: the other image this time)
+        eor #1
+        sta bivar,x
++       lda vy + NS,x
+        ldy bivar,x
+        beq +
+        sec
+        sbc #BIDY
+        bcs +
+        lda #0                      ; (off the top: the first)
+        sta bivar,x
+        lda vy + NS,x
++       sta vy + BIV,x
+        lda #(SPRBINF & $3fff) / 64
+        clc
+        adc bivar,x
+        sta vptr + BIV,x
+        lda #VLOW
+        bne _in
+_ih     lda #VLOW | VHIDE
+_in     sta vfl + BIV,x
+        dex
+        bpl _i
+        rts
 kptr    .byte 0, (SPRBALLOON & $3fff) / 64, (SPRDAGGER & $3fff) / 64   ; (each kind's sprite: 1 balloon, 2 dagger)
 kcol    .byte 0, 0, 0                                                  ; (and colour: black, outlines)
 
@@ -710,15 +752,18 @@ _xu     txa
         jmp _nx
 _full   jsr writerec
         jmp _nx
-_clash  ldy mv                  ; sprite mv and mi clash: mi goes if it isn't kept before others
-        lda vfl,y               ; and mv is, else mv; then mv again
-        and #VFIRST
-        beq _rmj
+_clash  ldy mv                  ; sprite mv and mi clash: mi goes if it ranks below mv (kept
+        lda vfl,y               ; before others, then the rest, then the low), else mv; then mv
+        and #VFIRST | VLOW      ; again (the rank: the flags, VLOW flipped)
+        eor #VLOW
+        sta mrank
         ldx mi
         lda vfl,x
-        and #VFIRST
-        beq +
-_rmj    jmp _rm
+        and #VFIRST | VLOW
+        eor #VLOW
+        cmp mrank
+        bcc +
+        jmp _rm
 +       lda mv
         pha
         stx mv
@@ -1002,8 +1047,8 @@ pplace
         jmp _done
 +       lda #PLACES
         sta mbud
-        lda #VFIRST
-        sta mpass
+        lda #VFIRST | VLOW      ; (the passes, by rank: kept before others ($60), the rest ($20),
+        sta mpass               ; the low (0), which evict nothing)
 _p      lda #0
         sta mo
 _pv     ldx mo
@@ -1014,7 +1059,8 @@ _pv     ldx mo
         lda vh,y
         bpl _pn
         lda vfl,y
-        and #VFIRST
+        and #VFIRST | VLOW
+        eor #VLOW
         cmp mpass
         bne _pn
         lda mbud
@@ -1031,8 +1077,11 @@ _pn     inc mo
         jmp _pv
 _pe     lda mpass
         beq _done
+        cmp #VLOW + 1           ; (the next rank down)
         lda #0
-        sta mpass
+        bcc +
+        lda #VLOW
++       sta mpass
         jmp _p
 _done
         .if MUXTIME
@@ -1238,9 +1287,11 @@ evict
         ldx #NV - 1
 _e      lda vh,x
         bmi _en
-        lda vfl,x
-        and #VFIRST
-        bne _en
+        lda vfl,x               ; (only one ranking below the pass's)
+        and #VFIRST | VLOW
+        eor #VLOW
+        cmp mpass
+        bcs _en
         lda vy,x
         sec
         sbc my
@@ -1793,6 +1844,8 @@ vxhi    .fill NV
 vptr    .fill NV
 vcol    .fill NV
 vfl     .fill NV
+mrank   .byte 0
+bivar   .fill NB                ; (each balloon's infill's image: 0 top, 1 bottom)
 order   .for i = 0, i < NV, i += 1
         .byte i
         .endfor

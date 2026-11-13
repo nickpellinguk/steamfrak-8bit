@@ -142,10 +142,14 @@ writeFileSync(DIR + 'masks.inc', `; made by tools/build.mjs\nmasks   .byte ${mas
                  // (their sprites: the image's black alone, an outline; the balloon's yellow highlight black
                  // too; the spans below are the whole image's)
                  const spr = H.flatMap((h, k) => { const b = Array(64).fill(0); h.grid.forEach((r, y) => r.forEach((p, x) => { if (p === 3 || (k === 0 && p === 1)) b[y * 3 + (x >> 3)] |= 0x80 >> (x & 7); })); return b; });
+                 // (and the balloon's infill, its magenta, twice: at the sprite's top, and at its
+                 // bottom, BIDY lines down)
+                 const BIDY = 21 - H[0].grid.length;
+                 for (const dy of [0, BIDY]) { const b = Array(64).fill(0); H[0].grid.forEach((r, y) => r.forEach((p, x) => { if (p === 2) b[(y + dy) * 3 + (x >> 3)] |= 0x80 >> (x & 7); })); spr.push(...b); }
                  const sp = gr => gr.flatMap(r => { const xs = r.map((p, x) => p >= 0 ? x : -1).filter(x => x >= 0); return xs.length ? [xs[0], xs[xs.length - 1]] : [255, 255]; });
                  const K = (n, f) => B(n, [0, ...H.map(f)]);
                  writeFileSync(DIR + 'hazspr.bin', Buffer.from(spr));
-                 return K('kxo', h => h.xo) + K('kyo', h => h.yo) + K('kw', h => h.grid[0].length) + K('kh', h => h.grid.length) +
+                 return `BIDY    = ${BIDY}\n` + K('kxo', h => h.xo) + K('kyo', h => h.yo) + K('kw', h => h.grid[0].length) + K('kh', h => h.grid.length) +
                      B('kbx0', [0, ...hb.map(b => b.x0)]) + B('kbx1', [0, ...hb.map(b => b.x1)]) + B('kby0', [0, ...hb.map(b => b.y0)]) + B('kby1', [0, ...hb.map(b => b.y1)]) +
                      // (his box and kind k's touch where its origin less his, d, is within [min, max] each
                      // way, for each of his frames: biased by $80, max + 1, for unsigned compares)
