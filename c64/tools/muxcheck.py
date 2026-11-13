@@ -13,8 +13,9 @@ for line in open(C64+'/build/frak64.lbl'):
     if m: lbl[m.group(1)]=int(m.group(3),16 if m.group(2) else 10)
 N=int(sys.argv[1]) if len(sys.argv)>1 else 8
 NV=lbl["vt"]-lbl["vh"]          # (the virtual sprites: vh is NV long, vt follows)
-per=[('nb',1),('t010',64*20),('vh',NV*15),('vy',NV*6),('tpen',9),('tmsbb',5)]   # contiguous blocks
-# addresses: buffers are contiguous from t010 (20 arrays x 64); model from vh; virtual sprites from vy
+BL=lbl["t017"]-lbl["t010"]     # (each buffer array's length: 32 a buffer)
+per=[('nb',1),('t010',BL*20),('vh',NV*15),('vy',NV*6),('tpen',9),('tmsbb',5)]   # contiguous blocks
+# addresses: buffers are contiguous from t010 (20 arrays x BL); model from vh; virtual sprites from vy
 const=[('maskjm',256),('masktl',256),('maskth',256),('masktla',256),('masktha',256),('masktlb',256),('maskthb',256)]
 cmds=['m %04x %04x'%(lbl[n],lbl[n]+l-1) for n,l in const]+['break %04x'%lbl['muxdone']]
 for i in range(N):
@@ -36,7 +37,7 @@ for f in range(N):
     if k+len(per)>len(bl): break
     nb=vals(bl[k])[0]; buf=vals(bl[k+1]); vm=vals(bl[k+3]); tp=vals(bl[k+4]); tm=vals(bl[k+5]); k+=len(per)
     TYv=tp[0]; tmsb,tra,trb,tres1,tres2=tm[:5]; TL=min(255,TYv+42)
-    B={n:buf[i*64:(i+1)*64] for i,n in enumerate(bufnames)}
+    B={n:buf[i*BL:(i+1)*BL] for i,n in enumerate(bufnames)}
     V={n:vm[i*NV:(i+1)*NV] for i,n in enumerate(vnames)}
     # set-ups in the buffer
     ins=[]

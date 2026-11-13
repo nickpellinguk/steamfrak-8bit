@@ -90,6 +90,7 @@ _swap   ldx back                    ; out of the pair shown's range: the other's
         sta back
         lda #1
         sta flippend
+        sta fliphere                ; (the frame being made flips them)
         clc
         rts
 _wait   sec

@@ -122,6 +122,11 @@ flippend = zp + 54                  ; (the next frame's scroll, decided in the m
 wanto   = zp + 55                   ;  flip for the border to make; the hidden pair's origin wanted;
 nvs     = zp + 56                   ;  the VSP offset)
 muxbusy = zp + 57
+qn      = zp + 119                  ; (frames made and waiting to be shown: 0-2; mux.asm)
+nlast   = zp + 120                  ; (the buffer made last)
+nf      = zp + 121                  ; (the buffer a frame's being copied from: nlast, as it was)
+fliphere = zp + 122                 ; (the frame being made flips the pairs: cstep, camera)
+MUXRAM  = $c000                     ; (the multiplexer's model and buffers: mux.asm)
 dtmp    = zp + 58                   ; (2)
 mt0     = zp + 60
 mte     = zp + 61                   ; (the multiplexer's)
@@ -259,10 +264,13 @@ start   sei
         lda #0
         sta $d01b
         sta bufoff
+        sta nlast
+        sta qn
         sta muxready
         sta muxreq
         sta muxbusy
         sta flippend
+        sta fliphere
         lda #$ff
         .else
         ; (the test: sprites 1-7 in the left border, where they can't be seen, but are fetched)
@@ -410,8 +418,9 @@ start   sei
         sta $d019
         cli
         .if MEASURE
-measure lda muxreq                  ; (the scroll and the multiplexer still run)
-        beq +
+measure lda qn                      ; (the scroll and the multiplexer still run)
+        cmp #2
+        bcs +
         jsr nextframe
 +       inc cnt                     ; (8 cycles a count, 16 every 256th)
         bne measure
@@ -428,9 +437,10 @@ measure lda muxreq                  ; (the scroll and the multiplexer still run)
         sta $dd0e
         .endif
 main    .if !TEST
-        lda muxreq                  ; once a frame: the next frame's scroll, the game's sprites
-        beq +                       ; and the multiplexer
-        jsr nextframe
+        lda qn                      ; a frame (the next frame's scroll, the game's sprites and the
+        cmp #2                      ; multiplexer) whenever there's a buffer for it: up to two
+        bcs +                       ; ahead of the one shown, so a quick frame's time is kept for
+        jsr nextframe               ; a slow one
 +
         .endif
         jsr bgwork                  ; the hidden pair's work, a piece
@@ -444,19 +454,12 @@ idle    ldx #8
         bne -
         jmp main
 
-; Once a frame (after the border's switched to the last): the next frame's scroll, the game's
-; sprites and the multiplexer
+; A frame made (up to two ahead of the one shown): the next frame's scroll, the game's sprites
+; and the multiplexer; then its settings for the border (qsave), and it's waiting to be shown
 nextframe
-        lda #1                      ; (busy before the request's gone: the border mustn't ask again)
-        sta muxbusy
         lda #0
-        sta muxreq
-        .if PROFILE
-        lda preq                    ; (--profile: the request's time, then the stages')
-        sta pstage
-        lda preq + 1
-        sta pstage + 1
-        .endif
+        sta fliphere
+        #pst 0
         #pst 2
         jsr gametick                ; (a game tick: the keys, Trogg)
         #pst 4
@@ -471,13 +474,115 @@ nextframe
         jsr strset
         #pst 14
         jsr muxframe
-        lda #0
-        sta muxbusy
+        jsr qsave
         .if PROFILE
         jmp precord
         .else
         rts
         .endif
+
+; The frame made (in buffer nb): what the border needs to show it (qapply), kept by buffer: the
+; scroll, a flip of the pairs, the VSP offset, the yoyo's string, Trogg's settings
+qsave   lda nb
+        lsr
+        lsr
+        lsr
+        lsr
+        lsr
+        tax
+        lda scrx
+        sta q_shx,x
+        lda fliphere
+        sta q_flip,x
+        lda nvs
+        sta q_nvs,x
+        lda sp_on
+        sta q_on,x
+        lda sp_r
+        sta q_r,x
+        lda sp_h
+        sta q_h,x
+        lda sp_ch
+        sta q_ch,x
+        lda sp_c0
+        sta q_c0,x
+        lda sp_c1
+        sta q_c1,x
+        ldy qtoff,x
+        ldx #0
+-       lda tpen,x
+        sta q_t,y
+        iny
+        inx
+        cpx #TSET
+        bne -
+        lda nb                      ; (then it's there to be shown)
+        sta nlast
+        inc qn
+        rts
+
+; In the border, the next frame made shown (bufoff its buffer): its settings in force
+qapply  lda bufoff
+        lsr
+        lsr
+        lsr
+        lsr
+        lsr
+        tax
+        lda q_shx,x
+        sta shx
+        lda q_nvs,x                 ; (the VSP offset)
+        jsr setvspa
+        lda q_on,x                  ; (the yoyo's string, at the next tick: strapply)
+        sta sq_on
+        lda q_r,x
+        sta sq_r
+        lda q_h,x
+        sta sq_h
+        lda q_ch,x
+        sta sq_ch
+        lda q_c0,x
+        sta sq_c0
+        lda q_c1,x
+        sta sq_c1
+        lda #1
+        sta strpend
+        lda q_flip,x
+        pha
+        ldy qtoff,x                 ; (Trogg's settings)
+        ldx #0
+-       lda q_t,y
+        sta tact,x
+        iny
+        inx
+        cpx #TSET
+        bne -
+        pla                         ; (and the pairs flipped)
+        beq +
+        lda #0
+        sta flippend
+        lda front
+        eor #1
+        sta front
+        jsr usefront
++       jmp setx
+q_shx   .fill 3
+q_flip  .fill 3
+q_nvs   .fill 3
+q_on    .fill 3
+q_r     .fill 3
+q_h     .fill 3
+q_ch    .fill 3
+q_c0    .fill 3
+q_c1    .fill 3
+qtoff   .byte 0, TSET, 2 * TSET
+q_t     .fill 3 * TSET
+sq_on   .byte 0                     ; (the string shown: strapply's)
+sq_r    .byte 0
+sq_h    .byte 0
+sq_ch   .byte 0
+sq_c0   .byte 0
+sq_c1   .byte 0
 
         .if PROFILE
 ; (--profile: the frame's record into the ring: its stamps, the frame count, held frames so far,
@@ -522,7 +627,6 @@ _pd     sta $e000,x
 pstage  .fill 32
 pheld   .byte 0
 pseq    .word 0
-preq    .word 0
         .endif
 
 ; Fill row prow of pair back for window working at VSP offset fsh (tops and bottoms), then prow+1:
@@ -864,37 +968,28 @@ bordirq sta sava
         sta $d001
         inc frames
         .if !TEST
-        lda muxready                ; the next frame's scroll and sprites, together, once the
-        beq _nmux                   ; multiplexer has made them; and then the frame after wanted
-        lda bufoff                  ; (or, if it's not working on one, this one again)
-        eor #32
-        sta bufoff
+        lda qn                      ; the next frame made, if there is one: its buffer, and its
+        beq _nmux                   ; scroll and settings (qapply); else this one again
+        lda bufoff
+        clc
+        adc #32
+        cmp #96
+        bcc _nbuf
         lda #0
-        sta muxready
+_nbuf   sta bufoff
+        dec qn
         .if SLACK
         inc nswap
         .endif
-        jsr frame
-        jmp _wmux
+        jsr qapply
+        jmp _dmux
 _nmux   .if SLACK
-        inc nhold                   ; (debug: frames the multiplexer wasn't ready)
+        inc nhold                   ; (debug: frames none was ready)
         .endif
         .if PROFILE
         inc pheld
         .endif
         jsr setx
-        lda muxbusy
-        bne _dmux
-_wmux   lda #1
-        sta muxreq
-        .if PROFILE
--       lda $dd05                   ; (--profile: the request's time, kept till its work starts)
-        ldx $dd04
-        cmp $dd05
-        bne -
-        sta preq + 1
-        stx preq
-        .endif
 _dmux
         .else
         jsr frame
@@ -1010,7 +1105,7 @@ vson    .byte 0
 
 ; The VSP offset from nvs (in the border, or at the start)
 setvsp  lda nvs
-        sta vson
+setvspa sta vson
         clc
         adc #VSPT - 7
         sta vsk+1
@@ -1116,6 +1211,7 @@ camera  lda jumping
         sta back
         lda #1
         sta flippend
+        sta fliphere                ; (the frame being made flips them)
 _x      rts
 _go     lda tx                      ; where he is on the screen
         sec
