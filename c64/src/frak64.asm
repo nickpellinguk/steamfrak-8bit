@@ -52,6 +52,19 @@ PAUSE   = 50                        ; frames held at each end
 
 ; zero page
 zp      = $02
+
+; (--profile: CIA 2's timer A, free running, read at each stage of a frame's work into pstage;
+; each frame's record (32 bytes) then copied into a ring at $e000-$fdff (tools/frameprof.py))
+pst     .macro
+        .if PROFILE
+-       lda $dd05
+        ldx $dd04
+        cmp $dd05
+        bne -
+        sta pstage + \1 + 1
+        stx pstage + \1
+        .endif
+        .endm
 scrx    = zp + 0                    ; scroll position, pixels (16 bits)
 dir     = zp + 2                    ; +1 or -1 ($ff)
 pause   = zp + 3
@@ -203,15 +216,6 @@ start   sei
         ; Scrubblies' bodies (expanded both ways, magenta, behind the characters, so their black
         ; and the eyes' and teeth's yellow are in front, their x following the scroll), the
         ; balloons and daggers (hazards.asm: their sprites made by build.mjs) and the yoyo
-        ldx #63
--       lda sprscrub,x
-        sta SPRSCRUB,x
-        lda hazspr,x
-        sta SPRBALLOON,x
-        lda hazspr + 64,x
-        sta SPRDAGGER,x
-        dex
-        bpl -
         ldx #NS - 1
 -       lda scruby,x
         sta vy,x
@@ -223,15 +227,6 @@ start   sei
         sta vfl,x
         dex
         bpl -
-        ldx #0                      ; the yoyo's frames (yoyo.asm): black, kept before others; the
--       lda yoyospr,x               ; FRAK! bubble's
-        sta SPRYOYO,x
-        cpx #128
-        bcs +
-        lda frakspr,x
-        sta SPRFRAK,x
-+       inx
-        bne -
         ldx #1
 -       lda #(SPRFRAK & $3fff) / 64
         clc
@@ -342,15 +337,6 @@ start   sei
         sta $d900,x
         sta $da00,x
         sta $db00,x
-        ; ... and the character sets in place
-        lda charsets,x
-        sta CS0,x
-        lda charsets+$100,x
-        sta CS0+$100,x
-        lda charsets+$200,x
-        sta CS1,x
-        lda charsets+$300,x
-        sta CS1+$100,x
         inx
         bne -
 
@@ -434,7 +420,7 @@ measure lda muxreq                  ; (the scroll and the multiplexer still run)
         .endif
 
 ; The foreground: the hidden pair kept filled and up to date for the next swap (bgwork)
-        .if MUXTIME
+        .if MUXTIME || PROFILE
         lda #$ff                    ; (debug: CIA 2's timer A free running, for muxframe's stamps)
         sta $dd04
         sta $dd05
@@ -465,16 +451,79 @@ nextframe
         sta muxbusy
         lda #0
         sta muxreq
+        .if PROFILE
+        lda preq                    ; (--profile: the request's time, then the stages')
+        sta pstage
+        lda preq + 1
+        sta pstage + 1
+        .endif
+        #pst 2
         jsr gametick                ; (a game tick: the keys, Trogg)
+        #pst 4
         jsr decide
+        #pst 6
         jsr trogset                 ; (Trogg's sprites, for the next frame's scroll)
+        #pst 8
         jsr yoyoset                 ; (the yoyo's sprite, and its string)
+        #pst 10
         jsr frakset                 ; (the FRAK! bubble)
+        #pst 12
         jsr strset
+        #pst 14
         jsr muxframe
         lda #0
         sta muxbusy
+        .if PROFILE
+        jmp precord
+        .else
         rts
+        .endif
+
+        .if PROFILE
+; (--profile: the frame's record into the ring: its stamps, the frame count, held frames so far,
+; some of the game's state, and its number)
+precord lda frames
+        sta pstage + 24
+        lda pheld
+        sta pstage + 25
+        lda tstate
+        sta pstage + 26
+        lda dead
+        sta pstage + 27
+        lda won
+        sta pstage + 28
+        lda yo_len
+        sta pstage + 29
+        lda pseq + 1
+        sta pstage + 30
+        lda pseq
+        sta pstage + 31
+        inc pseq
+        bne +
+        inc pseq + 1
++
+        ldx #31
+-       lda pstage,x
+_pd     sta $e000,x
+        dex
+        bpl -
+        lda _pd+1
+        clc
+        adc #32
+        sta _pd+1
+        bcc +
+        inc _pd+2
+        lda _pd+2
+        cmp #$fe
+        bcc +
+        lda #$e0
+        sta _pd+2
++       rts
+pstage  .fill 32
+pheld   .byte 0
+pseq    .word 0
+preq    .word 0
+        .endif
 
 ; Fill row prow of pair back for window working at VSP offset fsh (tops and bottoms), then prow+1:
 ; screen columns 2-39 (0-2 are the FLI bug's, never seen, under the cover sprite; 2 is filled too
@@ -830,11 +879,22 @@ bordirq sta sava
 _nmux   .if SLACK
         inc nhold                   ; (debug: frames the multiplexer wasn't ready)
         .endif
+        .if PROFILE
+        inc pheld
+        .endif
         jsr setx
         lda muxbusy
         bne _dmux
 _wmux   lda #1
         sta muxreq
+        .if PROFILE
+-       lda $dd05                   ; (--profile: the request's time, kept till its work starts)
+        ldx $dd04
+        cmp $dd05
+        bne -
+        sta preq + 1
+        stx preq
+        .endif
 _dmux
         .else
         jsr frame
@@ -1196,18 +1256,29 @@ fdb1    .for i = 0, i < ROWS, i += 1
 bandset .binary "bandset.bin"
 junk    .fill 16
 hist    .fill 32
-sprscrub .binary "scrubspr.bin"
 ; the cover sprite's y for each row's tick: the next piece's, once this one has started
 covery  .for i = 0, i < ROWS, i += 1
 _y      := COVERY0 + 42 * (1 + ((54 + 8 * i) - (COVERY0 + 1)) / 42)
         .byte _y > COVERY0 + 4 * 42 ? COVERY0 + 4 * 42 : _y   ; (the last piece runs past the bottom)
         .endfor
         .include "masks.inc"
-charsets .binary "charsets.bin"
 end
         .cerror end > SCR0, "the program runs into the screens"
-        ; (then the VIC bank: the screens, character sets, sprites and the multiplexer's RAM, all
-        ; set up at the start; and what's loaded straight into it)
+        ; (then the VIC bank: the screens, the cover sprite and the multiplexer's RAM, set up at
+        ; the start; and what's loaded straight into it: the character sets, the other sprites)
+        .fill CS0 - *, 0
+        .binary "charsets.bin", 0, 512
+        .fill SPRSCRUB - *, 0
+        .binary "scrubspr.bin"      ; (the Scrubblies' bodies)
+        .binary "hazspr.bin", 0, 64 ; (SPRBALLOON: hazards.asm's, from build.mjs)
+        .cerror * != SPRYOYO
+        .dsection yoyospr           ; (the yoyo's frames: yoyo.asm)
+        .cerror * != SPRDAGGER
+        .binary "hazspr.bin", 64, 64
+        .cerror * != SPRFRAK
+        .binary "frakspr.bin"       ; (the FRAK! bubble's black, its yellow: build.mjs)
+        .fill CS1 - *, 0
+        .binary "charsets.bin", 512, 512
         .fill $6800 - *, 0
 TROGG   .binary "trogg.bin"         ; Trogg's sprites: per frame outline P1-P3, infill P1-P3
         .cerror * > $8000, "Trogg's sprites run out of the VIC bank"

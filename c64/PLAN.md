@@ -359,6 +359,51 @@ reference for everything else is that code (`../src/frak.asm`): `check_collision
     pause by the restarts used x, which `pickup` still needed; it uses y.)
 13. **Budget**, with everything running: the whole frame profiled, readiness and slack measured
     in the camera test and in play, and whatever that shows fixed.
+    - **Memory first** (done): `tools/memmap.py` sizes every item; the waste found and taken out,
+      2.5K off the program file, 1.8K more free below `$4000` (the README's memory map): the
+      row-tail tables in pairs, interleaved (only odd masks are read: the cover's bit 0 is always
+      set); Trogg's sprite blocks once each (60 of 90, `tblk` each frame's 6), his collision
+      spans likewise (12 of 15); the character sets and sprites loaded where the VIC reads them,
+      not copied; the patches' save areas cut to 192 cells. Checked: the tail tables the same
+      for every odd mask, each frame's blocks the same bytes, collisions, pickups, checkpoints,
+      hazards and pops as before (py65), the frame checker (30 frames, no problems), the screen
+      pixel for pixel the same as before in VICE (3 frames sooner: the start does less), the
+      packed program unpacking; readiness in the camera test 90.0% (90.2% before: noise).
+      Left: the alignment padding (0.45K), and `colw0`/`colw1` as a loop (0.55K, slower).
+    - **The frame in play** (measured): `build.mjs --profile` stamps CIA 2's timer at each stage
+      of a frame's work, from the border's request to the multiplexer done, into a ring at
+      `$e000`; `tools/frameprof.py` plays a key script in VICE and reads it back
+      (`tools/autoplay.py` makes the scripts: the game's own tick in py65, choosing key segments
+      that go somewhere new, pick things up and knock Scrubblies off). Six starts across A_1,
+      1,500 ticks of play each, then standing: **7.6-33.4% of frames held** (35.7% in a normal
+      `--slack` build of the first, so not the stamps' doing); playing 36-68% over, standing
+      13-27%. The work averages 7,600-9,200 CPU cycles (py65; 6,800-13,900), but where it runs
+      matters: `gametick` runs first, in the border, at about 90% (3,300 CPU cycles take
+      3,600); the multiplexer's stages run on into the picture, at about 29% (3,500 take about
+      12,000: the row interrupts' waits, 4-line FLI's bad lines and the sprites' fetches take
+      the rest). So the budget is about 7,000 cycles in the border, then a third of a cycle per
+      cycle. CPU by routine: `collide` 1,700 (its mask loop shifts a bit at a time: about 440),
+      `update` 1,300-1,600, `game` 1,000, `hazards` 570, `yoyo_collide` 0-540, `sort` 360,
+      `rngs` 330-470, `read_keys` 270.
+    - **Found**: the BBC version runs a game tick per vertical sync (50 a second) however slowly
+      it draws (more ticks after a slow frame, capped at `MAX_TICKS_PER_FRAME`); the C64 runs one
+      per frame made, so each held frame is a tick lost and the game runs slow.
+      (Accepted: the C64 runs at 50 ticks a second, 5/6 of the Steam version's 60.)
+    - **`collide` with registers** (done): the objects' mask shifted in A (9 cycles a bit, not
+      32); the balloons and daggers by their origin less his, one 16-bit difference each way
+      against his frame's limits for the kind (`cbxn1` ... from the build, biased by $80),
+      instead of four 16-bit edges built in memory; the hot variables in zero page (`$64`-`$78`).
+      In play 1,729 cycles a frame on average to 900; `collidecost.py` means 1,025 / 1,469 /
+      1,897 (0, 3, 6 balloons and daggers out) to 930 / 1,140 / 1,320. The same results:
+      `collidetest` (5,000 situations), `poptest`, `picktest`, `cptest`, `hazardtest`; the frame
+      checker. Held frames: 35.2% to 29.2% (the start), 33.4% to 25.8% (260,207), 27.1% to 19.8%
+      (500,207).
+    - **A frame of buffer?** The work averages under a frame everywhere; it's the spikes that are
+      held. Replaying the recorded work times through a model of the pipeline (a frame may be
+      made while the one before waits to be shown): no buffer 4-27% held (the model's optimistic:
+      VICE measured 24-35%), one frame of buffer 0.1-2.1%, more hardly better. The cost: a third
+      set of the multiplexer's buffers and its replay across two frames, each queued frame's
+      scroll settings, and a frame (20 ms) more between the keys and the screen.
 14. **Sound.** The sound effects on the SID (`SFX_CHING` for a pickup, `SFX_SQUEAL`, `SFX_DAGGER`,
     `SFX_POP`, `SFX_THUD`), from the BBC version's definitions, played in the border; the music
     (the victory tune) after. Its time measured against the budget from 13.

@@ -100,7 +100,7 @@ const cells = [...patches.flat(), ...ppatches.flat()], ns = patches.flat().lengt
 const newT = q => gdiff.has(q) ? topsGone[q] : topsOff[q], newB = q => gdiff.has(q) ? bottomsGone[q] : bottomsOff[q];
 const starts = (gs, base) => gs.reduce((a, g) => (a.push(a[a.length - 1] + g.length), a), [base]).slice(0, -1);
 if (cells.length > 256) throw new Error('more than 256 patch cells');
-let inc = `; made by tools/pack.mjs: each Scrubbly's patch knocking it off, then each gem's and key's\n; picking it up (in picks.json's order): cells as level map offset, row, column, new top code,\n; new bottom code\nSTRING = ${STRING}\n`;
+let inc = `; made by tools/pack.mjs: each Scrubbly's patch knocking it off, then each gem's and key's\n; picking it up (in picks.json's order): cells as level map offset, row, column, new top code,\n; new bottom code\nSTRING = ${STRING}\nNPATCH = ${cells.length}\n`;
 inc += `scrpn   .byte ${patches.map(g => g.length).join(', ')}\nscrpi   .byte ${starts(patches, 0).join(', ')}\n`;
 inc += `pkpn    .byte ${ppatches.map(g => g.length).join(', ')}\npkpi    .byte ${starts(ppatches, ns).join(', ')}\n`;
 inc += `scrplo  .byte ${cells.map(q => q & 255).join(', ')}\nscrphi  .byte ${cells.map(q => q >> 8).join(', ')}\n`;
