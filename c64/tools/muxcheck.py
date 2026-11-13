@@ -14,7 +14,7 @@ for line in open(C64+'/build/frak64.lbl'):
 N=int(sys.argv[1]) if len(sys.argv)>1 else 8
 NV=lbl["vt"]-lbl["vh"]          # (the virtual sprites: vh is NV long, vt follows)
 BL=lbl["t017"]-lbl["t010"]     # (each buffer array's length: 32 a buffer)
-per=[('nb',1),('t010',BL*20),('vh',NV*15),('vy',NV*6),('tpen',15),('tmsbb',6)]   # contiguous blocks
+per=[('nb',1),('t010',BL*20),('vh',NV*15),('vy',NV*6),('tpen',14),('tmsbb',6)]   # contiguous blocks
 # addresses: buffers are contiguous from t010 (20 arrays x BL); model from vh; virtual sprites from vy
 const=[('maskjm',256),('masktl',256),('maskth',256),('masktla',256),('masktha',256),('masktlb',256),('maskthb',256),('masktlc',256),('maskthc',256)]
 cmds=['m %04x %04x'%(lbl[n],lbl[n]+l-1) for n,l in const]+['break %04x'%lbl['muxdone']]

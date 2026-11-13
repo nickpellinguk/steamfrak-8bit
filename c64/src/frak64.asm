@@ -558,6 +558,7 @@ qapply  lda bufoff
         inx
         cpx #TSET
         bne -
+
         pla                         ; (and the pairs flipped)
         beq +
         lda #0
