@@ -531,15 +531,19 @@ _on     sta vxhi + NS,x
         .endif
         ; a balloon's infill (its magenta, hi-res: in front, as the outline is; their pixels
         ; don't meet), low priority, in one of two images: the pixels at the sprite's top (at the
-        ; outline's y), or at its bottom (BIDY lines up), so there's a second place to try: each
-        ; time it can't be placed, the other next; once it is, the one that was
+        ; outline's y), or at its bottom (BIDY lines up), so there's a second place to try: place
+        ; tries both at once, the first preferred; once placed, the one it took
         dey
         bne _ih
         lda vxlo + NS,x
         sta vxlo + BIV,x
         lda vxhi + NS,x
         sta vxhi + BIV,x
-        lda vy + NS,x               ; (bivar: changed by pplace when it can't be placed)
+        lda vh + BIV,x              ; (not placed: shown as the first, for place to try both)
+        bpl +
+        lda #0
+        sta bivar,x
++       lda vy + NS,x
         ldy bivar,x
         beq +
         sec
@@ -1082,13 +1086,8 @@ _pv     ldx mo
         jsr place
         bcs _pn
         lda mpass
-        bne _pev
-        ldx mv                  ; (the low, a balloon's infill: the other image next time)
-        lda bivar - BIV,x
-        eor #1
-        sta bivar - BIV,x
-        jmp _pn
-_pev    jsr evict
+        beq _pn
+        jsr evict
         bcc _pn
         jsr place
 _pn     inc mo
@@ -1132,83 +1131,104 @@ place
         tax
         lda mktab,x
         sta mk
-        jsr calcl
-        ldx mk
-        beq _t0
--       lda tinst,x
-        bpl +
-        cpx tres1
-        bcc _tk
-        cpx tres2
+        lda #0                  ; (pyb: the second image's y, for a balloon's infill; 0: none)
+        sta pyb
+        lda vfl,y
+        and #VLOW
         beq +
-        bcs _tk
-+       dex
-        bne -
-_t0     ldy #3
--       lda slotv,y
-        bmi _s0
-        dey
-        bpl -
+        lda my                  ; (the low: a balloon's infill, shown as its first image; its
+        sec                     ; second BIDY lines up, if that's on the screen)
+        sbc #BIDY
+        bcc +
+        cmp #47
+        bcc +
+        sta pyb
++       jsr calcl               ; (ml: the first's last line)
+        ldx mk
+        jsr ftick
+        lda #0
+        rol
+        sta pvt                 ; (the first's tick found)
+        stx mt
+        lda ms
+        sta pmst
+        lda #0
+        sta pvb
+        lda pyb
+        beq _nb
+        lda my                  ; the second's: its last line, its tick (the first's, if that's
+        pha                     ; early enough for it too; else the next one free up the
+        lda pyb                 ; screen from its own)
+        sta my
+        jsr calcl
+        lda ml
+        sta pmlb
+        pla
+        sta my
+        jsr calcl
+        ldx pyb
+        lda mktab,x
+        tax
+        lda pvt
+        beq +
+        cpx mt
+        bcc +
+        ldx mt                  ; (the same tick, and slot)
+        lda pmst
+        sta ms
+        sec
+        bcs ++
++       jsr ftick
++       lda #0
+        rol
+        sta pvb
+        stx ptb
+        lda ms
+        sta pmsb
+_nb     lda pvt
+        ora pvb
+        bne +
         clc
         rts
-_s0     sty ms
-_tk     stx mt
-        jsr attrof              ; (its settings: a hardware sprite whose sprite before it has the
++       jsr attrof              ; (its settings: a hardware sprite whose sprite before it has the
         sta matt                ; same is preferred, so its set-up changes no registers)
         lda #$ff
         sta mbest
+        sta bbest
+        lda mt
+        sta ptt
+        lda ml
+        sta pmlt
         ldx #3
 _h      stx mh
-        lda #$ff                ; (its neighbours down this hardware sprite)
-        sta mp
+        lda #$ff                ; (its neighbours down this hardware sprite: for the first, and
+        sta mp                  ; for the second, pmpb)
+        sta pmpb
         ldy hwhead,x
 _w      bmi _wd
         lda vy,y
         cmp my
         bcs _wd
-        sty mp
+        cmp pyb
+        bcs +
+        sty pmpb
++       sty mp
         lda vnxt,y
         tay
         jmp _w
 _wd     sty mn
-        ldy mp
-        bmi _p1
-        lda mt
-        beq _hn
-        ldx mt
-        lda lim,x
-        ldx mh
-        cmp vl,y
-        bcc _hn
-_p1     ldy mn
-        bmi _p2
-        ldx vt,y
-        lda lim,x
-        ldx mh
-        cmp ml
-        bcc _hn
-_p2     lda #0                  ; (the settings before it there: the same as its own?)
-        ldy mp
-        bmi +
-        lda va,y
-+       cmp matt
-        beq +
-        lda #0
-        .byte $2c
-+       lda #1
-        sta mcm
-        lda #0                  ; (the line the sprite before it ends on: the latest, of those
-        ldy mp                  ; matching as well, is best)
-        bmi +
-        lda vl,y
-+       ldx mbest
+        lda pvt
+        beq _hb2
+        jsr hfit                ; (the first here)
+        bcc _hb2
+        ldx mbest
         bmi _hb
         ldx mcm
         cpx mbm
-        bcc _hn
+        bcc _hb2
         bne _hb
         cmp mbl
-        bcc _hn
+        bcc _hb2
 _hb     sta mbl
         lda mcm
         sta mbm
@@ -1218,16 +1238,90 @@ _hb     sta mbl
         sta bp
         lda mn
         sta bn
+_hb2    lda pvb                 ; (the second here, unless the first fits somewhere already)
+        beq _hn
+        lda mbest
+        bpl _hn
+        ldy pmpb
+        bmi +
+        lda vnxt,y
+        tay
+        jmp ++
++       ldx mh
+        ldy hwhead,x
++       sty mn
+        sty pmnb
+        lda pmpb
+        sta mp
+        lda ptb
+        sta mt
+        lda pmlb
+        sta ml
+        jsr hfit
+        php
+        pha
+        lda ptt
+        sta mt
+        lda pmlt
+        sta ml
+        pla
+        plp
+        bcc _hn
+        ldx bbest
+        bmi _hbb
+        ldx mcm
+        cpx bbm
+        bcc _hn
+        bne _hbb
+        cmp bbl
+        bcc _hn
+_hbb    sta bbl
+        lda mcm
+        sta bbm
+        lda mh
+        sta bbest
+        lda pmpb
+        sta bbp
+        lda pmnb
+        sta bbn
 _hn     ldx mh
         inx
         cpx #8
         beq +
         jmp _h
 +       lda mbest
+        bpl _take
+        lda bbest               ; (the first fits nowhere: the second, if it fits)
         bpl +
         clc
         rts
-+
++       ldy mv                  ; (the second: its y, last line, tick, slot, image)
+        lda pyb
+        sta my
+        sta vy,y
+        lda pmlb
+        sta ml
+        lda ptb
+        sta mt
+        lda pmsb
+        sta ms
+        lda bbp
+        sta bp
+        lda bbn
+        sta bn
+        ldx mv
+        lda #1
+        sta bivar - BIV,x
+        lda vptr,x
+        clc
+        adc #1
+        sta vptr,x
+        lda bbest
+        jmp _tk2
+_take   lda pmst                ; (the first: its slot)
+        sta ms
+        lda mbest
+_tk2
         .if MUXTIME
         inc cnt0+1
         .endif
@@ -1296,6 +1390,66 @@ _hn     ldx mh
         jsr dirtyt
 +       jsr writerec
         sec
+        rts
+
+; The first free tick from x up the screen (not one of Trogg's), else tick 0 with a free slot
+; (ms): x, carry set; carry clear if none
+ftick   cpx #0
+        beq _t0
+-       lda tinst,x
+        bpl +
+        cpx tres1
+        bcc _f
+        cpx tres2
+        beq +
+        bcs _f
++       dex
+        bne -
+_t0     ldy #3
+-       lda slotv,y
+        bmi _s0
+        dey
+        bpl -
+        clc
+        rts
+_s0     sty ms
+_f      sec
+        rts
+
+; Whether sprite mv fits on hardware sprite mh between mp and mn, set up at tick mt, ending on
+; line ml: carry set if so, then mcm (1: the sprite before has its settings) and a (the line the
+; sprite before ends on, 0 if none)
+hfit    ldy mp
+        bmi _p1
+        lda mt
+        beq _no
+        ldx mt
+        lda lim,x
+        cmp vl,y
+        bcc _no
+_p1     ldy mn
+        bmi _p2
+        ldx vt,y
+        lda lim,x
+        cmp ml
+        bcc _no
+_p2     lda #0                  ; (the settings before it there: the same as its own?)
+        ldy mp
+        bmi +
+        lda va,y
++       cmp matt
+        beq +
+        lda #0
+        .byte $2c
++       lda #1
+        sta mcm
+        lda #0
+        ldy mp
+        bmi +
+        lda vl,y
++       sec
+        rts
+_no     clc
         rts
 
 ; Sprite mv not placed: drop the nearest shown that isn't kept before others (c set if one is)
@@ -1873,6 +2027,22 @@ vcol    .fill NV
 vfl     .fill NV
 mrank   .byte 0
 bivar   .fill NB                ; (each balloon's infill's image: 0 top, 1 bottom)
+pyb     .byte 0                 ; (place's, for the infill's two images: the second's y, last
+pmlb    .byte 0                 ;  line, tick, slot; whether each has a tick; the first's tick,
+ptb     .byte 0                 ;  slot, last line; the second's neighbours; its best)
+pmsb    .byte 0
+pvt     .byte 0
+pvb     .byte 0
+ptt     .byte 0
+pmst    .byte 0
+pmlt    .byte 0
+pmpb    .byte 0
+pmnb    .byte 0
+bbest   .byte 0
+bbl     .byte 0
+bbm     .byte 0
+bbp     .byte 0
+bbn     .byte 0
 order   .for i = 0, i < NV, i += 1
         .byte i
         .endfor

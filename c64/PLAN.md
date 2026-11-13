@@ -462,8 +462,10 @@ reference for everything else is that code (`../src/frak.asm`): `check_collision
       (`keytest`: scroll 153, Trogg 0 pixels wrong). `--slack`: no overruns, least slack 50.
       Balloon infill: each balloon a magenta hi-res infill virtual sprite, in a third, low rank
       (VLOW: placed after all others, one try a frame, evicting nothing, evicted by any), with two
-      images, top-justified at the outline's y or bottom-justified 11 lines up, the other tried
-      each time one can't be placed. The multiplexer revisited for it (exact py65 profile of 60
+      images, top-justified at the outline's y or bottom-justified 11 lines up, found in one
+      search (place: one tick scan for both, one walk down each hardware sprite's list for both
+      y's, the first preferred wherever it fits; Insane: 55 of 59 balloons with infill, 50 the
+      first, 5 the second). The multiplexer revisited for it (exact py65 profile of 60
       frames of scripted play: 7,750 cycles a frame to 6,090): the hazards' x and y from each
       kind's offset made once a frame; the Scrubblies' x only when the scroll changes or one is
       knocked off or back; hidden virtual sprites passed over quickly; a kept sprite's settings
