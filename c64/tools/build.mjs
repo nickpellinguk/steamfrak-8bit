@@ -139,8 +139,9 @@ writeFileSync(DIR + 'masks.inc', `; made by tools/build.mjs\nmasks   .byte ${mas
         // (the balloon (kind 1) and the dagger (2): their sprites, hi-res, the image at the sprite's
         // corner; their origin in the image, size, tight box from the image's corner, spans)
         (() => { const H = [pj.hazards.IMG_Balloon, pj.hazards.IMG_DaggerLR], hb = H.map(h => box(h.grid));
-                 // (their sprites: the image's black alone, an outline; the spans below are the whole image's)
-                 const spr = H.flatMap(h => { const b = Array(64).fill(0); h.grid.forEach((r, y) => r.forEach((p, x) => { if (p === 3) b[y * 3 + (x >> 3)] |= 0x80 >> (x & 7); })); return b; });
+                 // (their sprites: the image's black alone, an outline; the balloon's yellow highlight black
+                 // too; the spans below are the whole image's)
+                 const spr = H.flatMap((h, k) => { const b = Array(64).fill(0); h.grid.forEach((r, y) => r.forEach((p, x) => { if (p === 3 || (k === 0 && p === 1)) b[y * 3 + (x >> 3)] |= 0x80 >> (x & 7); })); return b; });
                  const sp = gr => gr.flatMap(r => { const xs = r.map((p, x) => p >= 0 ? x : -1).filter(x => x >= 0); return xs.length ? [xs[0], xs[xs.length - 1]] : [255, 255]; });
                  const K = (n, f) => B(n, [0, ...H.map(f)]);
                  writeFileSync(DIR + 'hazspr.bin', Buffer.from(spr));
