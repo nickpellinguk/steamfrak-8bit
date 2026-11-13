@@ -200,19 +200,22 @@ let SCRUB = [...scrub0.slice(0, 38), scrub0[37], scrub0[38], scrub0[39], scrub0[
 if (fromTxt) SCRUB = readFileSync(TXT, 'utf8').split('\n').filter(l => /^\s*\d+ /.test(l)).map(l => [...l.replace(/^\s*\d+ /, '').replace(/\|/g, '').padEnd(40)].slice(0, 40).map(c => ' .YM#'.indexOf(c) - 1));
 // The key, redrawn for the C64: 16 wide (two characters), its shaft two yellow lines between two
 // black, so that it fills a half (4 lines: the key's top is 10 lines above its platform's first
-// magenta line, a half's first, so its lines 2-5 are a half) and the ring's middle the half
-// beside it: the halves' background then yellow (KEYHALF: its lines there); the rest of its
-// yellow as before
+// magenta line, a half's first, so its lines 2-5 are a half) and the ring's middle, round its
+// hole, the half beside it: the halves' background then yellow (KEYHALF: its lines there); the
+// rest of its yellow as before. Its teeth the BBC's, 4 lines: their last in place of the
+// platform's top line, all of it under the key (KEYDROP: the key a line further down than its
+// height would put it)
 const KEY = ['..........BBBB..',
              '.........BBYYBB.',
-             'BBBBBBBBBYYBBYYB',
+             'BBBBBBBBBYYYYYYB',
              'BYYYYYYYYYYBBYYB',
              'BYYYYYYYYYYBBYYB',
-             'BBBBBBBBBYYBBYYB',
-             '.BYB.BYB.BBYYBB.',
-             '.BYB.BYB..BBBB..',
-             '.BBB.BBB........'].map(r => [...r].map(c => c === 'B' ? 3 : c === 'Y' ? 1 : -1));
-const KEYHALF = [2, 5];
+             'BBBBBBBBBYYYYYYB',
+             '.BYYYYB..BBYYBB.',
+             '.BYYYYB...BBBB..',
+             '.BYBBYB.........',
+             '.BB..BB.........'].map(r => [...r].map(c => c === 'B' ? 3 : c === 'Y' ? 1 : -1));
+const KEYHALF = [2, 5], KEYDROP = 1;
 const tag = new Uint8Array(W * H), ovl = new Int8Array(W * H).fill(-1);   // (ovl: the keys' yellow, a sprite behind them when one's free)
 const SH = SCRUB.length, placed = [];   // (tag: 1 a Scrubbly's, 2 its teeth's yellow, 4 its eyes')         // 1 a Scrubbly's, 2 its teeth's cells (lines 24-31, columns 8-23), 3 its feet (lines 40-43)
 // (each gem's and key's place, as drawn, and its tight box: the solid pixels' extent; picks.json)
@@ -241,7 +244,7 @@ e.draw_img.forEach((img, k) => {
             let xl = cx0; while (xl > 0 && art[at2(xl - 1, band)] !== 0) xl--;
             xl = Math.round(xl / 8) * 8;
             const unit = xl + 16 * Math.round((cx0 - xl - 8) / 16);
-            left = unit + Math.floor((16 - iw) / 2); top = band - 1 - ih;
+            left = unit + Math.floor((16 - iw) / 2); top = band - 1 - ih + (key ? KEYDROP : 0);
         }
         // (nothing behind it either: a ladder's foot, say)
         for (let y = 0; y < ih; y++) for (let x = 0; x < iw; x++) if (inside(left + x, top + y)) art[at2(left + x, top + y)] = 0;
