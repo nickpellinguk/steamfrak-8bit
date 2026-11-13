@@ -81,16 +81,20 @@ for (let p = 0; p < W * H; p++) {
     if (pix.length < 20) { if (!SUF) console.log(`a scrap dropped: ${pix.length} pixels at ${pc.x0},${pc.y0}`); continue; }
     pieces.push(pc);
 }
+// (a piece's left end to the nearest 8, but for those rounded down: their BBC places, level x
+// and y; the R's slope, its fourth, which rounded up touched the fifth: down, it touches the third)
+const DOWNX = [[244, 152]];
+const snapPX = (x, y) => DOWNX.some(([hx, hy]) => Math.abs(x - hx) <= 2 && Math.abs(y - hy) <= 2) ? Math.floor(x / 8) * 8 : Math.round(x / 8) * 8;
 const snapTop = y => { let d = ((3 - y) % 4 + 4) % 4; if (d > 2) d -= 4; return y + d; };     // (nearest 3 mod 4: the last line of a half)
 const art = new Uint8Array(W * H);
 for (const pc of pieces) {
-    const dx = Math.round(pc.x0 / 8) * 8 - pc.x0, dy = snapTop(pc.y0) - pc.y0;
+    const dx = snapPX(pc.x0, pc.y0) - pc.x0, dy = snapTop(pc.y0) - pc.y0;
     for (const q of pc.pix) { const x = q % W + dx, y = ((q / W) | 0) + dy; if (inside(x, y)) art[at2(x, y)] = base[q]; }
 }
 // ... their colours by line: the top black on background, the next 4 magenta and black, the rest
 // black and background, to line 12 (each piece's lines from its own top)
 for (const pc of pieces) {
-    const dx = Math.round(pc.x0 / 8) * 8 - pc.x0, top = snapTop(pc.y0);
+    const dx = snapPX(pc.x0, pc.y0) - pc.x0, top = snapTop(pc.y0);
     for (const q of pc.pix) {
         const x = q % W + dx, y = ((q / W) | 0) + top - pc.y0;
         if (!inside(x, y)) continue;
@@ -150,8 +154,7 @@ e.lad_x.forEach((lx, k) => {
 // the original, and its height the original's, so the physics sees the original's objects moved),
 // its x to the middle of the ladder as redrawn, less 2; Trogg's start moved with the platform he
 // starts on
-const snapX = x => Math.round(x / 8) * 8;
-const plats = e.plat_x.map((x, k) => ({ x: snapX(x), y: snapTop(e.plat_y[k]), w: e.plat_w[k] }));
+const plats = e.plat_x.map((x, k) => ({ x: snapPX(x, e.plat_y[k]), y: snapTop(e.plat_y[k]), w: e.plat_w[k] }));
 const under = (x, y) => {            // (the platform under x whose top is nearest y, within 16)
     let best = -1;
     e.plat_x.forEach((px, i) => { if (px <= x && x < px + e.plat_w[i] && Math.abs(e.plat_y[i] - y) <= 16 && (best < 0 || Math.abs(e.plat_y[i] - y) < Math.abs(e.plat_y[best] - y))) best = i; });
