@@ -55,6 +55,6 @@ for s in sorted(seqs, key=lambda s: -recs[s]['tot'])[:12]:
           ', '.join(f'{n} {r["dt"][i]}' for i, n in enumerate(STAGES) if r['dt'][i] > 300))
 if os.environ.get('RAW'):
     with open(os.environ['RAW'], 'w') as o:
-        o.write('tick total ' + ' '.join(STAGES) + ' state dead won yoyo\n')
+        o.write('tick total ' + ' '.join(STAGES) + ' state dead won yoyo frames held\n')
         for s in seqs:
-            r = recs[s]; o.write(f'{s} {r["tot"]} ' + ' '.join(map(str, r['dt'])) + f' {r["tstate"]} {r["dead"]} {r["won"]} {r["yolen"]}\n')
+            r = recs[s]; o.write(f'{s} {r["tot"]} ' + ' '.join(map(str, r['dt'])) + f' {r["tstate"]} {r["dead"]} {r["won"]} {r["yolen"]} {r["frames"]} {r["held"]}\n')

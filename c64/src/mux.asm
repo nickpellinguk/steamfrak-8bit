@@ -15,9 +15,11 @@
 ; is dropped (a sprite kept before others, VFIRST, wins against one that isn't), and placed again
 ; with the new ones: at most four a frame, those kept before others first; the rest wait.
 ;
-; The results go to the buffer not being shown (bufoff is 0 or 32), which the border switches to
-; once it's ready (muxready). Each frame starts by copying the last frame's changes across from the
-; buffer now shown, so the two keep step.
+; There are three buffers (0, 32, 64), used in turn: one shown (bufoff), up to two finished and
+; waiting to be shown (qn of them; the newest nlast), and so a frame can be made up to two ahead
+; of the one shown (frak64.asm's nextframe, the border's tick 25). A frame is made in the buffer
+; after nlast (nb), last made three frames ago: it starts by copying across from nlast what the
+; two frames since changed, so the three keep step.
 
 NV      = NS + NB + 1 + 2       ; virtual sprites: the Scrubblies, the balls, the yoyo, the FRAK! bubble
 VEXPY   = 1                     ; (vfl: expanded down,
@@ -78,9 +80,14 @@ muxframe
         bpl -
         jsr stamp
         .endif
-        lda bufoff
-        eor #32
-        sta nb
+        lda nlast               ; (the frame made last: copied from; the buffer after it: made)
+        sta nf
+        clc
+        adc #32
+        cmp #96
+        bcc +
+        lda #0
++       sta nb
         jsr replay
         #pst 16
         .if MUXTIME
@@ -106,9 +113,7 @@ muxframe
         sta cnt0+6
         cli
         .endif
-muxdone lda #1
-        sta muxready
-        rts
+muxdone rts
 
         .if MUXTIME
 stamp   ldx stampi              ; (debug: CIA 2's timer A, free running, at each stage)
@@ -137,7 +142,7 @@ itp     .fill 24
 cnt0    .fill 8
         .endif
 
-; At the start: the model with no sprites shown, and both buffers with none (the cover's
+; At the start: the model with no sprites shown, and all three buffers with none (the cover's
 ; registers; each row the cover alone)
 muxinit lda #<mdata             ; (all 0 first)
         sta mptr
@@ -166,7 +171,7 @@ muxinit lda #<mdata             ; (all 0 first)
         dex
         bpl -
         lda #$ff
-        ldx #63
+        ldx #95
 -       sta e_n,x
         sta u_n,x
         dex
@@ -194,44 +199,147 @@ muxinit lda #<mdata             ; (all 0 first)
         lda maskjm,y
         sta rowimm,x
         sta rowimm + 32,x
+        sta rowimm + 64,x
         lda masktl,y
         sta rowtl,x
         sta rowtl + 32,x
+        sta rowtl + 64,x
         lda maskth,y
         sta rowth,x
         sta rowth + 32,x
+        sta rowth + 64,x
         dex
         bpl -
         lda #1
         sta t017
         sta t017 + 32
+        sta t017 + 64
         sta t01d
         sta t01d + 32
+        sta t01d + 64
         lda #0
         sta t010
         sta t010 + 32
+        sta t010 + 64
         sta t01b
         sta t01b + 32
+        sta t01b + 64
         rts
 
-; The last frame's changes, from the buffer shown to the one being made: ticks (tdl, with what
-; changed: 1 x and y, 2 the whole record, 4 the registers), and rows (rdl)
-replay  ldy #0
-_t      cpy tdn
-        bcc +
-        jmp _r
-+       sty mj
+; The two frames since this buffer was made: their changes, from the newest (nf) to it (nb):
+; ticks (with what changed: 1 x and y, 2 the whole record, 4 the registers), and rows. The last
+; frame's are in tdl (tdf), the one's before in tgl (tdg); then the last frame's become the one
+; before's, for the next
+replay  ldy #0                  ; ticks: the last frame's, what changed in either
+-       cpy tdn
+        bcs +
+        sty mj
         ldx tdl,y
         lda tdf,x
-        sta mflg
+        ora tdg,x
+        jsr rtick
+        ldy mj
+        iny
+        bne -
++       ldy #0                  ; then the frame before's, those not done already
+-       cpy tgn
+        bcs +
+        sty mj
+        ldx tgl,y
+        lda tdf,x
+        bne _tn
+        lda tdg,x
+        jsr rtick
+_tn     ldy mj
+        iny
+        bne -
++       ldy tgn                 ; (the frame before's forgotten; the last frame's in its place)
+-       dey
+        bmi +
+        ldx tgl,y
+        lda #0
+        sta tdg,x
+        beq -
++       ldy #0
+-       cpy tdn
+        bcs +
+        ldx tdl,y
+        lda tdf,x
+        sta tdg,x
         lda #0
         sta tdf,x
+        txa
+        sta tgl,y
+        iny
+        bne -
++       sty tgn
+        lda #0
+        sta tdn
+        ldy #0                  ; rows: the last frame's
+-       cpy rdn
+        bcs +
+        ldx rdl,y
+        jsr rrow
+        iny
+        bne -
++       ldy #0                  ; then the frame before's, those not done already
+-       cpy rgn
+        bcs +
+        ldx rgl,y
+        lda rdf,x
+        bne _rn
+        jsr rrow
+_rn     iny
+        bne -
++       ldy rgn                 ; (and the generations moved on)
+-       dey
+        bmi +
+        ldx rgl,y
+        lda #0
+        sta rdg,x
+        beq -
++       ldy #0
+-       cpy rdn
+        bcs +
+        ldx rdl,y
+        lda #1
+        sta rdg,x
+        lda #0
+        sta rdf,x
+        txa
+        sta rgl,y
+        iny
+        bne -
++       sty rgn
+        lda #0
+        sta rdn
+        rts
+
+; (row x's operands, from nf to nb; y kept)
+rrow    sty mj
+        txa
+        ora nf
+        tay
+        txa
+        ora nb
+        tax
+        lda rowimm,y
+        sta rowimm,x
+        lda rowtl,y
+        sta rowtl,x
+        lda rowth,y
+        sta rowth,x
+        ldy mj
+        rts
+
+; (tick x's changes a, from nf to nb)
+rtick   sta mflg
         txa
         bne _u
         ldx #3                  ; tick 0: its four slots
 _s      stx mt
         txa
-        ora bufoff
+        ora nf
         tay
         txa
         ora nb
@@ -256,15 +364,15 @@ _s      stx mt
         bpl _s
         lda mflg
         and #4
-        beq _nx
-        ldy bufoff
+        beq _x
+        ldy nf
         ldx nb
-        jsr cpregs
-        jmp _nx
-_u      ora nb
-        tax                     ; (to)
-        eor #32
+        jmp cpregs
+_u      ora nf
         tay                     ; (from)
+        txa
+        ora nb
+        tax                     ; (to)
         lda mflg
         lsr
         lsr
@@ -283,38 +391,9 @@ _u      ora nb
         sta u_col,x
 +       lda mflg
         and #4
-        beq _nx
-        jsr cpregs
-_nx     ldy mj
-        iny
-        jmp _t
-_r      ldy #0
-_rl     cpy rdn
-        bcs _rd
-        ldx rdl,y
-        lda #0
-        sta rdf,x
-        txa
-        ora bufoff
-        sta mt
-        txa
-        ora nb
-        tax
-        sty mj
-        ldy mt
-        lda rowimm,y
-        sta rowimm,x
-        lda rowtl,y
-        sta rowtl,x
-        lda rowth,y
-        sta rowth,x
-        ldy mj
-        iny
-        bne _rl
-_rd     lda #0
-        sta tdn
-        sta rdn
-        rts
+        beq _x
+        jmp cpregs
+_x      rts
 
 cpregs  lda trch,y              ; (a tick's registers, list y to list x)
         sta trch,x
@@ -1728,7 +1807,7 @@ lim     .for i = 0, i < 26, i += 1
         .byte 46 + 8 * i
         .endfor
         .send high
-        .virtual $6000             ; (RAM only, set up by muxinit)
+        .virtual MUXRAM            ; (RAM only, set up by muxinit)
 mdata
 ; (the multiplexer's model: for each virtual sprite, its hardware sprite ($ff: not shown), tick,
 ; slot (tick 0), last line, rows, settings as set up, and the sprites before and after it on its
@@ -1763,28 +1842,34 @@ tdn     .byte 0
 rdf     .fill ROWS
 rdl     .fill ROWS
 rdn     .byte 0
+tdg     .fill 26                ; (changed the frame before: ticks, and what; rows)
+tgl     .fill 26
+tgn     .byte 0
+rdg     .fill ROWS
+rgl     .fill ROWS
+rgn     .byte 0
 wlist   .fill NV
-; (the two buffers: 32 each, by tick: tick 0's slots (e_*), each later tick's set-up (u_*:
+; (the three buffers: 32 each, by tick: tick 0's slots (e_*), each later tick's set-up (u_*:
 ; u_n $ff for none) and registers where they change (trch); and the rows' operands)
-t010    .fill 64
-t017    .fill 64
-t01d    .fill 64
-t01b    .fill 64
-trch    .fill 64
-e_n     .fill 64
-e_reg   .fill 64
-e_x     .fill 64
-e_y     .fill 64
-e_ptr   .fill 64
-e_col   .fill 64
-u_n     .fill 64
-u_reg   .fill 64
-u_y     .fill 64
-u_x     .fill 64
-u_ptr   .fill 64
-u_col   .fill 64
-rowimm  .fill 64
-rowtl   .fill 64
-rowth   .fill 64
+t010    .fill 96
+t017    .fill 96
+t01d    .fill 96
+t01b    .fill 96
+trch    .fill 96
+e_n     .fill 96
+e_reg   .fill 96
+e_x     .fill 96
+e_y     .fill 96
+e_ptr   .fill 96
+e_col   .fill 96
+u_n     .fill 96
+u_reg   .fill 96
+u_y     .fill 96
+u_x     .fill 96
+u_ptr   .fill 96
+u_col   .fill 96
+rowimm  .fill 96
+rowtl   .fill 96
+rowth   .fill 96
 mdend
         .endv

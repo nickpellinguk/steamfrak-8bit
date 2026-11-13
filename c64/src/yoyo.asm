@@ -774,8 +774,8 @@ shr3    lsr                         ; ((a, ytmp) >> 3)
         rts
 
 ; In the border, with the scroll: the last frame's string cells put back from the level map (in
-; the pair they were written to, those in its window), then this frame's written into the pair
-; shown
+; the pair they were written to, those in its window), then this frame's (sq_*: qapply's copy of
+; strset's, for the frame shown) written into the pair shown
 strapply
         lda sa_on
         beq _new
@@ -826,23 +826,23 @@ strapply
         cpy iend
         iny
         bcc -
-_new    lda sp_on
+_new    lda sq_on
         sta sa_on
         beq _x
         lda front
         sta sa_p
-        lda sp_r
+        lda sq_r
         sta sa_r
-        lda sp_h
+        lda sq_h
         sta sa_h
-        lda sp_c0
+        lda sq_c0
         sta sa_c0
-        lda sp_c1
+        lda sq_c1
         sta sa_c1
         ldx front
         jsr _ptrs
         ldy sa_c0
-        lda sp_ch
+        lda sq_ch
 -       sta (ip0),y
         cpy sa_c1
         iny
