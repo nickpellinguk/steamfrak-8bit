@@ -4,8 +4,8 @@
 #   python3 compare.py shot.png [SCROLL]     (SCROLL -1: find it; 0 if left out)
 import sys
 from PIL import Image
-W, HS = 752, 200
-import os
+import os, re
+W, HS = 8 * int(re.search(r'^NC\s*=\s*(\d+)', open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'build', 'level.inc')).read(), re.M).group(1)), 200     # (the level's width: build/level.inc)
 # (SPRITES=1: against the picture with the Scrubblies' sprites, charsspr.bin; OFF=1: the Scrubblies
 # yo-yoed off, chars_off.bin, charsspr_off.bin; GONE=1: the gems and keys picked up)
 exp = open(__file__.rsplit('/', 1)[0] + ('/../build/charsspr' if os.environ.get('SPRITES') else '/../build/chars') + ('_off' if os.environ.get('OFF') else '_gone' if os.environ.get('GONE') else '') + '.bin', 'rb').read()

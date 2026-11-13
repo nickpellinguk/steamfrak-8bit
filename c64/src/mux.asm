@@ -755,12 +755,16 @@ _kept
         lda #8
         sta mh
         lda tpen + TY1
-        sta my
         clc
         adc #42
         bcc +
         lda #255
 +       sta ml
+        lda tpen + TY1              ; (his top above line 47, jumping from the top platform: from
+        cmp #47                     ; row 0 still, not none, as r4lo and r3lo have it there for a
+        bcs +                       ; sprite removed: his lines 3 and 4 there are his)
+        lda #47
++       sta my
         jsr rngs
         lda tra                     ; (his rows' tails: the old ones and the new ones redone)
         cmp traw

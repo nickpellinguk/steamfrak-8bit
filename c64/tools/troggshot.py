@@ -6,7 +6,7 @@
 # sprite at the left, counts; the scroll is the one
 # that fits the rows round him.
 #   python3 troggshot.py shot.png X Y FRAME
-import json, os, subprocess, sys
+import json, os, re, subprocess, sys
 from PIL import Image
 DIR = os.path.dirname(os.path.abspath(__file__))
 B = os.path.join(DIR, '..', 'build')
@@ -16,7 +16,7 @@ out = subprocess.run(['python3', os.path.join(DIR, 'compare.py'), shot, '-1'], c
 scroll = int(out[0].split()[-1]); dx = int(out[1].split()[2])
 frames = json.load(open(os.path.join(B, 'trogg.json')))
 f = frames[fr]; shown = f['shown']
-exp = open(os.path.join(B, 'charsspr.bin'), 'rb').read(); W = 752
+exp = open(os.path.join(B, 'charsspr.bin'), 'rb').read(); W = 8 * int(re.search(r'^NC\s*=\s*(\d+)', open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'build', 'level.inc')).read(), re.M).group(1))
 PAL = {(145, 245, 220): 0, (255, 255, 92): 1, (184, 85, 246): 2, (0, 0, 0): 3, (160, 70, 220): 2}
 im = Image.open(shot).convert('RGB'); px = im.load()
 X0, Y0 = 32, 35

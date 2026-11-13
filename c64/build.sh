@@ -19,4 +19,5 @@ if [ ! -f ../cpc6128/build/images.json ]; then
 fi
 node tools/mockup.mjs > /dev/null
 OFF=1 node tools/mockup.mjs > /dev/null      # (the Scrubblies yo-yoed off: their glyphs packed too)
+GONE=1 node tools/mockup.mjs > /dev/null     # (the gems and keys picked up: likewise)
 node tools/build.mjs "$@"
