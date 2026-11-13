@@ -1014,15 +1014,25 @@ _dmux
         bne t26n                    ; not at tick 25, whose work, with it, could take over two
         lda strpend                 ; ticks, and one would be lost)
         beq t26n
+        jsr strapply                ; (the old string put back; the new one at tick 27)
+t26n    ldx row                     ; (strapply leaves x changed)
+        cpx #ROWS + 3
+        bne t27n
+        lda strpend
+        beq t27n
         lda #0
         sta strpend
-        jsr strapply
-t26n
+        jsr strdraw
+t27n
         .if !TEST
         cpx #38                     ; tick 37 (line 37): sprites 3-7 parked below the screen, then
         bne t37n                    ; those set up before the frame (tick 0's slots), and the
-        lda #255                    ; registers (in time for sprites from line 47, and leaving
-        sta $d007                   ; tick 38 little to do before row 0's)
+        lda $d012                   ; registers (in time for sprites from line 47, and leaving
+        cmp #41                     ; tick 38 little to do before row 0's). (On line 45, not
+        bcc t37o                    ; 37: a tick was lost, a handler having taken over two; this
+        jmp rl0                     ; is tick 38's, and the count in step again from it)
+t37o    lda #255
+        sta $d007
         sta $d009
         sta $d00b
         sta $d00d

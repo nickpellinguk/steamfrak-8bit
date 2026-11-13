@@ -819,7 +819,7 @@ strapply
         lda pvw,x
         cmp #$ff
         beq _new                    ; (being filled: from the map anyway)
-        jsr _ptrs
+        jsr strptrs
         lda sa_h                    ; (the map's row: ip1)
         bne +
         ldy sa_r
@@ -862,7 +862,11 @@ strapply
         cpy iend
         iny
         bcc -
-_new    lda sq_on
+_new    rts
+
+; ... and at tick 27, this frame's written (apart: the two together, for a long string, took over
+; two ticks, and a tick was lost: the border's count then a tick behind for good)
+strdraw lda sq_on
         sta sa_on
         beq _x
         lda front
@@ -876,7 +880,7 @@ _new    lda sq_on
         lda sq_c1
         sta sa_c1
         ldx front
-        jsr _ptrs
+        jsr strptrs
         ldy sa_c0
         lda sq_ch
 -       sta (ip0),y
@@ -885,7 +889,7 @@ _new    lda sq_on
         bcc -
 _x      rts
 ; ip0 = pair x's screen (sa_h: tops or bottoms), row sa_r, less its origin: (ip0),y is column y
-_ptrs   ldy sa_r
+strptrs ldy sa_r
         lda sa_h
         bne _b
         cpx #0
