@@ -1,7 +1,7 @@
 // Trogg as C64 sprites: every frame as two hardware sprites, a hi-res outline (black, in front)
 // and a multicolour infill behind it (yellow and magenta, the shared multicolour registers, at
-// double-width pixels), 24 wide: the standing and walking frames (26 wide) lose 2 columns at the
-// tip of the snout, for now.
+// double-width pixels), 24 wide: the standing and walking frames (26 wide) are narrowed, the snout
+// a pixel shorter and the back a pixel in.
 //
 // Trogg is 34 lines high, a sprite 21, so each sprite is used twice down the screen: its first
 // instance from block P1 (Trogg's lines 0-20), its second (Y + 21) from block P2 (rows 0-12:
@@ -40,16 +40,26 @@ function pixels(name) {
 // standing frame is walking frame 0)
 const frames = [];
 for (const n of ['cd_0', 'cd_1', 'cn', 'cu_0', 'cu_1', 'yl', 'yr']) frames.push({ name: 'Trogg_' + n, ...pixels('IMG_Trogg_' + n) });
+// (26 wide, so narrowed to the sprite's 24: the snout a pixel shorter, the column behind its tip
+// gone, and the back a pixel in, its outer column gone and the one inside it black where that
+// had anything, so both stay outlined; Trogg's x the same place on him)
+const narrow = (g, w, side) => g.map(r0 => {
+    const r = [...r0]; while (r.length < w) r.push(-1);
+    if (side === 'r') { const back = r[0] >= 0; r.splice(w - 2, 1); r.splice(0, 1); if (back) r[0] = 3; }
+    else { const back = r[w - 1] >= 0; r.splice(w - 1, 1); r.splice(1, 1); if (back) r[r.length - 1] = 3; }
+    return r;
+});
 for (const side of 'rl') {
     const body = pixels('IMG_TroggBody_' + side);
     for (let f = 0; f < 4; f++) {
         const legs = pixels(`IMG_TroggLegs_${side}_${f}`);
-        frames.push({ name: `Trogg_w${side}_${f}${f ? '' : ' (and s' + side + ')'}`, g: [...body.g, ...legs.g], xo: body.xo, w: body.w, h: 34 });
+        let g = [...body.g, ...legs.g], w = body.w, xo = body.xo;
+        if (w === 26) { g = narrow(g, w, side); w = 24; xo -= 1; }
+        frames.push({ name: `Trogg_w${side}_${f}${f ? '' : ' (and s' + side + ')'}`, g, xo, w, h: 34 });
     }
 }
 
-// Each frame cut to 24 columns (the 26-wide ones lose the snout's tip: the right 2 columns
-// facing right, the left 2 facing left), then the two sprites
+// Each frame to 24 columns (the walking ones narrowed above), then the two sprites
 const W = 24, H = 34;
 const out = [], blocks = [];
 let lostAll = 0;
