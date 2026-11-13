@@ -404,6 +404,24 @@ reference for everything else is that code (`../src/frak.asm`): `check_collision
       VICE measured 24-35%), one frame of buffer 0.1-2.1%, more hardly better. The cost: a third
       set of the multiplexer's buffers and its replay across two frames, each queued frame's
       scroll settings, and a frame (20 ms) more between the keys and the screen.
+    - **The frame buffer** (done): the multiplexer has three buffers (0, 32, 64; its RAM moved to
+      `$c000`); the main program makes a frame whenever one is free, up to two ahead of the one
+      shown (`qn` waiting, the newest `nlast`), so a quick frame's time is kept for a slow one.
+      `replay` copies the union of the last two frames' changes (`tdl`/`tdf` and `tgl`/`tdg`;
+      rows likewise) from the newest buffer; x and y needn't be: they're written every frame.
+      Each frame's settings (scroll, flip, VSP offset, the yoyo's string, Trogg's) are kept by
+      buffer (`qsave`) and put in force when it's shown (`qapply`); `fliphere` marks the frame
+      that flips the pairs. A column stepped two frames ahead lands one column further under
+      the cover sprite (columns 0-2), still hidden. Checked: `muxcheck` (30 frames standing,
+      2 x 60 in scripted play), the py65 tests, the screen as before. Held frames: 1.2-11.1%
+      (from 7.6-35.2%); the camera test's readiness 96.5% (from 90.0%), the camera never
+      waiting. Left: while Trogg's on the move the work averages over a frame (20,200-22,300
+      cycles as the frame sees it, 17-29% held), which no buffer can absorb; standing, 3-9%.
+      Making frames ahead costs some of what the order bought: `gametick` no longer starts in
+      the border (5,500 cycles as the frame sees it, from 3,600), and `replay` copies two frames'
+      changes (1,200, from 560). Visible side effects: a knock-off's or pickup's cells change
+      when the tick runs, up to two frames before the sprites follow; the string is clipped to
+      the newest window, so at the left edge it can lose a character or two for a frame.
 14. **Sound.** The sound effects on the SID (`SFX_CHING` for a pickup, `SFX_SQUEAL`, `SFX_DAGGER`,
     `SFX_POP`, `SFX_THUD`), from the BBC version's definitions, played in the border; the music
     (the victory tune) after. Its time measured against the budget from 13.
