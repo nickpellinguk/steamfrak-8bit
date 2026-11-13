@@ -47,7 +47,9 @@ _wd     dec wint
         bne _still
         jmp newlevel
 _play   jsr read_keys
+        .if !STILL                  ; (--still: a test, Trogg kept where he's put)
         jsr trogg_update
+        .endif
         jsr hazards                 ; (the balloons and daggers)
         jsr collide                 ; (and what he's touching)
         jsr checkcp                 ; (a checkpoint, if one's due)
@@ -1394,7 +1396,7 @@ wint    .word 0
 ; ---- Data
 tyf     .byte 0                     ; (his y's twentieths: tx, ty in trogg.asm)
 tstate  .byte ST_STAND
-tface   .byte 0                     ; (0 right, 1 left)
+tface   .byte TROGGF >= 11 && TROGGF <= 14 ? 1 : 0     ; (0 right, 1 left; a test's start frame facing left: left)
 tclimb  .byte 0                     ; (0 still, 1 up, 2 down)
 anim    .byte 0
 animf   .byte 0                     ; (its fraction)

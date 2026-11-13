@@ -68,11 +68,11 @@ let inc = '; made by tools/build.mjs: for each mask of sprites shown (0, the cov
 // at the odd, maskth = block); maskjm's even bytes are spare
 const pair = (a, b, fa, fb) => `${b}  .byte ` + tailFor.flatMap((d, m) => m & 1 ? [] : [fa(m + 1), fb(m + 1)]).join(', ') + `\n${a} = ${b} - 1\n`;
 inc += pair('masktl', 'maskth', m => `<tail${tailFor[m]}`, m => `>tail${tailFor[m]}`);
-// (the same tails, then Trogg's second instances (a: y + 21 and P2) or third blocks (b: P3), for
-// the rows whose ticks change his sprites)
-for (const v of 'ab') inc += pair(`masktl${v}`, `maskth${v}`, m => `<tail${tailFor[m]}${v}`, m => `>tail${tailFor[m]}${v}`);
+// (the same tails, then Trogg's second instances (a: y + 21 and P2) or third blocks (b: P3), or his
+// x's move and P1b (c), for the rows whose ticks change his sprites)
+for (const v of 'abc') inc += pair(`masktl${v}`, `maskth${v}`, m => `<tail${tailFor[m]}${v}`, m => `>tail${tailFor[m]}${v}`);
 inc += 'maskjm  .byte ' + jmFor.filter((j, m) => m & 1).map(j => `0, ${j}`).join(', ') + '\n';
-for (const [v, to] of [['', 'tailend'], ['a', 'trogga'], ['b', 'troggb']])
+for (const [v, to] of [['', 'tailend'], ['a', 'trogga'], ['b', 'troggb'], ['c', 'troggc']])
     for (const d of delays) inc += `tail${d}${v}  stx $d018\n` + delayCode(d).map(c => `        ${c}\n`).join('') + `        sta $d011\n        jmp ${to}\n`;
 writeFileSync(DIR + 'tails.inc', inc);
 
@@ -91,7 +91,7 @@ if (PM !== null) spr = [1, 2, 3, 4, 5, 6, 7].map(n => ({ n, y: (+PM >> n & 1) ? 
 const maskOn = line => spr.reduce((m, s) => line >= s.y + CONV && line < s.y + CONV + (s.exp ? 42 : 21) ? m | 1 << s.n : m, COVER);
 const masks = [], masks3 = [];
 for (let r = 0; r < 25; r++) { masks3.push(maskOn(54 + 8 * r)); masks.push(maskOn(55 + 8 * r)); }
-defs.push('-D', `TEST=${TEST ? 1 : 0}`, '-D', `BALLTEST=${process.argv.includes('--balltest') ? 1 : 0}`, '-D', `NOBALLS=${process.argv.includes('--noballs') ? 1 : 0}`, '-D', `MUXTIME=${process.argv.includes('--muxtime') ? 1 : 0}`, '-D', `PROFILE=${process.argv.includes('--profile') ? 1 : 0}`, '-D', `SLACK=${process.argv.includes('--slack') ? 1 : 0}`, '-D', `INSANE=${process.argv.includes('--insane') ? 1 : 0}`, '-D', `TROGGX=${arg('troggx', 0)}`, '-D', `TROGGY=${arg('troggy', 0)}`, '-D', `TROGGF=${arg('troggf', 7)}`, '-D', `KEYTEST=${process.argv.includes('--keys') ? 1 : 0}`, '-D', `SCROLLDEMO=${process.argv.includes('--scrolldemo') ? 1 : 0}`, '-D', `CAMTEST=${process.argv.includes('--camtest') ? 1 : 0}`, '-D', `INVINCIBLE=${process.argv.includes('--invincible') ? 1 : 0}`);
+defs.push('-D', `TEST=${TEST ? 1 : 0}`, '-D', `BALLTEST=${process.argv.includes('--balltest') ? 1 : 0}`, '-D', `NOBALLS=${process.argv.includes('--noballs') ? 1 : 0}`, '-D', `MUXTIME=${process.argv.includes('--muxtime') ? 1 : 0}`, '-D', `PROFILE=${process.argv.includes('--profile') ? 1 : 0}`, '-D', `SLACK=${process.argv.includes('--slack') ? 1 : 0}`, '-D', `INSANE=${process.argv.includes('--insane') ? 1 : 0}`, '-D', `TROGGX=${arg('troggx', 0)}`, '-D', `TROGGY=${arg('troggy', 0)}`, '-D', `TROGGF=${arg('troggf', 7)}`, '-D', `KEYTEST=${process.argv.includes('--keys') ? 1 : 0}`, '-D', `SCROLLDEMO=${process.argv.includes('--scrolldemo') ? 1 : 0}`, '-D', `CAMTEST=${process.argv.includes('--camtest') ? 1 : 0}`, '-D', `INVINCIBLE=${process.argv.includes('--invincible') ? 1 : 0}`, '-D', `STILL=${process.argv.includes('--still') ? 1 : 0}`);
 const testy = TEST ? spr.map(s => s.y) : [0];
 const sx = scrub.placed.map(p => 31 + p.x);
 writeFileSync(DIR + 'masks.inc', `; made by tools/build.mjs\nmasks   .byte ${masks.join(', ')}\nmasks3  .byte ${masks3.join(', ')}\n` +
@@ -166,6 +166,8 @@ writeFileSync(DIR + 'masks.inc', `; made by tools/build.mjs\nmasks   .byte ${mas
                             ...[3, 4, 5, 6, 7, 8, 9, 10, 11].map(y => 'BY' + letters(y) + 'YB'),
                             ' B' + 'Y'.repeat(20) + 'B ', ' BB' + 'Y'.repeat(18) + 'BB ', '  BBYY' + 'B'.repeat(16) + '  ',
                             '   BYBB' + ' '.repeat(17), '   BYB' + ' '.repeat(18), '  BYB' + ' '.repeat(19), ' BBB' + ' '.repeat(20)];
+                 // (the F's bars both as long as the top one: a row with the bar's first two pixels has its third)
+                 for (let y = 3; y <= 11; y++) if (n[y].slice(2, 4) === 'BB') n[y] = n[y].slice(0, 4) + 'B' + n[y].slice(5);
                  if (n.some(r => r.length !== 24) || n.length !== F.grid.length) throw new Error('the FRAK! bubble is not 24 x ' + F.grid.length);
                  writeFileSync(DIR + 'frak.txt', '; the FRAK! bubble as the C64 shows it: 24 wide, each pixel shown 2 wide (build.mjs)\n' + n.join('\n') + '\n');
                  const blk = col => { const b = Array(64).fill(0); n.forEach((r, y) => { for (let x = 0; x < 24; x++) if (r[x] === col) b[y * 3 + (x >> 3)] |= 0x80 >> (x & 7); }); return b; };

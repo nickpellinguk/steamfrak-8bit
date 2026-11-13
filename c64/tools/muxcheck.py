@@ -14,9 +14,9 @@ for line in open(C64+'/build/frak64.lbl'):
 N=int(sys.argv[1]) if len(sys.argv)>1 else 8
 NV=lbl["vt"]-lbl["vh"]          # (the virtual sprites: vh is NV long, vt follows)
 BL=lbl["t017"]-lbl["t010"]     # (each buffer array's length: 32 a buffer)
-per=[('nb',1),('t010',BL*20),('vh',NV*15),('vy',NV*6),('tpen',9),('tmsbb',5)]   # contiguous blocks
+per=[('nb',1),('t010',BL*20),('vh',NV*15),('vy',NV*6),('tpen',15),('tmsbb',6)]   # contiguous blocks
 # addresses: buffers are contiguous from t010 (20 arrays x BL); model from vh; virtual sprites from vy
-const=[('maskjm',256),('masktl',256),('maskth',256),('masktla',256),('masktha',256),('masktlb',256),('maskthb',256)]
+const=[('maskjm',256),('masktl',256),('maskth',256),('masktla',256),('masktha',256),('masktlb',256),('maskthb',256),('masktlc',256),('maskthc',256)]
 cmds=['m %04x %04x'%(lbl[n],lbl[n]+l-1) for n,l in const]+['break %04x'%lbl['muxdone']]
 for i in range(N):
     cmds.append('x')
@@ -29,14 +29,14 @@ def vals(b):
         m=re.match(r'.*>C:[0-9a-f]+\s+((?:[0-9a-f]{2}\s+)+)',line)
         if m: v+=[int(x,16) for x in m.group(1).split()]
     return v
-mjm,mtl,mth,mtla,mtha,mtlb,mthb=[vals(bl[i]) for i in range(7)]
+mjm,mtl,mth,mtla,mtha,mtlb,mthb,mtlc,mthc=[vals(bl[i]) for i in range(9)]
 bufnames=['t010','t017','t01d','t01b','trch','e_n','e_reg','e_x','e_y','e_ptr','e_col','u_n','u_reg','u_y','u_x','u_ptr','u_col','rowimm','rowtl','rowth']
 vnames=['vy','vxlo','vxhi','vptr','vcol','vfl']
-probs=0; k=7
+probs=0; k=9
 for f in range(N):
     if k+len(per)>len(bl): break
     nb=vals(bl[k])[0]; buf=vals(bl[k+1]); vm=vals(bl[k+3]); tp=vals(bl[k+4]); tm=vals(bl[k+5]); k+=len(per)
-    TYv=tp[0]; tmsb,tra,trb,tres1,tres2=tm[:5]; TL=min(255,TYv+42)
+    TYv=tp[0]; tmsb,tra,trb,tres1,tres2,trc=tm[:6]; TL=min(255,TYv+42)
     B={n:buf[i*BL:(i+1)*BL] for i,n in enumerate(bufnames)}
     V={n:vm[i*NV:(i+1)*NV] for i,n in enumerate(vnames)}
     # set-ups in the buffer
@@ -72,7 +72,7 @@ for f in range(N):
         for i in ins:
             if i['y']+1<=54+8*r<=i['l']: m3|=1<<i['h']
             if i['y']+1<=55+8*r<=i['l']: m4|=1<<i['h']
-        tl,th=(mtla,mtha) if r==tra else (mtlb,mthb) if r==trb else (mtl,mth)
+        tl,th=(mtla,mtha) if r==tra else (mtlb,mthb) if r==trb else (mtlc,mthc) if r==trc else (mtl,mth)
         if B['rowimm'][nb+r]!=mjm[m3] or B['rowtl'][nb+r]!=tl[m4] or B['rowth'][nb+r]!=th[m4]:
             print(f'f{f}: row {r} operands wrong (masks {m3:02x}/{m4:02x})'); probs+=1
     # registers in force on each line
@@ -97,5 +97,8 @@ for f in range(N):
         if (rg[0]&6)!=tmsb or (rg[1]&6) or (rg[2]&6) or (rg[3]&6): print(f'f{f}: Trogg\'s register bits wrong on line {line}: {rg}'); probs+=1; break
     exp_tra = (TYv-35)>>3 if TYv>=35 and (TYv-35)>>3 < 25 else 255
     if tra!=exp_tra: print(f'f{f}: Trogg\'s row {tra}, not {exp_tra}'); probs+=1
-    print(f'frame {f}: {len(ins)} set-ups, {len(vis)} visible; Trogg y {TYv}, rows {tra}/{trb}, ticks {tres1}-{tres2} left alone')
+    # (the row for his x's move: the one before, if there is one)
+    exp_trc = exp_tra-1 if 0 < exp_tra < 255 else 255
+    if trc!=exp_trc: print(f'f{f}: Trogg\'s x-move row {trc}, not {exp_trc}'); probs+=1
+    print(f'frame {f}: {len(ins)} set-ups, {len(vis)} visible; Trogg y {TYv}, rows {trc}/{tra}/{trb}, ticks {tres1}-{tres2} left alone')
 print('problems:',probs)
