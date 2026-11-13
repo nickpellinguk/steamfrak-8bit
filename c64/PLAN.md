@@ -370,6 +370,24 @@ reference for everything else is that code (`../src/frak.asm`): `check_collision
       pixel for pixel the same as before in VICE (3 frames sooner: the start does less), the
       packed program unpacking; readiness in the camera test 90.0% (90.2% before: noise).
       Left: the alignment padding (0.45K), and `colw0`/`colw1` as a loop (0.55K, slower).
+    - **The frame in play** (measured): `build.mjs --profile` stamps CIA 2's timer at each stage
+      of a frame's work, from the border's request to the multiplexer done, into a ring at
+      `$e000`; `tools/frameprof.py` plays a key script in VICE and reads it back
+      (`tools/autoplay.py` makes the scripts: the game's own tick in py65, choosing key segments
+      that go somewhere new, pick things up and knock Scrubblies off). Six starts across A_1,
+      1,500 ticks of play each, then standing: **7.6-33.4% of frames held** (35.7% in a normal
+      `--slack` build of the first, so not the stamps' doing); playing 36-68% over, standing
+      13-27%. The work averages 7,600-9,200 CPU cycles (py65; 6,800-13,900), but where it runs
+      matters: `gametick` runs first, in the border, at about 90% (3,300 CPU cycles take
+      3,600); the multiplexer's stages run on into the picture, at about 29% (3,500 take about
+      12,000: the row interrupts' waits, 4-line FLI's bad lines and the sprites' fetches take
+      the rest). So the budget is about 7,000 cycles in the border, then a third of a cycle per
+      cycle. CPU by routine: `collide` 1,700 (its mask loop shifts a bit at a time: about 440),
+      `update` 1,300-1,600, `game` 1,000, `hazards` 570, `yoyo_collide` 0-540, `sort` 360,
+      `rngs` 330-470, `read_keys` 270.
+    - **Found**: the BBC version runs a game tick per vertical sync (50 a second) however slowly
+      it draws (more ticks after a slow frame, capped at `MAX_TICKS_PER_FRAME`); the C64 runs one
+      per frame made, so each held frame is a tick lost and the game runs slow.
 14. **Sound.** The sound effects on the SID (`SFX_CHING` for a pickup, `SFX_SQUEAL`, `SFX_DAGGER`,
     `SFX_POP`, `SFX_THUD`), from the BBC version's definitions, played in the border; the music
     (the victory tune) after. Its time measured against the budget from 13.

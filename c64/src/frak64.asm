@@ -52,6 +52,19 @@ PAUSE   = 50                        ; frames held at each end
 
 ; zero page
 zp      = $02
+
+; (--profile: CIA 2's timer A, free running, read at each stage of a frame's work into pstage;
+; each frame's record (32 bytes) then copied into a ring at $e000-$fdff (tools/frameprof.py))
+pst     .macro
+        .if PROFILE
+-       lda $dd05
+        ldx $dd04
+        cmp $dd05
+        bne -
+        sta pstage + \1 + 1
+        stx pstage + \1
+        .endif
+        .endm
 scrx    = zp + 0                    ; scroll position, pixels (16 bits)
 dir     = zp + 2                    ; +1 or -1 ($ff)
 pause   = zp + 3
@@ -407,7 +420,7 @@ measure lda muxreq                  ; (the scroll and the multiplexer still run)
         .endif
 
 ; The foreground: the hidden pair kept filled and up to date for the next swap (bgwork)
-        .if MUXTIME
+        .if MUXTIME || PROFILE
         lda #$ff                    ; (debug: CIA 2's timer A free running, for muxframe's stamps)
         sta $dd04
         sta $dd05
@@ -438,16 +451,79 @@ nextframe
         sta muxbusy
         lda #0
         sta muxreq
+        .if PROFILE
+        lda preq                    ; (--profile: the request's time, then the stages')
+        sta pstage
+        lda preq + 1
+        sta pstage + 1
+        .endif
+        #pst 2
         jsr gametick                ; (a game tick: the keys, Trogg)
+        #pst 4
         jsr decide
+        #pst 6
         jsr trogset                 ; (Trogg's sprites, for the next frame's scroll)
+        #pst 8
         jsr yoyoset                 ; (the yoyo's sprite, and its string)
+        #pst 10
         jsr frakset                 ; (the FRAK! bubble)
+        #pst 12
         jsr strset
+        #pst 14
         jsr muxframe
         lda #0
         sta muxbusy
+        .if PROFILE
+        jmp precord
+        .else
         rts
+        .endif
+
+        .if PROFILE
+; (--profile: the frame's record into the ring: its stamps, the frame count, held frames so far,
+; some of the game's state, and its number)
+precord lda frames
+        sta pstage + 24
+        lda pheld
+        sta pstage + 25
+        lda tstate
+        sta pstage + 26
+        lda dead
+        sta pstage + 27
+        lda won
+        sta pstage + 28
+        lda yo_len
+        sta pstage + 29
+        lda pseq + 1
+        sta pstage + 30
+        lda pseq
+        sta pstage + 31
+        inc pseq
+        bne +
+        inc pseq + 1
++
+        ldx #31
+-       lda pstage,x
+_pd     sta $e000,x
+        dex
+        bpl -
+        lda _pd+1
+        clc
+        adc #32
+        sta _pd+1
+        bcc +
+        inc _pd+2
+        lda _pd+2
+        cmp #$fe
+        bcc +
+        lda #$e0
+        sta _pd+2
++       rts
+pstage  .fill 32
+pheld   .byte 0
+pseq    .word 0
+preq    .word 0
+        .endif
 
 ; Fill row prow of pair back for window working at VSP offset fsh (tops and bottoms), then prow+1:
 ; screen columns 2-39 (0-2 are the FLI bug's, never seen, under the cover sprite; 2 is filled too
@@ -803,11 +879,22 @@ bordirq sta sava
 _nmux   .if SLACK
         inc nhold                   ; (debug: frames the multiplexer wasn't ready)
         .endif
+        .if PROFILE
+        inc pheld
+        .endif
         jsr setx
         lda muxbusy
         bne _dmux
 _wmux   lda #1
         sta muxreq
+        .if PROFILE
+-       lda $dd05                   ; (--profile: the request's time, kept till its work starts)
+        ldx $dd04
+        cmp $dd05
+        bne -
+        sta preq + 1
+        stx preq
+        .endif
 _dmux
         .else
         jsr frame

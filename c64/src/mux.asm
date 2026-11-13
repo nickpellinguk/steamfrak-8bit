@@ -82,18 +82,22 @@ muxframe
         eor #32
         sta nb
         jsr replay
+        #pst 16
         .if MUXTIME
         jsr stamp
         .endif
         jsr game
+        #pst 18
         .if MUXTIME
         jsr stamp
         .endif
         jsr sort
+        #pst 20
         .if MUXTIME
         jsr stamp
         .endif
         jsr update
+        #pst 22
         .if MUXTIME
         jsr stamp
         lda rdn
