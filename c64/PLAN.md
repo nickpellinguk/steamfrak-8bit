@@ -438,15 +438,19 @@ reference for everything else is that code (`../src/frak.asm`): `check_collision
       wide, the snout at one end (lines 3-5) and the back at the other (lines 17-24). His head
       (lines 0-16) is cut 2 pixels toward the snout from his body (lines 6-33), and his sprites'
       x moves those 2 pixels partway down him: in a third kind of row tail (c, the row before
-      P2's: `trc`), with the pointers to P1b (P1 cut as the body), from line 7 of the row (his
-      lines 7-14). A pointer reaches the sprites from the line after it's written, an x on the
-      line it's written, from where the beam is: so the pointers early on line 6, then the x,
-      on line 6 once the beam's past him (CIA 1's timer B reads 263 - c on line 6, cycle c;
-      `TXK`), or for x over 240, at line 7's start, before the beam reaches him ($d010 first,
-      when the move crosses 256). No row before (the top of the screen): P2's tick moves it.
+      P2's: `trc`), with the pointers to P1b (P1 cut as the body), from line 6 of the row (his
+      lines 6-13). A pointer reaches the sprites from the line after it's written, an x on the
+      line it's written, from where the beam is. The tail runs on line 5 and must be quick (the
+      next row's interrupt takes only 31 cycles' lateness: a first version, waiting lines in the
+      tail, overran into the rows below him and corrupted them, `--slack`'s overrun counts
+      hundreds in play): the bottoms' screen's pointers (the ones line 5's fetches read), then
+      the x once the beam's past him on line 5 (CIA 1's timer B, its low byte 70 - c on line 5,
+      cycle c: `TXK`), far right held over the fetches into line 6's first cycles, still before
+      him; $d010's bits flipped if the move crosses 256; then the tops' screen's pointers. No
+      overruns (in play, and held far right); the least slack 30 cycles (about 50 before).
       Measured in VICE (`--still`, a test build keeping him where he's put; `troggshot.py`):
-      0 pixels wrong at all 8 heights mod 8, x 40-230 both ways, and far right (x 688-720,
-      across 256); at x 750 only the right border's. Readiness in the camera test 93.8% (95.8%).
+      0 pixels wrong at all 8 heights mod 8, x 40-200 both ways, and far right (x 688-720,
+      across 256); at x 750 only the right border's.
 14. **Sound.** The sound effects on the SID (`SFX_CHING` for a pickup, `SFX_SQUEAL`, `SFX_DAGGER`,
     `SFX_POP`, `SFX_THUD`), from the BBC version's definitions, played in the border; the music
     (the victory tune) after. Its time measured against the budget from 13.
