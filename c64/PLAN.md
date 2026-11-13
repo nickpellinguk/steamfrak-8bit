@@ -388,6 +388,22 @@ reference for everything else is that code (`../src/frak.asm`): `check_collision
     - **Found**: the BBC version runs a game tick per vertical sync (50 a second) however slowly
       it draws (more ticks after a slow frame, capped at `MAX_TICKS_PER_FRAME`); the C64 runs one
       per frame made, so each held frame is a tick lost and the game runs slow.
+      (Accepted: the C64 runs at 50 ticks a second, 5/6 of the Steam version's 60.)
+    - **`collide` with registers** (done): the objects' mask shifted in A (9 cycles a bit, not
+      32); the balloons and daggers by their origin less his, one 16-bit difference each way
+      against his frame's limits for the kind (`cbxn1` ... from the build, biased by $80),
+      instead of four 16-bit edges built in memory; the hot variables in zero page (`$64`-`$78`).
+      In play 1,729 cycles a frame on average to 900; `collidecost.py` means 1,025 / 1,469 /
+      1,897 (0, 3, 6 balloons and daggers out) to 930 / 1,140 / 1,320. The same results:
+      `collidetest` (5,000 situations), `poptest`, `picktest`, `cptest`, `hazardtest`; the frame
+      checker. Held frames: 35.2% to 29.2% (the start), 33.4% to 25.8% (260,207), 27.1% to 19.8%
+      (500,207).
+    - **A frame of buffer?** The work averages under a frame everywhere; it's the spikes that are
+      held. Replaying the recorded work times through a model of the pipeline (a frame may be
+      made while the one before waits to be shown): no buffer 4-27% held (the model's optimistic:
+      VICE measured 24-35%), one frame of buffer 0.1-2.1%, more hardly better. The cost: a third
+      set of the multiplexer's buffers and its replay across two frames, each queued frame's
+      scroll settings, and a frame (20 ms) more between the keys and the screen.
 14. **Sound.** The sound effects on the SID (`SFX_CHING` for a pickup, `SFX_SQUEAL`, `SFX_DAGGER`,
     `SFX_POP`, `SFX_THUD`), from the BBC version's definitions, played in the border; the music
     (the victory tune) after. Its time measured against the budget from 13.

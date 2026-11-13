@@ -145,6 +145,12 @@ writeFileSync(DIR + 'masks.inc', `; made by tools/build.mjs\nmasks   .byte ${mas
                  writeFileSync(DIR + 'hazspr.bin', Buffer.from(spr));
                  return K('kxo', h => h.xo) + K('kyo', h => h.yo) + K('kw', h => h.grid[0].length) + K('kh', h => h.grid.length) +
                      B('kbx0', [0, ...hb.map(b => b.x0)]) + B('kbx1', [0, ...hb.map(b => b.x1)]) + B('kby0', [0, ...hb.map(b => b.y0)]) + B('kby1', [0, ...hb.map(b => b.y1)]) +
+                     // (his box and kind k's touch where its origin less his, d, is within [min, max] each
+                     // way, for each of his frames: biased by $80, max + 1, for unsigned compares)
+                     [1, 2].map(k => { const h = H[k - 1], b = hb[k - 1];
+                         const lim = (n, f) => { const v = tb.map(f); if (v.some(d => d < -128 || d > 126)) throw new Error(`${n}: out of a byte`); return B(n, v.map(d => (d + 128) & 255)); };
+                         return lim(`cbxn${k}`, t => t.x0 + h.xo - b.x1) + lim(`cbxx${k}`, t => t.x1 + h.xo - b.x0 + 1) +
+                                lim(`cbyn${k}`, t => t.y0 + h.yo - b.y1) + lim(`cbyx${k}`, t => t.y1 + h.yo - b.y0 + 1); }).join('') +
                      B('balsp', sp(H[0].grid)) + B('dagsp', sp(H[1].grid)) + `kspl    .byte 0, <balsp, <dagsp\nksph    .byte 0, >balsp, >dagsp\n`; })() +
         // (the FRAK! bubble, redrawn at half width, 24 x 19, for two x-expanded sprites: its black, and
         // its yellow where the black isn't (so either can be in front). The letters from the BBC's

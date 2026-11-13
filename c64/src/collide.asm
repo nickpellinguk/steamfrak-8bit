@@ -6,55 +6,43 @@
 ; first. The comparisons are signed: his box can reach above the level's top, jumping.
 sp1     = zp + 94                   ; (2: his spans, the second stage's)
 sp2     = zp + 96                   ; (2: its)
+ctl     = zp + 98                   ; (2 each: Trogg's box)
+ctr     = zp + 100
+ctt     = zp + 102
+ctb     = zp + 104
+obl     = zp + 106                  ; (2 each: an object's)
+obr     = zp + 108
+obt     = zp + 110
+obb     = zp + 112
+cml     = zp + 114                  ; (the objects in his columns, then also his bands)
+cmh     = zp + 115
+cbits   = zp + 116                  ; (the bits still to look at)
+cdl     = zp + 117                  ; (a balloon's or dagger's dx or dy, low)
+bmh     = zp + 118                  ; (his bands' objects, high)
         .section high
         .include "collide.inc"      ; tbx0 ... (Trogg's frames), scbll ... (the Scrubblies), pkll ...
                                     ; (the gems and keys), BBX0 ... (the ball sprite)
+; (his box's edges from his place: a signed byte added to a word)
+cedge   .macro tab, src, dst
+        ldy #0
+        lda \tab,x
+        bpl +
+        dey
++       clc
+        adc \src
+        sta \dst
+        tya
+        adc \src+1
+        sta \dst+1
+        .endm
 collide lda dead
         beq +
         rts
 +       ldx tfr                     ; his box: x tx + tbx0 to tx + tbx1, y ty + tby0 to ty + tby1
-        lda tbx0,x
-        bpl +
-        clc
-        adc tx
-        sta ctl
-        lda tx+1
-        adc #$ff
-        jmp ++
-+       clc
-        adc tx
-        sta ctl
-        lda tx+1
-        adc #0
-+       sta ctl+1
-        lda tbx1,x
-        bpl +
-        clc
-        adc tx
-        sta ctr
-        lda tx+1
-        adc #$ff
-        jmp ++
-+       clc
-        adc tx
-        sta ctr
-        lda tx+1
-        adc #0
-+       sta ctr+1
-        lda tby0,x
-        bpl +
-        clc
-        adc ty
-        sta ctt
-        lda ty+1
-        adc #$ff
-        jmp ++
-+       clc
-        adc ty
-        sta ctt
-        lda ty+1
-        adc #0
-+       sta ctt+1
+        #cedge tbx0, tx, ctl
+        #cedge tbx1, tx, ctr
+        #cedge tby0, ty, ctt
+        #cedge tby1, ty, ctb
         lda ctl+1                   ; (and his columns, for a quick first test: ctl / 8 to ctr / 8,
         bpl +                       ; from 0)
         lda #0
@@ -67,28 +55,71 @@ collide lda dead
         ldy ctr
         jsr _c8
         sta tc1
-        lda tby1,x
-        bpl +
-        clc
-        adc ty
-        sta ctb
-        lda ty+1
-        adc #$ff
-        jmp ++
-+       clc
-        adc ty
-        sta ctb
-        lda ty+1
-        adc #0
-+       sta ctb+1
         .if !NOBALLS
-        ldx #NB - 1                 ; the balloons and daggers: x from their sprite's left (oxl, oxh),
-_b      lda oact,x                  ; (its kind: 1 balloon, 2 dagger)
-        bne +
-        jmp _bn
-+       tay
-        lda oy,x                    ; its image's corner: its origin less (kxo, kyo)
+        ; The balloons and daggers: the box test by its origin less his (dx, dy), against his
+        ; frame's limits for its kind (collide.inc's cbxn1 ...; biased by $80, the max plus 1)
+        ldy tfr
+        lda cbxn1,y
+        sta cbxn+1
+        lda cbxn2,y
+        sta cbxn+2
+        lda cbxx1,y
+        sta cbxx+1
+        lda cbxx2,y
+        sta cbxx+2
+        lda cbyn1,y
+        sta cbyn+1
+        lda cbyn2,y
+        sta cbyn+2
+        lda cbyx1,y
+        sta cbyx+1
+        lda cbyx2,y
+        sta cbyx+2
+        ldx #NB - 1
+_b      ldy oact,x                  ; (its kind: 1 balloon, 2 dagger)
+        beq _bn
+        lda oy,x                    ; dy, -128 to 127 or not near
         sec
+        sbc ty
+        sta cdl
+        lda oyh,x
+        sbc ty+1
+        bne _yh
+        lda cdl
+        bpl _yt
+_bn     dex
+        bpl _b
+        jmp _bdone
+_yh     cmp #$ff
+        bne _bn
+        lda cdl
+        bpl _bn
+_yt     eor #$80
+        cmp cbyn,y
+        bcc _bn
+        cmp cbyx,y
+        bcs _bn
+        lda oxl,x                   ; dx likewise (x from its sprite's left)
+        sec
+        sbc tx
+        sta cdl
+        lda oxh,x
+        sbc tx+1
+        bne _xh
+        lda cdl
+        bpl _xt
+        bmi _bn
+_xh     cmp #$ff
+        bne _bn
+        lda cdl
+        bpl _bn
+_xt     eor #$80
+        cmp cbxn,y
+        bcc _bn
+        cmp cbxx,y
+        bcs _bn
+        lda oy,x                    ; the boxes touch: then the spans, from its image's corner,
+        sec                         ; its origin less (kxo, kyo)
         sbc kyo,y
         sta oit
         lda oyh,x
@@ -101,63 +132,7 @@ _b      lda oact,x                  ; (its kind: 1 balloon, 2 dagger)
         lda oxh,x
         sbc #0
         sta oil+1
-        lda oit                     ; its box: y first
-        clc
-        adc kby0,y
-        sta obt
-        lda oit+1
-        adc #0
-        sta obt+1
-        lda ctb                     ; (its top <= his bottom)
-        sec
-        sbc obt
-        lda ctb+1
-        sbc obt+1
-        bpl +
-        jmp _bn
-+       lda oit
-        clc
-        adc kby1,y
-        sta obb
-        lda oit+1
-        adc #0
-        sta obb+1
-        lda obb                     ; (its bottom >= his top)
-        sec
-        sbc ctt
-        lda obb+1
-        sbc ctt+1
-        bpl +
-        jmp _bn
-+       lda oil                     ; then x
-        clc
-        adc kbx0,y
-        sta obl
-        lda oil+1
-        adc #0
-        sta obl+1
-        lda ctr                     ; (its left <= his right)
-        sec
-        sbc obl
-        lda ctr+1
-        sbc obl+1
-        bpl +
-        jmp _bn
-+       lda oil
-        clc
-        adc kbx1,y
-        sta obr
-        lda oil+1
-        adc #0
-        sta obr+1
-        lda obr                     ; (its right >= his left)
-        sec
-        sbc ctl
-        lda obr+1
-        sbc ctl+1
-        bpl +
-        jmp _bn
-+       lda kspl,y                  ; the boxes touch: then the spans
+        lda kspl,y
         sta osp
         lda ksph,y
         sta osp+1
@@ -166,27 +141,24 @@ _b      lda oact,x                  ; (its kind: 1 balloon, 2 dagger)
         stx ck
         jsr spans
         ldx ck
-        bcc _bn
-        jmp trogg_dies
-_bn     dex
-        bmi +
-        jmp _b
-+
+        bcs +
+        jmp _bn
++       jmp trogg_dies
+_bdone
         .endif
         lda #0                      ; the Scrubblies, gems and keys in his columns (colml, colmh:
-        sta cml                     ; each column's, bit k Scrubbly k, then gem or key k - NS)
-        sta cmh
+        sta cmh                     ; each column's, bit k Scrubbly k, then gem or key k - NS)
         ldy tc0
--       lda colml,y
-        ora cml
-        sta cml
+-       ora colml,y
+        tax
         lda colmh,y
         ora cmh
         sta cmh
+        txa
         cpy tc1
         iny
         bcc -
-        lda cml
+        sta cml
         ora cmh
         bne +
 _none   rts                         ; (none)
@@ -215,32 +187,38 @@ _none   rts                         ; (none)
         lsr
 +       tay
         lda #0
-        sta bml
         sta bmh
--       lda bandml,y
-        ora bml
-        sta bml
+-       ora bandml,y
+        tax
         lda bandmh,y
         ora bmh
         sta bmh
+        txa
         cpy cband1
         iny
         bcc -
-        lda cml
-        and bml
+        and cml
         sta cml
-        lda cmh
-        and bmh
+        lda bmh
+        and cmh
         sta cmh
         ora cml
         bne +
         rts                         ; (none: the usual)
-+       ldx #0
-_k      lsr cmh
-        ror cml
++       ldx #0                      ; each object whose bit is set, in A (cml, then cmh), shifted
+        lda cml                     ; out a bit at a time, x its number
+_k      lsr
+        bcs _hit
+        beq _kz
+        inx
+        bne _k
+_kz     cpx #8                      ; (the rest of this byte clear: the next byte, or done)
         bcs +
-        jmp _kn
-+
+        ldx #8
+        lda cmh
+        bne _k
++       rts
+_hit    sta cbits                   ; (the bits left)
         stx ck
         cpx #NS
         bcs _pk
@@ -337,12 +315,11 @@ _pk     txa                         ; a gem or key (not picked up yet): touched,
         inc ptouchn
         jsr pickup
 _kr     ldx ck
-_kn     inx
-        lda cml
-        ora cmh
-        beq +
+        lda cbits
+        bne +
+        jmp _kz
++       inx
         jmp _k
-+       rts
 _c8     sty tc1                     ; ((a, y) / 8: a column)
         lsr
         ror tc1
@@ -518,19 +495,11 @@ overlap lda ctr                     ; obl <= ctr
 _no     clc
         rts
 
-ctl     .word 0                     ; (Trogg's box)
-ctr     .word 0
-ctt     .word 0
-ctb     .word 0
-obl     .word 0                     ; (an object's)
-obr     .word 0
-obt     .word 0
-obb     .word 0
-cml     .byte 0                     ; (the objects in his columns)
-cmh     .byte 0
+cbxn    .fill 3                     ; (his frame's limits for the balloon (1), the dagger (2))
+cbxx    .fill 3
+cbyn    .fill 3
+cbyx    .fill 3
 ck      .byte 0
-bml     .byte 0                     ; (the objects in his bands)
-bmh     .byte 0
 cband1     .byte 0
 ckp     .byte 0
 oil     .word 0                     ; (the second stage: the object's image's corner, spans, rows)
