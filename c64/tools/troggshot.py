@@ -35,18 +35,18 @@ def bgmatch(s):
             if 0 <= x < W and cls(x, y) == exp[(y - 24) * W + x])
     scroll = keep
     return n
-scroll = max(range(scroll - 2, scroll + 3), key=bgmatch)
+scroll = max(range(max(0, scroll - 64), scroll + 65), key=bgmatch)     # (compare.py's can be thrown by him)
 best = None
 for oy in range(-6, 7):
     for ox in range(-12, 13):
-        bad = sum(1 for r in range(34) for c in range(24) if shown[r][c] >= 0 and 0 <= top + oy + r - 24 < 200
+        bad = sum(1 for r in range(34) for c in range(len(shown[r])) if shown[r][c] >= 0 and 0 <= top + oy + r - 24 < 200
                   and at(left + ox + c, 0)[0] >= X0 + dx + 32
                   and cls(left + ox + c, top + oy + r) != shown[r][c])     # (in the display window, not under the cover)
         if best is None or bad < best[0]: best = (bad, ox, oy)
 bad, ox, oy = best
 below = 0
 for r in range(34, 42):
-    for c in range(24):
+    for c in range(len(shown[0])):
         x, y = left + ox + c, top + oy + r
         if 0 <= y - 24 < 200 and 0 <= x < W and cls(x, y) != exp[(y - 24) * W + x]: below += 1
 print(f'scroll {scroll}: Trogg found {ox:+d} across, {oy:+d} down from where he should be; '

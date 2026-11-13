@@ -766,16 +766,27 @@ _kept
         lda #47
 +       sta my
         jsr rngs
-        lda tra                     ; (his rows' tails: the old ones and the new ones redone)
-        cmp traw
+        lda tra                     ; (his rows' tails: the old ones and the new ones redone, the
+        cmp traw                    ; row before for the x's move too)
+        bne _rd
+        lda trc
+        cmp trcw
         beq +
+_rd     ldy traw
+        dey
+        jsr _row
         ldy traw
         jsr _row
         ldy traw
         iny
         jsr _row
+        lda trc
+        sta trcw
         ldy tra
         sty traw
+        dey
+        jsr _row
+        ldy tra
         jsr _row
         ldy tra
         iny
@@ -801,6 +812,7 @@ _row    cpy #ROWS
         jmp rdirty
 +       rts
 traw    .byte $ff                   ; (the rows and bit 8 last frame)
+trcw    .byte $ff
 tres1w  .byte $ff
 tres2w  .byte $ff
 tmsbw   .byte 0
@@ -1708,6 +1720,8 @@ rowsfin ldy #0
         beq _ta
         cpx trb
         beq _tb
+        cpx trc
+        beq _tc
         lda mk4,x
         tax
         lda masktl,x
@@ -1730,6 +1744,13 @@ _tb     lda mk4,x
         lda masktlb,x
         sta rowtl,y
         lda maskthb,x
+        sta rowth,y
+        jmp _rn
+_tc     lda mk4,x
+        tax
+        lda masktlc,x
+        sta rowtl,y
+        lda maskthc,x
         sta rowth,y
         jmp _rn
 
