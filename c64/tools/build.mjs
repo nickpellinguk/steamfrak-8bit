@@ -166,6 +166,8 @@ writeFileSync(DIR + 'masks.inc', `; made by tools/build.mjs\nmasks   .byte ${mas
                             ...[3, 4, 5, 6, 7, 8, 9, 10, 11].map(y => 'BY' + letters(y) + 'YB'),
                             ' B' + 'Y'.repeat(20) + 'B ', ' BB' + 'Y'.repeat(18) + 'BB ', '  BBYY' + 'B'.repeat(16) + '  ',
                             '   BYBB' + ' '.repeat(17), '   BYB' + ' '.repeat(18), '  BYB' + ' '.repeat(19), ' BBB' + ' '.repeat(20)];
+                 // (the F's bars both as long as the top one: a row with the bar's first two pixels has its third)
+                 for (let y = 3; y <= 11; y++) if (n[y].slice(2, 4) === 'BB') n[y] = n[y].slice(0, 4) + 'B' + n[y].slice(5);
                  if (n.some(r => r.length !== 24) || n.length !== F.grid.length) throw new Error('the FRAK! bubble is not 24 x ' + F.grid.length);
                  writeFileSync(DIR + 'frak.txt', '; the FRAK! bubble as the C64 shows it: 24 wide, each pixel shown 2 wide (build.mjs)\n' + n.join('\n') + '\n');
                  const blk = col => { const b = Array(64).fill(0); n.forEach((r, y) => { for (let x = 0; x < 24; x++) if (r[x] === col) b[y * 3 + (x >> 3)] |= 0x80 >> (x & 7); }); return b; };
