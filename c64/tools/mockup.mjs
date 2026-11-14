@@ -254,8 +254,11 @@ e.draw_img.forEach((img, k) => {
                 left = over(unit - 8) > over(unit) ? unit - 8 : unit;   // the unit's character or the one before: more over its platform)
             }
         }
-        // (nothing behind it either: a ladder's foot, say)
-        for (let y = 0; y < ih; y++) for (let x = 0; x < iw; x++) if (inside(left + x, top + y)) art[at2(left + x, top + y)] = 0;
+        // (nothing behind it either: a ladder's foot, say; nor anything else in the halves it's in,
+        // so its glyphs are its own, the same in every level: the common ones, pack.mjs. The
+        // platform's top line goes under a gem as under a key)
+        const hx0 = left & ~7, hx1 = (left + iw + 7) & ~7, hy0 = top & ~3, hy1 = (top + ih + 3) & ~3;
+        for (let y = hy0; y < hy1; y++) for (let x = hx0; x < hx1; x++) if (inside(x, y)) art[at2(x, y)] = 0;
         picks.push({ name: im.name, left, top, box: tightBox(pix) });
         pickGrids[im.name] = pix;                    // (its pixels: -1 clear; for the collision spans)
         console.log(`${im.name} ${k}: left ${left} (from its unit ${band >= 0 ? left - (left - Math.floor((16 - iw) / 2)) : '?'}, mod 8 ${left & 7}), top ${top} (mod 4 ${top & 3})`);

@@ -566,3 +566,16 @@ NTSC machine instead of a garbled screen; the VSP crash test on hardware (VSP.md
   full again, so any more glyphs would mean a third set.
 - What the physics costs: 1,100-1,450 cycles a tick (milestone 3).
 - How long the fill takes after turning round, and so the dead zone (milestone 4).
+
+## Memory for several levels (Scrubbly, Hooter, Poglet)
+
+- Common glyphs first in both character sets (pack.mjs: NCOMMON = 19): blank, the yo-yo string
+  (1-4), the key and gem halves at both alignments; the level's glyphs from NCOMMON on.
+- Common sprites contiguous from $5a00: cover, blank, yo-yo, FRAK!, timer, balloon, dagger,
+  hazards' shared parts, Trogg; the level's sprites from LSPR ($6d80).
+- The level's own glyphs, sprites and map packed (tools/lz.py, ../tools/pack.py's format) and
+  unpacked at the start by loader.asm (lvlstreams); the map at $e000, under the KERNAL.
+  A_1: 5634 bytes packed to 1299. The program ends at $a9ac (was $b6ac): about 5.7KB free for
+  more packed levels.
+- Next: the per-level tables still compiled in (band sets, geometry, objects, patches, NC) to be
+  loadable as well.

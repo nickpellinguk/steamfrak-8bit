@@ -6,6 +6,7 @@
 #                                     last made: a --keys build, any script; prints the script.
 #                                     X Y: Trogg's start, as build.mjs --troggx X --troggy Y)
 import os, random, re, sys
+import os as _os, sys as _sys; _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__))); import c64img   # (the level unpacked: loadlevel)
 from py65.devices.mpu6502 import MPU
 DIR = os.path.dirname(os.path.abspath(__file__)); B = os.path.join(DIR, '..', 'build')
 lbl = {}
@@ -15,7 +16,7 @@ for line in open(os.path.join(B, 'frak64.lbl')):
 TICKS = int(sys.argv[1]) if len(sys.argv) > 1 else 4000
 random.seed(int(sys.argv[2]) if len(sys.argv) > 2 else 1)
 prg = open(os.path.join(B, 'frak64.prg'), 'rb').read()
-mem = bytearray(65536); mem[0x0801:0x0801 + len(prg) - 2] = prg[2:]
+mem = c64img.image(prg)
 mem[0xdc00] = mem[0xdc01] = 0xff
 stub = 0x033c; mem[stub:stub + 3] = bytes([0x20, lbl['gametick'] & 255, lbl['gametick'] >> 8])
 KS = lbl['kscrk']; NSC = 5

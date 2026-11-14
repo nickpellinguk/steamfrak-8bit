@@ -7,6 +7,7 @@
 # checkpoint. Random keys, gems, Scrubblies and places, a few rounds.
 #   python3 cptest.py [ROUNDS]      (the build as last made)
 import os, random, re, sys
+import os as _os, sys as _sys; _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__))); import c64img   # (the level unpacked: loadlevel)
 from py65.devices.mpu6502 import MPU
 DIR = os.path.dirname(os.path.abspath(__file__)); B = os.path.join(DIR, '..', 'build')
 lbl = {}
@@ -22,7 +23,7 @@ const = {m.group(1): int(m.group(2)) for m in re.finditer(r'^(\w+)\s*=\s*(\d+)',
 NP, NS = len(tab['pkkind']), len(tab['scrpn'])
 NC = int(re.search(r'^NC\s*=\s*(\d+)', open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'build', 'level.inc')).read(), re.M).group(1)); MAPN = 25 * NC     # (the level map's size: build/level.inc)
 prg = open(os.path.join(B, 'frak64.prg'), 'rb').read()
-base = bytearray(65536); base[0x0801:0x0801 + len(prg) - 2] = prg[2:]
+base = c64img.image(prg)
 def call(mem, label, x=0):
     stub = 0x033c; mem[stub:stub + 5] = bytes([0xa2, x, 0x20, lbl[label] & 255, lbl[label] >> 8])
     mpu = MPU(memory=mem); mpu.pc = stub; mpu.sp = 0xf0

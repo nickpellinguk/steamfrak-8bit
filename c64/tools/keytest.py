@@ -4,6 +4,7 @@
 # then, checked with troggshot.py: he's still by then, so the two agree exactly or not at all).
 #   python3 keytest.py 60:-,150:U,30:- [build options]      (keys: L R U D Y, or - for none)
 import os, re, subprocess, sys
+import os as _os, sys as _sys; _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__))); import c64img   # (the level unpacked: loadlevel)
 from py65.devices.mpu6502 import MPU
 DIR = os.path.dirname(os.path.abspath(__file__))
 B = os.path.join(DIR, '..', 'build')
@@ -22,7 +23,7 @@ ticks = sum(int(s.split(':')[0]) for s in keys.split(',')) + 50 + 60   # (a rest
 
 # ---- py65: the program's gametick, tick after tick
 prg = open(os.path.join(B, 'frak64.prg'), 'rb').read()
-mem = bytearray(65536); mem[0x0801:0x0801 + len(prg) - 2] = prg[2:]
+mem = c64img.image(prg)
 mem[0xdc00] = mem[0xdc01] = 0xff                    # (no keys, no joystick)
 stub = 0x033c; mem[stub:stub + 3] = bytes([0x20, lbl['gametick'] & 255, lbl['gametick'] >> 8])
 for t in range(ticks):

@@ -24,12 +24,37 @@ if (off.NC !== NC || off.ROWS !== ROWS) throw new Error('level_off.json is anoth
 // screen codes too)
 const gone = JSON.parse(readFileSync(DIR + 'level_gone.json'));
 if (gone.NC !== NC || gone.ROWS !== ROWS) throw new Error('level_gone.json is another size');
-const STRING = 60, CAP = STRING;      // (characters 60-63 of every set: the yoyo's string)
+// The common glyphs, the same in every level, at the start of both sets (common.bin, once in the
+// program): 0 blank (space), 1-4 the yoyo's string (a black line at line 0-3 of both halves), then
+// the keys' and gems' (their tops, and their bottoms, from their grids at the places mockup.mjs
+// puts them: x KEYX / GEMX in a character, y KEYY / GEMY in a half, in either half of a row; their
+// halves hold nothing else). The level's own after them, from NCOMMON (levelcs.bin: each set's)
+const STRING = 1;
+const pj = JSON.parse(readFileSync(DIR + 'picks.json'));
+const PLACE = { IMG_Key: [0, 1], IMG_Gem: [2, 2] };     // (x mod 8, y mod 4)
+const hex4 = rows => rows.map(v => v.toString(16).padStart(2, '0')).join('');
+const comT = new Set(), comB = new Set();
+for (const [name, [px, py]] of Object.entries(PLACE)) {
+    const g = pj.grids[name];
+    for (const p of pj.picks.filter(p => p.name === name)) if ((p.left & 7) !== px || (p.top & 3) !== py) throw new Error(`a ${name} not at x ${px} mod 8, y ${py} mod 4`);
+    for (const yo of [py, py + 4]) {
+        const H = Math.ceil((yo + g.length) / 8), W = Math.ceil((px + g[0].length) / 8);
+        for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) for (const h of [0, 1]) {
+            const rows = [0, 1, 2, 3].map(l => { let v = 0; for (let b = 0; b < 8; b++) { const x = 8 * c + b - px, y = 8 * r + 4 * h + l - yo; if (y >= 0 && y < g.length && x >= 0 && x < g[0].length && g[y][x] === 3) v |= 0x80 >> b; } return v; });
+            if (rows.some(v => v)) (h ? comB : comT).add(hex4(rows));
+        }
+    }
+}
+const BLANK = '00000000', COMT = [...comT].sort(), COMB = [...comB].sort();
+const NCOMMON = 5 + Math.max(COMT.length, COMB.length), CAP = 64 - NCOMMON;
+const isCom = (p, h) => p === BLANK || (h ? comB : comT).has(p);
 const rowT = [], rowB = [];
 for (let r = 0; r < ROWS; r++) {
     rowT.push(new Set([...d.T.slice(r * NC, r * NC + NC), ...off.T.slice(r * NC, r * NC + NC), ...gone.T.slice(r * NC, r * NC + NC)]));
     rowB.push(new Set([...d.B.slice(r * NC, r * NC + NC), ...off.B.slice(r * NC, r * NC + NC), ...gone.B.slice(r * NC, r * NC + NC)]));
 }
+for (const s of rowT) for (const p of [...s]) if (isCom(p, 0)) s.delete(p);    // (the common glyphs: not the bands' own)
+for (const s of rowB) for (const p of [...s]) if (isCom(p, 1)) s.delete(p);
 const bandT = [...rowT, new Set()], bandB = [new Set(), ...rowB];
 const sets = [], order = bandT.map((t, k) => k).sort((a, b) => (bandT[b].size + bandB[b].size) - (bandT[a].size + bandB[a].size));
 for (const k of order) {
@@ -41,14 +66,15 @@ if (sets.length > 2) throw new Error(`needs ${sets.length} character sets`);
 while (sets.length < 2) sets.push({ T: new Set(), B: new Set(), bands: [] });
 const bandset = new Uint8Array(ROWS + 1), cs = Buffer.alloc(1024);
 sets.forEach((s, k) => {
-    s.Ti = new Map([...s.T].map((p, i) => [p, i])); s.Bi = new Map([...s.B].map((p, i) => [p, i]));
+    s.Ti = new Map([[BLANK, 0], ...COMT.map((p, i) => [p, 5 + i]), ...[...s.T].map((p, i) => [p, NCOMMON + i])]);
+    s.Bi = new Map([[BLANK, 0], ...COMB.map((p, i) => [p, 5 + i]), ...[...s.B].map((p, i) => [p, NCOMMON + i])]);
     for (const [p, i] of s.Ti) for (let l = 0; l < 4; l++) cs[k * 512 + i * 8 + l] = parseInt(p.slice(l * 2, l * 2 + 2), 16);
     for (const [p, i] of s.Bi) for (let l = 0; l < 4; l++) cs[k * 512 + i * 8 + 4 + l] = parseInt(p.slice(l * 2, l * 2 + 2), 16);
     for (const b of s.bands) bandset[b] = k;
     for (let l = 0; l < 4; l++) {     // (the string's: a line at line l of either half)
         cs[k * 512 + (STRING + l) * 8 + l] = 0xff; cs[k * 512 + (STRING + l) * 8 + 4 + l] = 0xff;
     }
-    console.log(`character set ${k}: bands ${s.bands.sort((a, b) => a - b).join(' ')} (${s.T.size} tops, ${s.B.size} bottoms)`);
+    console.log(`character set ${k}: bands ${s.bands.sort((a, b) => a - b).join(' ')} (${s.T.size} tops, ${s.B.size} bottoms of its own)`);
 });
 const codes = v => {
     const t = Buffer.alloc(ROWS * NC), b = Buffer.alloc(ROWS * NC);
@@ -100,7 +126,7 @@ const cells = [...patches.flat(), ...ppatches.flat()], ns = patches.flat().lengt
 const newT = q => gdiff.has(q) ? topsGone[q] : topsOff[q], newB = q => gdiff.has(q) ? bottomsGone[q] : bottomsOff[q];
 const starts = (gs, base) => gs.reduce((a, g) => (a.push(a[a.length - 1] + g.length), a), [base]).slice(0, -1);
 if (cells.length > 256) throw new Error('more than 256 patch cells');
-let inc = `; made by tools/pack.mjs: each Scrubbly's patch knocking it off, then each gem's and key's\n; picking it up (in picks.json's order): cells as level map offset, row, column, new top code,\n; new bottom code\nSTRING = ${STRING}\nNPATCH = ${cells.length}\n`;
+let inc = `; made by tools/pack.mjs: each Scrubbly's patch knocking it off, then each gem's and key's\n; picking it up (in picks.json's order): cells as level map offset, row, column, new top code,\n; new bottom code\nSTRING = ${STRING}\nNCOMMON = ${NCOMMON}\nNPATCH = ${cells.length}\n`;
 inc += `scrpn   .byte ${patches.map(g => g.length).join(', ')}\nscrpi   .byte ${starts(patches, 0).join(', ')}\n`;
 inc += `pkpn    .byte ${ppatches.map(g => g.length).join(', ')}\npkpi    .byte ${starts(ppatches, ns).join(', ')}\n`;
 inc += `scrplo  .byte ${cells.map(q => q & 255).join(', ')}\nscrphi  .byte ${cells.map(q => q >> 8).join(', ')}\n`;
@@ -109,6 +135,10 @@ inc += `scrpt   .byte ${cells.map(newT).join(', ')}\nscrpb   .byte ${cells.map(n
 writeFileSync(DIR + 'scrpatch.inc', inc);
 console.log(`Scrubbly patches: ${patches.map(g => g.length).join(', ')} cells; gems' and keys': ${ppatches.map(g => g.length).join(', ')}`);
 writeFileSync(DIR + 'charsets.bin', cs); writeFileSync(DIR + 'bandset.bin', bandset);
+if (!cs.subarray(0, NCOMMON * 8).equals(cs.subarray(512, 512 + NCOMMON * 8))) throw new Error('the sets\' common glyphs differ');
+writeFileSync(DIR + 'common.bin', cs.subarray(0, NCOMMON * 8));
+writeFileSync(DIR + 'levelcs.bin', Buffer.concat([cs.subarray(NCOMMON * 8, 512), cs.subarray(512 + NCOMMON * 8, 1024)]));
+console.log(`common glyphs: ${NCOMMON} (blank, string, ${COMT.length} tops and ${COMB.length} bottoms of keys and gems)`);
 writeFileSync(DIR + 'tops.bin', tops); writeFileSync(DIR + 'bottoms.bin', bottoms);
 writeFileSync(DIR + 'level.inc', `NC = ${NC}\nROWS = ${ROWS}\n`);
 console.log(`${NC} columns x ${ROWS} rows`);

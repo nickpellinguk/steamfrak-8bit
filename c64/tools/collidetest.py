@@ -7,6 +7,7 @@
 # situations where spans and an exact pixel test disagree (what the spans approximate).
 #   python3 collidetest.py [N]      (the build as last made, with the balls: not --noballs)
 import os, random, re, sys
+import os as _os, sys as _sys; _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__))); import c64img   # (the level unpacked: loadlevel)
 from py65.devices.mpu6502 import MPU
 DIR = os.path.dirname(os.path.abspath(__file__)); B = os.path.join(DIR, '..', 'build')
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 5000
@@ -53,7 +54,7 @@ scrimg = [(p['x'] + 8, p['top'] + 24) for p in SJ['placed']]
 pkimg = [(p['left'], p['top'], KS[p['name']]) for p in PJ['picks']]
 
 prg = open(os.path.join(B, 'frak64.prg'), 'rb').read()
-base = bytearray(65536); base[0x0801:0x0801 + len(prg) - 2] = prg[2:]
+base = c64img.image(prg)
 stub = 0x033c; base[stub:stub + 3] = bytes([0x20, lbl['collide'] & 255, lbl['collide'] >> 8])
 random.seed(1)
 bad = 0; hits = {'scrubbly': 0, 'ball': 0, 'pick': 0, 'none': 0}
