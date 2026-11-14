@@ -496,6 +496,15 @@ reference for everything else is that code (`../src/frak.asm`): `check_collision
       run it into the next frame's top border. Checked: no garbage in 40 scrolling-demo frames or
       60 Insane frames, sprites shown below the level, keytest, muxcheck (normal, Insane), no
       overruns; held frames 12.0% (11.2% before).
+      Trogg's x-move row's overrun (seen with him on the top platform, and on the middle one):
+      what follows the x's move was too long for the next row's interrupt, 4 lines on, when a
+      hazard's sprite added its fetches. Now the tops' screen's P1b pointers are written before
+      the wait (unseen till the $d018 write after it), and the rest goes through tailcx, tailend
+      without the set-up (his ticks have none) or the last row's check: about 30 cycles less
+      after the x. No overruns at x 524 / 644 (y 59) or 444 (y 123), least slack there 28-32
+      (was 1); Trogg pixel-exact at six places. (Tried and dropped: setting the next row's
+      operands or its $d018 before the wait: the x's write then came too late on busy lines, and
+      the early $d018 had lines 6-7 read the tops' screen's pointers.)
 14. **Sound.** The sound effects on the SID (`SFX_CHING` for a pickup, `SFX_SQUEAL`, `SFX_DAGGER`,
     `SFX_POP`, `SFX_THUD`), from the BBC version's definitions, played in the border; the music
     (the victory tune) after. Its time measured against the budget from 13.
