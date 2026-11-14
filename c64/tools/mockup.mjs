@@ -204,9 +204,8 @@ if (fromTxt) SCRUB = readFileSync(TXT, 'utf8').split('\n').filter(l => /^\s*\d+ 
 // first, so its lines 3-6 are a half) and the ring's middle, round its hole (a column wide), the
 // half beside it: the halves' background then yellow (KEYHALF: its lines there); the ring 9 wide
 // and 10 high; the rest of its yellow as before. Its teeth the BBC's, but 3 yellow columns wide, not 4
-// (the middle one not repeated), and 3 lines, not 4 (the two the same as one): clear of the
-// platform, whose top line is gone under all of the key (its last line, blank: KEYDROP, the key a
-// line further down than its height would put it)
+// (the middle one not repeated), and 3 lines, not 4 (the two the same as one). It and the gems a
+// half above their platforms' top lines, sharing no cell with them (its last line, blank: KEYDROP)
 const KEY = ['.................BBBBB..',
              '................BBYYYBB.',
              '...............BBYYYYYBB',
@@ -247,18 +246,35 @@ e.draw_img.forEach((img, k) => {
         if (band >= 0) {
             let xl = cx0; while (xl > 0 && art[at2(xl - 1, band)] !== 0) xl--;
             xl = Math.round(xl / 8) * 8;
-            const unit = xl + 16 * Math.round((cx0 - xl - 8) / 16);
-            left = unit + Math.floor((16 - iw) / 2); top = band - 1 - ih + (key ? KEYDROP : 0);
-            if (key) {                   // (the key, 24 wide: on a character, its shaft's half all yellow and black,
-                const over = l => { let n = 0; for (let x = l; x < l + iw; x++) if (inside(x, band) && art[at2(x, band)] === 2) n++; return n; };
-                left = over(unit - 8) > over(unit) ? unit - 8 : unit;   // the unit's character or the one before: more over its platform)
+            const unit0 = xl + 16 * Math.round((cx0 - xl - 8) / 16);
+            // (a half higher than on the BBC: clear of the platform's top line's half, so that no
+            // cell is both the key's or gem's and the platform's)
+            top = band - 1 - ih + (key ? KEYDROP : 0) - 4;
+            const over = l => { let n = 0; for (let x = l; x < l + iw; x++) if (inside(x, band) && art[at2(x, band)] === 2) n++; return n; };
+            const clear = l => { if (over(l) < Math.min(iw - 4, over(at(unit0)))) return false;   // (over its platform as much, and
+                for (let y = top & ~3; y < ((top + ih + 3) & ~3); y++)      //  nothing else in its halves:
+                    for (let x = l & ~7; x < ((l + iw + 7) & ~7); x++)      //  a ladder's top, say)
+                        if (!inside(x, y) || (art[at2(x, y)] !== 0 && !tag[at2(x, y)])) return false;   // (a Scrubbly's no matter: not there when it's yo-yoed off)
+                return true; };
+            const at = u => !key ? u + Math.floor((16 - iw) / 2)         // (the key, 24 wide: on a character, its shaft's half all
+                : over(u - 8) > over(u) ? u - 8 : u;                     //  yellow and black: the unit's character or the one before, more over its platform)
+            left = at(unit0);
+            for (let d = 0; d <= 160; d += 16) {                         // (the nearest unit along whose halves are clear)
+                if (clear(at(unit0 - d))) { left = at(unit0 - d); break; }
+                if (clear(at(unit0 + d))) { left = at(unit0 + d); break; }
+                if (d === 160) {                                         // (none: on a ladder's top, the ladder
+                    let n = 0, m = 0;                                    //  going on up behind it; that gone in its
+                    for (let y = top & ~3; y < ((top + ih + 3) & ~3); y++)   //  halves, as before under the key itself)
+                        for (let x = left & ~7; x < ((left + iw + 7) & ~7); x++)
+                            if (inside(x, y) && art[at2(x, y)] && !tag[at2(x, y)]) { if (art[at2(x, y)] === 2) m++; n++; art[at2(x, y)] = 0; }
+                    console.log(`${im.name} ${k}: ${n} pixels of a ladder cleared from its halves`);
+                    if (m) console.error(`${im.name} ${k}: ${m} magenta pixels in its halves`);
+                }
             }
+            if (left !== at(unit0)) console.log(`${im.name} ${k}: moved ${left - at(unit0)} to clear cells`);
         }
-        // (nothing behind it either: a ladder's foot, say; nor anything else in the halves it's in,
-        // so its glyphs are its own, the same in every level: the common ones, pack.mjs. The
-        // platform's top line goes under a gem as under a key)
-        const hx0 = left & ~7, hx1 = (left + iw + 7) & ~7, hy0 = top & ~3, hy1 = (top + ih + 3) & ~3;
-        for (let y = hy0; y < hy1; y++) for (let x = hx0; x < hx1; x++) if (inside(x, y)) art[at2(x, y)] = 0;
+        // (its halves hold nothing else, so its glyphs are its own, the same in every level: the
+        // common ones, pack.mjs)
         picks.push({ name: im.name, left, top, box: tightBox(pix) });
         pickGrids[im.name] = pix;                    // (its pixels: -1 clear; for the collision spans)
         console.log(`${im.name} ${k}: left ${left} (from its unit ${band >= 0 ? left - (left - Math.floor((16 - iw) / 2)) : '?'}, mod 8 ${left & 7}), top ${top} (mod 4 ${top & 3})`);
