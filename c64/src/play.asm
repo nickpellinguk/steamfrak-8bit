@@ -12,9 +12,7 @@
 ; Death (landing at 1.6 pixels a tick or faster, or falling off the bottom) restarts the level
 ; after a second.
 
-        .section high               ; (placed past the level map: frak64.asm)
-        .include "geometry.inc"     ; NPLATS, NLADS, LEVEL_W, LEVEL_H, TSTARTX, TSTARTY, the tables
-        .send high
+        .include "geometry.inc"     ; (the platforms and ladders: each level's, lvllayout.inc)
 
 JUMP_SPEED = 25                     ; (twentieths of a pixel a tick; gravity is 1)
 TERMINAL_SPEED = 80
@@ -35,7 +33,10 @@ gametick
         beq _alive
         dec dead
         bne _still
-        jmp restart
+        jsr restart                 ; (then the display and the multiplexer set up afresh round him
+        lda #1                      ;  where he restarts: rstflag, the main loop goes to start, the
+        sta rstflag                 ;  level kept; else what the multiplexer had placed for him
+        rts                         ;  before, above where he now is, could upset his sprites)
 _alive  lda won                     ; the level complete (all the keys): everything still, then
         beq _play                   ; A_1 again from the start (the only level), as the BBC
         lda wint                    ; version's game_tick
@@ -45,7 +46,10 @@ _wd     dec wint
         lda wint
         ora wint+1
         bne _still
-        jmp newlevel
+        jsr newlevel                ; (and the same: set up afresh)
+        lda #1
+        sta rstflag
+        rts
 _play   jsr read_keys
         lda k_esc                   ; Escape (Run/Stop or the left arrow, just pressed): the level
         beq +                       ; from the start, and the program from its start: the attract
@@ -1293,7 +1297,6 @@ _climb  lda tclimb
         .if KEYTEST
 ; (a test: the keys from a script, --keys in build.mjs: for so many ticks each, keys held (bits:
 ; 1 left, 2 right, 4 up, 8 down, 16 yoyo); then none)
-        .section high               ; (a test's: not in the low memory, which is nearly full)
         .include "keys.inc"         ; kscrn (ticks), kscrk (keys), KSCRN (steps)
 keytest lda kstep
         cmp #KSCRN
@@ -1330,7 +1333,6 @@ _none   lda #0
         rts
 kstep   .byte 0
 kticks  .byte 0
-        .send high
         .endif
 
         .if CAMTEST

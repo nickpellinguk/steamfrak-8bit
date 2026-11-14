@@ -579,6 +579,12 @@ NTSC machine instead of a garbled screen; the VSP crash test on hardware (VSP.md
   more packed levels.
 - Next: the per-level tables still compiled in (band sets, geometry, objects, patches, NC) to be
   loadable as well.
+- Reorganised (after the border hazards filled the low memory): the packed streams that fit (4K)
+  under the I/O ($d000-$dfff: loaded at $c000, the multiplexer's RAM, and moved there by the cold
+  start; loadlevel reads them with $01 at $34), the rest in the high memory; play.asm moved high;
+  the --profile build's ring 2K in the high memory (frameprof.py saves it each second), the map at
+  $e000 in every build. Free: 2.8K low, 2.4K high (the README's memory map); about one more level
+  fits, then levels from the disk.
 
 ## Levels as pieces (levels/)
 

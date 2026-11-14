@@ -44,8 +44,8 @@ black outline with yellow eyes and teeth in the characters, and a magenta sprite
 
 **To play it**: `build/frak64.d64` in VICE (drag it onto the window, or `x64sc build/frak64.d64`),
 or on a C64: `LOAD"FRAK64",8` and `RUN`. It's the program packed by
-[Exomizer](https://bitbucket.org/magli143/exomizer) (`sfx sys`: 40,143 bytes to 11,300, 45 blocks),
-unpacking itself when run; unpacked it runs from `$0801` to `$a4cf`, past BASIC's memory, which
+[Exomizer](https://bitbucket.org/magli143/exomizer) (`sfx sys`: 51,176 bytes to 22,408, 89 blocks),
+unpacking itself when run; unpacked it runs from `$0801` to `$cfe8`, past BASIC's memory, which
 packing keeps out of BASIC's way. The build makes the disk image when Exomizer is at
 `/opt/frak-tools/exomizer-src/src/exomizer` (or `$EXOMIZER`): built from its source (here,
 commit `ba91318`, `make` in `src`). `build.mjs --packtest` puts the packed program in the test
@@ -232,31 +232,35 @@ about 1,500) makes the expensive frames.
 ## Memory map
 
 As built now (`tools/build.mjs` prints the program's extent; the labels are in `build/frak64.lbl`;
-`tools/memmap.py` sizes each item). The program file loads from `$0801` to `$acd4` (42,196 bytes;
-14,106 packed on the disk image); the start sets `$01` to `$35` (RAM everywhere but I/O), so the
-KERNAL's and BASIC's areas are RAM.
+`tools/memmap.py` sizes each item and prints what's free in each part). The program file loads
+from `$0801` to `$cfe8` (51,176 bytes; 22,408 packed on the disk image). Its BASIC line's SYS goes
+to `cold` (`$080d`, low, as the BASIC ROM is still in then), which moves the packed level streams
+loaded at `$c000` under the I/O and goes on to `start`; `start` sets `$01` to `$35` (RAM everywhere
+but I/O), so the KERNAL's and BASIC's areas are RAM.
 
 | From | To | What | Free |
 | --- | --- | --- | --- |
-| `$0002` | `$007c` | Zero page: the scroll, the row interrupt, the multiplexer and its frame queue, the yoyo, collisions' pointers and hot variables | `$7d`-`$ff` |
+| `$0002` | `$007e` | Zero page: the scroll, the row interrupt, the multiplexer and its frame queue, the yoyo, collisions' pointers and hot variables; `$f0`-`$fc` the loader's | |
 | `$0100` | `$01ff` | Stack | |
 | `$0200` | `$07ff` | Unused (BASIC's and the KERNAL's areas) | 1.5K |
-| `$0801` | `$37fe` | Low: code and tables that must be below the VIC bank or are timing-critical: the row interrupt and its tails (`$0d00`), the border ticks, VSP (`vspline`, `$0f00`), the fill, the column writes (`colw0`, `colw1`), the scroll (`scroll.asm`), the camera, the multiplexer (`mux.asm`), Trogg (`trogg.asm`), his physics (`play.asm`); the `$d018` tables (`$36e7`) | `$37ff`-`$3fff`, 2K |
+| `$0801` | `$34e0` | Low: what's timed or the IRQs' (the cold start, `start`, the row interrupt `$0f00` and its tails, the border ticks, VSP `vspline` `$1180`, the column writes, the scroll, the camera, the multiplexer, Trogg's sprites); the `$d018` tables (`$3300`) | `$34e1`-`$3fff`, 2.8K |
 | `$4000` | `$4fff` | VIC bank 1: the 4 screens, pair 0 (`$4000` tops, `$4400` bottoms) and pair 1 (`$4800`, `$4c00`); `$3f8`-`$3ff` of each the sprite pointers | |
-| `$5000` | `$51ff` | Character set 0 (64 characters; loaded in place) | `$5200`-`$53ff`, 0.5K |
-| `$5400` | `$567f` | Sprites: the cover (`$5400`, made at the start), the Scrubbly (`$5440`), the balloon (`$5480`), the yoyo's 4 (`$54c0`), the dagger (`$55c0`), the FRAK! bubble's 2 (`$5600`); all but the cover loaded in place; a blank one (`$5680`, for a Scrubbly knocked off) | `$56c0`-`$57ff`, 0.3K |
-| `$5800` | `$59ff` | Character set 1 (loaded in place) | `$5a00`-`$5fff`, 1.5K |
-| `$6000` | `$67ff` | | 2K |
-| `$6800` | `$76ff` | Trogg's sprites: 60 different blocks, shared among his 15 frames (`tblk`: each frame's 6) | |
-| `$7700` | `$89f1` | The level map: `tops`, then `bottoms` (97 x 25 each; changed in place for what's knocked off and picked up) | |
-| `$89f2` | `$acd4` | High (`.section high`): the yoyo and its string, knocking off and picking up (`yoyo.asm`), collisions (`collide.asm`, `$9ea1`, and its tables `collide.inc`), the balloons and daggers (`hazards.asm`, `$a2df`), the multiplexer's and the physics' tables (`mktab` `$a500`, `lim` `$aa00`, `geometry.inc`), the patches' save areas | |
-| `$acd5` | `$bfff` | | 4.8K |
-| `$c000` | `$c9b0` | The multiplexer's RAM (`.virtual`: its model, lists and three buffers, cleared at the start) | `$c9b1`-`$cfff`, 1.6K |
-| `$d000` | `$dfff` | I/O (the RAM under it unused) | |
-| `$e000` | `$fff9` | RAM under the KERNAL (`$fffa`-`$ffff`: the NMI, reset and IRQ vectors; `$e000`-`$fdff` the frame records in a `--profile` build) | 8K |
+| `$5000` | `$51ff` | Character set 0 (64 characters: the 19 common ones loaded in place, the level's unpacked after them) | |
+| `$5200` | `$57ff` | The front end's cast (sprites, loaded in place; unused in the game, kept for the attract screen) | |
+| `$5800` | `$59ff` | Character set 1 (as set 0) | |
+| `$5a00` | `$5d7f` | Common sprites: the cover (made at the start), a blank, the yoyo's, the FRAK! bubble's, the timer (drawn), the balloon, the dagger, the balloon's infills and multicolour one | |
+| `$5d80` | `$6d7f` | Trogg's sprites | |
+| `$6d80` | `$6dbf` | The level's sprite (its enemy's infill: unpacked) | `$6dc0`-`$79fe`, 3.1K (sprites or data only: the VIC sees it) |
+| `$79ff` | | Zero: the VIC's idle fetch, shown in the open borders | |
+| `$7a00` | `$b65c` | High (`.section high`): what needn't be low: the yoyo (`yoyo.asm`), collisions (`collide.asm`, `$8c02`, and `collide.inc`), the balloons and daggers, the multiplexer's tables (`mktab` `$9400`), the loader and the packed streams that aren't under the I/O (`lvltab` `$9a34`), the front end (`attract` `$a746`), the physics and play (`play.asm`); in a `--profile` build, the frame records' ring (2K) | `$b65d`-`$bfff`, 2.4K |
+| `$c000` | `$ce0b` | The multiplexer's RAM (`.virtual`: its model, lists and three buffers, cleared by `muxinit`); in the file, the streams for under the I/O, moved at the cold start | `$ce0c`-`$cfff`, 0.5K |
+| `$d000` | `$dfe8` | RAM under the I/O: the packed level streams that fit (4K, the longest first: build.mjs), read only by `loadlevel`, with `$01` at `$34` and the interrupts off | 23 bytes |
+| `$e000` | `$f2f1` | The level map: `tops`, then `bottoms` (97 x 25 each; unpacked by `loadlevel`, changed in place for what's knocked off and picked up) | |
+| `$f2f2` | `$fd84` | The level's block of tables and numbers (`LVL`, 2,707 bytes: `lvllayout.inc`) | `$fd85`-`$fff9`, 0.6K |
+| `$fffa` | `$ffff` | The NMI, reset and IRQ vectors | |
 
-Free in all: about 14K in the large pieces (`$acd5`-`$bfff`, `$c9b1`-`$cfff`, `$e000`-`$fff9`), 2K
-below `$4000`, and about 4.3K in the VIC bank's gaps (usable for sprites or tables, not code the VIC would see).
+The packed levels take 2.2K-2.7K each; with 4K under the I/O full, each further level comes out of
+the high memory's 2.4K, so about one more fits before the levels need to come from the disk.
 
 The budget pass (milestone 13) took 2.5K off the program file and freed 1.8K below `$4000`: each
 pair of row-tail tables shares a block (every row's mask has the cover's bit 0, so only odd entries

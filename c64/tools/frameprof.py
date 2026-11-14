@@ -1,23 +1,26 @@
 # Profiles a whole frame's work in play, in VICE: a --profile build (CIA 2's timer A stamped at
 # each stage of nextframe, from the border's request on: frak64.asm's pst) playing a key script
-# (build.mjs --keys; tools/autoplay.py makes one), its records (a ring at $e000) saved every couple
-# of seconds and joined up. Times are as the frame sees them: the interrupts and the VIC's stolen
+# (build.mjs --keys; tools/autoplay.py makes one), its records (a ring in the high memory, PRING0) saved
+# every second and joined up. Times are as the frame sees them: the interrupts and the VIC's stolen
 # cycles included. The budget: the work must be done a frame (19,656 cycles) after the request, or
 # the frame is shown again (held).
 #   python3 frameprof.py KEYS [SECONDS [X Y]]   (KEYS: a script, or @file holding one; X Y:
 #                                                Trogg's start, build.mjs --troggx/--troggy)
-# (RAW=file: also each frame's stages, one line each, to that file)
+# (RAW=file: also each frame's stages, one line each, to that file; START=n: level n, from 0)
 import os, re, subprocess, sys, glob, statistics
 DIR = os.path.dirname(os.path.abspath(__file__)); B = os.path.join(DIR, '..', 'build')
 keys = sys.argv[1]
 if keys.startswith('@'): keys = open(keys[1:]).read().strip()
 SECS = float(sys.argv[2]) if len(sys.argv) > 2 else 30
 opts = ['--troggx', sys.argv[3], '--troggy', sys.argv[4]] if len(sys.argv) > 4 else []
+if os.environ.get('START'): opts += ['--start', os.environ['START']]   # (START=n: level n, from 0)
 subprocess.run(['node', os.path.join(DIR, 'build.mjs'), '--nopack', '--profile', '--keys', keys] + opts, check=True, capture_output=True)
 snap = os.path.join(B, 'snap'); os.makedirs(snap, exist_ok=True)
 for f in glob.glob(os.path.join(snap, 'p*.bin')): os.remove(f)
+lbl = {m.group(1): int(m.group(2), 16) for m in (re.match(r'^(\w+)\s*=\s*\$([0-9a-fA-F]+)', l) for l in open(os.path.join(B, 'frak64.lbl'))) if m}
+R0, RE = lbl['PRING0'], lbl['PRINGE']               # (the ring: 64 records, 1.3 s, saved each second)
 cmds = []
-for i in range(int(SECS / 2)): cmds += ['wait 2', 'save "%s" 0 e000 fdff' % os.path.join(snap, 'p%03d.bin' % i)]
+for i in range(int(SECS)): cmds += ['wait 1', 'save "%s" 0 %04x %04x' % (os.path.join(snap, 'p%03d.bin' % i), R0, RE - 1)]
 subprocess.run(['python3', os.path.join(DIR, 'vice.py'), '2'] + cmds, capture_output=True)
 STAGES = ['wait', 'gametick', 'decide', 'trogset', 'yoyoset', 'frakset', 'strset', 'replay', 'game', 'sort', 'update']
 recs = {}

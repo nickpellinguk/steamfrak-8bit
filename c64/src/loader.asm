@@ -33,6 +33,8 @@ loadlevel
         sta ulst
         lda lvltab + 1,x
         sta ulst + 1
+        lda #$34                    ; (RAM everywhere: some streams are under the I/O; the caller's
+        sta $01                     ;  interrupts are off)
 -       ldy #0
         lda (ulst),y                ; (each stream: its packed data, where it goes)
         sta usrc
@@ -55,7 +57,9 @@ loadlevel
         bcc -
         inc ulst + 1
         bne -
-_x      ldx #NS - 1
+_x      lda #$35                    ; (the I/O back)
+        sta $01
+        ldx #NS - 1
 -       lda knock0,x
         sta knocked,x
         dex
@@ -79,6 +83,7 @@ _x      ldx #NS - 1
 level   .byte 0                     ; (the level being played)
 chosen  .byte LSTART                ; (the level to play: front.asm's menu chooses; LSTART, build.mjs --start)
 enfl    .byte 0                     ; (its enemy's sprite's flags, mux.asm)
+rstflag .byte 0                     ; (a restart: start sets the display up afresh, the level kept)
 
 unpack  ldy #0
         lda #$80
@@ -161,4 +166,5 @@ _put    sta (udp),y
 +       rts
 
         .include "lvlpack.inc"
+
         .send high

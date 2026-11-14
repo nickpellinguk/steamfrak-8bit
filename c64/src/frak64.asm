@@ -54,10 +54,9 @@ PAUSE   = 50                        ; frames held at each end
 zp      = $02
 
 ; (--profile: CIA 2's timer A, free running, read at each stage of a frame's work into pstage;
-; each frame's record (32 bytes) then copied into a ring at PRING0-PRINGE (tools/frameprof.py);
-; the level map then after the program instead of there: MAPS)
-PRING0  = $e000
-PRINGE  = $fe00
+; each frame's record (32 bytes) then copied into a ring at PRING0-PRINGE, in the high memory
+; (tools/frameprof.py))
+PRSIZE  = 2048                      ; (64 records: tools/frameprof.py saves the ring often enough)
 pst     .macro
         .if PROFILE
 -       lda $dd05
@@ -155,8 +154,32 @@ COVERY0 = 49                        ; its first piece's y (lines 50-91; then 92,
 
         * = $0801
         .word (+), 10
-        .null $9e, format("%d", start)
+        .null $9e, format("%d", cold)
 +       .word 0
+
+; The cold start (the BASIC line's SYS: low, as the BASIC ROM's still in): the streams that go
+; under the I/O ($d000-$dfff: loader.asm) moved there from where the program loads them
+; ($c000-$cfff, then the multiplexer's RAM: muxinit clears it), then the game
+cold    sei
+        jsr undercp
+        jmp start
+undercp lda #$34                    ; (RAM everywhere; and back: the I/O)
+        sta $01
+        .if UNDERN
+        ldx #UNDERN
+        ldy #0
+_cp     lda UNDERL,y
+_cd     sta UNDER,y
+        iny
+        bne _cp
+        inc _cp + 2
+        inc _cd + 2
+        dex
+        bne _cp
+        .endif
+        lda #$35
+        sta $01
+        rts
 
 start   sei
         cld
@@ -179,11 +202,14 @@ start   sei
         sta $fffa
         lda #>nmi
         sta $fffb
+        lda rstflag                 ; (a restart: the level as it is, Trogg as restart left him)
+        bne _rs
         .if FRONT
         jsr attract                 ; (the attract screen, till a key: front.asm)
         .endif
         lda chosen                  ; (the level chosen: the front end's, else the first)
         jsr loadlevel               ; (the level's own glyphs, sprites, map and tables: loader.asm)
+_rs
         lda #<irq1
         sta $fffe
         lda #>irq1
@@ -345,7 +371,11 @@ covc0   lda #3                      ; (the cover: the level's background colour,
         .if !TEST
         jsr muxinit                 ; (the multiplexer's: no sprites yet, in either buffer)
         jsr fresh                   ; (and what it keeps from frame to frame)
-        jsr tmreset                 ; (the timer at 0:00)
+        lda rstflag                 ; (the timer at 0:00, but for a restart: it goes on)
+        bne +
+        jsr tmreset
++       lda #0
+        sta rstflag
         .endif
 
         lda $dd02                   ; VIC bank 1
@@ -518,6 +548,11 @@ nextframe
         #pst 0
         #pst 2
         jsr gametick                ; (a game tick: the keys, Trogg)
+        lda rstflag                 ; (a restart: the display set up afresh, start)
+        beq +
+        sei
+        jmp start
++
         #pst 4
         jsr decide
         #pst 6
@@ -611,7 +646,7 @@ qapply  lda bufoff
         sta tact,x
         iny
         inx
-        cpx #TSET
+        cpx #TBA                    ; (not the border ticks': read from q_t, trbord)
         bne -
 
         pla                         ; (and the pairs flipped)
@@ -1053,6 +1088,7 @@ bordirq sta sava
         ldx row
         cpx #ROWS
         bne +
+        jsr trbord                  ; (Trogg's lines below row 24's, this frame's: trogg.asm)
         inc frames
         .if !TEST
         lda qn                      ; the next frame made, if there is one: its buffer, and its
@@ -1096,9 +1132,20 @@ _dmux
         bcc +
         jmp rl0                     ; (tick 38)
 +       stx row
-        cpx #ROWS + 2               ; tick 26: the yoyo's string, if the frame's changed (strapply:
-        bne t26n                    ; not at tick 25, whose work, with it, could take over two
-        lda strpend                 ; ticks, and one would be lost)
+        cpx #ROWS + 2               ; (ticks 26 and 27: Trogg's lines below row 24's, trbt)
+        beq +
+        cpx #ROWS + 3
+        bne ++
++       txa
+        sbc #1                      ; (carry set: the tick)
+        jsr trbtl
+        ldx row
++       cpx #ROWS + 2               ; tick 26: the bottom border's sprite (bbset), then the yoyo's
+        bne t26n                    ; string, if the frame's changed (strapply: not at tick 25,
+        .if !TEST                   ; whose work, with it, could take over two ticks, and one
+        jsr bbset                   ; would be lost)
+        .endif
+        lda strpend
         beq t26n
         jsr strapply                ; (the old string put back; the new one at tick 27)
 t26n    ldx row                     ; (strapply leaves x changed)
@@ -1128,22 +1175,30 @@ t28n
         jsr tmset
         ldx row
 t29n
-        cpx #37                     ; tick 36 (line 29): sprites 3-7 parked below the screen, their
+        cpx #36                     ; tick 35 (line 21): the top border's hazard on sprite 7 (btset)
+        bne t35n
+        jsr btset
+        ldx row
+t35n    cpx #37                     ; tick 36 (line 29): sprites 3-7 parked below the screen, their
         bne t36n                    ; pointers blank (there, lines 256-276, they're in the open
-        lda #255                    ; border), before tick 37 sets up those before the frame
-        sta $d007
+        lda #255                    ; border), before tick 37 sets up those before the frame; not
+        sta $d007                   ; 7 with the top border's hazard on it
         sta $d009
         sta $d00b
         sta $d00d
+        ldy bufoff
+        ldx btbon,y
+        bne +
         sta $d00f
-        jsr park
-        ldx row
++       jsr park
+        jsr apply0                  ; (tick 0's set-ups: their sprites parked, none shown till line
+        ldx row                     ;  47; here, not at tick 37, which has too much else to do)
 t36n
         .endif
         .if !TEST
-        cpx #38                     ; tick 37 (line 37): sprites 3-7 parked below the screen, then
-        bne t37n                    ; those set up before the frame (tick 0's slots), and the
-        lda $d012                   ; registers (in time for sprites from line 47, and leaving
+        cpx #38                     ; tick 37 (line 37): the registers, for those set up before the
+        bne t37n                    ; frame (tick 0's slots, at tick 36), in time for sprites from
+        lda $d012                   ; line 47 (and leaving
         cmp #41                     ; tick 38 little to do before row 0's). (On line 45, not
         bcc t37o                    ; 37: a tick was lost, a handler having taken over two; this
         jsr tmcov                   ; is tick 38's, and the count in step again from it)
@@ -1162,7 +1217,6 @@ t37o    jsr tmcov                   ; (sprite 0 the cover again, the timer done:
         sta $d01c
         lda #0                      ; (Trogg's outline black: sprite 1 may have been another's)
         sta $d028
-        jsr apply0
         jsr tick37                  ; (Trogg's sprites' first instances)
 t37n
         .endif
@@ -1217,6 +1271,12 @@ vspline lda vson
         beq vspx
         ldy v010r                   ; (the cover sprite's x back after the write: $d010)
         ldx #(D011A & $f8) | 2      ; (YSCROLL 2: line 50 a bad line, from the write)
+        lda $dc07                   ; (too late, the timer past the poll's mark already, a tick
+        bne +                       ;  before having overrun: no VSP this frame, rather than a
+        lda $dc06                   ;  slide out of reach)
+        cmp #VSPB
+        bcc vspx
++
 -       lda $dc07                   ; (the timer under 256: line 49)
         bne -
 -       lda $dc06                   ; (until line 50: read on its cycle -1 to 7)
@@ -1296,6 +1356,9 @@ tmset   lda #(SPRTIMER & $3fff) / 64
         lda $d010
         and #$fe
         sta $d010
+        lda $d01c                   ; (hi-res: a balloon in the bottom border may have been
+        and #$fe                    ;  multicolour)
+        sta $d01c
         lda #TMX
         sta $d000
         lda #TMY
@@ -1351,6 +1414,83 @@ tmreset lda #0
         sta tms1
         sta tmm
         jmp tmdraw
+        .section high
+; The top border's hazard, at tick 35 (line 21), on sprite 7 (at the head of its list: mux.asm's
+; btvmux), the buffer shown's: a dagger or a balloon above line 47, in the top border
+btset   ldy bufoff
+        lda btbon,y
+        beq _x
+        lda btbptr,y
+        sta SCR0 + $3ff
+        sta SCR1 + $3ff
+        sta SCR2 + $3ff
+        sta SCR3 + $3ff
+        lda #0
+        sta $d02e
+        lda btbx,y
+        sta $d00e
+        lda $d010
+        and #$7f
+        ldx btbxh,y
+        beq +
+        ora #$80
++       sta $d010
+        lda $d017
+        and #$7f
+        sta $d017
+        lda $d01d
+        and #$7f
+        sta $d01d
+        lda $d01b
+        and #$7f
+        sta $d01b
+        lda $d01c
+        and #$7f
+        ldx btbmc,y
+        beq +
+        ora #$80
++       sta $d01c
+        lda btby,y
+        sta $d00f
+_x      rts
+
+; The bottom border's sprite, at tick 26 (line 261: the cover's last piece done at line 259), on
+; sprite 0 (the timer from tick 29): a balloon or a dagger below line 261, the multiplexer's
+; buffer shown's (mux.asm's bbcand), its y the line's low byte, as the VIC compares it
+bbset   ldy bufoff
+        lda bbon,y
+        beq _x
+        lda bbptr,y
+        sta SCR0 + $3f8
+        sta SCR1 + $3f8
+        sta SCR2 + $3f8
+        sta SCR3 + $3f8
+        lda #0                      ; (black: the dagger's outline, the balloon's %10)
+        sta $d027
+        lda bbx,y
+        sta $d000
+        lda $d010
+        and #$fe
+        ora bbxh,y
+        sta $d010
+        lda $d017
+        and #$fe
+        sta $d017
+        lda $d01d
+        and #$fe
+        sta $d01d
+        lda $d01b
+        and #$fe
+        sta $d01b
+        lda $d01c
+        and #$fe
+        ora bbmc,y
+        sta $d01c
+        lda bby,y
+        sta $d001
+_x      rts
+        .send high
+
 tmcov   lda #(SPRCOVER & $3fff) / 64 ; (and back: the cover)
         sta SCR0 + $3f8
         sta SCR1 + $3f8
@@ -1609,7 +1749,9 @@ setx    lda shx
         .if FRONT
         .include "front.asm"
         .endif
+        .section high               ; (not timed, not needing to be low: the low memory's for those)
         .include "play.asm"
+        .send high
 
         .align $100
 d18a0   .fill ROWS + 1
@@ -1692,19 +1834,28 @@ TROGG   .binary "trogg.bin"         ; Trogg's sprites: per frame outline P1-P3, 
 ; (the level map: the loader's, at MAPS, past the program, under the KERNAL's ROM, which is
 ; switched out; the program's tables (high) straight after the level's sprites. In --profile
 ; builds, the profile's ring is there: the map after the program)
-        .if !PROFILE
 MAPS    = $e000
-        .endif
 tops    = MAPS
 bottoms = MAPS + ROWS * NC
-        .dsection high              ; (tables that needn't be low: mux.asm's, play.asm's)
+        .dsection high              ; (tables and code that needn't be low)
         .if PROFILE
-MAPS    .fill 2 * ROWS * NC         ; (--profile: the level map here, the ring at $e000)
-LVL     .fill LVLSIZE               ; (and the level's block of tables)
-        .cerror * > MUXRAM, "the level map runs into the multiplexer's RAM"
-        .else
+        .align $100
+PRING0  .fill PRSIZE                ; (--profile: the records' ring)
+PRINGE
+        .endif
+hiend   .cerror * > MUXRAM, "the high memory runs into the multiplexer's RAM"
 ; (the level's block of tables and numbers, after the map: loader.asm unpacks the level's there)
 LVL     = MAPS + 2 * ROWS * NC
         .cerror LVL + LVLSIZE > $ffe0, "the level's block runs into the vectors"
-        .endif
+; (the streams that go under the I/O: loaded at $c000 (the multiplexer's RAM, cleared by muxinit),
+; moved to $d000 at the cold start: loader.asm)
+        .fill MUXRAM - *, 0
+UNDERL
+        .logical $d000
+UNDER
+        .dsection under
+UNDERE
+        .endlogical
+UNDERN  = (UNDERE - UNDER + 255) >> 8
+        .cerror UNDERE > $e000, "the streams under the I/O run past $dfff"
         .include "lvllayout.inc"    ; (its layout: the tables' places, NS, NP, NPATCH)

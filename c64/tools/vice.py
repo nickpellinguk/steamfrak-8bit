@@ -16,7 +16,7 @@ try:
         except OSError:
             time.sleep(0.2)
     if not s: sys.exit('no monitor')
-    s.settimeout(2)
+    s.settimeout(float(os.environ.get('VTO', '2')))
     def talk(cmd):
         s.sendall((cmd + '\n').encode())
         out = b''

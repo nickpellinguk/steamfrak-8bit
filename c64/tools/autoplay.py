@@ -16,7 +16,7 @@ for line in open(os.path.join(B, 'frak64.lbl')):
 TICKS = int(sys.argv[1]) if len(sys.argv) > 1 else 4000
 random.seed(int(sys.argv[2]) if len(sys.argv) > 2 else 1)
 prg = open(os.path.join(B, 'frak64.prg'), 'rb').read()
-mem = c64img.image(prg)
+mem = c64img.image(prg, int(os.environ.get('START', 0)))     # (START=n: level n, from 0)
 mem[0xdc00] = mem[0xdc01] = 0xff
 stub = 0x033c; mem[stub:stub + 3] = bytes([0x20, lbl['gametick'] & 255, lbl['gametick'] >> 8])
 KS = lbl['kscrk']; NSC = 5

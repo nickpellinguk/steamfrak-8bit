@@ -27,7 +27,10 @@ TM2     = 4                         ;  its bit 8's change ($d010's bits 1 and 2 
 TP1O    = 5                         ;  the pointers: outline P1, P1b, P2, P3,
 TP1I    = 9                         ;  infill likewise,
 TXK     = 13                        ;  the timer's low byte when the x can move on line 5,
-TSET    = 14                        ;  plus 1)
+TBA     = 14                        ;  the border ticks (25-27; 255: none) for what would be
+TBB     = 15                        ;  rows 25 on's: the second instances and P2, P3, and the
+TBC     = 16                        ;  x's move and P1b (trbord),
+TSET    = 17                        ;  plus 1)
 
 ; His sprites' settings for the frame after, from his place (tx: x in the level, ty: his feet's y
 ; in the level, as the BBC and CPC versions keep them) and frame (tfr), and the scroll; and for the
@@ -155,7 +158,32 @@ _nb     inx
         cpx #ROWS
         bcs +
         stx trb
-+       lda tpen + TY1              ; the ticks left alone: lists from ceil((y - 60) / 8) + 1
++       lda #$ff                    ; the border ticks for what would be rows 25 on's (the
+        sta tpen + TBA              ;  border's open: his lower lines show there). The writes
+        sta tpen + TBB              ;  reach the VIC at about line 54.5 + 8t (tick t), and must
+        sta tpen + TBC              ;  land (as the rows' do) in his lines 12-20 for the second
+        lda tpen + TY1              ;  instances and P2 (L in y + 13 to y + 21: t = (y - 34) / 8),
+        cmp #255                    ;  20-33 for P3 (the tick after), 5-12 for the x's move (tick
+        beq _bx                     ;  25: for row 25 his a line or two late at most). Row 24 his:
+        cmp #35 + 8 * ROWS          ;  only P3's in the border, tick 25
+        bcs _bb
+        cmp #35 + 8 * (ROWS - 1)
+        bcc _bx
+        lda #25
+        sta tpen + TBB
+        bne _bx
+_bb     ldx #25
+        stx tpen + TBC
+        sec
+        sbc #34
+        lsr
+        lsr
+        lsr
+        sta tpen + TBA
+        clc
+        adc #1
+        sta tpen + TBB
+_bx     lda tpen + TY1              ; the ticks left alone: lists from ceil((y - 60) / 8) + 1
         sec                         ; to (y - 13) / 8 + 1 (0 to 25)
         sbc #45
         bcs +
@@ -179,7 +207,7 @@ _nb     inx
         rts
 
 ; In the border, at the switch to the next frame: its settings his
-tswitch ldx #TSET - 1
+tswitch ldx #TBA - 1
 -       lda tpen,x
         sta tact,x
         dex
@@ -250,6 +278,69 @@ tb2     sta SCR0 + $3fa
 tb3     sta SCR1 + $3fa
         jmp tailend
 
+; In the border (tick 25, before the switch to the next frame): this frame's tick 25's (at once:
+; their windows are narrow), from its settings in q_t (tbo: their offset, for ticks 26 and 27,
+; trbtl, a = the tick). The pointers in the screen $d018 has the VIC reading (as at the end of row 24, till tick
+; 38; set again at tick 37); the x at once (no beam to wait for there)
+trbord  lda bufoff                  ; (this frame's settings: its buffer's in q_t, there till
+        lsr                         ;  well after tick 27, the next frame made in another)
+        lsr
+        lsr
+        lsr
+        lsr
+        tax
+        ldy qtoff,x
+        sty tbo
+        lda q_t + TBB,y             ; (none this frame, as almost always: done)
+        cmp #$ff
+        beq trbx
+        lda #25
+        bne trbt
+trbtl   ldy tbo                     ; (ticks 26 and 27)
+trbt    cmp q_t + TBC,y             ; (the x's move: with P1b, unless P2's in the same tick)
+        bne _a
+        pha
+        cmp q_t + TBA,y
+        beq +
+        ldx q_t + TP1O + 1,y
+        lda q_t + TP1I + 1,y
+        jsr _ptr
++       lda q_t + TXL2,y
+        sta $d002
+        sta $d004
+        lda q_t + TM2,y
+        beq +
+        eor $d010
+        sta $d010
++       pla
+_a      cmp q_t + TBA,y
+        bne _b
+        pha
+        lda q_t + TY2,y
+        sta $d003
+        sta $d005
+        ldx q_t + TP1O + 2,y
+        lda q_t + TP1I + 2,y
+        jsr _ptr
+        pla
+_b      cmp q_t + TBB,y
+        bne trbx
+        ldx q_t + TP1O + 3,y
+        lda q_t + TP1I + 3,y
+_ptr    pha                         ; (in the screen the VIC's reading in the border: $d018's,
+        lda $d018                   ;  $4000 + 1K x its top 4 bits: whichever pair's shown)
+        and #$f0
+        lsr
+        lsr
+        ora #$43
+        sta _po + 2
+        sta _pi + 2
+        pla
+_po     stx $43f9
+_pi     sta $43fa
+trbx    rts
+tbo     .byte 0
+
 ; The pair shown's screens, for the pointers (from usefront: a, the high byte of the tops' screen's
 ; pointers; x, the bottoms')
 tpair   sta tq0+2
@@ -276,7 +367,7 @@ ty      .word TROGGY                ;  start, lv_tstartx/y, set by loadlevel unl
 tfr     .byte TROGGF
 tfrw    .byte $ff                   ; (the frame whose pointers are in tpen)
 tpen    .fill TSET
-tact    .fill TSET, 255             ; (parked below the screen until the first frame)
+tact    .fill TBA, 255             ; (parked below the screen until the first frame)
 tmsbb   .byte 0
 tra     .byte $ff
 trb     .byte $ff

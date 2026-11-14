@@ -26,7 +26,8 @@ NVS     = NS + NB + 1 + 2 + NB  ; virtual sprites, sorted: the Scrubblies, the b
 BIV     = NS + NB + 3
 TVO     = NVS                   ; then Trogg's first instances, at the head of hardware sprites 1
 TVI     = NVS + 1               ; (outline) and 2 (infill), so what's placed there comes after him:
-NV      = NVS + 2               ; never sorted, updated, placed or dropped (troggmux keeps them)
+BTV     = NVS + 2               ; then the top border's hazard, at the head of hardware sprite 7
+NV      = NVS + 3               ; never sorted, updated, placed or dropped (troggmux, btvmux keep them)
 VEXPY   = 1                     ; (vfl: expanded down,
 VEXPX   = 2                     ;  ... across,
 VBEHIND = 4                     ;  ... behind the characters,
@@ -171,7 +172,7 @@ muxinit lda #<mdata             ; (all 0 first)
         sta vnxt,x
         dex
         bpl -
-        ldx #NV
+        ldx #NV + 1
         lda #NONE
 -       sta v3lo,x
         sta v4lo,x
@@ -249,6 +250,25 @@ muxinit lda #<mdata             ; (all 0 first)
         lda #VFIRST
         sta vfl + TVO
         sta vfl + TVI
+        lda #7                  ; the top border's hazard (btvmux), at the head of sprite 7: set up
+        sta vh + BTV            ; before the frame (tick 35), so what's placed there comes after it;
+        lda #BTV                ; none, its last line 0
+        sta hwhead + 7
+        lda #$ff
+        sta va + BTV
+        lda #VFIRST
+        sta vfl + BTV
+        lda #0
+        sta vy + BTV
+        sta vl + BTV
+        sta btw
+        sta bton
+        sta btbon                   ; (no border sprites in any buffer)
+        sta btbon + 32
+        sta btbon + 64
+        sta bbon
+        sta bbon + 32
+        sta bbon + 64
         rts
 
 ; The two frames since this buffer was made: their changes, from the newest (nf) to it (nb):
@@ -489,7 +509,11 @@ _fl     sta vfl,x
         ; the balloons and daggers (hazards.asm moves them): their sprites, the image's corner at
         ; its origin less (kxo, kyo), x 31 + that - the scroll, y 26 + that: x = its x - bx (each
         ; kind's: the scroll + kxo - 31, made here once), y = its y + kyc (each kind's: 26 - kyo)
-_bal    ldy #2
+_bal    ldy nb                      ; (the bottom border's sprite: none yet this frame; the top's)
+        lda #0
+        sta bbon,y
+        sta bton
+        ldy #2
 -       lda scrx
         clc
         adc kxo,y
@@ -541,7 +565,14 @@ _on     sta vxhi + NS,x
         sta vy + NS,x
         lda oyh,x
         adc kych,y
-        bne _hid
+        beq +
+        jsr bbcand                  ; (lines 256 on: the bottom border's, sprite 0, tick 26)
+        jmp _hid
++       lda vy + NS,x               ; (above line 47: the top border's, sprite 7, tick 35)
+        cmp #47
+        bcs +
+        jsr btcand
++
         lda kptr,y                  ; (its sprite; its colour black, as all start)
         sta vptr + NS,x
         .if BALLTEST
@@ -579,7 +610,7 @@ _on     sta vxhi + NS,x
 +       inc bmct,x
         lda bmct,x
         and #15
-        bne _ih
+        bne _ihj
         beq _hr0
 _bk     lda #0
         sta bmc,x
@@ -630,6 +661,205 @@ _hr0    lda vh + NS,x               ; (only with its outline placed: never the i
         jmp _nm
 bxl     .fill 3
 bxh     .fill 3
+
+; Hazard x (kind y), on the screen across, past line 255 down (a the y's high byte): the bottom
+; border's sprite for this frame (on sprite 0, set up at tick 26, line 261: frak64.asm's bbset),
+; if its y is 261-275 (on lines 262-, set up in time, its pixels done by line 285, where sprite 0
+; becomes the timer), a balloon before a dagger: the balloon in multicolour (one sprite), the dagger
+; hi-res; the y as the VIC compares it, the line's low byte
+        .section high
+COVERR  = COVERX + 7 + 32          ; (the cover's right edge, 32 wide: a border hazard's x from it)
+; Hazard x (kind y), on the screen across, above line 47 (y 21-46: from line 22, after tick 35
+; sets it up on line 21): the top border's for this frame (btvmux; on sprite 7), a dagger before
+; a balloon: the balloon in multicolour, the dagger hi-res
+btcand  lda vy + NS,x
+        cmp #21
+        bcc _x
+        lda vxhi + NS,x             ; (not over the cover's columns: no cover in the border)
+        bne +
+        lda vxlo + NS,x
+        cmp #COVERR
+        bcc _x
++
+        lda bton
+        beq +
+        cpy #2
+        bne _x
+        lda btk
+        cmp #2
+        beq _x
++       lda #1
+        sta bton
+        sty btk
+        lda vy + NS,x
+        sta bty
+        lda vxlo + NS,x
+        sta btx
+        lda vxhi + NS,x
+        sta btxh
+        lda #0
+        sta btmc
+        lda kptr,y
+        cpy #1
+        bne +
+        lda #1
+        sta btmc
+        lda #(SPRBMC & $3fff) / 64
++       sta btptr
+_x      rts
+bton    .byte 0                     ; (this frame's: shown, kind, y, x, x's bit 8, multicolour, pointer)
+btk     .byte 0
+bty     .byte 0
+btx     .byte 0
+btxh    .byte 0
+btmc    .byte 0
+btptr   .byte 0
+btw     .byte 0                     ; (its settings as the registers were last swept for: btset)
+btnx    .byte 0
+
+; The top border's hazard, its virtual sprite BTV at the head of sprite 7: its lines (from line
+; 47, as Trogg's: for its rows and for what's placed after it, its last line 47 at least, so that
+; nothing on sprite 7 is set up before the frame (tick 37) while it's shown; none: 0), its rows'
+; masks, and its settings for the IRQ (tick 35, the buffer being made's); a change of its x's bit
+; 8 or kind (hi-res or multicolour) a sweep of the registers
+btvmux  lda #NV + 1
+        sta mv
+        lda #7
+        sta mh
+        lda bton
+        beq _off
+        lda bty
+        clc
+        adc #21
+        cmp #47
+        bcs +
+        lda #47
++       sta ml
+        lda #47
+        sta my
+        bne _on
+_off    lda #0
+        sta ml
+        sta my
+_on     lda my
+        sta vy + BTV
+        lda ml
+        sta vl + BTV
+        ldx my                      ; (its rows on line 4 and line 3, as rngs has them, but none
+        lda r4lo,x                  ;  for a line it's done before: r4hi and r3hi have row 0 for
+        sta nc                      ;  any last line above row 0's lines 4 and 3, 55 and 54; Trogg
+        lda r3lo,x                  ;  always reaches them, but this can end from line 47)
+        sta n3c
+        ldx ml
+        lda r4hi,x
+        sta nd
+        lda r3hi,x
+        sta n3d
+        cpx #55                     ; (none: NONE, 0, as for a y of 0)
+        bcs +
+        lda #NONE
+        sta nc
+        lda #0
+        sta nd
+        cpx #54
+        bcs +
+        sta n3d
+        lda #NONE
+        sta n3c
++       ldy mv
+        jsr rngsv
+        ldx vnxt + BTV              ; (what's after it on sprite 7 and set up before it ends:
+_fr     bmi _frd                    ;  removed, to be placed again, as Trogg's _free does, before
+        lda vnxt,x                  ;  the checks, which would otherwise have to choose between
+        sta btnx                    ;  them)
+        lda vt,x
+        beq +
+        tay
+        lda lim,y
+        cmp vl + BTV
+        bcs _frd
++       stx mv
+        jsr remove
+        ldx btnx
+        jmp _fr
+_frd
+        ldy nb
+        lda bton
+        sta btbon,y
+        beq +
+        lda btptr
+        sta btbptr,y
+        lda btx
+        sta btbx,y
+        lda btxh
+        sta btbxh,y
+        lda btmc
+        sta btbmc,y
+        lda bty
+        sta btby,y
++       lda bton                    ; (its settings as the registers need them: shown, x's bit 8,
+        beq +                       ;  multicolour)
+        lda btxh
+        asl
+        ora btmc
+        asl
+        ora #1
++       cmp btw
+        beq +
+        sta btw
+        lda #1
+        sta regdirty
++       rts
+
+bbcand  cmp #1
+        bne _x
+        lda vy + NS,x
+        cmp #261 - 256
+        bcc _x
+        cmp #276 - 256
+        bcs _x
+        lda vxhi + NS,x             ; (not over the cover's columns: no cover in the border)
+        bne +
+        lda vxlo + NS,x
+        cmp #COVERR
+        bcc _x
++
+        stx mt
+        ldx nb
+        lda bbon,x                  ; (one already: a balloon stays)
+        beq +
+        cpy #1
+        bne _xx
+        lda bbptr,x
+        cmp #(SPRBMC & $3fff) / 64
+        beq _xx
++       lda #1
+        sta bbon,x
+        cpy #1
+        bne +
+        lda #(SPRBMC & $3fff) / 64
+        sta bbptr,x
+        lda #1
+        sta bbmc,x
+        bne ++
++       lda kptr,y
+        sta bbptr,x
+        lda #0
+        sta bbmc,x
++       ldy mt
+        lda vy + NS,y
+        sta bby,x
+        lda vxlo + NS,y
+        sta bbx,x
+        lda vxhi + NS,y
+        sta bbxh,x
+        ldy mt                      ; (kind back in y, the hazard in x)
+        ldx mt
+        ldy oact,x
+        rts
+_xx     ldx mt
+_x      rts
+        .send high
 gscx    .word $ffff
 scrchg  .byte 1
 kptr    .byte 0, (SPRBALLOON & $3fff) / 64, (SPRDAGGER & $3fff) / 64   ; (each kind's sprite: 1 balloon, 2 dagger)
@@ -684,6 +914,7 @@ update  lda #0
         sta mwait
         sta mo
         jsr troggmux
+        jsr btvmux
 _v
         .if MUXTIME
         jsr stamp2
@@ -741,8 +972,6 @@ _ck
         lda vy,y
         cmp #47
         bcc _rm
-        cmp #251
-        bcs _rm
         sta my
         tax                     ; (its tick still early enough: if not, an earlier one)
         lda mktab,x
@@ -959,8 +1188,6 @@ wadd    ldy mv
         lda vy,y
         cmp #47
         bcc +
-        cmp #251
-        bcs +
         ldx mwait
         tya
         sta wlist,x
@@ -1678,7 +1905,7 @@ rngs    ldy mv
         sta nd
         lda r3hi,x
         sta n3d
-        lda nc
+rngsv   lda nc                  ; (rngsv: nc, nd, n3c, n3d given, y = mv)
         cmp v4lo,y
         bne _ch
         lda nd
@@ -1925,7 +2152,21 @@ sweep
         sta hattr + 2
         lda #4                  ; (Trogg's infill multicolour)
         sta s01c
-        lda #1
+        lda bton                ; (the top border's hazard on sprite 7, set up before: its x's bit
+        beq _swn                ;  8, multicolour; its settings taken as unknown, as Trogg's)
+        lda #$ff
+        sta hattr + 7
+        lda btxh
+        beq _swm
+        lda s010
+        ora #$80
+        sta s010
+_swm    lda btmc
+        beq _swn
+        lda s01c
+        ora #$80
+        sta s01c
+_swn    lda #1
         sta s017
         sta s01d
         lda #0
@@ -2086,8 +2327,12 @@ _tc     lda mk4,x
         jmp _rn
 
 ; ---- In the last border tick: the set-ups before the frame (tick 0's four slots)
-park    lda #(SPRBLANK & $3fff) / 64 ; (sprites 3-7, parked at y 255, blank: there they're shown on
-        ldy #7                      ;  lines 256-276, in the open border; tick 36)
+park    ldy #7                      ; (sprites 3-7, parked at y 255, blank: there they're shown on
+        ldx bufoff                  ;  lines 256-276, in the open border; tick 36; not 7 with the
+        lda btbon,x                 ;  top border's hazard on it)
+        beq +
+        dey
++       lda #(SPRBLANK & $3fff) / 64
 -
 apb0    sta SCR0 + $3f8,y
 apb1    sta SCR1 + $3f8,y
@@ -2203,10 +2448,10 @@ vh      .fill NV
 vt      .fill NV
 vs      .fill NV
 vl      .fill NV
-v3lo    .fill NV + 1               ; (NV: Trogg's)
-v3hi    .fill NV + 1
-v4lo    .fill NV + 1
-v4hi    .fill NV + 1
+v3lo    .fill NV + 2               ; (NV: Trogg's; NV + 1, the top border's hazard's)
+v3hi    .fill NV + 2
+v4lo    .fill NV + 2
+v4hi    .fill NV + 2
 va      .fill NV
 vflp    .fill NV
 vxhp    .fill NV
@@ -2220,6 +2465,18 @@ hwhead  .fill 8
 hattr   .fill 8
 s01c    .byte 0                 ; ($d01c, as s010 ...)
 tinst   .fill 26           ; (each tick's sprite)
+btbon   .fill 65                ; (each buffer's (0, 32, 64) top border hazard: shown, pointer, x,
+btbptr  .fill 65                ;  x's bit 8, multicolour, y)
+btbx    .fill 65
+btbxh   .fill 65
+btbmc   .fill 65
+btby    .fill 65
+bbon    .fill 65                ; (each buffer's (0, 32, 64) bottom border sprite: shown, pointer,
+bbptr   .fill 65                ;  multicolour, x, x's bit 8, y)
+bbmc    .fill 65
+bbx     .fill 65
+bbxh    .fill 65
+bby     .fill 65
 slotv   .fill 4            ; (tick 0's)
 mk3     .fill ROWS           ; (each row's sprites on lines 3 and 4)
 mk4     .fill ROWS

@@ -252,7 +252,7 @@ console.log(`row masks (line 3/4): ${masks.map((m, r) => masks3[r] === m ? m.toS
     const streams = [['cs0', 'CS0 + NCOMMON * 8'], ['cs1', 'CS1 + NCOMMON * 8'], ['spr', 'LSPR'], ['tops', 'tops'], ['bottoms', 'bottoms'], ['tab', 'LVL']];
     let out = `; made by tools/build.mjs: each level's own data, packed (loader.asm): each stream and where it goes\nLSPRN = 1\nNLEVELS = ${LEVELS.length}\n` +
         `lvltab  .word ${LEVELS.map((_, k) => `lvl${k}`).join(', ')}\n`;
-    const sizes = [];
+    const sizes = [], all = [];
     dirs.forEach((d, k) => {
         const sc = JSON.parse(readFileSync(d + 'scrub.json', 'utf8')), sb = Buffer.alloc(64);
         sc.sprite.forEach((row, y) => { for (let i = 0; i < 3; i++) sb[y * 3 + i] = parseInt(row.slice(i * 8, i * 8 + 8), 2); });
@@ -261,11 +261,18 @@ console.log(`row masks (line 3/4): ${masks.map((m, r) => masks3[r] === m ? m.toS
         let total = 0, raw = 0;
         for (const [n] of streams) { writeFileSync(d + `raw_${n}.bin`, src[n]); execFileSync('python3', [TOOLS + 'lz.py', d + `raw_${n}.bin`, d + `lz_${n}.bin`]); total += readFileSync(d + `lz_${n}.bin`).length; raw += src[n].length; }
         sizes.push(`${LEVELS[k]} ${raw} to ${total}`);
-        out += `lvl${k}\n` + streams.map(([n, dst]) => `        .word lz${k}_${n}, ${dst}\n`).join('') + '        .word 0\n' +
-            streams.map(([n]) => `lz${k}_${n} .binary "lv/${LEVELS[k]}/lz_${n}.bin"\n`).join('');
+        out += `lvl${k}\n` + streams.map(([n, dst]) => `        .word lz${k}_${n}, ${dst}\n`).join('') + '        .word 0\n';
+        for (const [n] of streams) all.push({ k, n, len: readFileSync(d + `lz_${n}.bin`).length });
     });
+    // (the streams: as many as fit in the RAM under the I/O ($d000-$dfff, 4K: read only by loadlevel,
+    // the I/O switched out), the longest first; the rest here, in the high section)
+    let used = 0;
+    for (const st of [...all].sort((x, y) => y.len - x.len)) if (used + st.len <= 4096) { st.under = true; used += st.len; }
+    const bin = st => `lz${st.k}_${st.n} .binary "lv/${LEVELS[st.k]}/lz_${st.n}.bin"\n`;
+    out += all.filter(st => !st.under).map(bin).join('') + '        .section under\n' + all.filter(st => st.under).map(bin).join('') + '        .send under\n';
     writeFileSync(DIR + 'lvlpack.inc', out);
-    console.log(`levels' own data (bytes, packed): ${sizes.join('; ')}; their block of tables ${lay.size}`);
+    const hi = all.filter(st => !st.under).reduce((t, st) => t + st.len, 0);
+    console.log(`levels' own data (bytes, packed): ${sizes.join('; ')}; ${used} under the I/O, ${hi} in the program's high memory; their block of tables ${lay.size}`);
 }
 // (--keys T:K,T:K...: for a test build, the keys held for T ticks each, K of L R U D Y E (Escape)
 // or -)
@@ -297,7 +304,7 @@ if ((plain || packtest) && existsSync(EXO)) {
 if (packtest && !existsSync(DIR + 'frak64.exo.prg')) throw new Error('--packtest needs Exomizer');
 const prg = readFileSync(DIR + (packtest ? 'frak64.exo.prg' : 'frak64.prg'));
 const sysAt = p => { const i = p.indexOf(0x9e, 6); return parseInt(p.subarray(i + 1, i + 8).toString('latin1').match(/\d+/)[0], 10); };
-if (packtest) lbl.start = sysAt(prg);
+lbl.start = sysAt(prg);                             // (the BASIC line's SYS: cold, or the packed program's own)
 console.log(`frak64.prg: $0801-$${(0x0801 + prg.length - 3).toString(16)} (${prg.length - 2} bytes), start $${lbl.start.toString(16)}, row interrupt $${lbl.rowirq.toString(16)}; TS ${PARAMS.TS}`);
 writeFileSync(DIR + 'rom.inc', `START = $${lbl.start.toString(16)}\nPAGES = ${Math.ceil((prg.length - 2) / 256)}\n`);
 // (the cartridge for the stand-in ROMs: a Magic Desk CRT, the PRG in 8K banks)
