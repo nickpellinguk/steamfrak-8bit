@@ -20,8 +20,12 @@
 import { readFileSync, writeFileSync } from 'fs';
 import { deflateSync } from 'zlib';
 const LV = new URL('../levels/', import.meta.url).pathname, DIR = new URL('../build/', import.meta.url).pathname;
-const NAME = process.argv[2] || 'A_1', ROW0 = 3, Y0 = ROW0 * 8;
+const NAME = process.argv.slice(2).find(a => !a.startsWith('--')) || 'A_1', ROW0 = 3, Y0 = ROW0 * 8;
+// (--preview: only the checks, the glyph counts (a set over 64 reported, not refused) and
+// build/level_<name>.png; nothing for the game)
+const PREVIEW = process.argv.includes('--preview');
 const fail = m => { throw new Error(`${NAME}: ${m}`); };
+const warns = [], soft = m => { if (process.argv.includes('--preview')) warns.push(m); else fail(m); };   // (--preview: reported, not refused)
 
 // ---- The level file
 const lines = readFileSync(`${LV}${NAME}.txt`, 'utf8').split('\n').map(l => l.replace(/#.*/, '').trim()).filter(Boolean);
@@ -64,13 +68,14 @@ for (const o of placed) {
     const p = pieceOf(o.name);
     if (o.x & 7 || o.y & 3) fail(`${o.name} at ${o.x},${o.y}: not on the 8x4 grid`);
     if (p.rows === 'even' && o.y & 15) fail(`${o.name} at ${o.x},${o.y}: not on an even character row (y a multiple of 16)`);
+    if (p.rows === 'odd' && (o.y & 15) !== 8) fail(`${o.name} at ${o.x},${o.y}: not on an odd character row (y 8 more than a multiple of 16)`);
     for (const t of tiles(o.name)) { const hr = (o.y >> 2) + t.i, c = (o.x >> 3) + t.j; if (hr < 0 || hr >= NHR || c < 0 || c >= NC) fail(`${o.name} at ${o.x},${o.y}: off the map`); }
 }
 const isEnemy = o => !!pieceOf(o.name).enemy, isPick = o => !!pieceOf(o.name).pick;
 const stamp = keep => { const m = new Array(NHR * NC).fill(null), who = new Int16Array(NHR * NC).fill(-1); placed.forEach((o, k) => { if (keep(o)) for (const t of tiles(o.name)) { m[halfAt(o, t)] = t.tile; who[halfAt(o, t)] = k; } }); return { m, who }; };
 const full = stamp(() => true), off = stamp(o => !isEnemy(o)), gone = stamp(o => !isPick(o));
 // (an object's halves are all its own: nothing of it under another piece placed later)
-placed.forEach((o, k) => { if (isEnemy(o) || isPick(o)) for (const t of tiles(o.name)) if (full.who[halfAt(o, t)] !== k) fail(`${o.name} at ${o.x},${o.y}: covered by ${placed[full.who[halfAt(o, t)]].name}`); });
+placed.forEach((o, k) => { if (isEnemy(o) || isPick(o)) for (const t of tiles(o.name)) if (full.who[halfAt(o, t)] !== k) return soft(`${o.name} at ${o.x},${o.y}: covered by ${placed[full.who[halfAt(o, t)]].name}`); });
 
 // ---- The glyphs: common, the type's either-band ones, each set's own
 const BLANK = '00000000', STRING = 1;
@@ -79,13 +84,14 @@ const add = (set, g) => { if (!glyphs[set].has(g)) glyphs[set].set(g, glyphs[set
 for (const s of [0, 1]) { add(s, BLANK); for (let l = 0; l < 4; l++) glyphs[s].set('string' + l, glyphs[s].size); }
 // (the common pieces' glyphs in every level; then the type's, as the type file lists them: each
 // tile's bands, either if the piece can go on any row)
-const bandsOf = (name, t) => pieceOf(name).rows === 'even' ? [bandOf(t.i) & 1] : [0, 1];
+const bandsOf = (name, t) => { const r = pieceOf(name).rows; return r === 'even' ? [bandOf(t.i) & 1] : r === 'odd' ? [bandOf(t.i + 2) & 1] : [0, 1]; };
 for (const n of Object.keys(common)) for (const t of tiles(n)) for (const s of [0, 1]) add(s, t.tile.g);
 const NCOMMON = glyphs[0].size;
 for (const n of Object.keys(typed)) for (const t of tiles(n)) if (bandsOf(n, t).length === 2) for (const s of [0, 1]) add(s, t.tile.g);
 const NBOTH = glyphs[0].size;
 for (const n of Object.keys(typed)) for (const t of tiles(n)) { const b = bandsOf(n, t); if (b.length === 1) add(b[0], t.tile.g); }
-for (const s of [0, 1]) if (glyphs[s].size > 64) fail(`character set ${s} needs ${glyphs[s].size} glyphs`);
+for (const s of [0, 1]) if (glyphs[s].size > 64 && !PREVIEW) fail(`character set ${s} needs ${glyphs[s].size} glyphs`);
+if (PREVIEW) { preview(); process.exit(0); }
 // (checked: each placed half's glyph is in its band's set, as it must be by its piece's rows)
 const cs = Buffer.alloc(1024);
 for (const s of [0, 1]) for (const [g, i] of glyphs[s]) for (let l = 0; l < 4; l++) {
@@ -180,3 +186,28 @@ for (const [suf, st] of [['', full], ['_off', off], ['_gone', gone]]) { writeFil
 console.log(`${NAME} (${meta.type[0]}): ${placed.length} pieces placed; glyphs: ${NCOMMON} common (blank, string, keys, gems), ${NBOTH - NCOMMON} the type's in either band, ` +
     `then set 0 ${glyphs[0].size - NBOTH} and set 1 ${glyphs[1].size - NBOTH} of their own: ${glyphs[0].size} and ${glyphs[1].size} of 64; ` +
     `patches ${sp.map(g => g.length).join(' ')} / ${pp.map(g => g.length).join(' ')}; ${plats.length} platforms, ${lads.length} ladders`);
+
+// ---- --preview: the level as shown, each enemy's sprite behind its characters (an expanded
+// hi-res one, sprite, magenta; or a multicolour one, mcsprite, y-expanded: Y yellow, M magenta)
+function preview() {
+    const px = new Uint8Array(W * HS), fg = new Uint8Array(W * HS);
+    for (let hr = 0; hr < NHR; hr++) for (let c = 0; c < NC; c++) { const t = full.m[hr * NC + c] || { g: BLANK, b: 0 };
+        for (let l = 0; l < 4; l++) { const v = parseInt(t.g.slice(l * 2, l * 2 + 2), 16); for (let x = 0; x < 8; x++) { const q = (hr * 4 + l) * W + c * 8 + x; fg[q] = v & 0x80 >> x ? 1 : 0; px[q] = fg[q] ? 3 : t.b; } } }
+    for (const o of placed.filter(isEnemy)) { const p = pieceOf(o.name);
+        if (p.mcsprite) { const [ox, oy] = p.spriteAt; p.mcsprite.forEach((r, by) => [...r].forEach((ch, bx) => { if (ch === '.') return;
+            for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) { const X = o.x + ox + bx * 2 + dx, Y = o.y + oy + by * 2 + dy; if (X >= 0 && X < W && Y >= 0 && Y < HS && !fg[Y * W + X]) px[Y * W + X] = ch === 'Y' ? 1 : 2; } })); }
+        else if (p.sprite) p.sprite.forEach((r, by) => [...r].forEach((ch, bx) => { if (ch !== '#') return;
+            for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) { const X = o.x - 8 + bx * 2 + dx, Y = o.y + 1 + by * 2 + dy; if (X >= 0 && X < W && Y >= 0 && Y < HS && !fg[Y * W + X]) px[Y * W + X] = 2; } })); }
+    const pal = [[0, 200, 200], [255, 255, 0], [255, 0, 255], [0, 0, 0]], S = 2, IW = W * S, IH = HS * S;
+    const raw = Buffer.alloc((IW * 3 + 1) * IH);
+    for (let y = 0; y < IH; y++) for (let x = 0; x < IW; x++) raw.set(pal[px[(y / S | 0) * W + (x / S | 0)]], y * (IW * 3 + 1) + 1 + x * 3);
+    const crcT = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+    const crc = b => { let c = 0xffffffff; for (const x of b) c = crcT[(c ^ x) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+    const chunk = (t, d) => { const l = Buffer.alloc(4); l.writeUInt32BE(d.length); const td = Buffer.concat([Buffer.from(t), d]); const c = Buffer.alloc(4); c.writeUInt32BE(crc(td)); return Buffer.concat([l, td, c]); };
+    const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(IW, 0); ihdr.writeUInt32BE(IH, 4); ihdr[8] = 8; ihdr[9] = 2;
+    writeFileSync(`${DIR}level_${NAME}.png`, Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]));
+    const own = s => [...glyphs[s].keys()].slice(NBOTH).length;
+    if (warns.length) console.log('problems:\n  ' + warns.join('\n  '));
+    console.log(`${NAME} (${meta.type[0]}, preview): ${placed.length} pieces placed, ${placed.filter(isEnemy).length} enemies; glyphs: ${NCOMMON} common, ${NBOTH - NCOMMON} the type's in either band, ` +
+        `then set 0 ${own(0)} and set 1 ${own(1)} of their own: ${glyphs[0].size} and ${glyphs[1].size} of 64`);
+}

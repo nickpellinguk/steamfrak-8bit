@@ -599,3 +599,24 @@ NTSC machine instead of a garbled screen; the VSP crash test on hardware (VSP.md
   of its visible pixels right against the BBC's (black pixels hide the sprite either way, so they
   don't count; the old rule needed 2 of a block's 4 pixels magenta, so blocks half black were
   holes). 38 pixels unlike the BBC's down to 15: one magenta shown cyan, and the feet's yellow (14).
+
+## The Poglet type, first pass (A_2)
+
+- tools/export_poglet.mjs: the BBC's room_A_2 into levels/poglet.json and levels/A_2.txt.
+  - Logs: 12 lines, top line a half's first (3 halves, black on magenta); 8-pixel caps (corners
+    squared), between them the long log's most seamless 24 columns (seam 0: the grain's period is
+    12) repeated; the stubs under them dropped; widths to the nearest 8 (the BBC's 20 + 12k).
+  - Ropes: the BBC's black edges only (the yellow core would be a third colour in a half),
+    columns 2-5 of a character, a kink every 16 lines; snapped along the log they hang from.
+  - The Poglet: black outline in the characters, 3 characters by 9 halves; yellow and magenta
+    from a multicolour sprite, y-expanded ($d025 yellow, $d026 magenta, as the game has them),
+    chosen block by block: 2 pixels unlike the BBC's. poglet_rope: the rope baked in behind it.
+  - Squeezed: the BBC's lines 56-224 to the map's 36-188 (x 0.905), as its content spans 213
+    lines; the physics' ladders scaled with it.
+  - The Poglets on odd rows (the type's phase: it moves the logs they sit on least, 14 lines in
+    all, the most 8), so their glyphs split between the sets: 52 and 53 of 64.
+- level.mjs: "rows": "odd" as well as "even"; --preview (checks, glyph counts, a picture, no game
+  files; overlaps reported, not refused).
+- Not playable yet: the game gives each Scrubbly a fixed sprite (3-7); 9 Poglets need their
+  sprites multiplexed (at most 3 on a line on screen), and multicolour; their collision shapes
+  and patches (level.mjs's game files are the Scrubbly's); the Poglets' behaviour.
