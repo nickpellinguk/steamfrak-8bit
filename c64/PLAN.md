@@ -605,9 +605,14 @@ NTSC machine instead of a garbled screen; the VSP crash test on hardware (VSP.md
 - tools/export_poglet.mjs: the BBC's room_A_2 into levels/poglet.json and levels/A_2.txt.
   - Logs: 12 lines, top line a half's first (3 halves). Each end the BBC's single black column
     with background above and below it (what makes them logs), in a character of its own (black
-    on cyan); the body between on whole characters (black on magenta): the BBC's first and last 8
-    columns, and between them the long log's most seamless 24 (seam 0: the grain's period is 12)
-    repeated; the stubs under them dropped; bodies to the nearest 8 (the BBC's 18 + 12k).
+    on cyan); the body between on whole characters (black on magenta). The BBC's bodies are 2
+    start columns, 12-pixel units of 3 kinds (grain; grain with a stub hanging under it; a knot),
+    which share their edge columns so any follow any, and 2 end columns. On the C64 each unit is
+    8 pixels: grain and stub the BBC's with the 4 most redundant interior columns dropped, the
+    knot drawn for 8 (its ring and core); the first and last characters the start or end columns
+    and a grain squeezed to 6. A log's middle characters take the BBC's units by position along
+    it (a knot or stub once, a stub not where a rope hangs or off the map); the stub under the log
+    black on background. Bodies to the nearest 8 (the BBC's 18 + 12k).
   - Ropes: the BBC's black edges only (the yellow core would be a third colour in a half),
     columns 2-5 of a character, a kink every 16 lines; snapped along the log they hang from.
   - The Poglet: black outline in the characters, 3 characters by 9 halves; yellow and magenta
@@ -616,7 +621,7 @@ NTSC machine instead of a garbled screen; the VSP crash test on hardware (VSP.md
   - Squeezed: the BBC's lines 56-224 to the map's 36-188 (x 0.905), as its content spans 213
     lines; the physics' ladders scaled with it.
   - The Poglets on odd rows (the type's phase: it moves the logs they sit on least, 14 lines in
-    all, the most 8), so their glyphs split between the sets: 57 and 59 of 64.
+    all, the most 8), so their glyphs split between the sets: 58 and 60 of 64.
 - level.mjs: "rows": "odd" as well as "even"; --preview (checks, glyph counts, a picture, no game
   files; overlaps reported, not refused).
 - Not playable yet: the game gives each Scrubbly a fixed sprite (3-7); 9 Poglets need their

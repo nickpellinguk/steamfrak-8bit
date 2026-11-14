@@ -35,21 +35,67 @@ const fy = y => B0 + (y - A0) * (B1 - B0) / (A1 - A0), snap4 = v => Math.round(v
 const logs = e.plat_x.map((x, k) => ({ x, y: e.plat_y[k], w: e.plat_w[k] }));
 const long = logs.reduce((a, b) => b.w > a.w ? b : a);
 const rowsOf = (x0, x1, y) => Array.from({ length: 12 }, (_, l) => { let s = ''; for (let x = x0; x < x1; x++) s += D[P(x, y + l)]; return s; });
-// (the grain unit: the 24 columns of the long log's body whose seam, column s against s + 24, is cleanest)
-let best = null;
-for (let s = long.x + 8; s + 48 <= long.x + long.w - 8; s++) { let c = 0; for (let l = 1; l < 11; l++) if (P(s, long.y + l) !== P(s + 24, long.y + l)) c++; if (!best || c < best.c) best = { s, c }; }
-const unit = rowsOf(best.s, best.s + 24, long.y).map((r, l) => l === 0 || l === 11 ? '3'.repeat(24) : r);
-notes.push(`log grain: the long log's columns ${best.s - long.x}-${best.s - long.x + 23}, seam ${best.c} pixels off`);
+// (the BBC's logs: an end column, 2 start columns (magenta, black), 12-pixel units, 2 end columns
+// (black, magenta), an end column; the units of 3 kinds, the same edge column on both sides so
+// that any follow any: g grain, s grain with a stub hanging under it, k a knot; the rest the same
+// with a rope under them. Each kind from the first unit of it found, 16 lines: the log's 12 and
+// the stub's 4)
+const rows16 = (x0, x1, y) => Array.from({ length: 16 }, (_, l) => { let s = ''; for (let x = x0; x < x1; x++) s += D[P(x, y + l)]; return s; });
+const bbcUnits = {}, seqOf = new Map();
+for (const g of logs) {
+    const seq = [];
+    for (let u = g.x + 4; u + 12 <= g.x + g.w - 4; u += 12) {
+        const r = rows16(u, u + 12, g.y), stub = r[10].includes('0') || r[11].slice(0, 12).includes('0');
+        const k = stub ? 's' : r[2].slice(3, 9) === '333333' ? 'k' : 'g';
+        if (!bbcUnits[k] && !r.slice(12).join('').includes('1')) bbcUnits[k] = r;     // (one with nothing under it but its stub)
+        seq.push(k);
+    }
+    seqOf.set(`${g.x},${g.y}`, seq);
+}
+// (each squeezed to 8 columns: its edge columns kept, the 4 interior columns most like the column
+// before them dropped, one at a time)
+const squeeze = (r, keep) => {
+    let cols = [...Array(r[0].length).keys()];
+    while (cols.length > keep) { let bi = -1, bs = 1e9;
+        for (let i = 1; i < cols.length - 1; i++) { let d = 0; for (let l = 1; l < 11; l++) d += r[l][cols[i]] !== r[l][cols[i - 1]]; if (d < bs) { bs = d; bi = i; } }
+        cols.splice(bi, 1); }
+    return r.map(row => cols.map(c => row[c]).join(''));
+};
+const C8 = Object.fromEntries(Object.entries(bbcUnits).map(([k, r]) => [k, squeeze(r, 8)]));
+// (the stub: under the log black on background (its magenta black), and the background in the
+// log's last 2 lines, where it breaks off, black: each half 2 colours)
+C8.s = C8.s.map((r, l) => l < 10 ? r : l < 12 ? r.replace(/0/g, '3') : r.replace(/2/g, '3').replace(/0/g, '-'));
+// (the knot drawn for 8 columns, squeezing loses its middle: the BBC's ring, 6 wide on rows 2-7,
+// round its 2 x 2 core; the edge columns as every unit's)
+C8.k = ['33333333', '22222222', '22333322', '33222233', '23233232', '33233233', '23222232', '22333322', '33222233', '22333322', '22222222', '33333333',
+        '--------', '--------', '--------', '--------'];
+for (const k of 'gk') C8[k] = C8[k].map((r, l) => l < 12 ? r : '--------');
+notes.push(`log units: grain and stub the BBC's 12 columns squeezed to 8, the knot drawn for 8`);
 // (the ends, as the BBC's: a single black column, lines 2-9, background above and below it. On
 // the C64 each is a character to itself, the column at its inner edge, so the body, between
 // them, starts on a character: the end characters black on cyan, the body black on magenta. The
-// body's first and last characters the BBC's columns next to the ends)
+// body's first character the 2 start columns and a grain squeezed to 6; its last the same mirrored)
 const E = long.x; let RE = long.x + long.w - 1; while (![...Array(8)].some((_, l) => P(RE, long.y + 2 + l))) RE--;
-const edge = x => Array.from({ length: 12 }, (_, l) => D[P(x, long.y + l)] === '0' ? '-' : '3');
+const edge = x => Array.from({ length: 16 }, (_, l) => l >= 12 ? '-' : D[P(x, long.y + l)] === '0' ? '-' : '3');
 const endL = edge(E).map(c => '-------' + c), endR = edge(RE).map(c => c + '-------');
-const firstB = rowsOf(E + 1, E + 9, long.y), lastB = rowsOf(RE - 8, RE, long.y);
-for (const [n, a] of [['first', firstB], ['last', lastB]]) if (a.some(r => r.includes('0'))) notes.push(`log body's ${n} character has background in it`);
-const logPiece = n => { const a = []; for (let l = 0; l < 12; l++) { let s = endL[l] + firstB[l]; for (let k = 0; k < n - 2; k++) s += unit[l].slice((k % 3) * 8, (k % 3) * 8 + 8); a.push(s + lastB[l] + endR[l]); } return { art: a, plats: [[7, 0, n * 8 + 2]] }; };
+const g6 = squeeze(bbcUnits.g, 6), st = rows16(E + 1, E + 3, long.y), en = rows16(RE - 2, RE, long.y);
+const firstB = st.map((r, l) => l < 12 ? r + g6[l] : '--------'), lastB = en.map((r, l) => l < 12 ? g6[l] + r : '--------');
+// (a log's middle characters: the BBC's units, by where each character's middle falls along it;
+// a knot or stub only once if its unit covers two; a stub where a rope hangs, grain)
+const middle = (g, n, ropeCols) => {
+    const seq = seqOf.get(`${g.x},${g.y}`), out = [];
+    for (let j = 0; j < n; j++) {
+        const f = (j + 0.5) / n, u = Math.min(seq.length - 1, Math.floor(f * seq.length));
+        let k = seq.length ? seq[u] : 'g';
+        if (k !== 'g' && out.length && out[out.length - 1].u === u) k = 'g';
+        if (k === 's' && (ropeCols.has(j) || g.Y + 16 > 200)) k = 'g';     // (nor where it would hang off the map)
+        out.push({ k, u });
+    }
+    return out.map(o => o.k).join('');
+};
+const logPiece = mid => { const stubs = mid.includes('s'), H = stubs ? 16 : 12, a = [];
+    for (let l = 0; l < H; l++) a.push(endL[l] + firstB[l] + [...mid].map(k => C8[k][l]).join('') + lastB[l] + endR[l]);
+    return { art: a, plats: [[7, 0, (mid.length + 2) * 8 + 2]] }; };
 // (the Poglets always on the same row phase, ROWS: even, their piece's top a multiple of 16, or
 // odd, 8 more; so a log a Poglet sits on has its top 36 below that, and every log in the BBC's row
 // of one with it. ROWS from the argument, or whichever moves those logs least)
@@ -64,9 +110,7 @@ const logY = y => rowOf(y) !== undefined ? phaseSnap(fy(rowOf(y)), PHASE) : snap
 const L = logs.map(g => {
     // (its body, between its end columns, to the nearest characters; the piece a character left of it)
     const x0 = Math.round((g.x + 1 + XOFF) / 8) * 8, x1 = Math.round((g.x + g.w - 1 + XOFF) / 8) * 8, n = Math.max(2, (x1 - x0) / 8), y = logY(g.y);
-    const name = `log${n}`; if (!pieces[name]) pieces[name] = logPiece(n);
-    place.push([name, x0 - 8, y]);
-    return { ...g, X: x0, N: n, Y: y };
+    return { ...g, X: x0, N: n, Y: y, ropes: new Set() };
 });
 // ---- Ropes: from the bottom of the log they hang from (or their own top) to their end
 const ROPE = (() => { const r = []; for (let l = 0; l < 16; l++) r.push(l === 10 || l === 13 ? '--3---3-' : l === 11 || l === 12 ? '---3--3-' : '--3--3--'); return r; })();
@@ -83,8 +127,13 @@ e.lad_x.forEach((lx, k) => {
     pieces[name + '_' + h + '_' + ext] = { ...ropePiece(n), ladder: [4, ly2 - top, h, ext] };
     ropePlace.push([name + '_' + h + '_' + ext, cx, top]);
     ropeAt.push({ cx, top, bot, lx });
+    if (g) g.ropes.add((cx - g.X) / 8 - 1);          // (the middle character it hangs from)
     if (g && (cx + 2 < g.X || cx + 6 > g.X + g.N * 8)) notes.push(`rope ${k} at ${cx}: not under its log (${g.X}-${g.X + g.N * 8})`);
 });
+// ---- The logs' pieces, now the ropes are known: log_<first, middle, last>
+for (const g of L) { const mid = middle(g, Math.max(0, g.N - 2), g.ropes), name = `log_${mid}`;
+    if (!pieces[name]) pieces[name] = logPiece(mid);
+    place.unshift([name, g.X - 8, g.Y]); }
 // ---- The Poglet: art at the piece's column 1, row 3 (its feet end on the piece's last line)
 const H = JSON.parse(readFileSync(LV + 'hazards.json')).images.IMG_Poglet, PG0 = H.grid;
 // (the C64's Poglet: the BBC's with pixels made black (x, y in its image), each completing an
