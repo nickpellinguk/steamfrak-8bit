@@ -635,7 +635,8 @@ NTSC machine instead of a garbled screen; the VSP crash test on hardware (VSP.md
     coloured by column: a girder starts 4 into a character, so each unit's middle 8 columns (the
     hourglass's neck, its holes there yellow) are a character black on yellow, and its 4 at each
     side, with its neighbour's, a character black on the background (red: the bars' ends, the X's
-    outer arms as outlines, the holes between units see-through). k BBC units stay k (so 4/3 as
+    outer arms as outlines, the holes between units see-through); its top and bottom halves black
+    on yellow all the way but for its end characters, so the bars are yellow through. k BBC units stay k (so 4/3 as
     wide), centred where they were; chains hang under a unit's middle character.
   - Chains: 8 wide, a whole character: a cap (a half, black on yellow) under their girder, then
     the BBC's 14-line link cycle stretched to 16 (a hole row more in each link); each half black

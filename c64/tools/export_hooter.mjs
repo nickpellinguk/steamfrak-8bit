@@ -5,7 +5,8 @@
 //     tall, coloured by column: each girder starts 4 into a character, so each unit's middle 8
 //     columns (the hourglass's neck) are a character black on yellow, and its sides, with its
 //     neighbour's, a character black on the background (red on Hooter levels: the X's outer arms as
-//     outlines, the holes between units see-through). A girder of k BBC units has k, centred where
+//     outlines, the holes between units see-through); but the top and bottom halves black on
+//     yellow all the way but for the end characters, so the bars are yellow through. A girder of k BBC units has k, centred where
 //     it was. girder<K>: K units, 2K + 1 characters
 //   - chains (the ladders): a cap (a half, black on yellow) under the girder they hang from, then
 //     the BBC's links (8 wide, 14 lines a cycle) stretched to 16 by a hole row more in each link,
@@ -42,7 +43,10 @@ const UNIT = ['################', '#YYYYYYYYYYYYYY#', '#Y############Y#', '##Y##
     '##Y##......##Y##', '#Y############Y#', '#YYYYYYYYYYYYYY#', '################'];
 const unitArt = UNIT.map(r => [...r].map((c, x) => c === '#' ? '3' : x >= 4 && x < 12 ? '1' : '0').join(''));
 // (a girder of u units: 4 columns of nothing, the units, 4 of nothing: 2u + 1 characters)
-const girderPiece = u => ({ art: unitArt.map(r => '----' + r.repeat(u) + '----'), plats: [[4, 0, u * 16]] });
+// (and its top and bottom halves black on yellow all the way, but for its end characters: so its
+// bars are yellow through, only its middle 8 lines by column)
+const girderPiece = u => ({ art: unitArt.map((r, l) => { const a = '----' + r.repeat(u) + '----';
+    return l >= 4 && l < 12 ? a : [...a].map((c, x) => x >= 8 && x < a.length - 8 && c !== '3' ? '1' : c).join(''); }), plats: [[4, 0, u * 16]] });
 const G = e.plat_x.map((x, k) => {
     const w = e.plat_w[k], u = Math.max(1, Math.round(w / 12)), n = 2 * u + 1, X = Math.round((x + w / 2 + XOFF - n * 4) / 8) * 8, Y = snap4(fy(e.plat_y[k]));
     const name = `girder${u}`; if (!pieces[name]) pieces[name] = girderPiece(u);
