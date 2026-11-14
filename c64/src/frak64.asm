@@ -170,6 +170,9 @@ start   sei
         sta $fffa
         lda #>nmi
         sta $fffb
+        .if FRONT
+        jsr attract                 ; (the attract screen, till a key: front.asm)
+        .endif
         lda #<irq1
         sta $fffe
         lda #>irq1
@@ -330,6 +333,7 @@ start   sei
         bpl -
         .if !TEST
         jsr muxinit                 ; (the multiplexer's: no sprites yet, in either buffer)
+        jsr fresh                   ; (and what it keeps from frame to frame)
         jsr tmreset                 ; (the timer at 0:00)
         .endif
 
@@ -1361,6 +1365,20 @@ tmm     .byte 0
         .endif
 
         .section high
+; What the multiplexer keeps from frame to frame, as when loaded: a start after Escape finds it as
+; the last game left it
+fresh   lda #$ff
+        sta gscx
+        sta gscx+1
+        sta traw
+        sta trcw
+        sta tres1w
+        sta tres2w
+        lda #1
+        sta scrchg
+        lda #0
+        sta tmsbw
+        rts
 vtmp    .byte 0
 v010r   .byte 0                     ; ($d010 with the cover's bit clear, for vspline)
         .send high
@@ -1575,6 +1593,9 @@ setx    lda shx
         .include "hazards.asm"
         .include "mux.asm"
         .include "trogg.asm"
+        .if FRONT
+        .include "front.asm"
+        .endif
         .include "play.asm"
 
         .align $100
@@ -1643,6 +1664,11 @@ end
         .fill 64, 0                 ; (the timer: drawn by tmdraw)
         .fill CS1 - *, 0
         .binary "charsets.bin", 512, 512
+        .if FRONT
+        .cerror * > FRSPR
+        .fill FRSPR - *, 0
+        .binary "frontspr.bin"      ; (the front end's cast: front.asm)
+        .endif
         .fill $6800 - *, 0
 TROGG   .binary "trogg.bin"         ; Trogg's sprites: per frame outline P1-P3, infill P1-P3
         .cerror * > $79ff, "Trogg's sprites run into $79ff"
