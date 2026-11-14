@@ -1,11 +1,12 @@
 // First pass: a classic Hooter level (A_3) from the BBC's, into the level format (../levels):
 // hooter.json (the type's pieces) and A_3.txt. Redrawn for ECM's 8x4 halves (black on one
 // background each):
-//   - girders: 16 lines: 4 black on yellow (a bar), 8 black on the background (red on Hooter
-//     levels: the X's arms as outlines, their yellow gone, its holes see-through), 4 black on yellow.
-//     The BBC's 12-pixel unit (an X between thin bars, its own black edge on both sides, so units
-//     abut with a double line) drawn 16 wide, in the BBC's proportion. A girder of k BBC
-//     units centred where it was, an even number of characters nearest 1.5k. girder<N>: N characters
+//   - girders: the BBC's 12-pixel X-truss unit (an hourglass between bars) drawn 16 wide and 16
+//     tall, coloured by column: each girder starts 4 into a character, so each unit's middle 8
+//     columns (the hourglass's neck) are a character black on yellow, and its sides, with its
+//     neighbour's, a character black on the background (red on Hooter levels: the X's outer arms as
+//     outlines, the holes between units see-through). A girder of k BBC units has k, centred where
+//     it was. girder<K>: K units, 2K + 1 characters
 //   - chains (the ladders): a cap (a half, black on yellow) under the girder they hang from, then
 //     the BBC's links (8 wide, 14 lines a cycle) stretched to 16 by a hole row more in each link,
 //     each half's background whichever of yellow and magenta most of it is (so the links seen
@@ -30,20 +31,23 @@ const pieces = {}, place = [], chainPlace = [], notes = [];
 const [A0, A1, B0, B1] = [49, 229, 12, 184];
 const fy = y => B0 + (y - A0) * (B1 - B0) / (A1 - A0), snap4 = v => Math.round(v / 4) * 4;
 // ---- Girders: the unit, 8 wide, 16 lines (Y yellow, # black, . hole)
-// (16 wide, 2 characters: a bar (4 lines, black on yellow, its last where the X's arms start), the
-// X (8 lines, black on the background: its arms' outlines, their yellow gone, the holes
-// see-through), a bar; the X's arms from the corners to a 4-wide middle, as the BBC's)
-const UNIT = ['################', '#YYYYYYYYYYYYYY#', '#Y############Y#', '##Y##YYYYYY##Y##',
-    '.##.##....##.##.', '..##.##..##.##..', '...##.####.##...', '....##....##....',
-    '....##....##....', '...##.####.##...', '..##.##..##.##..', '.##.##....##.##.',
-    '##Y##YYYYYY##Y##', '#Y############Y#', '#YYYYYYYYYYYYYY#', '################'];
-const girderPiece = n => ({ art: UNIT.map(r => [...r].map(c => c === '#' ? '3' : c === 'Y' ? '1' : '0').join('').repeat(n / 2)), plats: [[0, 0, n * 8]] });
-// (a girder of k BBC units: 2 characters a unit of 16, as near 12k as an even number of characters gets)
+// (16 wide, 16 lines: the BBC's X-truss unit, an hourglass between bars; coloured by column, as
+// it falls on the characters: a girder starts 4 into a character, so each unit's middle 8 columns
+// (its hourglass's neck, its holes there yellow) are a character, black on yellow, and its 4 at
+// each side, with its neighbour's, a character black on the background (the bars' ends, the X's
+// outer arms as outlines, the holes between units see-through))
+const UNIT = ['################', '#YYYYYYYYYYYYYY#', '#Y############Y#', '##Y##......##Y##',
+    '.##Y##....##Y##.', '..##Y##..##Y##..', '...##Y####Y##...', '....##YYYY##....',
+    '....##YYYY##....', '...##Y####Y##...', '..##Y##..##Y##..', '.##Y##....##Y##.',
+    '##Y##......##Y##', '#Y############Y#', '#YYYYYYYYYYYYYY#', '################'];
+const unitArt = UNIT.map(r => [...r].map((c, x) => c === '#' ? '3' : x >= 4 && x < 12 ? '1' : '0').join(''));
+// (a girder of u units: 4 columns of nothing, the units, 4 of nothing: 2u + 1 characters)
+const girderPiece = u => ({ art: unitArt.map(r => '----' + r.repeat(u) + '----'), plats: [[4, 0, u * 16]] });
 const G = e.plat_x.map((x, k) => {
-    const w = e.plat_w[k], u = Math.round(w / 12), n = Math.max(2, 2 * Math.round(0.75 * u)), X = Math.round((x + w / 2 + XOFF - n * 4) / 8) * 8, Y = snap4(fy(e.plat_y[k]));
-    const name = `girder${n}`; if (!pieces[name]) pieces[name] = girderPiece(n);
+    const w = e.plat_w[k], u = Math.max(1, Math.round(w / 12)), n = 2 * u + 1, X = Math.round((x + w / 2 + XOFF - n * 4) / 8) * 8, Y = snap4(fy(e.plat_y[k]));
+    const name = `girder${u}`; if (!pieces[name]) pieces[name] = girderPiece(u);
     place.push([name, X, Y]);
-    return { x, y: e.plat_y[k], w, X, N: n, Y };
+    return { x, y: e.plat_y[k], w, X, N: n, U: u, Y };
 });
 // ---- Chains: the BBC's link cycle, from the long chain (rows of it 8 wide)
 const ch0 = e.lad_x.findIndex((_, k) => e.lad_h[k] === Math.max(...e.lad_h)), cx0 = e.lad_x[ch0] - 4;
@@ -68,7 +72,8 @@ const chainAt = [];
 e.lad_x.forEach((lx, k) => {
     const ly = e.lad_y[k], lh = e.lad_h[k], ext = e.lad_ext[k];
     const g = G.find(g => g.y === ly - 1 && lx >= g.x - 2 && lx <= g.x + g.w + 2);
-    const cx = g ? Math.min(g.X + g.N * 8 - 8, Math.max(g.X, g.X + Math.round((lx - 4 - g.x) / 8) * 8)) : Math.round((lx - 4 + XOFF) / 8) * 8;
+    // (under its unit's middle character, the unit nearest it along its girder)
+    const cx = g ? g.X + 8 + 16 * Math.min(g.U - 1, Math.max(0, Math.round((lx - g.x - 6) / 12))) : Math.round((lx - 4 + XOFF) / 8) * 8;
     const top = g ? g.Y + 16 : snap4(fy(ly)), bot = Math.min(200, Math.max(top + 8, snap4(fy(ly + lh))));   // (not past the map)
     const n = (bot - top) / 4, h = Math.round(lh * (B1 - B0) / (A1 - A0)), ly2 = g ? g.Y + 1 : top, name = `chain${n}_${h}_${ext}`;
     pieces[name] = chainPiece(n, [4, ly2 - top, h, ext]);
