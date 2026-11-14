@@ -633,7 +633,7 @@ NTSC machine instead of a garbled screen; the VSP crash test on hardware (VSP.md
 - tools/export_hooter.mjs: the BBC's room_A_3 into levels/hooter.json and levels/A_3.txt.
   - Girders: the BBC's 12-pixel X-truss unit (an hourglass between bars) drawn 16 x 16 and
     coloured by column: a girder starts 4 into a character, so each unit's middle 8 columns (the
-    hourglass's neck, its holes there yellow) are a character black on yellow, and its 4 at each
+    hourglass's neck, its holes there solid black) are a character black on yellow, and its 4 at each
     side, with its neighbour's, a character black on the background (red: the bars' ends, the X's
     outer arms as outlines, the holes between units see-through); its top and bottom halves black
     on yellow all the way but for its end characters, so the bars are yellow through. k BBC units stay k (so 4/3 as

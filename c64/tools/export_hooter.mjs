@@ -34,14 +34,15 @@ const fy = y => B0 + (y - A0) * (B1 - B0) / (A1 - A0), snap4 = v => Math.round(v
 // ---- Girders: the unit, 8 wide, 16 lines (Y yellow, # black, . hole)
 // (16 wide, 16 lines: the BBC's X-truss unit, an hourglass between bars; coloured by column, as
 // it falls on the characters: a girder starts 4 into a character, so each unit's middle 8 columns
-// (its hourglass's neck, its holes there yellow) are a character, black on yellow, and its 4 at
+// (its hourglass's neck, its holes there solid black) are a character, black on yellow, and its 4 at
 // each side, with its neighbour's, a character black on the background (the bars' ends, the X's
 // outer arms as outlines, the holes between units see-through))
 const UNIT = ['################', '#YYYYYYYYYYYYYY#', '#Y############Y#', '##Y##......##Y##',
     '.##Y##....##Y##.', '..##Y##..##Y##..', '...##Y####Y##...', '....##YYYY##....',
     '....##YYYY##....', '...##Y####Y##...', '..##Y##..##Y##..', '.##Y##....##Y##.',
     '##Y##......##Y##', '#Y############Y#', '#YYYYYYYYYYYYYY#', '################'];
-const unitArt = UNIT.map(r => [...r].map((c, x) => c === '#' ? '3' : x >= 4 && x < 12 ? '1' : '0').join(''));
+// (the holes in the hourglass, above and below its neck, solid black)
+const unitArt = UNIT.map(r => [...r].map((c, x) => c === '#' || (c === '.' && x >= 4 && x < 12) ? '3' : x >= 4 && x < 12 ? '1' : '0').join(''));
 // (a girder of u units: 4 columns of nothing, the units, 4 of nothing: 2u + 1 characters)
 // (and its top and bottom halves black on yellow all the way, but for its end characters: so its
 // bars are yellow through, only its middle 8 lines by column)
