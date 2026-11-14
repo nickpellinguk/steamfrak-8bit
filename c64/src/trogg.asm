@@ -213,10 +213,12 @@ tq3     sta SCR1 + $3fa
 ; right, that's late enough that the writes can be held over the fetches into line 6's first
 ; cycles, still before the beam reaches him there; bit 8 flipped if it changes (TM2); then the
 ; tops' screen's pointers (the next row's). All from line 6
-troggc  lda tact + TP1O + 1
-tw1     sta SCR1 + $3f9
-        lda tact + TP1I + 1
+troggc  lda tact + TP1O + 1       ; (and the tops' screen's, the next row's, as they're unseen
+tw1     sta SCR1 + $3f9             ; till the $d018 write in tailcx: written here, before the
+tw0     sta SCR0 + $3f9             ; wait, to keep what's left after the x short, the next
+        lda tact + TP1I + 1         ; row's interrupt coming 4 lines on)
 tw3     sta SCR1 + $3fa
+tw2     sta SCR0 + $3fa
         ldx tact + TXL2
 -       lda $dc06                   ; (the low byte past TXK; or the high byte 0, line 6 begun)
         cmp tact + TXK
@@ -229,11 +231,7 @@ tw3     sta SCR1 + $3fa
         beq +
         eor $d010
         sta $d010
-+       lda tact + TP1O + 1
-tw0     sta SCR0 + $3f9
-        lda tact + TP1I + 1
-tw2     sta SCR0 + $3fa
-        jmp tailend
++       jmp tailcx
 trogga  lda tact + TY2
         sta $d003
         sta $d005

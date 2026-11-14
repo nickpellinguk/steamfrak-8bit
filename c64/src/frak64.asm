@@ -741,8 +741,10 @@ usefront
         sta rl0+1
         lda #<(d18a0+1)
         sta rla+1
+        sta rlat+1
         lda #>d18a0
         sta rla+2
+        sta rlat+2
         sta rl0+2
         lda #<d18b0
         sta rlb+1
@@ -765,8 +767,10 @@ usefront
         sta rl0+1
         lda #<(d18a1+1)
         sta rla+1
+        sta rlat+1
         lda #>d18a1
         sta rla+2
+        sta rlat+2
         sta rl0+2
         lda #<d18b1
         sta rlb+1
@@ -944,7 +948,7 @@ tnosu
         lda row
         cmp #ROWS
         bcs +
-        lda rowtl,x                 ; the next row's interrupt's operands (prep, inline)
+tpr     lda rowtl,x                 ; the next row's interrupt's operands (prep, inline)
         sta rtj+1
         lda rowth,x
         sta rtj+2
@@ -988,6 +992,22 @@ _sdn
         ldx savx
         lda sava
         rti
+
+; Trogg's x's-move row's tail, after troggc: tailend without the set-up (his ticks have none) or
+; the last row's check (his row before is never the last), so it's done sooner
+tailcx  lda #D011A
+        sta $d011
+        sty savy
+        ldx row
+rlat    lda d18a0+1,x
+        sta $d018
+        inx
+        stx row
+        txa
+        clc
+        adc bufoff
+        tax
+        jmp tpr
 
 ; Row x's interrupt: the operands it uses
 prep    lda covery,x
