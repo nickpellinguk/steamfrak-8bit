@@ -1143,22 +1143,30 @@ t28n
         jsr tmset
         ldx row
 t29n
-        cpx #37                     ; tick 36 (line 29): sprites 3-7 parked below the screen, their
+        cpx #36                     ; tick 35 (line 21): the top border's hazard on sprite 7 (btset)
+        bne t35n
+        jsr btset
+        ldx row
+t35n    cpx #37                     ; tick 36 (line 29): sprites 3-7 parked below the screen, their
         bne t36n                    ; pointers blank (there, lines 256-276, they're in the open
-        lda #255                    ; border), before tick 37 sets up those before the frame
-        sta $d007
+        lda #255                    ; border), before tick 37 sets up those before the frame; not
+        sta $d007                   ; 7 with the top border's hazard on it
         sta $d009
         sta $d00b
         sta $d00d
+        ldy bufoff
+        ldx btbon,y
+        bne +
         sta $d00f
-        jsr park
-        ldx row
++       jsr park
+        jsr apply0                  ; (tick 0's set-ups: their sprites parked, none shown till line
+        ldx row                     ;  47; here, not at tick 37, which has too much else to do)
 t36n
         .endif
         .if !TEST
-        cpx #38                     ; tick 37 (line 37): sprites 3-7 parked below the screen, then
-        bne t37n                    ; those set up before the frame (tick 0's slots), and the
-        lda $d012                   ; registers (in time for sprites from line 47, and leaving
+        cpx #38                     ; tick 37 (line 37): the registers, for those set up before the
+        bne t37n                    ; frame (tick 0's slots, at tick 36), in time for sprites from
+        lda $d012                   ; line 47 (and leaving
         cmp #41                     ; tick 38 little to do before row 0's). (On line 45, not
         bcc t37o                    ; 37: a tick was lost, a handler having taken over two; this
         jsr tmcov                   ; is tick 38's, and the count in step again from it)
@@ -1177,7 +1185,6 @@ t37o    jsr tmcov                   ; (sprite 0 the cover again, the timer done:
         sta $d01c
         lda #0                      ; (Trogg's outline black: sprite 1 may have been another's)
         sta $d028
-        jsr apply0
         jsr tick37                  ; (Trogg's sprites' first instances)
 t37n
         .endif
@@ -1232,6 +1239,12 @@ vspline lda vson
         beq vspx
         ldy v010r                   ; (the cover sprite's x back after the write: $d010)
         ldx #(D011A & $f8) | 2      ; (YSCROLL 2: line 50 a bad line, from the write)
+        lda $dc07                   ; (too late, the timer past the poll's mark already, a tick
+        bne +                       ;  before having overrun: no VSP this frame, rather than a
+        lda $dc06                   ;  slide out of reach)
+        cmp #VSPB
+        bcc vspx
++
 -       lda $dc07                   ; (the timer under 256: line 49)
         bne -
 -       lda $dc06                   ; (until line 50: read on its cycle -1 to 7)
@@ -1369,6 +1382,46 @@ tmreset lda #0
         sta tms1
         sta tmm
         jmp tmdraw
+        .section high
+; The top border's hazard, at tick 35 (line 21), on sprite 7 (at the head of its list: mux.asm's
+; btvmux), the buffer shown's: a dagger or a balloon above line 47, in the top border
+btset   ldy bufoff
+        lda btbon,y
+        beq _x
+        lda btbptr,y
+        sta SCR0 + $3ff
+        sta SCR1 + $3ff
+        sta SCR2 + $3ff
+        sta SCR3 + $3ff
+        lda #0
+        sta $d02e
+        lda btbx,y
+        sta $d00e
+        lda $d010
+        and #$7f
+        ldx btbxh,y
+        beq +
+        ora #$80
++       sta $d010
+        lda $d017
+        and #$7f
+        sta $d017
+        lda $d01d
+        and #$7f
+        sta $d01d
+        lda $d01b
+        and #$7f
+        sta $d01b
+        lda $d01c
+        and #$7f
+        ldx btbmc,y
+        beq +
+        ora #$80
++       sta $d01c
+        lda btby,y
+        sta $d00f
+_x      rts
+
 ; The bottom border's sprite, at tick 26 (line 261: the cover's last piece done at line 259), on
 ; sprite 0 (the timer from tick 29): a balloon or a dagger below line 261, the multiplexer's
 ; buffer shown's (mux.asm's bbcand), its y the line's low byte, as the VIC compares it
@@ -1404,6 +1457,7 @@ bbset   ldy bufoff
         lda bby,y
         sta $d001
 _x      rts
+        .send high
 
 tmcov   lda #(SPRCOVER & $3fff) / 64 ; (and back: the cover)
         sta SCR0 + $3f8
