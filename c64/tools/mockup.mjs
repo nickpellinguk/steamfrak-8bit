@@ -219,6 +219,7 @@ const KEY = ['..........BBBB..',
 const KEYHALF = [2, 5], KEYDROP = 1;
 const tag = new Uint8Array(W * H), ovl = new Int8Array(W * H).fill(-1);   // (ovl: the keys' yellow, a sprite behind them when one's free)
 const SH = SCRUB.length, placed = [];   // (tag: 1 a Scrubbly's, 2 its teeth's yellow, 4 its eyes')         // 1 a Scrubbly's, 2 its teeth's cells (lines 24-31, columns 8-23), 3 its feet (lines 40-43)
+// (the hazards' grids, and the front end's cast: the Scrubbly as drawn, the Hooter, the Poglet)
 // (each gem's and key's place, as drawn, and its tight box: the solid pixels' extent; picks.json)
 const picks = [], pickGrids = {}, tightBox = g => { let x0 = 99, x1 = -1, y0 = 99, y1 = -1; g.forEach((r, y) => r.forEach((p, x) => { if (p >= 0) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); } })); return { x0, x1, y0, y1 }; };
 e.draw_img.forEach((img, k) => {
@@ -382,7 +383,7 @@ writeFileSync(`${OUT}/sprite.txt`, '; The Scrubbly\'s sprite, 24 x 21 (# solid m
 // (for the demo: where the Scrubblies' sprites go, the sprite, and the picture with them but
 // without the keys' sprites)
 // (and the balloon, dagger and FRAK! bubble: their pixels, and their origins' place in them)
-const hazards = Object.fromEntries(['IMG_Balloon', 'IMG_DaggerLR', 'IMG_Frak'].map(n => { const { im, out } = imagePixels(images.findIndex(m => m.name === n)); return [n, { grid: out, xo: im.xo, yo: im.yo }]; }));
+const hazards = Object.fromEntries(['IMG_Balloon', 'IMG_DaggerLR', 'IMG_Frak', 'IMG_Scrubbly', 'IMG_Hooter', 'IMG_Poglet'].map(n => { const { im, out } = imagePixels(images.findIndex(m => m.name === n)); return [n, { grid: out, xo: im.xo, yo: im.yo }]; }));
 if (!SUF) writeFileSync(`${OUT}/picks.json`, JSON.stringify({ picks, scrubBox: tightBox(SCRUB), grids: { IMG_Scrubbly: SCRUB, ...pickGrids }, hazards }));
 writeFileSync(`${OUT}/scrub${SUF}.json`, JSON.stringify({ placed: placed.map(({ left, top }) => ({ x: left - 8, top })), sprite: SPR.map(r => r.join('')) }));
 writeFileSync(`${OUT}/charsspr${SUF}.bin`, shown.subarray(0, W * HS));

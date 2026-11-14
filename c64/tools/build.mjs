@@ -91,7 +91,9 @@ if (PM !== null) spr = [1, 2, 3, 4, 5, 6, 7].map(n => ({ n, y: (+PM >> n & 1) ? 
 const maskOn = line => spr.reduce((m, s) => line >= s.y + CONV && line < s.y + CONV + (s.exp ? 42 : 21) ? m | 1 << s.n : m, COVER);
 const masks = [], masks3 = [];
 for (let r = 0; r < 25; r++) { masks3.push(maskOn(54 + 8 * r)); masks.push(maskOn(55 + 8 * r)); }
-defs.push('-D', `TEST=${TEST ? 1 : 0}`, '-D', `BALLTEST=${process.argv.includes('--balltest') ? 1 : 0}`, '-D', `NOBALLS=${process.argv.includes('--noballs') ? 1 : 0}`, '-D', `MUXTIME=${process.argv.includes('--muxtime') ? 1 : 0}`, '-D', `PROFILE=${process.argv.includes('--profile') ? 1 : 0}`, '-D', `SLACK=${process.argv.includes('--slack') ? 1 : 0}`, '-D', `INSANE=${process.argv.includes('--insane') ? 1 : 0}`, '-D', `TROGGX=${arg('troggx', 0)}`, '-D', `TROGGY=${arg('troggy', 0)}`, '-D', `TROGGF=${arg('troggf', 7)}`, '-D', `KEYTEST=${process.argv.includes('--keys') ? 1 : 0}`, '-D', `SCROLLDEMO=${process.argv.includes('--scrolldemo') ? 1 : 0}`, '-D', `CAMTEST=${process.argv.includes('--camtest') ? 1 : 0}`, '-D', `INVINCIBLE=${process.argv.includes('--invincible') ? 1 : 0}`, '-D', `STILL=${process.argv.includes('--still') ? 1 : 0}`);
+defs.push('-D', `TEST=${TEST ? 1 : 0}`, '-D', `BALLTEST=${process.argv.includes('--balltest') ? 1 : 0}`, '-D', `NOBALLS=${process.argv.includes('--noballs') ? 1 : 0}`, '-D', `MUXTIME=${process.argv.includes('--muxtime') ? 1 : 0}`, '-D', `PROFILE=${process.argv.includes('--profile') ? 1 : 0}`, '-D', `SLACK=${process.argv.includes('--slack') ? 1 : 0}`, '-D', `INSANE=${process.argv.includes('--insane') ? 1 : 0}`, '-D', `TROGGX=${arg('troggx', 0)}`, '-D', `TROGGY=${arg('troggy', 0)}`, '-D', `TROGGF=${arg('troggf', 7)}`, '-D', `KEYTEST=${process.argv.includes('--keys') ? 1 : 0}`, '-D', `SCROLLDEMO=${process.argv.includes('--scrolldemo') ? 1 : 0}`, '-D', `CAMTEST=${process.argv.includes('--camtest') ? 1 : 0}`, '-D', `INVINCIBLE=${process.argv.includes('--invincible') ? 1 : 0}`, '-D', `STILL=${process.argv.includes('--still') ? 1 : 0}`,
+    // (the front end: the attract screen first; not in test builds, nor with --nofront)
+    '-D', `FRONT=${['--nofront', '--keys', '--scrolldemo', '--camtest', '--profile', '--slack', '--muxtime', '--measure', '--test', '--balltest', '--still'].some(a => process.argv.includes(a)) ? 0 : 1}`);
 const testy = TEST ? spr.map(s => s.y) : [0];
 const sx = scrub.placed.map(p => 31 + p.x);
 writeFileSync(DIR + 'masks.inc', `; made by tools/build.mjs\nmasks   .byte ${masks.join(', ')}\nmasks3  .byte ${masks3.join(', ')}\n` +
@@ -206,6 +208,40 @@ writeFileSync(DIR + 'masks.inc', `; made by tools/build.mjs\nmasks   .byte ${mas
         B('tmA', tab(g => g << 3)) + B('tmB1', tab(g => g >> 1)) + B('tmB2', tab(g => (g & 1) << 7)) + B('tmC', tab(g => g << 1)) +
         B('tmcol', colon));
 }
+// The front end's cast (front.asm): each as hi-res outline sprites (its black) in front of
+// multicolour infill sprites (yellow %01, magenta %11, double-width pixels: a pair's magenta if
+// either is, else its yellow), 24 wide, 21 high; the Scrubbly (33 wide) two sprites across, each
+// cast member two down (21 rows, then the rest). Trogg from his standing frame as the game shows
+// it (trogg.json's shown, 26 wide): his head (rows 0-5) cut 2 pixels further right than his body
+// (rows 6-33), front.asm moving the top sprites' x 2 left between them. frontspr.bin, the blocks
+// in front.inc's order; front.inc, the text in screen codes (the C64's lower/upper-case set)
+{
+    const pj = JSON.parse(readFileSync(DIR + 'picks.json')), H = pj.hazards;
+    const tj = JSON.parse(readFileSync(DIR + 'trogg.json')), tf = tj.find(f => f.name.includes('(and sr)'));
+    if (!tf) throw new Error('no standing Trogg frame');
+    const at = (g, x, y) => (y >= 0 && y < g.length && x >= 0 && x < g[y].length) ? g[y][x] : -1;
+    const block = (g, x0, y0, xs = () => x0) => {           // (outline and infill: rows y0 to y0 + 20, columns from xs(row))
+        const o = Buffer.alloc(64), m = Buffer.alloc(64);
+        for (let r = 0; r < 21; r++) { const xa = xs(y0 + r);
+            for (let c = 0; c < 24; c++) if (at(g, xa + c, y0 + r) === 3) o[r * 3 + (c >> 3)] |= 0x80 >> (c & 7);
+            for (let i = 0; i < 12; i++) { const two = [at(g, xa + 2 * i, y0 + r), at(g, xa + 2 * i + 1, y0 + r)];
+                const v = two.includes(2) ? 3 : two.includes(1) ? 1 : 0; m[r * 3 + (i >> 2)] |= v << (6 - 2 * (i & 3)); } }
+        return [o, m];
+    };
+    const tg = tf.shown, txs = y => y < 6 ? 2 : 0;          // (Trogg: the head's window 2 right of the body's)
+    const [t0o, t0m] = block(tg, 0, 0, txs), [t1o, t1m] = block(tg, 0, 21, txs);
+    const S = H.IMG_Scrubbly.grid, [s0, s0m] = block(S, 0, 0), [s1, s1m] = block(S, 24, 0), [s2, s2m] = block(S, 0, 21), [s3, s3m] = block(S, 24, 21);
+    const Ho = H.IMG_Hooter.grid, [h0, h0m] = block(Ho, 0, 0), [h1, h1m] = block(Ho, 0, 21);
+    const Po = H.IMG_Poglet.grid, [p0, p0m] = block(Po, 0, 0), [p1, p1m] = block(Po, 0, 21);
+    const blocks = [t0o, t1o, t0m, t1m, s0, s1, s2, s3, s0m, s1m, s2m, s3m, h0, h1, h0m, h1m, p0, p1, p0m, p1m];
+    writeFileSync(DIR + 'frontspr.bin', Buffer.concat(blocks));
+    const sc = str => [...str].map(c => c >= 'a' && c <= 'z' ? c.charCodeAt(0) - 96 : c >= 'A' && c <= 'Z' ? c.charCodeAt(0) - 64 + 64 : c === '@' ? 0 : c.charCodeAt(0));
+    const T = [[0, 16, 'The Cast'], [1, 16, '--------'], [4, 22, 'Trogg'], [7, 17, 'vs.'], [10, 22, 'Scrubbly'], [15, 22, 'Hooter'],
+               [19, 22, 'Poglet'], [22, 6, 'Collect all the keys to win!'], [23, 7, '(C) 1984-2026 Nick Pelling']];
+    writeFileSync(DIR + 'front.inc', '; made by tools/build.mjs: the front end\'s text (front.asm): screen address, length, screen codes\nfetext\n' +
+        T.map(([r, c, t]) => `        .word SCR0 + ${r * 40 + c}\n        .byte ${t.length}, ${sc(t).join(', ')}\n`).join('') + '        .word 0\n' +
+        `FEBLOCKS = ${blocks.length}\n`);
+}
 const sb = Buffer.alloc(64);
 scrub.sprite.forEach((row, y) => { for (let k = 0; k < 3; k++) sb[y * 3 + k] = parseInt(row.slice(k * 8, k * 8 + 8), 2); });
 writeFileSync(DIR + 'scrubspr.bin', sb);
@@ -283,7 +319,8 @@ writeFileSync(DIR + 'rom.inc', `START = $${lbl.start.toString(16)}\nPAGES = ${Ma
 execFileSync('64tass', ['-q', '-a', '-C', '-b', '-I', DIR, '-o', DIR + 'rom.bin', SRC + 'rom.asm'], { cwd: DIR, stdio: 'inherit' });
 const rom = readFileSync(DIR + 'rom.bin');          // $a000-$bfff, then $e000-$ffff
 writeFileSync(DIR + 'basic.rom', rom.subarray(0, 0x2000)); writeFileSync(DIR + 'kernal.rom', rom.subarray(0x2000, 0x4000));
-writeFileSync(DIR + 'chargen.rom', Buffer.alloc(0x1000));
+try { execFileSync('python3', [TOOLS + 'standinfont.py', DIR + 'chargen.rom'], { stdio: 'ignore' }); }   // (a readable stand-in font, for the front end's text in tests)
+catch { writeFileSync(DIR + 'chargen.rom', Buffer.alloc(0x1000)); }
 if (process.argv.includes('--run')) {
     const shot = arg('shot', DIR + 'shot.png');
     if (existsSync(shot)) unlinkSync(shot);

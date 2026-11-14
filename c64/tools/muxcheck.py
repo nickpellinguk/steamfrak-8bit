@@ -4,7 +4,8 @@
 # and tail suit the sprites on its lines 3 and 4 (Trogg's included, and his rows' own tails), that
 # the registers in force fit every sprite on every line it's shown, that nothing is set up in the
 # ticks left to Trogg, and that the cover sprite is expanded.
-#   python3 muxcheck.py [FRAMES [SECONDS]]     (defaults 8 frames, from 6 s; on the last build)
+#   python3 muxcheck.py [FRAMES [SECONDS]]     (defaults 8 frames, from 6 s; on the last build,
+#                                              made with --nofront: the game, not the attract screen)
 import os, re, subprocess, sys
 C64=os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 lbl={}

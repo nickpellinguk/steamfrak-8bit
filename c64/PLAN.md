@@ -516,6 +516,20 @@ reference for everything else is that code (`../src/frak.asm`): `check_collision
       sprites 3-7 (y 255, blank pointers) moved to tick 36 to make room. Checked: no garbage in 80
       frames (scrolling demo, Insane), the timer in all; rollover and 9:59; keytest exact,
       muxcheck 0 problems, no overruns.
+      The front end (front.asm): the attract screen, as the BBC Master's and the CPC's ("The
+      Cast": the FRAK! bubble, Trogg vs. the Scrubbly, the Hooter and the Poglet, and the two
+      lines below), shown at the start till Space, Return, P, Y or a fire button. Text in the
+      C64's own font, copied from its character ROM ($01 = $32: the ROM at $d000, $a000-$bfff
+      still RAM, where the code is) to $4800, in a plain text screen at $4000 (both the game's,
+      cleared again after). The cast as sprites (build.mjs: frontspr.bin, 20 blocks at $5a00):
+      hi-res outlines in front of multicolour infills, Trogg from his standing frame as the game
+      shows it (his head 2 right of his body: the top sprites' x moved at line 72), the Scrubbly
+      2 across; six raster interrupts set the 8 sprites up band by band, each once the band
+      before has done with them (the bubble in the opened top border; Trogg; the Scrubbly from
+      line 109, after Trogg's bottom sprites end; the Hooter, then the Poglet, at 157). Not in
+      test builds (key scripts, --slack, --profile ...) or with --nofront (muxcheck needs it).
+      The VICE here has no Commodore ROMs: build.mjs writes a stand-in character ROM
+      (tools/standinfont.py, from Pillow's font) so the text shows in tests.
 14. **Sound.** The sound effects on the SID (`SFX_CHING` for a pickup, `SFX_SQUEAL`, `SFX_DAGGER`,
     `SFX_POP`, `SFX_THUD`), from the BBC version's definitions, played in the border; the music
     (the victory tune) after. Its time measured against the budget from 13.
