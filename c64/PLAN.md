@@ -609,7 +609,7 @@ NTSC machine instead of a garbled screen; the VSP crash test on hardware (VSP.md
     start columns, 12-pixel units of 3 kinds (grain; grain with a stub hanging under it; a knot),
     which share their edge columns so any follow any, and 2 end columns. On the C64 each unit is
     8 pixels: grain and stub the BBC's with the 4 most redundant interior columns dropped, the
-    knot drawn for 8 (its ring and core); the first and last characters the start or end columns
+    knot drawn for 8 (as the BBC's, no sides: a dash above and below an elongated 4 x 2 core); the first and last characters the start or end columns
     and a grain squeezed to 6. A log's middle characters take the BBC's units by position along
     it (a knot or stub once, a stub not where a rope hangs or off the map); the stub under the log
     black on background. Bodies to the nearest 8 (the BBC's 18 + 12k).

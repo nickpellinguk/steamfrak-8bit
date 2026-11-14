@@ -65,9 +65,10 @@ const C8 = Object.fromEntries(Object.entries(bbcUnits).map(([k, r]) => [k, squee
 // (the stub: under the log black on background (its magenta black), and the background in the
 // log's last 2 lines, where it breaks off, black: each half 2 colours)
 C8.s = C8.s.map((r, l) => l < 10 ? r : l < 12 ? r.replace(/0/g, '3') : r.replace(/2/g, '3').replace(/0/g, '-'));
-// (the knot drawn for 8 columns, squeezing loses its middle: the BBC's ring, 6 wide on rows 2-7,
-// round its 2 x 2 core; the edge columns as every unit's)
-C8.k = ['33333333', '22222222', '22333322', '33222233', '23233232', '33233233', '23222232', '22333322', '33222233', '22333322', '22222222', '33333333',
+// (the knot drawn for 8 columns, squeezing loses its middle: as the BBC's, no sides, a dash above
+// (6 wide, row 2) and below (row 7) an elongated core (4 x 2, rows 4-5); the edge columns as
+// every unit's)
+C8.k = ['33333333', '22222222', '23333332', '32222223', '22333322', '32333323', '22222222', '23333332', '33222233', '22333322', '22222222', '33333333',
         '--------', '--------', '--------', '--------'];
 for (const k of 'gk') C8[k] = C8[k].map((r, l) => l < 12 ? r : '--------');
 notes.push(`log units: grain and stub the BBC's 12 columns squeezed to 8, the knot drawn for 8`);
