@@ -14,7 +14,7 @@ for line in open(os.path.join(B, 'frak64.lbl')):
     m = re.match(r'^(\w+)\s*=\s*(\$?)([0-9a-fA-F]+)', line)
     if m: lbl[m.group(1)] = int(m.group(3), 16 if m.group(2) else 10)
 tab = {}
-for f in ('scrpatch.inc', 'collide.inc'):
+for f in ('scrpatch.inc', 'collide.inc', 'lvtab.inc'):
     for line in open(os.path.join(B, f)):
         m = re.match(r'^(\w+)\s+\.byte ([\d, ]+)$', line.strip())
         if m: tab[m.group(1)] = [int(v) for v in m.group(2).split(',')]
@@ -61,7 +61,7 @@ for t in range(w[1]):
     call(mem, 'gametick')
     if t < w[1] - 1 and (mem[lbl['tx']] != 100 or not mem[lbl['won']]): still = False
 end = (mem[lbl['won']], mem[lbl['tx']] | mem[lbl['tx'] + 1] << 8, any(mem[lbl['picked']:lbl['picked'] + NP]), mem[lbl['tops']:lbl['tops'] + MAPN] == tops0)
-want_x = int(re.search(r'TSTARTX\s*=\s*(\d+)', open(os.path.join(B, 'geometry.inc')).read()).group(1))
+want_x = int(re.search(r'TSTARTX\s*=\s*(\d+)', open(os.path.join(B, 'lvtab.inc')).read()).group(1))
 ok = w == (1, 350) and still and end == (0, want_x, False, True)
 if not ok: bad += 1
 print(f'the level complete: won {w[0]}, pause {w[1]} ticks, still through it {still}; after it, won {end[0]}, his x {end[1]} (start {want_x}), anything still picked up {end[2]}, the map as built {end[3]}')

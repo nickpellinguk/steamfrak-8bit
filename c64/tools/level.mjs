@@ -19,8 +19,13 @@
 //      chars*.bin and charsspr*.bin (the characters as shown, for compare.py), level.png
 import { readFileSync, writeFileSync } from 'fs';
 import { deflateSync } from 'zlib';
-const LV = new URL('../levels/', import.meta.url).pathname, DIR = new URL('../build/', import.meta.url).pathname;
-const NAME = process.argv.slice(2).find(a => !a.startsWith('--')) || 'A_1', ROW0 = 3, Y0 = ROW0 * 8;
+const LV = new URL('../levels/', import.meta.url).pathname, BUILD = new URL('../build/', import.meta.url).pathname;
+const opt = k => { const i = process.argv.indexOf('--' + k); return i < 0 ? null : process.argv[i + 1]; };
+// (--out DIR: where its files go, under build/, else build/ itself; --mapnc N: its map N columns,
+// padded with blank, so every level's is the same width in memory)
+const DIR = opt('out') ? `${BUILD}${opt('out').replace(/\/?$/, '/')}` : BUILD;
+import { mkdirSync } from 'fs'; mkdirSync(DIR, { recursive: true });
+const NAME = process.argv.slice(2).find((a, i, v) => !a.startsWith('--') && !(i && v[i - 1].startsWith('--') && v[i - 1] !== '--preview')) || 'A_1', ROW0 = 3, Y0 = ROW0 * 8;
 // (--preview: only the checks, the glyph counts (a set over 64 reported, not refused) and
 // build/level_<name>.png; nothing for the game)
 const PREVIEW = process.argv.includes('--preview');
@@ -37,7 +42,7 @@ for (const l of lines) {
     placed.push({ name: f[0], x: +f[1], y: +f[2] });
 }
 for (const k of ['type', 'size', 'width', 'height', 'trogg']) if (!meta[k]) fail(`no "${k}" line`);
-const [NC, ROWS] = meta.size.map(Number), NHR = ROWS * 2, W = NC * 8, HS = ROWS * 8;
+const [NCL, ROWS] = meta.size.map(Number), NC = Math.max(NCL, +(opt('mapnc') || 0)), NHR = ROWS * 2, W = NC * 8, HS = ROWS * 8;   // (NCL: its own columns)
 const typeFile = JSON.parse(readFileSync(`${LV}${meta.type[0]}.json`));
 const common = JSON.parse(readFileSync(LV + 'common.json')).pieces, typed = typeFile.pieces;
 const pieceOf = n => typed[n] || common[n] || fail(`no piece "${n}"`);
@@ -130,6 +135,8 @@ inc += `scrplo  .byte ${cells.map(q => q & 255).join(', ')}\nscrphi  .byte ${cel
 inc += `scrpr   .byte ${cells.map(q => (q / NC) | 0).join(', ')}\nscrpc   .byte ${cells.map(q => q % NC).join(', ')}\n`;
 inc += `scrpt   .byte ${cells.map(newT).join(', ')}\nscrpb   .byte ${cells.map(newB).join(', ')}\n`;
 writeFileSync(DIR + 'scrpatch.inc', inc);
+writeFileSync(DIR + 'patch.json', JSON.stringify({ STRING, NCOMMON, scrpn: sp.map(g => g.length), scrpi: starts(sp, 0), pkpn: pp.map(g => g.length), pkpi: starts(pp, ns),
+    cells, scrpr: cells.map(q => (q / NC) | 0), scrpc: cells.map(q => q % NC), scrpt: cells.map(newT), scrpb: cells.map(newB) }));
 writeFileSync(DIR + 'charsets.bin', cs); writeFileSync(DIR + 'bandset.bin', bandset);
 writeFileSync(DIR + 'common.bin', cs.subarray(0, NCOMMON * 8));
 writeFileSync(DIR + 'levelcs.bin', Buffer.concat([cs.subarray(NCOMMON * 8, 512), cs.subarray(512 + NCOMMON * 8, 1024)]));
@@ -141,35 +148,43 @@ const shape = name => {      // (the grid from its first row and column with any
     const a = pieceOf(name).art, own = ch => /[0-3S]/.test(ch);
     const r0 = a.findIndex(r => [...r].some(own)), c0 = Math.min(...a.map(r => { const i = [...r].findIndex(own); return i < 0 ? 99 : i; }));
     const r1 = a.length - 1 - [...a].reverse().findIndex(r => [...r].some(own));
-    const g = a.slice(r0, name === 'scrubbly' ? r1 + 1 : a.length).map(r => [...r.slice(c0)].map(ch => !own(ch) && ch !== '0' ? -1 : ch === 'S' ? 1 : +ch));
+    const g = a.slice(r0, pieceOf(name).enemy ? r1 + 1 : a.length).map(r => [...r.slice(c0)].map(ch => !own(ch) && ch !== '0' ? -1 : ch === 'S' ? 1 : +ch));
     return { g, dx: c0, dy: r0 };
 };
 const tightBox = g => { let x0 = 99, x1 = -1, y0 = 99, y1 = -1; g.forEach((r, y) => r.forEach((p, x) => { if (p >= 0) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); } })); return { x0, x1, y0, y1 }; };
 const IMG = { key: 'IMG_Key', gem: 'IMG_Gem' }, grids = {};
 const pickOut = picks.map(o => { const s = shape(o.name); grids[IMG[o.name]] = s.g; return { name: IMG[o.name], left: o.x + s.dx, top: o.y + s.dy + Y0, box: tightBox(s.g) }; });
 const sc = enemies.length ? shape(enemies[0].name) : null;
-if (sc) { if (sc.g[0].length > 40) sc.g = sc.g.map(r => r.slice(0, 40)); while (sc.g[0].length < 40) sc.g.forEach(r => r.push(-1)); grids.IMG_Scrubbly = sc.g; }
-const scrubPlaced = enemies.map(o => ({ x: o.x + sc.dx - 8, top: o.y + sc.dy }));
+// (the enemy's shape, as grids.IMG_Scrubbly whatever it is: the Scrubbly's 40 wide; each placed: its
+// shape's corner (ax, ay) and its sprite's (sx, sy), in the map; the Scrubbly's sprite 8 left of
+// it, an enemy with spriteAt from its piece's corner by that)
+if (sc) { if (enemies[0].name.startsWith('scrubbly')) { if (sc.g[0].length > 40) sc.g = sc.g.map(r => r.slice(0, 40)); while (sc.g[0].length < 40) sc.g.forEach(r => r.push(-1)); } grids.IMG_Scrubbly = sc.g; }
+const scrubPlaced = enemies.map(o => { const p = pieceOf(o.name), ax = o.x + sc.dx, ay = o.y + sc.dy;
+    return p.spriteAt ? { ax, ay, sx: o.x + p.spriteAt[0], sy: o.y + p.spriteAt[1] } : { ax, ay, sx: ax - 8, sy: ay }; });
 const hz = JSON.parse(readFileSync(LV + 'hazards.json')).images;
 const hazards = Object.fromEntries(Object.entries(hz).map(([k, v]) => [k, { xo: v.xo, yo: v.yo, grid: v.grid.map(r => [...r].map(ch => ch === '-' ? -1 : +ch)) }]));
 writeFileSync(DIR + 'picks.json', JSON.stringify({ picks: pickOut, scrubBox: sc ? tightBox(sc.g) : null, grids, hazards }));
-const spr = sc ? pieceOf(enemies[0].name).sprite : Array(21).fill('.'.repeat(24));
-writeFileSync(DIR + 'scrub.json', JSON.stringify({ placed: scrubPlaced, sprite: spr.map(r => r.replace(/#/g, '1').replace(/\./g, '0')) }));
+// (its sprite as bits: hi-res, # set; or multicolour, Y 01 ($d025), M 11 ($d026); and how it's
+// shown: hi-res expanded both ways, magenta, or multicolour expanded down; its box for the yoyo,
+// its shape's; the type's background)
+const ep = sc ? pieceOf(enemies[0].name) : null, mc = !!ep?.mcsprite;
+const spr = !sc ? Array(21).fill('0'.repeat(24)) : mc ? ep.mcsprite.map(r => [...r].map(c => ({ '.': '00', Y: '01', M: '11' }[c])).join('')) : ep.sprite.map(r => r.replace(/#/g, '1').replace(/\./g, '0'));
+writeFileSync(DIR + 'scrub.json', JSON.stringify({ placed: scrubPlaced, sprite: spr, mc, w: sc ? sc.g[0].length : 0, h: sc ? sc.g.length : 0, background: typeFile.background || 'cyan' }));
 const plats = [], lads = [];
 for (const o of placed) { const p = pieceOf(o.name);
     for (const [dx, dy, w] of p.plats || []) plats.push({ x: o.x + dx, y: o.y + dy + Y0, w });
     if (p.ladder) { const [dx, dy, h, ext] = p.ladder; lads.push({ x: o.x + dx, y: o.y + dy + Y0, h, ext }); } }
 const [tx, ty] = meta.trogg.map(Number);
-writeFileSync(DIR + 'geometry.json', JSON.stringify({ plats, lads, trogg: [tx, ty + Y0], w: +meta.width[0], h: +meta.height[0], row0: ROW0 }, null, 1));
+writeFileSync(DIR + 'geometry.json', JSON.stringify({ plats, lads, trogg: [tx, ty + Y0], w: +meta.width[0], h: +meta.height[0], row0: ROW0, nc: NCL }, null, 1));
 
 // ---- The characters as shown (each map), with the Scrubblies' sprites behind, and a picture
 const shown = (st, withSpr) => {
     const px = new Uint8Array(W * HS);
     for (let hr = 0; hr < NHR; hr++) for (let c = 0; c < NC; c++) { const t = st.m[hr * NC + c] || { g: BLANK, b: 0 };
         for (let l = 0; l < 4; l++) { const v = parseInt(t.g.slice(l * 2, l * 2 + 2), 16); for (let x = 0; x < 8; x++) px[(hr * 4 + l) * W + c * 8 + x] = v & 0x80 >> x ? 3 : t.b; } }
-    if (withSpr) for (const s of (st === off ? [] : scrubPlaced)) for (let y = 0; y < 42; y++) for (let x = 0; x < 48; x++) {
-        const X = s.x + x, Y = s.top + y;
-        if (spr[y >> 1][x >> 1] === '#' && X >= 0 && X < W && Y < HS) { const q = Y * W + X, hr = Y >> 2, c = X >> 3, t = st.m[hr * NC + c] || { g: BLANK }; if (!(parseInt(t.g.slice((Y & 3) * 2, (Y & 3) * 2 + 2), 16) & 0x80 >> (X & 7))) px[q] = 2; }
+    if (withSpr && !mc) for (const s of (st === off ? [] : scrubPlaced)) for (let y = 0; y < 42; y++) for (let x = 0; x < 48; x++) {
+        const X = s.sx + x, Y = s.sy + y;
+        if (spr[y >> 1][x >> 1] === '1' && X >= 0 && X < W && Y < HS) { const q = Y * W + X, hr = Y >> 2, c = X >> 3, t = st.m[hr * NC + c] || { g: BLANK }; if (!(parseInt(t.g.slice((Y & 3) * 2, (Y & 3) * 2 + 2), 16) & 0x80 >> (X & 7))) px[q] = 2; }
     }
     return px;
 };

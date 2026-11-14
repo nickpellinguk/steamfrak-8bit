@@ -16,7 +16,7 @@ for line in open(os.path.join(B, 'frak64.lbl')):
     m = re.match(r'^(\w+)\s*=\s*(\$?)([0-9a-fA-F]+)', line)
     if m: lbl[m.group(1)] = int(m.group(3), 16 if m.group(2) else 10)
 tab, const = {}, {}
-for line in open(os.path.join(B, 'collide.inc')):
+for line in [l for f in ('collide.inc', 'lvtab.inc') for l in open(os.path.join(B, f))]:
     m = re.match(r'^(\w+)\s+\.byte (.*)', line)
     if m and re.fullmatch(r'[\d, ]+', m.group(2).strip()): tab[m.group(1)] = [int(v) for v in m.group(2).split(',')]
     m = re.match(r'^(\w+)\s*=\s*(\d+)', line)
@@ -50,7 +50,7 @@ def hit(f, tx, ty, os_, ol, ot, exact=False):  # spans (or, exact: pixels) of hi
             if set(x + hl for x in xs) & set(x + ol for x in os_[orow]): return True
         elif xs[0] + hl <= os_[orow][-1] + ol and os_[orow][0] + ol <= xs[-1] + hl: return True
     return False
-scrimg = [(p['x'] + 8, p['top'] + 24) for p in SJ['placed']]
+scrimg = [(p['ax'], p['ay'] + 24) for p in SJ['placed']]
 pkimg = [(p['left'], p['top'], KS[p['name']]) for p in PJ['picks']]
 
 prg = open(os.path.join(B, 'frak64.prg'), 'rb').read()

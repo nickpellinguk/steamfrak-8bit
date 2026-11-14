@@ -271,8 +271,8 @@ tpair   sta tq0+2
         rts
 
 ; ---- Data
-tx      .word TROGGX ? TROGGX : TSTARTX     ; (his place in the level: x, and his feet's y;
-ty      .word TROGGY ? TROGGY : TSTARTY     ;  the start, from geometry.json)
+tx      .word TROGGX                ; (his place in the level: x, and his feet's y; the level's
+ty      .word TROGGY                ;  start, lv_tstartx/y, set by loadlevel unless TROGGX/Y)
 tfr     .byte TROGGF
 tfrw    .byte $ff                   ; (the frame whose pointers are in tpen)
 tpen    .fill TSET

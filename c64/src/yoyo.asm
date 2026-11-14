@@ -161,9 +161,9 @@ yoyo_collide
         ldx #NS - 1
 _lp     lda knocked,x
         bne _nx
-        lda scl,x                   ; yoyo left < its left + 40 ?
+        lda scl,x                   ; yoyo left < its left + its width (the level's enemy's: lv_enw) ?
         clc
-        adc #40
+        adc lv_enw
         sta ytmp
         lda sch,x
         adc #0
@@ -178,9 +178,9 @@ _lp     lda knocked,x
         lda yb_r+1
         sbc sch,x
         bcc _nx
-        lda sct,x                   ; yoyo top < its top + 42 ?
+        lda sct,x                   ; yoyo top < its top + its height (lv_enh) ?
         clc
-        adc #42
+        adc lv_enh
         sta ytmp
         lda #0
         adc #0
@@ -334,7 +334,7 @@ pickup  lda #1
         bne _gem
         inc keysgot
         lda keysgot
-        cmp #NKEYS
+        cmp lv_nkeys
         beq _last
         lda #1                      ; (a key, not the last: a checkpoint due)
         sta savecp
@@ -462,6 +462,8 @@ _gn     dex
 unknock ldx #NS - 1
 _s      lda knocked,x
         beq _n
+        lda knock0,x                ; (a slot the level doesn't use: knocked off for good)
+        bne _n
         lda #0
         sta knocked,x
         inc scrchg                  ; (the Scrubblies' sprites to see to: mux.asm's game)
@@ -934,7 +936,7 @@ _o      sta ip0+1
         sta ip0+1
         rts
 
-        .include "scrpatch.inc"     ; STRING; each Scrubbly's patch (pack.mjs)
+        .include "scrpatch.inc"     ; STRING, NCOMMON (each level's patches: its block, lvllayout.inc)
         .send high
 
 ; The yoyo's 4 frames (the BBC version's IMG_Yoyo_0-3, its black; 7 x 6), loaded straight into

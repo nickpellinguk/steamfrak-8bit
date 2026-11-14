@@ -12,35 +12,73 @@
 ; new one); a copy from the last distance (n bytes; then 0: literals, 1: a new copy); a new copy
 ; (h, then a byte b: distance (h - 1) * 256 + b + 1, h = 256 the end; then n - 1; then 0:
 ; literals, 1: another new copy). It starts with literals.
-ubits   = $f0                       ; (zero page: free in the game, $7e-$fa)
+ubits   = $f0                       ; (zero page: free in the game, $7f-$fa)
 usrc    = $f1
 udp     = $f3
 uptr    = $f5
 utmp    = $f7
 udist   = $f9
 
+ulst    = $fb                       ; (the level's stream list: free once the front end's done)
+
         .section high
+; Level A (0 to NLEVELS - 1): its streams unpacked (lvlpack.inc: its glyphs, its enemy's sprite,
+; its map, its block of tables and numbers at LVL), then what's made from them: the enemy slots it
+; doesn't use knocked off for good (knock0), its enemy's sprite's flags (enfl), Trogg at its start
 loadlevel
-        ldx #0
--       lda lvlstreams,x            ; (each stream: its packed data, where it goes)
+        sta level
+        asl
+        tax
+        lda lvltab,x
+        sta ulst
+        lda lvltab + 1,x
+        sta ulst + 1
+-       ldy #0
+        lda (ulst),y                ; (each stream: its packed data, where it goes)
         sta usrc
-        lda lvlstreams + 1,x
+        iny
+        lda (ulst),y
         sta usrc + 1
         ora usrc
         beq _x
-        lda lvlstreams + 2,x
+        iny
+        lda (ulst),y
         sta udp
-        lda lvlstreams + 3,x
+        iny
+        lda (ulst),y
         sta udp + 1
-        txa
-        pha
         jsr unpack
-        pla
+        lda ulst
         clc
         adc #4
-        tax
+        sta ulst
+        bcc -
+        inc ulst + 1
         bne -
-_x      rts
+_x      ldx #NS - 1
+-       lda knock0,x
+        sta knocked,x
+        dex
+        bpl -
+        lda #VEXPY | VEXPX | VBEHIND | VFIRST       ; (hi-res, expanded both ways)
+        ldx lv_enmc
+        beq +
+        lda #VEXPY | VMC | VBEHIND | VFIRST         ; (multicolour, expanded down)
++       sta enfl
+        .if !TROGGX
+        lda lv_tstartx
+        sta tx
+        lda lv_tstartx + 1
+        sta tx + 1
+        lda lv_tstarty
+        sta ty
+        lda lv_tstarty + 1
+        sta ty + 1
+        .endif
+        rts
+level   .byte 0                     ; (the level being played)
+chosen  .byte 0                     ; (the level to play: front.asm's menu chooses)
+enfl    .byte 0                     ; (its enemy's sprite's flags, mux.asm)
 
 unpack  ldy #0
         lda #$80

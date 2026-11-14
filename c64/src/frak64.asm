@@ -47,7 +47,7 @@ TICK    = 504                       ; the timer's period: 8 lines
 EARLY   = 160                        ; (its first period that much shorter: see irq2)
 D011A   = $5b                       ; ECM, display on, 25 rows, YSCROLL 3 (rows start at 51+8n)
 D011B   = $5f                       ; ... YSCROLL 7 (the forced bad line at 55+8n)
-MAXX    = (NC - 40) * 8             ; the furthest scroll, in pixels
+                                    ; (the furthest scroll, in pixels: the level's, lv_maxx)
 PAUSE   = 50                        ; frames held at each end
 
 ; zero page
@@ -116,7 +116,7 @@ s010    = zp + 50
 s017    = zp + 51
 s01d    = zp + 52
 s01b    = zp + 53
-NS      = 5                         ; the Scrubblies
+                                    ; (NS, the enemies' slots, and NP, the gems' and keys': lvllayout.inc)
 NB      = 6                         ; the balloons and daggers (at most)
 ; The sprites: the common ones first, together (every level's): the cover (drawn at the start), a
 ; blank one, the yoyo's frames, the FRAK! bubble, the timer, the balloon, the dagger, the balloon's
@@ -182,7 +182,8 @@ start   sei
         .if FRONT
         jsr attract                 ; (the attract screen, till a key: front.asm)
         .endif
-        jsr loadlevel               ; (the level's own glyphs, sprites and map: loader.asm)
+        lda chosen                  ; (the level chosen: the front end's, else the first)
+        jsr loadlevel               ; (the level's own glyphs, sprites, map and tables: loader.asm)
         lda #<irq1
         sta $fffe
         lda #>irq1
@@ -244,7 +245,7 @@ start   sei
         sta vy,x
         lda #(SPRSCRUB & $3fff) / 64
         sta vptr,x
-        lda #4
+        lda lv_encol                ; (the level's enemy's colour: magenta for the Scrubbly)
         sta vcol,x
         lda #VHIDE
         sta vfl,x
@@ -356,7 +357,7 @@ start   sei
         sta $dd00
         lda #3                      ; cyan border
         sta $d020
-        lda #3                      ; ECM backgrounds: cyan, yellow, purple, black
+        lda lv_bg                   ; ECM backgrounds: the level's (cyan, green or red), yellow, purple, black
         sta $d021
         lda #7
         sta $d022
@@ -1442,10 +1443,10 @@ _move   lda dtmp
         ora scrx                    ; at an end: turn round, and hold
         beq _turn
         lda scrx
-        cmp #<MAXX
+        cmp lv_maxx
         bne _hold
         lda scrx+1
-        cmp #>MAXX
+        cmp lv_maxx+1
         bne _hold
 _turn   lda dir
         eor #$fe
@@ -1463,7 +1464,6 @@ _hold   rts
 ; then that shown.
 VL      = 112
 VR      = 192
-MAXC    = MAXX / 8
 camera  lda jumping
         beq _go
         lda curc                    ; (a restart: to the scroll jumpx, window jumpw, play.asm)
@@ -1529,9 +1529,9 @@ _wl     lda #$ff
         bcc _ml
         rts
 _mr     lda scrx
-        cmp #<MAXX
+        cmp lv_maxx
         lda scrx+1
-        sbc #>MAXX
+        sbc lv_maxx+1
         bcs _x
         lda #1
         bne _step
@@ -1698,5 +1698,11 @@ bottoms = MAPS + ROWS * NC
         .dsection high              ; (tables that needn't be low: mux.asm's, play.asm's)
         .if PROFILE
 MAPS    .fill 2 * ROWS * NC         ; (--profile: the level map here, the ring at $e000)
+LVL     .fill LVLSIZE               ; (and the level's block of tables)
         .cerror * > MUXRAM, "the level map runs into the multiplexer's RAM"
+        .else
+; (the level's block of tables and numbers, after the map: loader.asm unpacks the level's there)
+LVL     = MAPS + 2 * ROWS * NC
+        .cerror LVL + LVLSIZE > $ffe0, "the level's block runs into the vectors"
         .endif
+        .include "lvllayout.inc"    ; (its layout: the tables' places, NS, NP, NPATCH)

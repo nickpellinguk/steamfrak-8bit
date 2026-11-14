@@ -15,11 +15,11 @@ for line in open(os.path.join(B, 'frak64.lbl')):
     m = re.match(r'^(\w+)\s*=\s*(\$?)([0-9a-fA-F]+)', line)
     if m: lbl[m.group(1)] = int(m.group(3), 16 if m.group(2) else 10)
 tab = {}
-for f in ('scrpatch.inc', 'collide.inc'):
+for f in ('scrpatch.inc', 'collide.inc', 'lvtab.inc'):
     for line in open(os.path.join(B, f)):
         m = re.match(r'^(\w+)\s+\.byte ([\d, ]+)$', line.strip())
         if m: tab[m.group(1)] = [int(v) for v in m.group(2).split(',')]
-const = {m.group(1): int(m.group(2)) for m in re.finditer(r'^(\w+)\s*=\s*(\d+)', open(os.path.join(B, 'geometry.inc')).read(), re.M)}
+const = {m.group(1): int(m.group(2)) for m in re.finditer(r'^(\w+)\s*=\s*(\d+)', open(os.path.join(B, 'lvtab.inc')).read(), re.M)}
 NP, NS = len(tab['pkkind']), len(tab['scrpn'])
 NC = int(re.search(r'^NC\s*=\s*(\d+)', open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'build', 'level.inc')).read(), re.M).group(1)); MAPN = 25 * NC     # (the level map's size: build/level.inc)
 prg = open(os.path.join(B, 'frak64.prg'), 'rb').read()

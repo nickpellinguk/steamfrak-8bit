@@ -80,15 +80,20 @@ writeFileSync(DIR + 'tails.inc', inc);
 // Y + CONV to Y + CONV + 20 (41 expanded). The Scrubblies' (3-7: expanded, y the line before
 // their top), from the mock-up (../build/scrub.json); or, --test SEED, sprites 1-7 in the left
 // border (unseen, but fetched) at random heights
-// (first, the level, from its pieces: levels/<--level, A_1>.txt, by level.mjs; not with --nopack)
-if (!process.argv.includes('--nopack')) execFileSync('node', [TOOLS + 'level.mjs', String(arg('level', 'A_1'))], { stdio: 'inherit' });
+// (first, the levels, from their pieces: levels/<name>.txt, by level.mjs, each into build/lv/<name>/,
+// their maps 97 columns; --levels A,B,C, the first also into build/ for the tests; not with --nopack)
+const LEVELS = String(arg('levels', 'A_1,A_2,A_3')).split(','), MAPNC = 97;
+if (!process.argv.includes('--nopack')) {
+    execFileSync('node', [TOOLS + 'level.mjs', LEVELS[0], '--mapnc', String(MAPNC)], { stdio: 'inherit' });
+    for (const l of LEVELS) execFileSync('node', [TOOLS + 'level.mjs', l, '--out', `lv/${l}`, '--mapnc', String(MAPNC)], { stdio: ['inherit', 'ignore', 'inherit'] });
+}
 const CONV = +arg('conv', 1), TEST = process.argv.includes('--test') || PM !== null;
 const scrub = JSON.parse(readFileSync(DIR + 'scrub.json', 'utf8'));
 let seed = +arg('test', 1) || 1;
 const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x80000000;
 let spr = [];                                       // (sprite, y, expanded)
 if (TEST) for (let n = 1; n < 8; n++) spr.push({ n, y: 30 + Math.floor(rnd() * 220), exp: rnd() < 0.3 });
-else scrub.placed.forEach((p, i) => spr.push({ n: 3 + i, y: 50 + p.top, exp: true }));
+// (else none: the multiplexer places the enemies; till its first frame, only the cover)
 if (PM !== null) spr = [1, 2, 3, 4, 5, 6, 7].map(n => ({ n, y: (+PM >> n & 1) ? 77 : 0, exp: !!(+PM >> n & 1) }));
 const maskOn = line => spr.reduce((m, s) => line >= s.y + CONV && line < s.y + CONV + (s.exp ? 42 : 21) ? m | 1 << s.n : m, COVER);
 const masks = [], masks3 = [];
@@ -97,10 +102,8 @@ defs.push('-D', `TEST=${TEST ? 1 : 0}`, '-D', `BALLTEST=${process.argv.includes(
     // (the front end: the attract screen first; not in test builds, nor with --nofront)
     '-D', `FRONT=${['--nofront', '--keys', '--scrolldemo', '--camtest', '--profile', '--slack', '--muxtime', '--measure', '--test', '--balltest', '--still'].some(a => process.argv.includes(a)) ? 0 : 1}`);
 const testy = TEST ? spr.map(s => s.y) : [0];
-const sx = scrub.placed.map(p => 31 + p.x);
 writeFileSync(DIR + 'masks.inc', `; made by tools/build.mjs\nmasks   .byte ${masks.join(', ')}\nmasks3  .byte ${masks3.join(', ')}\n` +
-    `testy   .byte ${testy.join(', ')}\nTESTEXP = ${spr.reduce((m, s) => s.exp ? m | 1 << s.n : m, COVER)}\n` +
-    `scruby  .byte ${scrub.placed.map(p => 50 + p.top).join(', ')}\nscl     .byte ${scrub.placed.map(p => (p.x + 8) & 255).join(', ')}\nsch     .byte ${scrub.placed.map(p => (p.x + 8) >> 8).join(', ')}\nsct     .byte ${scrub.placed.map(p => p.top + 24).join(', ')}\nsxlo    .byte ${sx.map(v => v & 255).join(', ')}\nsxhi    .byte ${sx.map(v => v >> 8).join(', ')}\n`);
+    `testy   .byte ${testy.join(', ')}\nTESTEXP = ${spr.reduce((m, s) => s.exp ? m | 1 << s.n : m, COVER)}\n`);
 // The collision boxes (collide.asm): each of Trogg's frames' solid pixels' extent as shown, from
 // (tx, ty) (trogg.json: the frame's left at tx - left, its top at ty - 34); each Scrubbly's, gem's
 // and key's in the level, as the mock-up drew them (picks.json; the level's y is the mock-up's,
@@ -110,23 +113,8 @@ writeFileSync(DIR + 'masks.inc', `; made by tools/build.mjs\nmasks   .byte ${mas
     const box = g => { let x0 = 99, x1 = -1, y0 = 99, y1 = -1; g.forEach((r, y) => r.forEach((p, x) => { if (p >= 0) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); } })); return { x0, x1, y0, y1 }; };
     const tb = tj.map(f => { const b = box(f.shown); return { x0: b.x0 - f.left, x1: b.x1 - f.left, y0: b.y0 - 34, y1: b.y1 - 34 }; });
     const sgn = v => v & 255, B = (n, a) => `${n.padEnd(8)}.byte ${a.join(', ')}\n`;
-    const sbx = pj.scrubBox, sl = scrub.placed.map(p => p.x + 8 + sbx.x0), sr = scrub.placed.map(p => p.x + 8 + sbx.x1);
-    const pk = pj.picks;
     writeFileSync(DIR + 'collide.inc', '; made by tools/build.mjs: the collision boxes (collide.asm)\n' +
         B('tbx0', tb.map(b => sgn(b.x0))) + B('tbx1', tb.map(b => sgn(b.x1))) + B('tby0', tb.map(b => sgn(b.y0))) + B('tby1', tb.map(b => sgn(b.y1))) +
-        B('scbll', sl.map(v => v & 255)) + B('scblh', sl.map(v => v >> 8)) + B('scbrl', sr.map(v => v & 255)) + B('scbrh', sr.map(v => v >> 8)) +
-        B('scbc0', sl.map(v => v >> 3)) + B('scbc1', sr.map(v => v >> 3)) + B('scbt', scrub.placed.map(p => p.top + 24 + sbx.y0)) + B('scbb', scrub.placed.map(p => p.top + 24 + sbx.y1)) +
-        `NP      = ${pk.length}\nNKEYS   = ${pk.filter(p => p.name === 'IMG_Key').length}\n` + B('pkll', pk.map(p => (p.left + p.box.x0) & 255)) + B('pklh', pk.map(p => (p.left + p.box.x0) >> 8)) +
-        B('pkrl', pk.map(p => (p.left + p.box.x1) & 255)) + B('pkrh', pk.map(p => (p.left + p.box.x1) >> 8)) +
-        B('pkc0', pk.map(p => (p.left + p.box.x0) >> 3)) + B('pkc1', pk.map(p => (p.left + p.box.x1) >> 3)) + B('pkt', pk.map(p => p.top + p.box.y0)) + B('pkb', pk.map(p => p.top + p.box.y1)) + B('pkkind', pk.map(p => p.name === 'IMG_Key' ? 2 : 1)) +
-        // (each column's objects, bit k: Scrubbly k, then gem or key k - NS: the quick first test)
-        (() => { const m = Array(96).fill(0), rng = [...sl.map((l, i) => [l >> 3, sr[i] >> 3]), ...pk.map(p => [(p.left + p.box.x0) >> 3, (p.left + p.box.x1) >> 3])];
-                 if (rng.length > 16) throw new Error('more than 16 static objects for the column masks');
-                 rng.forEach(([a, b], k) => { for (let c = a; c <= b; c++) m[c] |= 1 << k; });
-                 // (and each band of 32 lines' objects: his columns' and his bands' in common)
-                 const bm = Array(8).fill(0), ys = [...scrub.placed.map(p => [p.top + 24 + sbx.y0, p.top + 24 + sbx.y1]), ...pk.map(p => [p.top + p.box.y0, p.top + p.box.y1])];
-                 ys.forEach(([t, b], k) => { for (let c = t >> 5; c <= b >> 5; c++) bm[c] |= 1 << k; });
-                 return B('colml', m.map(v => v & 255)) + B('colmh', m.map(v => v >> 8)) + B('bandml', bm.map(v => v & 255)) + B('bandmh', bm.map(v => v >> 8)); })() +
         // (the second stage: each image's spans, a row's leftmost and rightmost solid pixel, 255
         // for an empty row; and each object's image's corner)
         (() => { const sp = g => g.flatMap(r => { const xs = r.map((p, x) => p >= 0 ? x : -1).filter(x => x >= 0); return xs.length ? [xs[0], xs[xs.length - 1]] : [255, 255]; });
@@ -134,12 +122,9 @@ writeFileSync(DIR + 'masks.inc', `; made by tools/build.mjs\nmasks   .byte ${mas
                  // (frames with the same spans share them: tsU, each different one once; tsAt, each frame's)
                  const tsU = [], tsAt = tj.map(f => { const v = sp(f.shown), k = tsU.findIndex(u => u.join() === v.join()); return k >= 0 ? k : tsU.push(v) - 1; });
                  return B('tleft', tj.map(f => f.left)) + `tspl    .byte ${tsAt.map(i => `<(tspan + ${i * 68})`).join(', ')}\ntsph    .byte ${tsAt.map(i => `>(tspan + ${i * 68})`).join(', ')}\n` +
-                     B('tspan', tsU.flat()) + B('scrsp', sp(g.IMG_Scrubbly)) + `SCRH    = ${g.IMG_Scrubbly.length}\n` +
-                     B('keysp', sp(g.IMG_Key)) + B('gemsp', sp(g.IMG_Gem)) +
-                     B('scil', scrub.placed.map(p => (p.x + 8) & 255)) + B('scih', scrub.placed.map(p => (p.x + 8) >> 8)) + B('scit', scrub.placed.map(p => p.top + 24)) +
-                     B('pkil', pk.map(p => p.left & 255)) + B('pkih', pk.map(p => p.left >> 8)) + B('pkit', pk.map(p => p.top)) +
-                     `pkspl   .byte ${pk.map(p => '<' + kinds[p.name]).join(', ')}\npksph   .byte ${pk.map(p => '>' + kinds[p.name]).join(', ')}\n` +
-                     B('pkh', pk.map(p => g[p.name].length)); })() +
+                     B('tspan', tsU.flat()) + B('keysp', sp(g.IMG_Key)) + B('gemsp', sp(g.IMG_Gem)) +
+                     // (a gem's or key's spans by its kind, pkkind: 1 gem, 2 key)
+                     `pkspk   .byte 0, <gemsp, <keysp\npkspkh  .byte 0, >gemsp, >keysp\n`; })() +
         // (the balloon (kind 1) and the dagger (2): their sprites, hi-res, the image at the sprite's
         // corner; their origin in the image, size, tight box from the image's corner, spans)
         (() => { const H = [pj.hazards.IMG_Balloon, pj.hazards.IMG_DaggerLR], hb = H.map(h => box(h.grid));
@@ -244,28 +229,42 @@ writeFileSync(DIR + 'masks.inc', `; made by tools/build.mjs\nmasks   .byte ${mas
         T.map(([r, c, t]) => `        .word SCR0 + ${r * 40 + c}\n        .byte ${t.length}, ${sc(t).join(', ')}\n`).join('') + '        .word 0\n' +
         `FEBLOCKS = ${blocks.length}\n`);
 }
-const sb = Buffer.alloc(64);
-scrub.sprite.forEach((row, y) => { for (let k = 0; k < 3; k++) sb[y * 3 + k] = parseInt(row.slice(k * 8, k * 8 + 8), 2); });
-writeFileSync(DIR + 'scrubspr.bin', sb);
 console.log(`row masks (line 3/4): ${masks.map((m, r) => masks3[r] === m ? m.toString(16) : masks3[r].toString(16) + '/' + m.toString(16)).join(' ')}; tails ${masks.map(m => tailFor[m]).join(' ')}`);
-// The level's own data, packed (loader.asm unpacks it at the start): each character set's own
-// glyphs (from NCOMMON on), its sprites (from LSPR: the Scrubbly's body), its map (tops, bottoms)
+// Each level's own data, packed (loader.asm unpacks the chosen level's): each character set's own
+// glyphs (from NCOMMON on), its sprites (from LSPR: its enemy's body), its map (tops, bottoms), and
+// its block of tables and numbers (LVL: lvldata.mjs, the layout in lvllayout.inc)
 {
-    const ncom = +/NCOMMON = (\d+)/.exec(readFileSync(DIR + 'scrpatch.inc', 'utf8'))[1];
-    const lcs = readFileSync(DIR + 'levelcs.bin'), half = (512 - ncom * 8);
-    writeFileSync(DIR + 'lvl_cs0.bin', lcs.subarray(0, half)); writeFileSync(DIR + 'lvl_cs1.bin', lcs.subarray(half));
-    writeFileSync(DIR + 'lvl_spr.bin', readFileSync(DIR + 'scrubspr.bin'));
-    const streams = [['cs0', 'CS0 + NCOMMON * 8'], ['cs1', 'CS1 + NCOMMON * 8'], ['spr', 'LSPR'], ['tops', 'tops'], ['bottoms', 'bottoms']];
-    const src = { cs0: 'lvl_cs0.bin', cs1: 'lvl_cs1.bin', spr: 'lvl_spr.bin', tops: 'tops.bin', bottoms: 'bottoms.bin' };
-    let total = 0, raw = 0;
-    for (const [k] of streams) {
-        execFileSync('python3', [TOOLS + 'lz.py', DIR + src[k], DIR + `lz_${k}.bin`]);
-        total += readFileSync(DIR + `lz_${k}.bin`).length; raw += readFileSync(DIR + src[k]).length;
-    }
-    writeFileSync(DIR + 'lvlpack.inc', '; made by tools/build.mjs: the level\'s own data, packed (loader.asm): each stream and where it goes\n' +
-        `LSPRN = ${readFileSync(DIR + 'lvl_spr.bin').length / 64}\nlvlstreams\n` + streams.map(([k, d]) => `        .word lz_${k}, ${d}\n`).join('') + '        .word 0\n' +
-        streams.map(([k]) => `lz_${k} .binary "lz_${k}.bin"\n`).join(''));
-    console.log(`the level's own data: ${raw} bytes, packed to ${total}`);
+    const { levelTables, layout } = await import(TOOLS + 'lvldata.mjs');
+    const dirs = LEVELS.map(l => `${DIR}lv/${l}/`), lt = dirs.map(d => levelTables(d));
+    const lay = layout(lt);
+    writeFileSync(DIR + 'lvllayout.inc', lay.inc);
+    // (for the py65 tests: the first level's tables, as long as it has them, and its numbers, as the
+    // .inc files had them)
+    { const t0 = lt[0], g0 = JSON.parse(readFileSync(dirs[0] + 'geometry.json', 'utf8'));
+      writeFileSync(DIR + 'lvtab.inc', `; made by tools/build.mjs: ${LEVELS[0]}'s tables, for the tests\nNP = ${t0.T.pkkind.length}\nNKEYS = ${t0.S.lv_nkeys[0]}\nTSTARTX = ${g0.trogg[0]}\nTSTARTY = ${g0.trogg[1]}\nSCRH = ${t0.S.lv_scrh[0]}\n` +
+          Object.entries(t0.T).map(([n, v]) => `${n.padEnd(8)}.byte ${v.join(', ')}\n`).join('')); }
+    const pt0 = JSON.parse(readFileSync(dirs[0] + 'patch.json', 'utf8')), ncom = pt0.NCOMMON;
+    const com = readFileSync(dirs[0] + 'common.bin');
+    dirs.forEach((d, k) => { if (!readFileSync(d + 'common.bin').equals(com)) throw new Error(`${LEVELS[k]}: its common glyphs differ`); });
+    writeFileSync(DIR + 'common.bin', com);
+    writeFileSync(DIR + 'scrpatch.inc', `; made by tools/build.mjs: the yoyo's string and the common glyphs (the levels' patches: lvllayout.inc)\nSTRING = ${pt0.STRING}\nNCOMMON = ${ncom}\n`);
+    const streams = [['cs0', 'CS0 + NCOMMON * 8'], ['cs1', 'CS1 + NCOMMON * 8'], ['spr', 'LSPR'], ['tops', 'tops'], ['bottoms', 'bottoms'], ['tab', 'LVL']];
+    let out = `; made by tools/build.mjs: each level's own data, packed (loader.asm): each stream and where it goes\nLSPRN = 1\nNLEVELS = ${LEVELS.length}\n` +
+        `lvltab  .word ${LEVELS.map((_, k) => `lvl${k}`).join(', ')}\n`;
+    const sizes = [];
+    dirs.forEach((d, k) => {
+        const sc = JSON.parse(readFileSync(d + 'scrub.json', 'utf8')), sb = Buffer.alloc(64);
+        sc.sprite.forEach((row, y) => { for (let i = 0; i < 3; i++) sb[y * 3 + i] = parseInt(row.slice(i * 8, i * 8 + 8), 2); });
+        const lcs = readFileSync(d + 'levelcs.bin'), half = 512 - ncom * 8;
+        const src = { cs0: lcs.subarray(0, half), cs1: lcs.subarray(half), spr: sb, tops: readFileSync(d + 'tops.bin'), bottoms: readFileSync(d + 'bottoms.bin'), tab: lay.blocks[k] };
+        let total = 0, raw = 0;
+        for (const [n] of streams) { writeFileSync(d + `raw_${n}.bin`, src[n]); execFileSync('python3', [TOOLS + 'lz.py', d + `raw_${n}.bin`, d + `lz_${n}.bin`]); total += readFileSync(d + `lz_${n}.bin`).length; raw += src[n].length; }
+        sizes.push(`${LEVELS[k]} ${raw} to ${total}`);
+        out += `lvl${k}\n` + streams.map(([n, dst]) => `        .word lz${k}_${n}, ${dst}\n`).join('') + '        .word 0\n' +
+            streams.map(([n]) => `lz${k}_${n} .binary "lv/${LEVELS[k]}/lz_${n}.bin"\n`).join('');
+    });
+    writeFileSync(DIR + 'lvlpack.inc', out);
+    console.log(`levels' own data (bytes, packed): ${sizes.join('; ')}; their block of tables ${lay.size}`);
 }
 // (--keys T:K,T:K...: for a test build, the keys held for T ticks each, K of L R U D Y E (Escape)
 // or -)
@@ -275,31 +274,8 @@ console.log(`row masks (line 3/4): ${masks.map((m, r) => masks3[r] === m ? m.toS
     writeFileSync(DIR + 'keys.inc', `; made by tools/build.mjs (--keys)\nKSCRN = ${steps.length}\n` +
         `kscrn   .byte ${steps.map(s => +s[0]).join(', ')}\nkscrk   .byte ${steps.map(s => bit(s[1])).join(', ')}\n`);
 }
-// (the platforms and ladders for Trogg's physics, as the BBC version's tables: geometry.json, by
-// level.mjs)
-{
-    const g = JSON.parse(readFileSync(DIR + 'geometry.json', 'utf8'));
-    const t = (name, v) => `${name.padEnd(8)}.byte ${v.join(', ')}\n`;
-    const P = g.plats, L = g.lads;
-    writeFileSync(DIR + 'geometry.inc', `; made by tools/build.mjs from geometry.json (level.mjs)\nNPLATS = ${P.length}\nNLADS = ${L.length}\n` +
-        `LEVEL_W = ${g.w}\nLEVEL_H = ${g.h}\nTSTARTX = ${g.trogg[0]}\nTSTARTY = ${g.trogg[1]}\n` +
-        t('plat_xl', P.map(p => p.x & 255)) + t('plat_xh', P.map(p => p.x >> 8)) + t('plat_yl', P.map(p => p.y & 255)) +
-        t('plat_yh', P.map(p => p.y >> 8)) + t('plat_w', P.map(p => p.w)) +
-        t('lad_xl', L.map(l => l.x & 255)) + t('lad_xh', L.map(l => l.x >> 8)) + t('lad_yl', L.map(l => l.y & 255)) +
-        t('lad_yh', L.map(l => l.y >> 8)) + t('lad_hl', L.map(l => l.h & 255)) + t('lad_hh', L.map(l => l.h >> 8)) + t('lad_ext', L.map(l => l.ext)) +
-        cols('pcol', 'plist', P.map((p, i) => [p.x, p.x + p.w - 1, i]).sort((a, b) => b[2] - a[2])) +
-        cols('lcol', 'llist', L.map((l, i) => [l.x - 6, l.x + 6, i])));
-    // (by 8-pixel column, the platforms over it (last first, as platform_find goes), and the
-    // ladders within 6 pixels of it (first first): each column's from xcol[c] to xcol[c + 1] in
-    // the list)
-    function cols(xcol, list, items) {
-        const NCOL = Math.ceil(g.w / 8) + 2, idx = [], lst = [];
-        for (let c = 0; c < NCOL; c++) { idx.push(lst.length); for (const [a, b, i] of items) if (a <= c * 8 + 7 && b >= c * 8) lst.push(i); }
-        idx.push(lst.length);
-        if (lst.length > 255) throw new Error(`${list}: too long`);
-        return `NCOL = ${NCOL}\n`.replace('NCOL', xcol.toUpperCase() + 'N') + t(xcol, idx) + t(list, lst);
-    }
-}
+// (the platforms and ladders for Trogg's physics: each level's, in its block, lvllayout.inc)
+writeFileSync(DIR + 'geometry.inc', '; made by tools/build.mjs: the platforms and ladders are each level\'s (lvllayout.inc)\n');
 execFileSync('64tass', ['-q', '-a', '-C', ...defs, '-I', DIR, '--labels=' + DIR + 'frak64.lbl', '-L', DIR + 'frak64.lst', '-o', DIR + 'frak64.prg', SRC + 'frak64.asm'], { cwd: DIR, stdio: 'inherit' });
 const lbl = Object.fromEntries(readFileSync(DIR + 'frak64.lbl', 'utf8').split('\n').map(l => l.match(/^(\w+)\s*=\s*\$([0-9a-f]+)/i)).filter(Boolean).map(m => [m[1], parseInt(m[2], 16)]));
 // The release: frak64.prg packed by Exomizer into a self-unpacking program (frak64.exo.prg, started

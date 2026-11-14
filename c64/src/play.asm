@@ -24,7 +24,7 @@ ST_FALL  = 2
 ST_CLIMB = 3
 ST_YOYO_OUT = 4
 ST_YOYO_BACK = 5
-X_MAX    = LEVEL_W - 10
+                                    ; (his furthest x: the level's width less 10, lv_xmax)
 
 ; ---- A game tick: the keys, then Trogg (or, dead, the count to the restart), then his frame
 gametick
@@ -76,13 +76,13 @@ newlevel
 ; Either way no balloons or daggers, his movement reset, and the camera jumped to show him.
 restart lda havecp
         bne _cp
-        lda #<TSTARTX               ; (the start: Trogg, every Scrubbly, gem and key back)
+        lda lv_tstartx              ; (the start: Trogg, every Scrubbly, gem and key back)
         sta tx
-        lda #>TSTARTX
+        lda lv_tstartx+1
         sta tx+1
-        lda #<TSTARTY
+        lda lv_tstarty
         sta ty
-        lda #>TSTARTY
+        lda lv_tstarty+1
         sta ty+1
         lda #0
         sta tyf
@@ -124,13 +124,13 @@ _cp     inc restarts
         sta jumpx
         sta jumpx+1
 +       lda jumpx
-        cmp #<MAXX
+        cmp lv_maxx
         lda jumpx+1
-        sbc #>MAXX
+        sbc lv_maxx+1
         bcc _all
-        lda #<MAXX
+        lda lv_maxx
         sta jumpx
-        lda #>MAXX
+        lda lv_maxx+1
         sta jumpx+1
 _all    lda jumpx+1                 ; (its window)
         lsr
@@ -527,13 +527,13 @@ trogg_falling
         lda #0
         sta tx+1
 +       lda tx
-        cmp #<X_MAX
+        cmp lv_xmax
         lda tx+1
-        sbc #>X_MAX
+        sbc lv_xmax+1
         bcc +
-        lda #<X_MAX
+        lda lv_xmax
         sta tx
-        lda #>X_MAX
+        lda lv_xmax+1
         sta tx+1
 +       lda tx
         sta q_x
@@ -625,16 +625,16 @@ _land   ; (he stays where he is: if that's between pixels above it, he drops ont
 _dies   jsr trogg_dies
 _bottom ; off the bottom of the level?
         lda ty
-        cmp #<LEVEL_H
+        cmp lv_levh
         lda ty+1
-        sbc #>LEVEL_H
+        sbc lv_levh+1
         bcc +
         lda #0
         sta xvel
         sta tyf
-        lda #<(LEVEL_H - 1)
+        lda lv_levh1
         sta ty
-        lda #>(LEVEL_H - 1)
+        lda lv_levh1+1
         sta ty+1
         jmp trogg_dies
 +       rts
@@ -926,7 +926,7 @@ xcolumn lda q_x+1
         lsr a
         lsr a
         ora pcx
-        cmp #PCOLN
+        cmp lv_pcoln
         tay
 +       rts
 
@@ -1387,7 +1387,7 @@ _cw     lda #ST_WALK
         sta tface
         jsr animate
         jmp trogg_frame
-CAMTURN = [424, 274, 724, 624, 674, 124, 324, 304, 344, TSTARTX]    ; (24 on from the level's old place)
+CAMTURN = [424, 274, 724, 624, 674, 124, 324, 304, 344, 65]    ; (24 on from the level's old place; 65: A_1's start)
 CAMTN   = len(CAMTURN)
 camtl   .byte <CAMTURN
 camth   .byte >CAMTURN

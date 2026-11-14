@@ -9,7 +9,7 @@ import os, re, subprocess, sys
 DIR = os.path.dirname(os.path.abspath(__file__)); B = os.path.join(DIR, '..', 'build')
 KNOCK = '60:-,10:Y,30:-,120:Y,200:-'
 def run(keys, secs):
-    subprocess.run(['node', os.path.join(DIR, 'build.mjs'), '--nopack', '--invincible', '--keys', keys, '--troggx', '345', '--troggy', '207'],
+    subprocess.run(['node', os.path.join(DIR, 'build.mjs'), '--nopack', *os.environ.get('LV', '').split(), '--invincible', '--keys', keys, '--troggx', '345', '--troggy', '207'],
                    check=True, capture_output=True)
     L = {}
     for line in open(os.path.join(B, 'frak64.lbl')):
@@ -22,12 +22,12 @@ def run(keys, secs):
     v = [[int(x, 16) for x in m.split()] for m in re.findall(r'>C:[0-9a-f]{4}\s+((?:[0-9a-f]{2}\s+)+)', out)]
     tx, ty = v[0][0] | v[0][1] << 8, v[0][2] | v[0][3] << 8
     secs_shown = v[2][3] * 60 + v[2][2] * 10 + v[2][1]
-    return dict(tx=tx, ty=ty, knocked=v[1], timer=secs_shown, tfr=v[3][0], start=(L['TSTARTX'], L['TSTARTY']), shot=shot)
+    return dict(tx=tx, ty=ty, knocked=v[1], timer=secs_shown, tfr=v[3][0], start=tuple(int(re.search(rf'^{n}\s*=\s*(\d+)', open(os.path.join(DIR, '..', 'build', 'lvtab.inc')).read(), re.M).group(1)) for n in ('TSTARTX', 'TSTARTY')), shot=shot)
 probs = 0
 a = run(KNOCK, 9)
 print(f'without Escape: Trogg at {a["tx"]},{a["ty"]}, knocked off {a["knocked"]}, timer {a["timer"]} s')
 if not any(a['knocked']): print('  the Scrubbly wasn\'t knocked off: the test proves nothing'); probs += 1
-e = run(KNOCK + ',1:E,100:-', 11)
+e = run(KNOCK + ',1:E,100:-', 13)      # (13 s: the level unpacked again after Escape, about a second)
 print(f'with Escape:    Trogg at {e["tx"]},{e["ty"]}, knocked off {e["knocked"]}, timer {e["timer"]} s')
 if (e['tx'], e['ty']) != e['start']: print(f'  Trogg not at his start {e["start"]}'); probs += 1
 if any(e['knocked']): print('  a Scrubbly still knocked off'); probs += 1
