@@ -120,6 +120,7 @@ SPRDAGGER = $55c0                   ; the dagger's
 SPRFRAK = $5600                     ; the FRAK! bubble's 2 (its black, its yellow)
 SPRBLANK = $5680                    ; a blank sprite (zeros: for a Scrubbly knocked off, yoyo.asm)
 SPRBINF = $56c0                     ; the balloon's infill's 2 (top-justified, bottom-justified)
+SPRBMC  = $5740                     ; the balloon in multicolour (the fallback, mux.asm)
 flippend = zp + 54                  ; (the next frame's scroll, decided in the main program: a pair
 wanto   = zp + 55                   ;  flip for the border to make; the hidden pair's origin wanted;
 nvs     = zp + 56                   ;  the VSP offset)
@@ -921,6 +922,8 @@ rla     lda d18a0+1,x               ; the next row's tops' screen (the same set)
         sta $d01d
         lda t01b,x
         sta $d01b
+        lda t01c,x
+        sta $d01c
 tnreg   lda u_ptr,x
 apt0    sta SCR0 + $3f8,y
 apt1    sta SCR1 + $3f8,y
@@ -1080,6 +1083,10 @@ t37o    lda #255
         sta $d01d
         lda t01b,y
         sta $d01b
+        lda t01c,y
+        sta $d01c
+        lda #0                      ; (Trogg's outline black: sprite 1 may have been another's)
+        sta $d028
         jsr apply0
         jsr tick37                  ; (Trogg's sprites' first instances)
 t37n
@@ -1421,6 +1428,8 @@ end
         .fill 64, 0                 ; (SPRBLANK)
         .cerror * != SPRBINF
         .binary "hazspr.bin", 128, 128  ; (the balloon's infill, top- and bottom-justified)
+        .cerror * != SPRBMC
+        .binary "hazspr.bin", 256, 64   ; (the balloon in multicolour)
         .fill CS1 - *, 0
         .binary "charsets.bin", 512, 512
         .fill $6800 - *, 0

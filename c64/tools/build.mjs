@@ -146,6 +146,12 @@ writeFileSync(DIR + 'masks.inc', `; made by tools/build.mjs\nmasks   .byte ${mas
                  // bottom, BIDY lines down)
                  const BIDY = 21 - H[0].grid.length;
                  for (const dy of [0, BIDY]) { const b = Array(64).fill(0); H[0].grid.forEach((r, y) => r.forEach((p, x) => { if (p === 2) b[(y + dy) * 3 + (x >> 3)] |= 0x80 >> (x & 7); })); spr.push(...b); }
+                 // (and the balloon whole in multicolour, the fallback: double-width pixels, each black (the
+                 // sprite's colour, %10) if either of its two is, else magenta (%11, $d026) if either is,
+                 // else see-through (the highlight too))
+                 { const b = Array(64).fill(0); H[0].grid.forEach((r, y) => { for (let i = 0; 2 * i < r.length; i++) {
+                       const two = [r[2 * i], r[2 * i + 1]], v = two.includes(3) ? 2 : two.includes(2) ? 3 : 0;
+                       b[y * 3 + (i >> 2)] |= v << (6 - 2 * (i & 3)); } }); spr.push(...b); }
                  const sp = gr => gr.flatMap(r => { const xs = r.map((p, x) => p >= 0 ? x : -1).filter(x => x >= 0); return xs.length ? [xs[0], xs[xs.length - 1]] : [255, 255]; });
                  const K = (n, f) => B(n, [0, ...H.map(f)]);
                  writeFileSync(DIR + 'hazspr.bin', Buffer.from(spr));
