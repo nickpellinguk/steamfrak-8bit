@@ -54,10 +54,9 @@ PAUSE   = 50                        ; frames held at each end
 zp      = $02
 
 ; (--profile: CIA 2's timer A, free running, read at each stage of a frame's work into pstage;
-; each frame's record (32 bytes) then copied into a ring at PRING0-PRINGE (tools/frameprof.py);
-; the level map then after the program instead of there: MAPS)
-PRING0  = $e000
-PRINGE  = $fe00
+; each frame's record (32 bytes) then copied into a ring at PRING0-PRINGE, in the high memory
+; (tools/frameprof.py))
+PRSIZE  = 2048                      ; (64 records: tools/frameprof.py saves the ring often enough)
 pst     .macro
         .if PROFILE
 -       lda $dd05
@@ -155,8 +154,32 @@ COVERY0 = 49                        ; its first piece's y (lines 50-91; then 92,
 
         * = $0801
         .word (+), 10
-        .null $9e, format("%d", start)
+        .null $9e, format("%d", cold)
 +       .word 0
+
+; The cold start (the BASIC line's SYS: low, as the BASIC ROM's still in): the streams that go
+; under the I/O ($d000-$dfff: loader.asm) moved there from where the program loads them
+; ($c000-$cfff, then the multiplexer's RAM: muxinit clears it), then the game
+cold    sei
+        jsr undercp
+        jmp start
+undercp lda #$34                    ; (RAM everywhere; and back: the I/O)
+        sta $01
+        .if UNDERN
+        ldx #UNDERN
+        ldy #0
+_cp     lda UNDERL,y
+_cd     sta UNDER,y
+        iny
+        bne _cp
+        inc _cp + 2
+        inc _cd + 2
+        dex
+        bne _cp
+        .endif
+        lda #$35
+        sta $01
+        rts
 
 start   sei
         cld
@@ -1717,7 +1740,9 @@ setx    lda shx
         .if FRONT
         .include "front.asm"
         .endif
+        .section high               ; (not timed, not needing to be low: the low memory's for those)
         .include "play.asm"
+        .send high
 
         .align $100
 d18a0   .fill ROWS + 1
@@ -1800,19 +1825,28 @@ TROGG   .binary "trogg.bin"         ; Trogg's sprites: per frame outline P1-P3, 
 ; (the level map: the loader's, at MAPS, past the program, under the KERNAL's ROM, which is
 ; switched out; the program's tables (high) straight after the level's sprites. In --profile
 ; builds, the profile's ring is there: the map after the program)
-        .if !PROFILE
 MAPS    = $e000
-        .endif
 tops    = MAPS
 bottoms = MAPS + ROWS * NC
-        .dsection high              ; (tables that needn't be low: mux.asm's, play.asm's)
+        .dsection high              ; (tables and code that needn't be low)
         .if PROFILE
-MAPS    .fill 2 * ROWS * NC         ; (--profile: the level map here, the ring at $e000)
-LVL     .fill LVLSIZE               ; (and the level's block of tables)
-        .cerror * > MUXRAM, "the level map runs into the multiplexer's RAM"
-        .else
+        .align $100
+PRING0  .fill PRSIZE                ; (--profile: the records' ring)
+PRINGE
+        .endif
+hiend   .cerror * > MUXRAM, "the high memory runs into the multiplexer's RAM"
 ; (the level's block of tables and numbers, after the map: loader.asm unpacks the level's there)
 LVL     = MAPS + 2 * ROWS * NC
         .cerror LVL + LVLSIZE > $ffe0, "the level's block runs into the vectors"
-        .endif
+; (the streams that go under the I/O: loaded at $c000 (the multiplexer's RAM, cleared by muxinit),
+; moved to $d000 at the cold start: loader.asm)
+        .fill MUXRAM - *, 0
+UNDERL
+        .logical $d000
+UNDER
+        .dsection under
+UNDERE
+        .endlogical
+UNDERN  = (UNDERE - UNDER + 255) >> 8
+        .cerror UNDERE > $e000, "the streams under the I/O run past $dfff"
         .include "lvllayout.inc"    ; (its layout: the tables' places, NS, NP, NPATCH)

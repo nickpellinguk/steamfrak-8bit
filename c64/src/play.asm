@@ -12,9 +12,7 @@
 ; Death (landing at 1.6 pixels a tick or faster, or falling off the bottom) restarts the level
 ; after a second.
 
-        .section high               ; (placed past the level map: frak64.asm)
-        .include "geometry.inc"     ; NPLATS, NLADS, LEVEL_W, LEVEL_H, TSTARTX, TSTARTY, the tables
-        .send high
+        .include "geometry.inc"     ; (the platforms and ladders: each level's, lvllayout.inc)
 
 JUMP_SPEED = 25                     ; (twentieths of a pixel a tick; gravity is 1)
 TERMINAL_SPEED = 80
@@ -1299,7 +1297,6 @@ _climb  lda tclimb
         .if KEYTEST
 ; (a test: the keys from a script, --keys in build.mjs: for so many ticks each, keys held (bits:
 ; 1 left, 2 right, 4 up, 8 down, 16 yoyo); then none)
-        .section high               ; (a test's: not in the low memory, which is nearly full)
         .include "keys.inc"         ; kscrn (ticks), kscrk (keys), KSCRN (steps)
 keytest lda kstep
         cmp #KSCRN
@@ -1336,7 +1333,6 @@ _none   lda #0
         rts
 kstep   .byte 0
 kticks  .byte 0
-        .send high
         .endif
 
         .if CAMTEST

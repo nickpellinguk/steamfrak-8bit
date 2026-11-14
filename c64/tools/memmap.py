@@ -1,6 +1,7 @@
 # The program's memory, by source file and by item: each label's address from build/frak64.lbl,
 # its file from where it's defined in src/ (and the build's generated .inc files), and its size the
 # distance to the next label up; the VIC bank's set-up areas and the gaps shown as they are.
+# Then what's free in each part.
 #   python3 memmap.py [N]      (the N biggest items; the build as last made)
 import collections, glob, os, re, sys
 DIR = os.path.dirname(os.path.abspath(__file__)); B = os.path.join(DIR, '..', 'build'); SRC = os.path.join(DIR, '..', 'src')
@@ -24,6 +25,9 @@ for (a, n), nxt in zip(items, items[1:] + [(top, None)]):
     if a <= fill_from < b: b = fill_from                  # (the item before the gap ends at it)
     sizes.append((b - a, n, where[n], a)); byfile[where[n]] += b - a
 print(f'program file: $0801-${top - 1:04x}, {top - 0x0801} bytes; of them ${fill_from:04x}-${fill_to - 1:04x} ({fill_to - fill_from} bytes) the VIC bank (zeros in the file but for the character sets and sprites)')
+LVLEND = int(re.search(r'^LVL\s*=\s*(\d+)', open(os.path.join(B, 'frak64.lbl')).read(), re.M).group(1)) + int(re.search(r'LVLSIZE = (\d+)', open(os.path.join(B, 'lvllayout.inc')).read()).group(1))
+print('free: low (code, to the screens) %d; high (to the multiplexer\'s RAM) %d; under the I/O %d; after the level\'s block (to the vectors) %d' %
+      (lbl['SCR0'] - lbl['end'], lbl['MUXRAM'] - lbl['hiend'], 0xe000 - lbl['UNDERE'], 0xfffa - LVLEND))
 print('\nby file (bytes):')
 for f, s in byfile.most_common(): print(f'  {f:16} {s:6}')
 print(f'\nthe {N} biggest items:')
