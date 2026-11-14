@@ -646,7 +646,7 @@ qapply  lda bufoff
         sta tact,x
         iny
         inx
-        cpx #TSET
+        cpx #TBA                    ; (not the border ticks': read from q_t, trbord)
         bne -
 
         pla                         ; (and the pairs flipped)
@@ -1088,6 +1088,7 @@ bordirq sta sava
         ldx row
         cpx #ROWS
         bne +
+        jsr trbord                  ; (Trogg's lines below row 24's, this frame's: trogg.asm)
         inc frames
         .if !TEST
         lda qn                      ; the next frame made, if there is one: its buffer, and its
@@ -1131,7 +1132,15 @@ _dmux
         bcc +
         jmp rl0                     ; (tick 38)
 +       stx row
-        cpx #ROWS + 2               ; tick 26: the bottom border's sprite (bbset), then the yoyo's
+        cpx #ROWS + 2               ; (ticks 26 and 27: Trogg's lines below row 24's, trbt)
+        beq +
+        cpx #ROWS + 3
+        bne ++
++       txa
+        sbc #1                      ; (carry set: the tick)
+        jsr trbtl
+        ldx row
++       cpx #ROWS + 2               ; tick 26: the bottom border's sprite (bbset), then the yoyo's
         bne t26n                    ; string, if the frame's changed (strapply: not at tick 25,
         .if !TEST                   ; whose work, with it, could take over two ticks, and one
         jsr bbset                   ; would be lost)

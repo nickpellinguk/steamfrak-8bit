@@ -6,13 +6,14 @@
 # the frame is shown again (held).
 #   python3 frameprof.py KEYS [SECONDS [X Y]]   (KEYS: a script, or @file holding one; X Y:
 #                                                Trogg's start, build.mjs --troggx/--troggy)
-# (RAW=file: also each frame's stages, one line each, to that file)
+# (RAW=file: also each frame's stages, one line each, to that file; START=n: level n, from 0)
 import os, re, subprocess, sys, glob, statistics
 DIR = os.path.dirname(os.path.abspath(__file__)); B = os.path.join(DIR, '..', 'build')
 keys = sys.argv[1]
 if keys.startswith('@'): keys = open(keys[1:]).read().strip()
 SECS = float(sys.argv[2]) if len(sys.argv) > 2 else 30
 opts = ['--troggx', sys.argv[3], '--troggy', sys.argv[4]] if len(sys.argv) > 4 else []
+if os.environ.get('START'): opts += ['--start', os.environ['START']]   # (START=n: level n, from 0)
 subprocess.run(['node', os.path.join(DIR, 'build.mjs'), '--nopack', '--profile', '--keys', keys] + opts, check=True, capture_output=True)
 snap = os.path.join(B, 'snap'); os.makedirs(snap, exist_ok=True)
 for f in glob.glob(os.path.join(snap, 'p*.bin')): os.remove(f)

@@ -20,7 +20,7 @@
 import { background, images } from '../../cpc6128/tools/emu/render.mjs';
 import { readFileSync, writeFileSync } from 'fs';
 const LV = new URL('../levels/', import.meta.url).pathname;
-const ROOM = process.argv[2] || 'room_A_2', NAME = process.argv[3] || 'A_2', XOFF = 24, Y0 = 24;
+const ROOM = process.argv[2] || 'room_A_2', NAME = process.argv[3] || 'A_2', XOFF = 48, Y0 = 24;
 const e = JSON.parse(readFileSync(new URL('../../build/levels.json', import.meta.url)))[ROOM];
 const bg = background(ROOM), cols = Math.ceil(e.w / 4), rows = Math.ceil(e.h / 8), BW = cols * 4;
 const src = new Uint8Array(BW * rows * 8);

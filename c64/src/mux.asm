@@ -668,12 +668,19 @@ bxh     .fill 3
 ; becomes the timer), a balloon before a dagger: the balloon in multicolour (one sprite), the dagger
 ; hi-res; the y as the VIC compares it, the line's low byte
         .section high
+COVERR  = COVERX + 7 + 32          ; (the cover's right edge, 32 wide: a border hazard's x from it)
 ; Hazard x (kind y), on the screen across, above line 47 (y 21-46: from line 22, after tick 35
 ; sets it up on line 21): the top border's for this frame (btvmux; on sprite 7), a dagger before
 ; a balloon: the balloon in multicolour, the dagger hi-res
 btcand  lda vy + NS,x
         cmp #21
         bcc _x
+        lda vxhi + NS,x             ; (not over the cover's columns: no cover in the border)
+        bne +
+        lda vxlo + NS,x
+        cmp #COVERR
+        bcc _x
++
         lda bton
         beq +
         cpy #2
@@ -811,6 +818,12 @@ bbcand  cmp #1
         bcc _x
         cmp #276 - 256
         bcs _x
+        lda vxhi + NS,x             ; (not over the cover's columns: no cover in the border)
+        bne +
+        lda vxlo + NS,x
+        cmp #COVERR
+        bcc _x
++
         stx mt
         ldx nb
         lda bbon,x                  ; (one already: a balloon stays)
