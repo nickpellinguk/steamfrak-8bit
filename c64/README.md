@@ -61,6 +61,7 @@ ROM routines.
 | --- | --- |
 | `tools/mockup.mjs` | The original redraw of the BBC's A_1 for the 8x4 grid (`build/mockup.png`); with `EXPORT=...`, the dumps `tools/export.mjs` cut into the level format |
 | `tools/export.mjs` | One-off: A_1 cut into pieces, `levels/scrubbly.json`, `levels/common.json` and `levels/A_1.txt` (then edited by hand: see its first line) |
+| `tools/export_poglet.mjs` | First pass: the BBC's first Poglet level (A_2) cut into `levels/poglet.json` and `levels/A_2.txt`: logs from caps and a 3-character grain unit, ropes as black edges, the Poglet as a black outline over a multicolour infill sprite; the level squeezed into 200 lines. `node tools/level.mjs A_2 --preview` checks it and draws `build/level_A_2.png` (not yet playable) |
 | `tools/level.mjs` | Builds a level from `levels/<name>.txt` ("name x y" lines) and its type's pieces: the fixed, orthogonal glyph sets by band parity, the map, the patches, the physics (`geometry.json`), the objects (`picks.json`, `scrub.json`) and `build/level.png`; run by `build.mjs` (`--level NAME`) |
 | `tools/trogg.mjs` | Trogg's frames as sprites: a hi-res black outline over a multicolour infill, 24 wide, each sprite used twice down his 34 lines (`build/trogg.png`, `trogg.txt`, `trogg.bin`) |
 | `src/frak64.asm` | The demo: the timer interrupt a row, double-buffered screens, scrolling |
