@@ -489,7 +489,10 @@ _fl     sta vfl,x
         ; the balloons and daggers (hazards.asm moves them): their sprites, the image's corner at
         ; its origin less (kxo, kyo), x 31 + that - the scroll, y 26 + that: x = its x - bx (each
         ; kind's: the scroll + kxo - 31, made here once), y = its y + kyc (each kind's: 26 - kyo)
-_bal    ldy #2
+_bal    ldy nb                      ; (the bottom border's sprite: none yet this frame)
+        lda #0
+        sta bbon,y
+        ldy #2
 -       lda scrx
         clc
         adc kxo,y
@@ -541,7 +544,10 @@ _on     sta vxhi + NS,x
         sta vy + NS,x
         lda oyh,x
         adc kych,y
-        bne _hid
+        beq +
+        jsr bbcand                  ; (lines 256 on: the bottom border's, sprite 0, tick 26)
+        jmp _hid
++
         lda kptr,y                  ; (its sprite; its colour black, as all start)
         sta vptr + NS,x
         .if BALLTEST
@@ -579,7 +585,7 @@ _on     sta vxhi + NS,x
 +       inc bmct,x
         lda bmct,x
         and #15
-        bne _ih
+        bne _ihj
         beq _hr0
 _bk     lda #0
         sta bmc,x
@@ -630,6 +636,54 @@ _hr0    lda vh + NS,x               ; (only with its outline placed: never the i
         jmp _nm
 bxl     .fill 3
 bxh     .fill 3
+
+; Hazard x (kind y), on the screen across, past line 255 down (a the y's high byte): the bottom
+; border's sprite for this frame (on sprite 0, set up at tick 26, line 261: frak64.asm's bbset),
+; if its y is 261-275 (on lines 262-, set up in time, its pixels done by line 285, where sprite 0
+; becomes the timer), a balloon before a dagger: the balloon in multicolour (one sprite), the dagger
+; hi-res; the y as the VIC compares it, the line's low byte
+bbcand  cmp #1
+        bne _x
+        lda vy + NS,x
+        cmp #261 - 256
+        bcc _x
+        cmp #276 - 256
+        bcs _x
+        stx mt
+        ldx nb
+        lda bbon,x                  ; (one already: a balloon stays)
+        beq +
+        cpy #1
+        bne _xx
+        lda bbptr,x
+        cmp #(SPRBMC & $3fff) / 64
+        beq _xx
++       lda #1
+        sta bbon,x
+        cpy #1
+        bne +
+        lda #(SPRBMC & $3fff) / 64
+        sta bbptr,x
+        lda #1
+        sta bbmc,x
+        bne ++
++       lda kptr,y
+        sta bbptr,x
+        lda #0
+        sta bbmc,x
++       ldy mt
+        lda vy + NS,y
+        sta bby,x
+        lda vxlo + NS,y
+        sta bbx,x
+        lda vxhi + NS,y
+        sta bbxh,x
+        ldy mt                      ; (kind back in y, the hazard in x)
+        ldx mt
+        ldy oact,x
+        rts
+_xx     ldx mt
+_x      rts
 gscx    .word $ffff
 scrchg  .byte 1
 kptr    .byte 0, (SPRBALLOON & $3fff) / 64, (SPRDAGGER & $3fff) / 64   ; (each kind's sprite: 1 balloon, 2 dagger)
@@ -741,8 +795,6 @@ _ck
         lda vy,y
         cmp #47
         bcc _rm
-        cmp #251
-        bcs _rm
         sta my
         tax                     ; (its tick still early enough: if not, an earlier one)
         lda mktab,x
@@ -959,8 +1011,6 @@ wadd    ldy mv
         lda vy,y
         cmp #47
         bcc +
-        cmp #251
-        bcs +
         ldx mwait
         tya
         sta wlist,x
@@ -2220,6 +2270,12 @@ hwhead  .fill 8
 hattr   .fill 8
 s01c    .byte 0                 ; ($d01c, as s010 ...)
 tinst   .fill 26           ; (each tick's sprite)
+bbon    .fill 65                ; (each buffer's (0, 32, 64) bottom border sprite: shown, pointer,
+bbptr   .fill 65                ;  multicolour, x, x's bit 8, y)
+bbmc    .fill 65
+bbx     .fill 65
+bbxh    .fill 65
+bby     .fill 65
 slotv   .fill 4            ; (tick 0's)
 mk3     .fill ROWS           ; (each row's sprites on lines 3 and 4)
 mk4     .fill ROWS

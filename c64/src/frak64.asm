@@ -1108,9 +1108,12 @@ _dmux
         bcc +
         jmp rl0                     ; (tick 38)
 +       stx row
-        cpx #ROWS + 2               ; tick 26: the yoyo's string, if the frame's changed (strapply:
-        bne t26n                    ; not at tick 25, whose work, with it, could take over two
-        lda strpend                 ; ticks, and one would be lost)
+        cpx #ROWS + 2               ; tick 26: the bottom border's sprite (bbset), then the yoyo's
+        bne t26n                    ; string, if the frame's changed (strapply: not at tick 25,
+        .if !TEST                   ; whose work, with it, could take over two ticks, and one
+        jsr bbset                   ; would be lost)
+        .endif
+        lda strpend
         beq t26n
         jsr strapply                ; (the old string put back; the new one at tick 27)
 t26n    ldx row                     ; (strapply leaves x changed)
@@ -1308,6 +1311,9 @@ tmset   lda #(SPRTIMER & $3fff) / 64
         lda $d010
         and #$fe
         sta $d010
+        lda $d01c                   ; (hi-res: a balloon in the bottom border may have been
+        and #$fe                    ;  multicolour)
+        sta $d01c
         lda #TMX
         sta $d000
         lda #TMY
@@ -1363,6 +1369,42 @@ tmreset lda #0
         sta tms1
         sta tmm
         jmp tmdraw
+; The bottom border's sprite, at tick 26 (line 261: the cover's last piece done at line 259), on
+; sprite 0 (the timer from tick 29): a balloon or a dagger below line 261, the multiplexer's
+; buffer shown's (mux.asm's bbcand), its y the line's low byte, as the VIC compares it
+bbset   ldy bufoff
+        lda bbon,y
+        beq _x
+        lda bbptr,y
+        sta SCR0 + $3f8
+        sta SCR1 + $3f8
+        sta SCR2 + $3f8
+        sta SCR3 + $3f8
+        lda #0                      ; (black: the dagger's outline, the balloon's %10)
+        sta $d027
+        lda bbx,y
+        sta $d000
+        lda $d010
+        and #$fe
+        ora bbxh,y
+        sta $d010
+        lda $d017
+        and #$fe
+        sta $d017
+        lda $d01d
+        and #$fe
+        sta $d01d
+        lda $d01b
+        and #$fe
+        sta $d01b
+        lda $d01c
+        and #$fe
+        ora bbmc,y
+        sta $d01c
+        lda bby,y
+        sta $d001
+_x      rts
+
 tmcov   lda #(SPRCOVER & $3fff) / 64 ; (and back: the cover)
         sta SCR0 + $3f8
         sta SCR1 + $3f8
