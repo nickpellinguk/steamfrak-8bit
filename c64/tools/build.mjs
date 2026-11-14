@@ -80,6 +80,8 @@ writeFileSync(DIR + 'tails.inc', inc);
 // Y + CONV to Y + CONV + 20 (41 expanded). The Scrubblies' (3-7: expanded, y the line before
 // their top), from the mock-up (../build/scrub.json); or, --test SEED, sprites 1-7 in the left
 // border (unseen, but fetched) at random heights
+// (first, the level, from its pieces: levels/<--level, A_1>.txt, by level.mjs; not with --nopack)
+if (!process.argv.includes('--nopack')) execFileSync('node', [TOOLS + 'level.mjs', String(arg('level', 'A_1'))], { stdio: 'inherit' });
 const CONV = +arg('conv', 1), TEST = process.argv.includes('--test') || PM !== null;
 const scrub = JSON.parse(readFileSync(DIR + 'scrub.json', 'utf8'));
 let seed = +arg('test', 1) || 1;
@@ -246,7 +248,6 @@ const sb = Buffer.alloc(64);
 scrub.sprite.forEach((row, y) => { for (let k = 0; k < 3; k++) sb[y * 3 + k] = parseInt(row.slice(k * 8, k * 8 + 8), 2); });
 writeFileSync(DIR + 'scrubspr.bin', sb);
 console.log(`row masks (line 3/4): ${masks.map((m, r) => masks3[r] === m ? m.toString(16) : masks3[r].toString(16) + '/' + m.toString(16)).join(' ')}; tails ${masks.map(m => tailFor[m]).join(' ')}`);
-if (!process.argv.includes('--nopack')) execFileSync('node', [TOOLS + 'pack.mjs'], { stdio: 'inherit' });
 // The level's own data, packed (loader.asm unpacks it at the start): each character set's own
 // glyphs (from NCOMMON on), its sprites (from LSPR: the Scrubbly's body), its map (tops, bottoms)
 {
@@ -275,12 +276,12 @@ if (!process.argv.includes('--nopack')) execFileSync('node', [TOOLS + 'pack.mjs'
         `kscrn   .byte ${steps.map(s => +s[0]).join(', ')}\nkscrk   .byte ${steps.map(s => bit(s[1])).join(', ')}\n`);
 }
 // (the platforms and ladders for Trogg's physics, as the BBC version's tables: geometry.json, by
-// mockup.mjs)
+// level.mjs)
 {
     const g = JSON.parse(readFileSync(DIR + 'geometry.json', 'utf8'));
     const t = (name, v) => `${name.padEnd(8)}.byte ${v.join(', ')}\n`;
     const P = g.plats, L = g.lads;
-    writeFileSync(DIR + 'geometry.inc', `; made by tools/build.mjs from geometry.json (mockup.mjs)\nNPLATS = ${P.length}\nNLADS = ${L.length}\n` +
+    writeFileSync(DIR + 'geometry.inc', `; made by tools/build.mjs from geometry.json (level.mjs)\nNPLATS = ${P.length}\nNLADS = ${L.length}\n` +
         `LEVEL_W = ${g.w}\nLEVEL_H = ${g.h}\nTSTARTX = ${g.trogg[0]}\nTSTARTY = ${g.trogg[1]}\n` +
         t('plat_xl', P.map(p => p.x & 255)) + t('plat_xh', P.map(p => p.x >> 8)) + t('plat_yl', P.map(p => p.y & 255)) +
         t('plat_yh', P.map(p => p.y >> 8)) + t('plat_w', P.map(p => p.w)) +

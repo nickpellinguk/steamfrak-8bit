@@ -579,3 +579,19 @@ NTSC machine instead of a garbled screen; the VSP crash test on hardware (VSP.md
   more packed levels.
 - Next: the per-level tables still compiled in (band sets, geometry, objects, patches, NC) to be
   loadable as well.
+
+## Levels as pieces (levels/)
+
+- Each level type's graphics in its own file (levels/scrubbly.json; hooter.json and poglet.json
+  to come), keys and gems in levels/common.json: named pieces (ledge1, ladder3, scrubbly...) as
+  strings of colours, cut into 8x4 halves on their own grid; a ledge's platforms and a ladder's
+  physics with it. A level is a text file of "name x y" lines (levels/A_1.txt), placed on the 8x4
+  grid (an enemy on an even character row), later pieces' halves replacing earlier ones'.
+- The glyphs are fixed by the type, not optimised per level: orthogonal (a glyph's two halves of
+  the character the same), set 0 for even bands and set 1 for odd; common glyphs first, then the
+  type's either-band ones, then each set's own (the Scrubbly's). A_1: 55 and 62 of 64.
+- tools/level.mjs builds everything from them (replacing mockup.mjs + pack.mjs in the build).
+- A_1 as rebuilt: its bottom floor 4 lines lower (184, as its right end already was), so the
+  Scrubblies there are on an even row; the Scrubbly's feet hide the ledge's top line under them.
+- Next: the C64 stamping the map from the level's placed pieces at load (the pieces' halves as
+  codes, once per type), instead of the packed map; then the level editor.

@@ -86,10 +86,10 @@ for (let p = 0; p < W * H; p++) {
 const DOWNX = [[244, 152]];
 const snapPX = (x, y) => DOWNX.some(([hx, hy]) => Math.abs(x - hx) <= 2 && Math.abs(y - hy) <= 2) ? Math.floor(x / 8) * 8 : Math.round(x / 8) * 8;
 const snapTop = y => { let d = ((3 - y) % 4 + 4) % 4; if (d > 2) d -= 4; return y + d; };     // (nearest 3 mod 4: the last line of a half)
-const art = new Uint8Array(W * H);
+const art = new Uint8Array(W * H), ledgeOwner = new Int16Array(W * H).fill(-1), ladOwner = new Int16Array(W * H).fill(-1);   // (EXPORT: whose each pixel is)
 for (const pc of pieces) {
     const dx = snapPX(pc.x0, pc.y0) - pc.x0, dy = snapTop(pc.y0) - pc.y0;
-    for (const q of pc.pix) { const x = q % W + dx, y = ((q / W) | 0) + dy; if (inside(x, y)) art[at2(x, y)] = base[q]; }
+    for (const q of pc.pix) { const x = q % W + dx, y = ((q / W) | 0) + dy; if (inside(x, y)) { art[at2(x, y)] = base[q]; ledgeOwner[at2(x, y)] = pieces.indexOf(pc); } }
 }
 // ... their colours by line: the top black on background, the next 4 magenta and black, the rest
 // black and background, to line 12 (each piece's lines from its own top)
@@ -109,7 +109,7 @@ for (const pc of pieces) {
     for (let x = 0; x < W; x++) {
         let m = false;
         for (let l = 1; l <= 4 && !m; l++) if (inside(x, top + l) && art[at2(x, top + l)] === 2) m = true;
-        if (m) for (let l = 5; l <= 8; l++) if (inside(x, top + l)) art[at2(x, top + l)] = art[at2(x, top + l)] === 3 ? 3 : 1;
+        if (m) for (let l = 5; l <= 8; l++) if (inside(x, top + l)) { art[at2(x, top + l)] = art[at2(x, top + l)] === 3 ? 3 : 1; if (ledgeOwner[at2(x, top + l)] < 0) ledgeOwner[at2(x, top + l)] = pieces.indexOf(pc); }
     }
 }
 
@@ -141,7 +141,7 @@ e.lad_x.forEach((lx, k) => {
         const p = y & 7, row = p >= 1 && p <= 3 ? RUNG[p - 1] : POLE;
         // (in the ledge's area too: its first half, its last, and its poles through its second half,
         // else the right pole's first line there is a hole, where the cone's black doesn't fill it)
-        const put = (x, v) => { if (inside(x, y) && !art[at2(x, y)] && (y < from + 4 || y >= to - 4 || (row === POLE && y < from + 8) || !area[at2(x, y)])) art[at2(x, y)] = v; };
+        const put = (x, v) => { if (inside(x, y) && !art[at2(x, y)] && (y < from + 4 || y >= to - 4 || (row === POLE && y < from + 8) || !area[at2(x, y)])) { if (!process.env.NOLADDERS) art[at2(x, y)] = v; ladOwner[at2(x, y)] = k; } };
         for (let x = 0; x < 12; x++) if (row[x] === '#') put(cx - 6 + x, 3);
     }
     ladMid[k] = cx;
@@ -287,7 +287,7 @@ e.draw_img.forEach((img, k) => {
 });
 
 // ---- 200 lines: character rows ROW0 to ROW0 + 24
-for (const a of [src, art, tag, ovl]) { a.copyWithin(0, ROW0 * 8 * W, (ROW0 + ROWS) * 8 * W); a.fill(a === ovl ? -1 : 0, ROWS * 8 * W); }
+for (const a of [src, art, tag, ovl, ledgeOwner, ladOwner]) { a.copyWithin(0, ROW0 * 8 * W, (ROW0 + ROWS) * 8 * W); a.fill(a === ovl ? -1 : 0, ROWS * 8 * W); }
 const HS = ROWS * 8;
 
 // ---- As ECM + 4-line FLI shows it
@@ -433,3 +433,9 @@ if (process.env.CHECK) {
 
 // ---- The C64 data, for pack.mjs: the halves as glyphs and ECM backgrounds, every cell's foreground
 writeFileSync(`${OUT}/level${SUF}.json`, JSON.stringify({ NC, ROWS, F: [...cellF], T: halfPat[0], B: halfPat[1], TB: [...halfB[0]], BB: [...halfB[1]] }));
+
+// ---- EXPORT=name: this run's characters as shown and whose each pixel is, for export.mjs
+if (process.env.EXPORT) writeFileSync(`${OUT}/export_${process.env.EXPORT}.json`, JSON.stringify({ W, HS, NC, ROW0, XOFF, w: e.w, h: e.h,
+    shown: [...shownChars.subarray(0, W * HS)], ledgeOwner: [...ledgeOwner.subarray(0, W * HS)], ladOwner: [...ladOwner.subarray(0, W * HS)],
+    plats, lads, trogg: troggStart, ladMid, picks, placed, SH, KEY, SPR, SCRUB, pickGrids, ovl: [...ovl.subarray(0, W * HS)],
+    bbcPlats: e.plat_x.map((x, k) => ({ x, y: e.plat_y[k], w: e.plat_w[k], moving: e.plat_moving[k], bouncy: e.plat_bouncy[k] })) }));
