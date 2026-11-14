@@ -21,12 +21,16 @@
 ; after nlast (nb), last made three frames ago: it starts by copying across from nlast what the
 ; two frames since changed, so the three keep step.
 
-NV      = NS + NB + 1 + 2 + NB  ; virtual sprites: the Scrubblies, the balls, the yoyo, the FRAK!
-                                ; bubble, the balloons' infill (BIV)
+NVS     = NS + NB + 1 + 2 + NB  ; virtual sprites, sorted: the Scrubblies, the balls, the yoyo, the
+                                ; FRAK! bubble, the balloons' infill (BIV)
 BIV     = NS + NB + 3
+TVO     = NVS                   ; then Trogg's first instances, at the head of hardware sprites 1
+TVI     = NVS + 1               ; (outline) and 2 (infill), so what's placed there comes after him:
+NV      = NVS + 2               ; never sorted, updated, placed or dropped (troggmux keeps them)
 VEXPY   = 1                     ; (vfl: expanded down,
 VEXPX   = 2                     ;  ... across,
 VBEHIND = 4                     ;  ... behind the characters,
+VMC     = $10                   ;  ... multicolour (the shared colours yellow and magenta),
 VLOW    = $20                   ;  ... placed after all others, and dropped for any of them,
 VFIRST  = $40                   ;  ... kept before others,
 VHIDE   = $80                   ;  ... not shown)
@@ -227,6 +231,24 @@ muxinit lda #<mdata             ; (all 0 first)
         sta t01b
         sta t01b + 32
         sta t01b + 64
+        lda #4                  ; (Trogg's infill, sprite 2: multicolour)
+        sta t01c
+        sta t01c + 32
+        sta t01c + 64
+        lda #1                  ; Trogg's first instances, at the head of sprites 1 and 2: set up
+        sta vh + TVO            ; before the frame (tick 37), kept before others, their settings
+        lda #2                  ; taken as unknown (his x's bit 8 can move partway down him)
+        sta vh + TVI
+        lda #TVO
+        sta hwhead + 1
+        lda #TVI
+        sta hwhead + 2
+        lda #$ff
+        sta va + TVO
+        sta va + TVI
+        lda #VFIRST
+        sta vfl + TVO
+        sta vfl + TVI
         rts
 
 ; The two frames since this buffer was made: their changes, from the newest (nf) to it (nb):
@@ -408,6 +430,8 @@ cpregs  lda trch,y              ; (a tick's registers, list y to list x)
         sta t01d,x
         lda t01b,y
         sta t01b,x
+        lda t01c,y
+        sta t01c,x
         rts
 
 ; ---- The game, such as it is: the Scrubblies follow the scroll; the balls bounce
@@ -485,6 +509,9 @@ _bal    ldy #2
         bne _m
 _hid    lda #VHIDE
         sta vfl + NS,x
+        lda #0                      ; (a balloon starts in hi-res)
+        sta bmc,x
+        sta bifail,x
 _ih     lda #VLOW | VHIDE
         sta vfl + BIV,x
 _nm     dex
@@ -535,8 +562,46 @@ _on     sta vxhi + NS,x
         ; tries both at once, the first preferred; once placed, the one it took
         dey
         bne _ih
-        lda vh + NS,x               ; (only with its outline placed: never the infill alone, and
-        bmi _ih                     ;  its hardware sprite free for the outline)
+        lda bmc,x                   ; (in multicolour: one sprite, blocky, the fallback)
+        beq _hr
+        lda #(SPRBMC & $3fff) / 64
+        sta vptr + NS,x
+        lda #VMC
+        sta vfl + NS,x
+        lda vh + BIV,x              ; (its infill placed, on a try: back to hi-res)
+        bpl _bk
+        lda bifail,x                ; (a try failed: tried again in 16 frames)
+        beq +
+        lda #0
+        sta bifail,x
+        sta bmct,x
++       inc bmct,x
+        lda bmct,x
+        and #15
+        bne _ih
+        beq _hr0
+_bk     lda #0
+        sta bmc,x
+        lda kptr + 1
+        sta vptr + NS,x
+        lda #0
+        sta vfl + NS,x
+        beq _hr0
+_ihj    jmp _ih
+_hr     lda bifail,x                ; hi-res: its infill's place sought (both its images) and none
+        beq _hr0                    ; found: in multicolour instead
+        lda #0
+        sta bifail,x
+        sta bmct,x
+        lda #1
+        sta bmc,x
+        lda #(SPRBMC & $3fff) / 64
+        sta vptr + NS,x
+        lda #VMC
+        sta vfl + NS,x
+        bne _ihj
+_hr0    lda vh + NS,x               ; (only with its outline placed: never the infill alone, and
+        bmi _ihj                    ;  its hardware sprite free for the outline)
         lda vxlo + NS,x
         sta vxlo + BIV,x
         lda vxhi + NS,x
@@ -574,7 +639,7 @@ sort    ldy order               ; (in order, mostly: each compared with the one 
         lda vy,y                ; one that's out of order moved back to its place)
         sta mkey
         ldx #1
-_next   cpx #NV
+_next   cpx #NVS
         bcs _done
         ldy order,x
         lda vy,y
@@ -623,7 +688,7 @@ _v
         jsr stamp2
         .endif
         ldx mo
-_vx     cpx #NV
+_vx     cpx #NVS
         bcc +
         jmp pplace
 +       ldy order,x
@@ -829,6 +894,11 @@ _kept
         bcs +                       ; sprite removed: his lines 3 and 4 there are his)
         lda #47
 +       sta my
+        sta vy + TVO                ; (his first instances, on sprites 1 and 2: his lines, for
+        sta vy + TVI                ; what's placed after him there)
+        lda ml
+        sta vl + TVO
+        sta vl + TVI
         jsr rngs
         lda tra                     ; (his rows' tails: the old ones and the new ones redone, the
         cmp traw                    ; row before for the x's move too)
@@ -997,6 +1067,8 @@ _regs   ldx mh                  ; (its hardware sprite's bits, and its settings)
         sta t01d,x
         lda t01b,y
         sta t01b,x
+        lda t01c,y
+        sta t01c,x
         jsr setbits
         lda #1
         sta trch,x
@@ -1053,6 +1125,12 @@ setbits lda mfl
         bcc +
         ora mbit
 +       sta t010,x
+        lda t01c,x
+        and mkey
+        lsr mcur
+        bcc +
+        ora mbit
++       sta t01c,x
         rts
 
 ; Those not shown placed (at most PLACES), kept before others first; a sprite kept before others
@@ -1088,8 +1166,12 @@ _pv     ldx mo
         jsr place
         bcs _pn
         lda mpass
-        beq _pn
-        jsr evict
+        bne _pev
+        ldx mv                  ; (the low: a balloon's infill, no place for either image: the
+        lda #1                  ; balloon in multicolour, game)
+        sta bifail - BIV,x
+        jmp _pn
+_pev    jsr evict
         bcc _pn
         jsr place
 _pn     inc mo
@@ -1201,7 +1283,7 @@ _nb     lda pvt
         sta ptt
         lda ml
         sta pmlt
-        ldx #3
+        ldx #1                  ; (sprites 1-7: 1 and 2 after Trogg)
 _h      stx mh
         lda #$ff                ; (its neighbours down this hardware sprite: for the first, and
         sta mp                  ; for the second, pmpb)
@@ -1571,12 +1653,13 @@ calcl   ldy mv
 +       sta ml
         rts
 
-; Sprite mv's settings, for the registers: expanded down, across, behind, x's bit 8 (a)
+; Sprite mv's settings, for the registers: expanded down, across, behind, x's bit 8, multicolour
+; (a: bits 0-4)
 attrof  ldy mv
         lda vxhi,y
         lsr
         lda vfl,y
-        and #VEXPY | VEXPX | VBEHIND
+        and #VEXPY | VEXPX | VBEHIND | VMC
         bcc +
         ora #8
 +       rts
@@ -1836,6 +1919,11 @@ sweep
 -       sta hattr,x
         dex
         bpl -
+        lda #$ff                ; (sprites 1 and 2: Trogg's, then unknown, his x's bit 8 maybe
+        sta hattr + 1           ; moved partway down him: what's set up after him sets them)
+        sta hattr + 2
+        lda #4                  ; (Trogg's infill multicolour)
+        sta s01c
         lda #1
         sta s017
         sta s01d
@@ -1891,6 +1979,8 @@ putregs lda s010
         sta t01d,x
         lda s01b
         sta t01b,x
+        lda s01c
+        sta t01c,x
         rts
 
 setattr jsr attrof              ; (sprite mv's settings into the registers: mcur, if they change)
@@ -1931,6 +2021,12 @@ setattr jsr attrof              ; (sprite mv's settings into the registers: mcur
         bcc +
         ora mbit
 +       sta s010
+        lda s01c
+        and mkey
+        lsr mfl
+        bcc +
+        ora mbit
++       sta s01c
         lda #1
         sta mcur
         rts
@@ -2029,6 +2125,9 @@ vcol    .fill NV
 vfl     .fill NV
 mrank   .byte 0
 bivar   .fill NB                ; (each balloon's infill's image: 0 top, 1 bottom)
+bmc     .fill NB                ; (each balloon: 1 in multicolour; its infill's try failed; frames
+bifail  .fill NB                ;  since, for the next try)
+bmct    .fill NB
 pyb     .byte 0                 ; (place's, for the infill's two images: the second's y, last
 pmlb    .byte 0                 ;  line, tick, slot; whether each has a tick; the first's tick,
 ptb     .byte 0                 ;  slot, last line; the second's neighbours; its best)
@@ -2045,7 +2144,7 @@ bbl     .byte 0
 bbm     .byte 0
 bbp     .byte 0
 bbn     .byte 0
-order   .for i = 0, i < NV, i += 1
+order   .for i = 0, i < NVS, i += 1
         .byte i
         .endfor
 ; (the balloons and daggers: kind (0 none, 1 balloon, 2 dagger), x in the level (and a fraction),
@@ -2108,6 +2207,7 @@ vprv    .fill NV
 vnxt    .fill NV
 hwhead  .fill 8
 hattr   .fill 8
+s01c    .byte 0                 ; ($d01c, as s010 ...)
 tinst   .fill 26           ; (each tick's sprite)
 slotv   .fill 4            ; (tick 0's)
 mk3     .fill ROWS           ; (each row's sprites on lines 3 and 4)
@@ -2148,5 +2248,6 @@ u_col   .fill 96
 rowimm  .fill 96
 rowtl   .fill 96
 rowth   .fill 96
+t01c    .fill 96                ; (each tick's $d01c, as t010 ...)
 mdend
         .endv

@@ -472,6 +472,19 @@ reference for everything else is that code (`../src/frak.asm`): `check_collision
       worked out only when its flags or x's bit 8 change; the sweep marking only ticks whose
       registers change. Held frames (frameprof, the same script): 8.6% before the infill, 15.1%
       with it, 10.9% now. muxcheck: 0 problems (plain, Insane).
+      Sprites 1 and 2 shared: Trogg's first instances are two fixed entries (TVO, TVI) at the
+      head of hardware sprites 1 and 2 in the multiplexer's model (set up in tick 37 as before,
+      his tails unchanged, never sorted, placed or dropped), so other sprites can be placed there
+      after his lines; their settings taken as unknown after him (his x's bit 8 can move partway
+      down), so what's set up there writes the registers. $d01c is now one of the multiplexer's
+      settings (VMC; t01c in each tick's list, written with the others in the tails and tick 37),
+      Trogg's outline colour restored in tick 37. A balloon whose infill finds no place (both
+      images) turns multicolour (SPRBMC: black, magenta, the highlight see-through, double-width
+      pixels), its infill tried again every 16 frames. Insane, Trogg high: 126 set-ups on sprites
+      1-2 in 60 samples, balloons 83 hi-res with infill, 1 multicolour, 2 without. muxcheck (now
+      with sprites 1-2 and $d01c): 0 problems; held frames 11.2% as before. The tails' least
+      slack 9 cycles less where a tick's registers change (12 at the least, Insane). Found, not
+      new: Trogg on the top platform (y 59) overruns his row 3's tick (main does too).
 14. **Sound.** The sound effects on the SID (`SFX_CHING` for a pickup, `SFX_SQUEAL`, `SFX_DAGGER`,
     `SFX_POP`, `SFX_THUD`), from the BBC version's definitions, played in the border; the music
     (the victory tune) after. Its time measured against the budget from 13.

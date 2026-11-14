@@ -13,8 +13,9 @@ for line in open(C64+'/build/frak64.lbl'):
     if m: lbl[m.group(1)]=int(m.group(3),16 if m.group(2) else 10)
 N=int(sys.argv[1]) if len(sys.argv)>1 else 8
 NV=lbl["vt"]-lbl["vh"]          # (the virtual sprites: vh is NV long, vt follows)
+NVS=lbl["NVS"] if "NVS" in lbl else NV   # (those sorted and placed: then Trogg's two, at the head of sprites 1 and 2)
 BL=lbl["t017"]-lbl["t010"]     # (each buffer array's length: 32 a buffer)
-per=[('nb',1),('t010',BL*20),('vh',NV*15),('vy',NV*6),('tpen',14),('tmsbb',6)]   # contiguous blocks
+per=[('nb',1),('t010',BL*21),('vh',NV*15),('vy',NV*6),('tpen',14),('tmsbb',6)]   # contiguous blocks
 # addresses: buffers are contiguous from t010 (20 arrays x BL); model from vh; virtual sprites from vy
 const=[('maskjm',256),('masktl',256),('maskth',256),('masktla',256),('masktha',256),('masktlb',256),('maskthb',256),('masktlc',256),('maskthc',256)]
 cmds=['m %04x %04x'%(lbl[n],lbl[n]+l-1) for n,l in const]+['break %04x'%lbl['muxdone']]
@@ -30,7 +31,7 @@ def vals(b):
         if m: v+=[int(x,16) for x in m.group(1).split()]
     return v
 mjm,mtl,mth,mtla,mtha,mtlb,mthb,mtlc,mthc=[vals(bl[i]) for i in range(9)]
-bufnames=['t010','t017','t01d','t01b','trch','e_n','e_reg','e_x','e_y','e_ptr','e_col','u_n','u_reg','u_y','u_x','u_ptr','u_col','rowimm','rowtl','rowth']
+bufnames=['t010','t017','t01d','t01b','trch','e_n','e_reg','e_x','e_y','e_ptr','e_col','u_n','u_reg','u_y','u_x','u_ptr','u_col','rowimm','rowtl','rowth','t01c']
 vnames=['vy','vxlo','vxhi','vptr','vcol','vfl']
 probs=0; k=9
 for f in range(N):
@@ -50,18 +51,19 @@ for f in range(N):
     # match to virtual sprites by (y, x)
     shownv=0
     for i in ins:
-        c=[v for v in range(NV) if V['vy'][v]==i['y'] and V['vxlo'][v]==i['x'] and not V['vfl'][v]&0x80]
+        c=[v for v in range(NVS) if V['vy'][v]==i['y'] and V['vxlo'][v]==i['x'] and not V['vfl'][v]&0x80]
         if not c: print(f'f{f}: set-up {i} matches no virtual sprite'); probs+=1; i['l']=i['y']+21; i['fl']=0; i['msb']=0; continue
         v=c[0]; fl=V['vfl'][v]; i['fl']=fl; i['msb']=V['vxhi'][v]&1
         i['l']=min(255,i['y']+(42 if fl&1 else 21))
         if i['reg']!=2*i['h']: print(f'f{f}: reg {i}'); probs+=1
-        if i['h']<3 or i['h']>7: print(f'f{f}: hw {i}'); probs+=1
-    vis=[v for v in range(NV) if not V['vfl'][v]&0x80 and 47<=V['vy'][v]<251]
+        if i['h']<1 or i['h']>7: print(f'f{f}: hw {i}'); probs+=1
+    vis=[v for v in range(NVS) if not V['vfl'][v]&0x80 and 47<=V['vy'][v]<251]
     # timing: early enough, hardware sprite free
     for i in ins:
         if i['t']>0 and i['y']<62+8*(i['t']-1): print(f'f{f}: too late {i}'); probs+=1
-    for h in range(3,8):
+    for h in range(1,8):
         seq=sorted([i for i in ins if i['h']==h],key=lambda i:(i['t'],i['y']))
+        if h in (1,2): seq=[dict(t=0,h=h,y=TYv,l=TL,trogg=1)]+seq      # (Trogg first there: set up before the frame)
         for a,b in zip(seq,seq[1:]):
             if b['t']==0 or a['l']>46+8*b['t']: print(f'f{f}: hw {h} clash {a} {b}'); probs+=1
     # rows
@@ -77,16 +79,16 @@ for f in range(N):
             print(f'f{f}: row {r} operands wrong (masks {m3:02x}/{m4:02x})'); probs+=1
     # registers in force on each line
     def regs_at(line):
-        cur=(B['t010'][nb],B['t017'][nb],B['t01d'][nb],B['t01b'][nb])
+        cur=(B['t010'][nb],B['t017'][nb],B['t01d'][nb],B['t01b'][nb],B['t01c'][nb])
         for t in range(1,26):
             if 56+8*(t-1)<=line and B['u_n'][nb+t]!=255 and B['trch'][nb+t]:
-                cur=(B['t010'][nb+t],B['t017'][nb+t],B['t01d'][nb+t],B['t01b'][nb+t])
+                cur=(B['t010'][nb+t],B['t017'][nb+t],B['t01d'][nb+t],B['t01b'][nb+t],B['t01c'][nb+t])
         return cur
     for i in ins:
-        want=(i['fl']&1,(i['fl']>>1)&1,(i['fl']>>2)&1,i['msb'])
+        want=(i['fl']&1,(i['fl']>>1)&1,(i['fl']>>2)&1,i['msb'],(i['fl']>>4)&1)
         for line in range(i['y']+1,i['l']+1):
             r=regs_at(line); h=i['h']
-            got=((r[1]>>h)&1,(r[2]>>h)&1,(r[3]>>h)&1,(r[0]>>h)&1)
+            got=((r[1]>>h)&1,(r[2]>>h)&1,(r[3]>>h)&1,(r[0]>>h)&1,(r[4]>>h)&1)
             if got!=want: print(f'f{f}: regs wrong for {i} on line {line}: {got} want {want}'); probs+=1; break
     if (B['t017'][nb]&1)!=1 or (B['t01d'][nb]&1)!=1: print(f'f{f}: cover not expanded'); probs+=1
     # Trogg: his ticks left alone; his sprites' bits in the registers on his lines
@@ -94,11 +96,12 @@ for f in range(N):
         if B['u_n'][nb+t]!=255: print(f'f{f}: a set-up in Trogg\'s tick {t}'); probs+=1
     for line in range(TYv+1,TL+1):
         rg=regs_at(line)
-        if (rg[0]&6)!=tmsb or (rg[1]&6) or (rg[2]&6) or (rg[3]&6): print(f'f{f}: Trogg\'s register bits wrong on line {line}: {rg}'); probs+=1; break
+        if (rg[0]&6)!=tmsb or (rg[1]&6) or (rg[2]&6) or (rg[3]&6) or (rg[4]&6)!=4: print(f'f{f}: Trogg\'s register bits wrong on line {line}: {rg}'); probs+=1; break
     exp_tra = (TYv-35)>>3 if TYv>=35 and (TYv-35)>>3 < 25 else 255
     if tra!=exp_tra: print(f'f{f}: Trogg\'s row {tra}, not {exp_tra}'); probs+=1
     # (the row for his x's move: the one before, if there is one)
     exp_trc = exp_tra-1 if 0 < exp_tra < 255 else 255
     if trc!=exp_trc: print(f'f{f}: Trogg\'s x-move row {trc}, not {exp_trc}'); probs+=1
-    print(f'frame {f}: {len(ins)} set-ups, {len(vis)} visible; Trogg y {TYv}, rows {trc}/{tra}/{trb}, ticks {tres1}-{tres2} left alone')
+    s12=sum(1 for i in ins if i['h'] in (1,2))
+    print(f'frame {f}: {len(ins)} set-ups ({s12} on sprites 1-2), {len(vis)} visible; Trogg y {TYv}, rows {trc}/{tra}/{trb}, ticks {tres1}-{tres2} left alone')
 print('problems:',probs)
