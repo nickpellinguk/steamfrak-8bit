@@ -197,7 +197,7 @@ const trogg = [e.trogg[0] + XOFF + (tg ? tg.X - (tg.x + XOFF) : 0), (tg ? tg.Y -
 pogPieces();
 const sorted = Object.fromEntries(Object.keys(pieces).sort((a, b) => a.localeCompare(b, 'en', { numeric: true })).map(k => [k, pieces[k]]));
 const json = o => JSON.stringify(o, null, 1).replace(/\[\s+([^\[\]{}]*?)\s+\]/g, (m, inner) => inner.includes('"') && inner.length > 60 ? m : '[' + inner.replace(/\s*\n\s*/g, ' ') + ']');
-writeFileSync(LV + 'poglet.json', json({ colours: '- transparent; 0 1 2 3 cyan yellow magenta black (the object); c y m b the same, scenery baked in; mcsprite: . clear, Y yellow ($d025), M magenta ($d026), 2x2 blocks', type: 'poglet', pieces: sorted }) + '\n');
+writeFileSync(LV + 'poglet.json', json({ background: 'green', colours: '- transparent; 0 1 2 3 background (green) yellow magenta black (the object); c y m b the same, scenery baked in; mcsprite: . clear, Y yellow ($d025), M magenta ($d026), 2x2 blocks', type: 'poglet', pieces: sorted }) + '\n');
 const NC = Math.ceil((e.w + XOFF) / 8) + 1;
 writeFileSync(LV + `${NAME}.txt`, [`# ${NAME}, first pass from the BBC's ${ROOM}: squeezed (its lines 56-224 to the map's 36-188), logs and ropes on the 8x4 grid`,
     'type poglet', `size ${NC} 25`, `width ${e.w + XOFF}`, `height ${e.h}`, `trogg ${trogg[0]} ${trogg[1]}`, '',

@@ -1,10 +1,10 @@
 // First pass: a classic Hooter level (A_3) from the BBC's, into the level format (../levels):
 // hooter.json (the type's pieces) and A_3.txt. Redrawn for ECM's 8x4 halves (black on one
 // background each):
-//   - girders: 16 lines, black on yellow (the lattice's holes yellow: see-through would need cyan
-//     in halves with the yellow). The BBC's 12-pixel unit (an X of yellow strokes outlined black
-//     between thin bars, its own black edge on both sides, so units abut with a double line) drawn
-//     16 wide: its X 10 lines tall between 3-line bars, in the BBC's proportion. A girder of k BBC
+//   - girders: 16 lines: 4 black on yellow (a bar), 8 black on the background (red on Hooter
+//     levels: the X's arms as outlines, their yellow gone, its holes see-through), 4 black on yellow.
+//     The BBC's 12-pixel unit (an X between thin bars, its own black edge on both sides, so units
+//     abut with a double line) drawn 16 wide, in the BBC's proportion. A girder of k BBC
 //     units centred where it was, an even number of characters nearest 1.5k. girder<N>: N characters
 //   - chains (the ladders): a cap (a half, black on yellow) under the girder they hang from, then
 //     the BBC's links (8 wide, 14 lines a cycle) stretched to 16 by a hole row more in each link,
@@ -30,14 +30,14 @@ const pieces = {}, place = [], chainPlace = [], notes = [];
 const [A0, A1, B0, B1] = [49, 229, 12, 184];
 const fy = y => B0 + (y - A0) * (B1 - B0) / (A1 - A0), snap4 = v => Math.round(v / 4) * 4;
 // ---- Girders: the unit, 8 wide, 16 lines (Y yellow, # black, . hole)
-// (16 wide, 2 characters: thin bars (3 lines) round a 10-line X, its arms 1 yellow outlined black
-// from the corners to a 4-wide middle, as the BBC's 12 x 8 in proportion; black on yellow throughout,
-// the holes yellow, so the bars can share halves with the lattice)
-const UNIT = ['################', '#YYYYYYYYYYYYYY#', '#Y############Y#',
-    '##Y##......##Y##', '.##Y##....##Y##.', '..##Y##..##Y##..', '...##Y####Y##...', '....##YYYY##....',
-    '....##YYYY##....', '...##Y####Y##...', '..##Y##..##Y##..', '.##Y##....##Y##.', '##Y##......##Y##',
-    '#Y############Y#', '#YYYYYYYYYYYYYY#', '################'];
-const girderPiece = n => ({ art: UNIT.map(r => [...r].map(c => c === '#' ? '3' : '1').join('').repeat(n / 2)), plats: [[0, 0, n * 8]] });
+// (16 wide, 2 characters: a bar (4 lines, black on yellow, its last where the X's arms start), the
+// X (8 lines, black on the background: its arms' outlines, their yellow gone, the holes
+// see-through), a bar; the X's arms from the corners to a 4-wide middle, as the BBC's)
+const UNIT = ['################', '#YYYYYYYYYYYYYY#', '#Y############Y#', '##Y##YYYYYY##Y##',
+    '.##.##....##.##.', '..##.##..##.##..', '...##.####.##...', '....##....##....',
+    '....##....##....', '...##.####.##...', '..##.##..##.##..', '.##.##....##.##.',
+    '##Y##YYYYYY##Y##', '#Y############Y#', '#YYYYYYYYYYYYYY#', '################'];
+const girderPiece = n => ({ art: UNIT.map(r => [...r].map(c => c === '#' ? '3' : c === 'Y' ? '1' : '0').join('').repeat(n / 2)), plats: [[0, 0, n * 8]] });
 // (a girder of k BBC units: 2 characters a unit of 16, as near 12k as an even number of characters gets)
 const G = e.plat_x.map((x, k) => {
     const w = e.plat_w[k], u = Math.round(w / 12), n = Math.max(2, 2 * Math.round(0.75 * u)), X = Math.round((x + w / 2 + XOFF - n * 4) / 8) * 8, Y = snap4(fy(e.plat_y[k]));
@@ -118,7 +118,7 @@ const tg = G.find(g => g.y === e.trogg[1] && e.trogg[0] >= g.x && e.trogg[0] < g
 const trogg = [e.trogg[0] + XOFF + (tg ? tg.X - (tg.x + XOFF) : 0), tg ? tg.Y - 1 : snap4(fy(e.trogg[1]))];
 const sorted = Object.fromEntries(Object.keys(pieces).sort((a, b) => a.localeCompare(b, 'en', { numeric: true })).map(k => [k, pieces[k]]));
 const json = o => JSON.stringify(o, null, 1).replace(/\[\s+([^\[\]{}]*?)\s+\]/g, (m, inner) => inner.includes('"') && inner.length > 60 ? m : '[' + inner.replace(/\s*\n\s*/g, ' ') + ']');
-writeFileSync(LV + 'hooter.json', json({ colours: '- transparent; 0 1 2 3 cyan yellow magenta black (the object); c y m b the same, scenery baked in; mcsprite: . clear, Y yellow ($d025), M magenta ($d026), 2x2 blocks', type: 'hooter', pieces: sorted }) + '\n');
+writeFileSync(LV + 'hooter.json', json({ background: 'red', colours: '- transparent; 0 1 2 3 background (red) yellow magenta black (the object); c y m b the same, scenery baked in; mcsprite: . clear, Y yellow ($d025), M magenta ($d026), 2x2 blocks', type: 'hooter', pieces: sorted }) + '\n');
 const NC = Math.ceil((e.w + XOFF) / 8) + 1;
 writeFileSync(LV + `${NAME}.txt`, [`# ${NAME}, first pass from the BBC's ${ROOM}: squeezed (its lines ${A0}-${A1} to the map's ${B0}-${B1}), girders and chains on the 8x4 grid`,
     'type hooter', `size ${NC} 25`, `width ${e.w + XOFF}`, `height ${e.h}`, `trogg ${trogg[0]} ${trogg[1]}`, '',

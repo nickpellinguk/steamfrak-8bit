@@ -631,12 +631,11 @@ NTSC machine instead of a garbled screen; the VSP crash test on hardware (VSP.md
 ## The Hooter type, first pass (A_3)
 
 - tools/export_hooter.mjs: the BBC's room_A_3 into levels/hooter.json and levels/A_3.txt.
-  - Girders: 16 lines, black on yellow throughout (see-through holes would need cyan in halves
-    with the yellow, so the lattice's holes are yellow). The BBC's 12-pixel X-truss unit drawn 16
-    wide (2 characters): 3-line bars round a 10-line X, its arms from the corners to a 4-wide
-    middle, the BBC's proportions; units abut with a double black line. A girder of k BBC units:
-    the even number of characters nearest 1.5k, centred where it was. (An 8-pixel X read as
-    dumbbells.)
+  - Girders: 16 lines: 4 black on yellow (a bar, its last line where the X's arms start), 8
+    black on the background (red on Hooter levels: the X's arms as outlines, their yellow gone,
+    its holes see-through), 4 black on yellow. The BBC's 12-pixel X-truss unit drawn 16 wide (2
+    characters), in its proportions; units abut with a double black line. A girder of k BBC
+    units: the even number of characters nearest 1.5k, centred where it was.
   - Chains: 8 wide, a whole character: a cap (a half, black on yellow) under their girder, then
     the BBC's 14-line link cycle stretched to 16 (a hole row more in each link); each half black
     on whichever of yellow and magenta most of it is, so the links edge on are magenta and face
@@ -646,3 +645,5 @@ NTSC machine instead of a garbled screen; the VSP crash test on hardware (VSP.md
   - Squeezed a little: the BBC's lines 49-229 to the map's 12-184 (x 0.956).
   - Glyphs: 49 of 64 in each set, with the Hooters on any row.
 - Not playable yet, as A_2.
+- Each type file names its background (the ECM register 0, "0" in the pieces): cyan for the
+  Scrubbly, green for the Poglet, red for the Hooter; level.mjs's preview draws it.
