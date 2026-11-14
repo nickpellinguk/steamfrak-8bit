@@ -35,6 +35,10 @@ attract lda #$32                    ; the font, from the character ROM (seen at 
         bne -
         lda #$35
         sta $01
+        lda $7fff                   ; (the opened borders show the bank's last byte in text mode,
+        sta fe7fff                  ;  $7fff, the game's code there: 0 while the attract screen is
+        lda #0                      ;  up, put back after; the game's, in ECM, is $79ff, kept 0)
+        sta $7fff
         lda $dd02                   ; VIC bank 1
         ora #3
         sta $dd02
@@ -128,6 +132,8 @@ _td     lda #3                      ; cyan, as the game
         sta $d015
         lda #1
         sta $d019
+        lda fe7fff
+        sta $7fff
         lda #0                      ; (the screens' memory, the text's and the font's, zero again,
         tax                         ; as the game finds it otherwise: it doesn't write every byte)
 -       .for p = 0, p < 16, p += 1
@@ -291,6 +297,7 @@ fesprs  lda fslists,x
         bne -
         rts
 fen     .byte 0
+fe7fff  .byte 0
 fei     .byte 0
         .align $100
 fslists
