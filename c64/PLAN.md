@@ -485,6 +485,17 @@ reference for everything else is that code (`../src/frak.asm`): `check_collision
       with sprites 1-2 and $d01c): 0 problems; held frames 11.2% as before. The tails' least
       slack 9 cycles less where a tick's registers change (12 at the least, Insane). Found, not
       new: Trogg on the top platform (y 59) overruns his row 3's tick (main does too).
+      Top and bottom borders opened: RSEL cleared on line 248 (row 24's interrupt waits for it),
+      so the vertical border never starts; sprites overhanging the level's edges now show there
+      (no new sprite range: the multiplexer still places y 47-250). Cleaned up: $79ff (the ECM idle
+      fetch, shown in the open border) zero, the level map moved to $7a00; line 50's VSP garbage
+      (3 characters at columns 40 - s, moved by the fine scroll) under the cover sprite, now from
+      line 50 (COVERY0 49), moved there for that line and back before line 51's bad line
+      (vspcov, vspline); parked sprites (y 255, shown on lines 256-276) blank; at tick 28 any
+      sprite with y under 56 moved to y 100, as the VIC would start it again on line 256 + y and
+      run it into the next frame's top border. Checked: no garbage in 40 scrolling-demo frames or
+      60 Insane frames, sprites shown below the level, keytest, muxcheck (normal, Insane), no
+      overruns; held frames 12.0% (11.2% before).
 14. **Sound.** The sound effects on the SID (`SFX_CHING` for a pickup, `SFX_SQUEAL`, `SFX_DAGGER`,
     `SFX_POP`, `SFX_THUD`), from the BBC version's definitions, played in the border; the music
     (the victory tune) after. Its time measured against the budget from 13.

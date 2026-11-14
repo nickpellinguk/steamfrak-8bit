@@ -140,7 +140,8 @@ shx     = zp + 65                   ; the scroll position shown (its low byte: s
 SPRSCRUB = $5440                    ; the Scrubblies' sprite
 SPRCOVER = $5400                    ; the cover sprite's data
 COVERX  = 24                        ; its x at fine scroll 0
-COVERY0 = 50                        ; its first piece's y (lines 51-92; then 93, 135, 177, 219)
+COVERY0 = 49                        ; its first piece's y (lines 50-91; then 92, 134, 176, 218): from
+                                    ; line 50, to hide the VSP line's garbage there (vspcov)
 
         * = $0801
         .word (+), 10
@@ -752,9 +753,11 @@ usefront
         lda #>(SCR0 + $3f8)         ; (the multiplexed sprites' pointers: this pair's)
         sta aps0+2
         sta apt0+2
+        sta apb0+2
         lda #>(SCR1 + $3f8)
         sta aps1+2
         sta apt1+2
+        sta apb1+2
         lda #>(SCR0 + $3f8)         ; (and Trogg's)
         ldx #>(SCR1 + $3f8)
         jmp tpair
@@ -774,9 +777,11 @@ usefront
         lda #>(SCR2 + $3f8)
         sta aps0+2
         sta apt0+2
+        sta apb0+2
         lda #>(SCR3 + $3f8)
         sta aps1+2
         sta apt1+2
+        sta apb1+2
         lda #>(SCR2 + $3f8)
         ldx #>(SCR3 + $3f8)
         jmp tpair
@@ -969,7 +974,13 @@ _sdn
         ldx savx
         lda sava
         rti
-+       lda #<bordirq               ; (the rows done: the border's ticks)
++                                   ; (the rows done) the borders opened: 24 rows (RSEL 0) on lines
+-       lda $d012                   ; 248-250, past line 247 (24 rows' end) and before 251 (25
+        cmp #248                    ; rows'), so the vertical border never starts; the rows' next
+        bcc -                       ; $d011 writes (25 rows) put RSEL back before row 0
+        lda #D011A & $f7
+        sta $d011
+        lda #<bordirq               ; (the border's ticks)
         sta $fffe
         lda #>bordirq
         sta $ffff
@@ -1045,8 +1056,9 @@ _dmux
         ldx #ROWS
 +       inx
         cpx #39
-        bcs +
-        stx row
+        bcc +
+        jmp rl0                     ; (tick 38)
++       stx row
         cpx #ROWS + 2               ; tick 26: the yoyo's string, if the frame's changed (strapply:
         bne t26n                    ; not at tick 25, whose work, with it, could take over two
         lda strpend                 ; ticks, and one would be lost)
@@ -1060,7 +1072,19 @@ t26n    ldx row                     ; (strapply leaves x changed)
         lda #0
         sta strpend
         jsr strdraw
-t27n
+t27n    ldx row
+        cpx #ROWS + 4               ; tick 28 (line 277): any sprite whose y is under 56 moved to
+        bne t28n                    ; y 100 (a line passed), as on line 256 + y (303-311, the VIC
+        ldy #14                     ; comparing y with the line's low byte) it would start again,
+-       lda $d001,y                 ; its fetches running on into the next frame's top border, now
+        cmp #56                     ; open (its set-up puts its y back before it's next shown)
+        bcs t28k
+        lda #100
+        sta $d001,y
+t28k    dey
+        dey
+        bne -
+t28n
         .if !TEST
         cpx #38                     ; tick 37 (line 37): sprites 3-7 parked below the screen, then
         bne t37n                    ; those set up before the frame (tick 0's slots), and the
@@ -1101,6 +1125,9 @@ rl0     lda d18a0                   ; tick 38 (line 45): row 0's screen and set
         ldx #0
         stx row
         jsr prep
+        .if !TEST
+        jsr vspcov                  ; (the cover sprite over line 50's garbage)
+        .endif
         .if SLACK
         lda $dc07                   ; (debug: tick 38's least slack before row 0's tick)
         bne +
@@ -1137,6 +1164,7 @@ VSPB    = VSPT + 2
         .page
 vspline lda vson
         beq vspx
+        ldy v010r                   ; (the cover sprite's x back after the write: $d010)
         ldx #(D011A & $f8) | 2      ; (YSCROLL 2: line 50 a bad line, from the write)
 -       lda $dc07                   ; (the timer under 256: line 49)
         bne -
@@ -1152,9 +1180,47 @@ _sl     .fill 31, $c9               ; (a cycle for each byte skipped)
         stx $d011
         lda #D011A                  ; (back, before line 51)
         sta $d011
+        lda #COVERX + 7             ; (the cover sprite back over columns 0-2, before line 51's
+        sta $d000                   ; bad line stops the CPU: 16 cycles from the write on cycle
+        sty $d010                   ; 53 at the latest, so by line 51's cycle 6)
 vspx    rts
         .endpage
 vson    .byte 0
+
+; The VSP line's garbage, now the border's open: line 50 shows 3 characters of the DMA delay's
+; fetches (the FLI bug's $ff, with whatever colour) at columns 40 - s to 42 - s, moved by the fine
+; scroll. The cover sprite (32 wide, from line 50) moved there for line 50: x = 24 + 8 (40 - s) +
+; ($d016 & 7) = $158 + ($d016 & 7) - 8s, and back after the write (vspline)
+        .if !TEST
+        .section high
+vspcov  lda vson
+        beq _x
+        asl
+        asl
+        asl
+        sta vtmp
+        lda $d016
+        and #7
+        ora #$58
+        sec
+        sbc vtmp
+        sta $d000
+        lda #0                      ; (x's bit 8: 1 unless that borrowed)
+        adc #0
+        sta vtmp
+        ldy bufoff
+        lda t010,y                  ; ($d010 as tick 37 left it, the cover's bit clear: then)
+        and #$fe
+        sta v010r
+        ora vtmp
+        sta $d010
+_x      rts
+        .send high
+        .endif
+        .section high
+vtmp    .byte 0
+v010r   .byte 0                     ; ($d010 with the cover's bit clear, for vspline)
+        .send high
 
 ; The VSP offset from nvs (in the border, or at the start)
 setvsp  lda nvs
@@ -1434,7 +1500,9 @@ end
         .binary "charsets.bin", 512, 512
         .fill $6800 - *, 0
 TROGG   .binary "trogg.bin"         ; Trogg's sprites: per frame outline P1-P3, infill P1-P3
-        .cerror * > $8000, "Trogg's sprites run out of the VIC bank"
+        .cerror * > $79ff, "Trogg's sprites run into $79ff"
+        .fill $7a00 - *, 0          ; ($79ff zero: the byte the VIC shows in the open borders, its
+                                    ; idle fetch in ECM)
 tops    .binary "tops.bin"          ; (the level map, past the VIC bank)
 bottoms .binary "bottoms.bin"
         .dsection high              ; (tables that needn't be low: mux.asm's, play.asm's)
