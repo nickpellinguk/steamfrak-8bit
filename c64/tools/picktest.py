@@ -9,19 +9,21 @@ import os, random, re, sys
 import os as _os, sys as _sys; _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__))); import c64img   # (the level unpacked: loadlevel)
 from py65.devices.mpu6502 import MPU
 DIR = os.path.dirname(os.path.abspath(__file__)); B = os.path.join(DIR, '..', 'build')
+LB = os.path.join(B, 'lv', os.environ['LEVEL']) if os.environ.get('LEVEL') else B   # (LEVEL=A_2: that level's files, build/lv/A_2)
+LIDX = int(re.search(r'^LEVEL\s*=\s*(\d+)', open(os.path.join(LB, 'lvtab.inc')).read(), re.M).group(1))
 lbl = {}
 for line in open(os.path.join(B, 'frak64.lbl')):
     m = re.match(r'^(\w+)\s*=\s*(\$?)([0-9a-fA-F]+)', line)
     if m: lbl[m.group(1)] = int(m.group(3), 16 if m.group(2) else 10)
 tab = {}
-for f in ('scrpatch.inc', 'collide.inc', 'lvtab.inc'):
+for f in ('scrpatch.inc', 'collide.inc', os.path.join(LB, 'lvtab.inc')):
     for line in open(os.path.join(B, f)):
         m = re.match(r'^(\w+)\s+\.byte ([\d, ]+)$', line.strip())
         if m: tab[m.group(1)] = [int(v) for v in m.group(2).split(',')]
 NP, NKEYS = len(tab['pkkind']), tab['pkkind'].count(2)
 NC = int(re.search(r'^NC\s*=\s*(\d+)', open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'build', 'level.inc')).read(), re.M).group(1)); MAPN = 25 * NC     # (the level map's size: build/level.inc)
 prg = open(os.path.join(B, 'frak64.prg'), 'rb').read()
-base = c64img.image(prg)
+base = c64img.image(prg, LIDX)
 def call(mem, label, x=0):
     stub = 0x033c; mem[stub:stub + 5] = bytes([0xa2, x, 0x20, lbl[label] & 255, lbl[label] >> 8])
     mpu = MPU(memory=mem); mpu.pc = stub; mpu.sp = 0xf0
@@ -61,7 +63,7 @@ for t in range(w[1]):
     call(mem, 'gametick')
     if t < w[1] - 1 and (mem[lbl['tx']] != 100 or not mem[lbl['won']]): still = False
 end = (mem[lbl['won']], mem[lbl['tx']] | mem[lbl['tx'] + 1] << 8, any(mem[lbl['picked']:lbl['picked'] + NP]), mem[lbl['tops']:lbl['tops'] + MAPN] == tops0)
-want_x = int(re.search(r'TSTARTX\s*=\s*(\d+)', open(os.path.join(B, 'lvtab.inc')).read()).group(1))
+want_x = int(re.search(r'TSTARTX\s*=\s*(\d+)', open(os.path.join(LB, 'lvtab.inc')).read()).group(1))
 ok = w == (1, 350) and still and end == (0, want_x, False, True)
 if not ok: bad += 1
 print(f'the level complete: won {w[0]}, pause {w[1]} ticks, still through it {still}; after it, won {end[0]}, his x {end[1]} (start {want_x}), anything still picked up {end[2]}, the map as built {end[3]}')

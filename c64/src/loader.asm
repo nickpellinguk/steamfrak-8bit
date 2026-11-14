@@ -77,7 +77,7 @@ _x      ldx #NS - 1
         .endif
         rts
 level   .byte 0                     ; (the level being played)
-chosen  .byte 0                     ; (the level to play: front.asm's menu chooses)
+chosen  .byte LSTART                ; (the level to play: front.asm's menu chooses; LSTART, build.mjs --start)
 enfl    .byte 0                     ; (its enemy's sprite's flags, mux.asm)
 
 unpack  ldy #0

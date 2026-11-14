@@ -10,13 +10,15 @@ import os, random, re, sys
 import os as _os, sys as _sys; _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__))); import c64img   # (the level unpacked: loadlevel)
 from py65.devices.mpu6502 import MPU
 DIR = os.path.dirname(os.path.abspath(__file__)); B = os.path.join(DIR, '..', 'build')
+LB = os.path.join(B, 'lv', os.environ['LEVEL']) if os.environ.get('LEVEL') else B   # (LEVEL=A_2: that level's files, build/lv/A_2)
+LIDX = int(re.search(r'^LEVEL\s*=\s*(\d+)', open(os.path.join(LB, 'lvtab.inc')).read(), re.M).group(1))
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 5000
 lbl = {}
 for line in open(os.path.join(B, 'frak64.lbl')):
     m = re.match(r'^(\w+)\s*=\s*(\$?)([0-9a-fA-F]+)', line)
     if m: lbl[m.group(1)] = int(m.group(3), 16 if m.group(2) else 10)
 tab, const = {}, {}
-for line in [l for f in ('collide.inc', 'lvtab.inc') for l in open(os.path.join(B, f))]:
+for line in [l for f in ('collide.inc', 'lvtab.inc') for l in open(os.path.join(LB if f == 'lvtab.inc' else B, f))]:
     m = re.match(r'^(\w+)\s+\.byte (.*)', line)
     if m and re.fullmatch(r'[\d, ]+', m.group(2).strip()): tab[m.group(1)] = [int(v) for v in m.group(2).split(',')]
     m = re.match(r'^(\w+)\s*=\s*(\d+)', line)
@@ -30,8 +32,8 @@ ov = lambda a, b: a[0] <= b[1] and b[0] <= a[1] and a[2] <= b[3] and b[2] <= a[3
 # the second stage, from the images themselves (not the build's tables): Trogg's frames as the C64
 # shows them, the Scrubbly, gem and key as the mock-up draws them, the ball sprite
 import json
-TJ = json.load(open(os.path.join(B, 'trogg.json'))); PJ = json.load(open(os.path.join(B, 'picks.json')))
-SJ = json.load(open(os.path.join(B, 'scrub.json')))
+TJ = json.load(open(os.path.join(B, 'trogg.json'))); PJ = json.load(open(os.path.join(LB, 'picks.json')))
+SJ = json.load(open(os.path.join(LB, 'scrub.json')))
 HZ = [PJ['hazards']['IMG_Balloon'], PJ['hazards']['IMG_DaggerLR']]     # (kinds 1 and 2)
 def solid(g):                                   # (each row's solid columns)
     return [[x for x, p in enumerate(r) if p >= 0] for r in g]
@@ -54,7 +56,7 @@ scrimg = [(p['ax'], p['ay'] + 24) for p in SJ['placed']]
 pkimg = [(p['left'], p['top'], KS[p['name']]) for p in PJ['picks']]
 
 prg = open(os.path.join(B, 'frak64.prg'), 'rb').read()
-base = c64img.image(prg)
+base = c64img.image(prg, LIDX)
 stub = 0x033c; base[stub:stub + 3] = bytes([0x20, lbl['collide'] & 255, lbl['collide'] >> 8])
 random.seed(1)
 bad = 0; hits = {'scrubbly': 0, 'ball': 0, 'pick': 0, 'none': 0}

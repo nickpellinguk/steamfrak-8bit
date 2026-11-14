@@ -137,8 +137,31 @@ _td     lda #3                      ; cyan, as the game
         bne -
         rts
 
-; Space, Return, P, Y or either fire button down: a not 0
-fekey   lda #$7f
+; 1, 2 or 3 down: that level chosen (chosen: loader.asm), and a not 0; else Space, Return, P, Y
+; or either fire button down (the level chosen before): a not 0
+fekey   lda #$7f                    ; (1: row 7, column 0; 2: column 3)
+        sta $dc00
+        lda $dc01
+        and #$01
+        bne +
+        lda #0
+        beq _lv
++       lda $dc01
+        and #$08
+        bne +
+        lda #1
+        bne _lv
++       lda #$fd                    ; (3: row 1, column 0)
+        sta $dc00
+        lda $dc01
+        and #$01
+        bne _keys
+        lda #2
+_lv     cmp #NLEVELS
+        bcs _keys
+        sta chosen
+        jmp _y
+_keys   lda #$7f
         sta $dc00
         lda $dc01
         and #$10

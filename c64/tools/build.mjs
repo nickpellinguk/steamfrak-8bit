@@ -98,7 +98,7 @@ if (PM !== null) spr = [1, 2, 3, 4, 5, 6, 7].map(n => ({ n, y: (+PM >> n & 1) ? 
 const maskOn = line => spr.reduce((m, s) => line >= s.y + CONV && line < s.y + CONV + (s.exp ? 42 : 21) ? m | 1 << s.n : m, COVER);
 const masks = [], masks3 = [];
 for (let r = 0; r < 25; r++) { masks3.push(maskOn(54 + 8 * r)); masks.push(maskOn(55 + 8 * r)); }
-defs.push('-D', `TEST=${TEST ? 1 : 0}`, '-D', `BALLTEST=${process.argv.includes('--balltest') ? 1 : 0}`, '-D', `NOBALLS=${process.argv.includes('--noballs') ? 1 : 0}`, '-D', `MUXTIME=${process.argv.includes('--muxtime') ? 1 : 0}`, '-D', `PROFILE=${process.argv.includes('--profile') ? 1 : 0}`, '-D', `SLACK=${process.argv.includes('--slack') ? 1 : 0}`, '-D', `INSANE=${process.argv.includes('--insane') ? 1 : 0}`, '-D', `TROGGX=${arg('troggx', 0)}`, '-D', `TROGGY=${arg('troggy', 0)}`, '-D', `TROGGF=${arg('troggf', 7)}`, '-D', `KEYTEST=${process.argv.includes('--keys') ? 1 : 0}`, '-D', `SCROLLDEMO=${process.argv.includes('--scrolldemo') ? 1 : 0}`, '-D', `CAMTEST=${process.argv.includes('--camtest') ? 1 : 0}`, '-D', `INVINCIBLE=${process.argv.includes('--invincible') ? 1 : 0}`, '-D', `STILL=${process.argv.includes('--still') ? 1 : 0}`,
+defs.push('-D', `TEST=${TEST ? 1 : 0}`, '-D', `BALLTEST=${process.argv.includes('--balltest') ? 1 : 0}`, '-D', `NOBALLS=${process.argv.includes('--noballs') ? 1 : 0}`, '-D', `MUXTIME=${process.argv.includes('--muxtime') ? 1 : 0}`, '-D', `PROFILE=${process.argv.includes('--profile') ? 1 : 0}`, '-D', `SLACK=${process.argv.includes('--slack') ? 1 : 0}`, '-D', `INSANE=${process.argv.includes('--insane') ? 1 : 0}`, '-D', `TROGGX=${arg('troggx', 0)}`, '-D', `TROGGY=${arg('troggy', 0)}`, '-D', `TROGGF=${arg('troggf', 7)}`, '-D', `KEYTEST=${process.argv.includes('--keys') ? 1 : 0}`, '-D', `SCROLLDEMO=${process.argv.includes('--scrolldemo') ? 1 : 0}`, '-D', `CAMTEST=${process.argv.includes('--camtest') ? 1 : 0}`, '-D', `INVINCIBLE=${process.argv.includes('--invincible') ? 1 : 0}`, '-D', `STILL=${process.argv.includes('--still') ? 1 : 0}`, '-D', `LSTART=${arg('start', 0)}`,
     // (the front end: the attract screen first; not in test builds, nor with --nofront)
     '-D', `FRONT=${['--nofront', '--keys', '--scrolldemo', '--camtest', '--profile', '--slack', '--muxtime', '--measure', '--test', '--balltest', '--still'].some(a => process.argv.includes(a)) ? 0 : 1}`);
 const testy = TEST ? spr.map(s => s.y) : [0];
@@ -224,7 +224,8 @@ writeFileSync(DIR + 'masks.inc', `; made by tools/build.mjs\nmasks   .byte ${mas
     writeFileSync(DIR + 'frontspr.bin', Buffer.concat(blocks));
     const sc = str => [...str].map(c => c >= 'a' && c <= 'z' ? c.charCodeAt(0) - 96 : c >= 'A' && c <= 'Z' ? c.charCodeAt(0) - 64 + 64 : c === '@' ? 0 : c.charCodeAt(0));
     const T = [[0, 16, 'The Cast'], [1, 16, '--------'], [4, 22, 'Trogg'], [7, 17, 'vs.'], [10, 22, 'Scrubbly'], [15, 22, 'Hooter'],
-               [19, 22, 'Poglet'], [22, 6, 'Collect all the keys to win!'], [23, 7, '(C) 1984-2026 Nick Pelling']];
+               [19, 22, 'Poglet'], [22, 6, 'Collect all the keys to win!'], [23, 7, '(C) 1984-2026 Nick Pelling'],
+               [24, 2, 'Level: 1 Scrubbly  2 Poglet  3 Hooter']];
     writeFileSync(DIR + 'front.inc', '; made by tools/build.mjs: the front end\'s text (front.asm): screen address, length, screen codes\nfetext\n' +
         T.map(([r, c, t]) => `        .word SCR0 + ${r * 40 + c}\n        .byte ${t.length}, ${sc(t).join(', ')}\n`).join('') + '        .word 0\n' +
         `FEBLOCKS = ${blocks.length}\n`);
@@ -240,8 +241,8 @@ console.log(`row masks (line 3/4): ${masks.map((m, r) => masks3[r] === m ? m.toS
     writeFileSync(DIR + 'lvllayout.inc', lay.inc);
     // (for the py65 tests: the first level's tables, as long as it has them, and its numbers, as the
     // .inc files had them)
-    { const t0 = lt[0], g0 = JSON.parse(readFileSync(dirs[0] + 'geometry.json', 'utf8'));
-      writeFileSync(DIR + 'lvtab.inc', `; made by tools/build.mjs: ${LEVELS[0]}'s tables, for the tests\nNP = ${t0.T.pkkind.length}\nNKEYS = ${t0.S.lv_nkeys[0]}\nTSTARTX = ${g0.trogg[0]}\nTSTARTY = ${g0.trogg[1]}\nSCRH = ${t0.S.lv_scrh[0]}\n` +
+    for (let k = lt.length - 1; k >= 0; k--) { const t0 = lt[k], g0 = JSON.parse(readFileSync(dirs[k] + 'geometry.json', 'utf8'));
+      for (const f of k ? [dirs[k] + 'lvtab.inc'] : [dirs[k] + 'lvtab.inc', DIR + 'lvtab.inc']) writeFileSync(f, `; made by tools/build.mjs: ${LEVELS[k]}'s tables, for the tests\nLEVEL = ${k}\nNP = ${t0.T.pkkind.length}\nNKEYS = ${t0.S.lv_nkeys[0]}\nTSTARTX = ${g0.trogg[0]}\nTSTARTY = ${g0.trogg[1]}\nSCRH = ${t0.S.lv_scrh[0]}\nMAXX = ${t0.S.lv_maxx[0] | t0.S.lv_maxx[1] << 8}\n` +
           Object.entries(t0.T).map(([n, v]) => `${n.padEnd(8)}.byte ${v.join(', ')}\n`).join('')); }
     const pt0 = JSON.parse(readFileSync(dirs[0] + 'patch.json', 'utf8')), ncom = pt0.NCOMMON;
     const com = readFileSync(dirs[0] + 'common.bin');

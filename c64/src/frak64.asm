@@ -213,7 +213,7 @@ start   sei
         sta SCR1 + $3f8
         sta SCR2 + $3f8
         sta SCR3 + $3f8
-        lda #3
+covc0   lda #3                      ; (the cover: the level's background colour, set by start)
         sta $d027
         lda #COVERY0
         sta $d001
@@ -355,8 +355,10 @@ start   sei
         and #$fc
         ora #2
         sta $dd00
-        lda #3                      ; cyan border
+        lda lv_bg                   ; the border the level's background colour, and the cover the same
         sta $d020
+        sta covc0 + 1
+        sta covc1 + 1
         lda lv_bg                   ; ECM backgrounds: the level's (cyan, green or red), yellow, purple, black
         sta $d021
         lda #7
@@ -1354,7 +1356,7 @@ tmcov   lda #(SPRCOVER & $3fff) / 64 ; (and back: the cover)
         sta SCR1 + $3f8
         sta SCR2 + $3f8
         sta SCR3 + $3f8
-        lda #3
+covc1   lda #3                      ; (the cover: the level's background colour, set by start)
         sta $d027
         lda $d017
         ora #1
