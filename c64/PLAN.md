@@ -539,6 +539,13 @@ reference for everything else is that code (`../src/frak.asm`): `check_collision
       the Scrubbly off, presses Escape, and checks the level's back as at the start (Trogg at his
       start and pixel-exact, nothing knocked off, the timer restarted). The key scripts' replay
       moved to the high section (the low memory is nearly full: the profile build ends at $3fff).
+      The key 24 wide (mockup.mjs's KEY): 8 more pixels of shaft (black, yellow, yellow, black
+      down), and the ring round the hole 9 wide and 10 high (was 7 by 8), a line more above and
+      below; the shaft now its lines 3-6 (KEYHALF), still a half (the key's bottom line kept where
+      it was). Three characters wide, so not centred on its 16-pixel platform unit: from the unit's
+      first character or the one before, whichever has more of the key over the platform (its
+      shaft's half must be all yellow and black, so on a character). Checked: the 4 keys in VICE
+      (the scrolling demo), the py65 tests (picks, collisions, checkpoints), keytest.
 14. **Sound.** The sound effects on the SID (`SFX_CHING` for a pickup, `SFX_SQUEAL`, `SFX_DAGGER`,
     `SFX_POP`, `SFX_THUD`), from the BBC version's definitions, played in the border; the music
     (the victory tune) after. Its time measured against the budget from 13.
