@@ -649,3 +649,19 @@ NTSC machine instead of a garbled screen; the VSP crash test on hardware (VSP.md
 - Not playable yet, as A_2.
 - Each type file names its background (the ECM register 0, "0" in the pieces): cyan for the
   Scrubbly, green for the Poglet, red for the Hooter; level.mjs's preview draws it.
+
+## Three levels in one program, and a level selection screen
+
+- Each level's own tables and numbers (platforms, ladders, collision boxes and masks, patches,
+  enemy places, start, width, height, keys, its enemy's size, sprite flags and colour, its
+  background) are a block (tools/lvldata.mjs: lvllayout.inc) at LVL, after the map, packed with its
+  glyphs, enemy sprite and map; loadlevel unpacks level A's (about a second). A_1, A_2 and A_3 are
+  all in: 2.3, 2.7 and 2.2KB packed; the program ends at $b918.
+- NS 9 enemy slots, NP 12 gem and key slots: a slot a level doesn't use is knocked off for good
+  (knock0) or never in the masks; the collision masks 24 bits. Maps 97 columns; the scroll's and
+  Trogg's limits each level's. Poglets and Hooters: multicolour sprites expanded down (enfl), the
+  yoyo's box their size; the border and the cover sprite the level's background.
+- The attract screen: 1, 2 or 3 chooses and starts a level (Space, Return or fire the one chosen
+  before); Escape comes back to it. build.mjs --start N: the level started without the front end.
+- Tests: LEVEL=A_2 (or A_3) runs collidetest, picktest, cptest on that level; all pass, and the
+  multiplexer and screen checks too.

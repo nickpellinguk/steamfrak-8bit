@@ -479,9 +479,10 @@ _neg    cmp #$ff                ; -47 to -1: part on the screen, as 457-503 (PAL
         sta vxlo,x
         lda #1
 _show   sta vxhi,x
-        lda #VEXPY | VEXPX | VBEHIND | VFIRST
+        lda enfl                ; (the level's enemy's: expanded both ways, or multicolour expanded down)
         bne _fl
-_hide   lda #VEXPY | VEXPX | VBEHIND | VFIRST | VHIDE
+_hide   lda enfl
+        ora #VHIDE
 _fl     sta vfl,x
         dex
         bpl -

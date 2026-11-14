@@ -19,6 +19,8 @@ cmh     = zp + 115
 cbits   = zp + 116                  ; (the bits still to look at)
 cdl     = zp + 117                  ; (a balloon's or dagger's dx or dy, low)
 bmh     = zp + 118                  ; (his bands' objects, high)
+cmx     = zp + 123                  ; (the third bytes: objects 16-23)
+bmx     = zp + 124
         .section high
         .include "collide.inc"      ; tbx0 ... (Trogg's frames), scbll ... (the Scrubblies), pkll ...
                                     ; (the gems and keys), BBX0 ... (the ball sprite)
@@ -146,20 +148,25 @@ _xt     eor #$80
 +       jmp trogg_dies
 _bdone
         .endif
-        lda #0                      ; the Scrubblies, gems and keys in his columns (colml, colmh:
-        sta cmh                     ; each column's, bit k Scrubbly k, then gem or key k - NS)
+        lda #0                      ; the enemies, gems and keys in his columns (colml, colmh, colmx:
+        sta cmh                     ; each column's, bit k enemy k, then gem or key k - NS)
+        sta cmx
         ldy tc0
 -       ora colml,y
         tax
         lda colmh,y
         ora cmh
         sta cmh
+        lda colmx,y
+        ora cmx
+        sta cmx
         txa
         cpy tc1
         iny
         bcc -
         sta cml
         ora cmh
+        ora cmx
         bne +
 _none   rts                         ; (none)
 +       lda ctb+1                   ; and in his bands of 32 lines (bandml, bandmh), his y kept to
@@ -188,11 +195,15 @@ _none   rts                         ; (none)
 +       tay
         lda #0
         sta bmh
+        sta bmx
 -       ora bandml,y
         tax
         lda bandmh,y
         ora bmh
         sta bmh
+        lda bandmx,y
+        ora bmx
+        sta bmx
         txa
         cpy cband1
         iny
@@ -202,6 +213,10 @@ _none   rts                         ; (none)
         lda bmh
         and cmh
         sta cmh
+        lda bmx
+        and cmx
+        sta cmx
+        ora cmh
         ora cml
         bne +
         rts                         ; (none: the usual)
@@ -213,9 +228,14 @@ _k      lsr
         inx
         bne _k
 _kz     cpx #8                      ; (the rest of this byte clear: the next byte, or done)
-        bcs +
+        bcs _kz2
         ldx #8
         lda cmh
+        bne _k
+_kz2    cpx #16
+        bcs +
+        ldx #16
+        lda cmx
         bne _k
 +       rts
 _hit    sta cbits                   ; (the bits left)
@@ -257,7 +277,7 @@ _hit    sta cbits                   ; (the bits left)
         sta osp
         lda #>scrsp
         sta osp+1
-        lda #SCRH
+        lda lv_scrh                 ; (the level's enemy's height)
         sta oh
         jsr spans
         bcs +
@@ -299,9 +319,10 @@ _pk     txa                         ; a gem or key (not picked up yet): touched,
         sta oit
         lda #0
         sta oit+1
-        lda pkspl,x
+        ldy pkkind,x                ; (its kind's spans: 1 a gem's, 2 a key's)
+        lda pkspk,y
         sta osp
-        lda pksph,x
+        lda pkspkh,y
         sta osp+1
         lda pkh,x
         sta oh

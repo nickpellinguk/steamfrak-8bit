@@ -10,20 +10,22 @@ import os, random, re, sys
 import os as _os, sys as _sys; _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__))); import c64img   # (the level unpacked: loadlevel)
 from py65.devices.mpu6502 import MPU
 DIR = os.path.dirname(os.path.abspath(__file__)); B = os.path.join(DIR, '..', 'build')
+LB = os.path.join(B, 'lv', os.environ['LEVEL']) if os.environ.get('LEVEL') else B   # (LEVEL=A_2: that level's files, build/lv/A_2)
+LIDX = int(re.search(r'^LEVEL\s*=\s*(\d+)', open(os.path.join(LB, 'lvtab.inc')).read(), re.M).group(1))
 lbl = {}
 for line in open(os.path.join(B, 'frak64.lbl')):
     m = re.match(r'^(\w+)\s*=\s*(\$?)([0-9a-fA-F]+)', line)
     if m: lbl[m.group(1)] = int(m.group(3), 16 if m.group(2) else 10)
 tab = {}
-for f in ('scrpatch.inc', 'collide.inc'):
+for f in ('scrpatch.inc', 'collide.inc', os.path.join(LB, 'lvtab.inc')):
     for line in open(os.path.join(B, f)):
         m = re.match(r'^(\w+)\s+\.byte ([\d, ]+)$', line.strip())
         if m: tab[m.group(1)] = [int(v) for v in m.group(2).split(',')]
-const = {m.group(1): int(m.group(2)) for m in re.finditer(r'^(\w+)\s*=\s*(\d+)', open(os.path.join(B, 'geometry.inc')).read(), re.M)}
+const = {m.group(1): int(m.group(2)) for m in re.finditer(r'^(\w+)\s*=\s*(\d+)', open(os.path.join(LB, 'lvtab.inc')).read(), re.M)}
 NP, NS = len(tab['pkkind']), len(tab['scrpn'])
 NC = int(re.search(r'^NC\s*=\s*(\d+)', open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'build', 'level.inc')).read(), re.M).group(1)); MAPN = 25 * NC     # (the level map's size: build/level.inc)
 prg = open(os.path.join(B, 'frak64.prg'), 'rb').read()
-base = c64img.image(prg)
+base = c64img.image(prg, LIDX)
 def call(mem, label, x=0):
     stub = 0x033c; mem[stub:stub + 5] = bytes([0xa2, x, 0x20, lbl[label] & 255, lbl[label] >> 8])
     mpu = MPU(memory=mem); mpu.pc = stub; mpu.sp = 0xf0
@@ -53,7 +55,7 @@ for rnd in range(rounds):
     got = dict(tx=r16(mem, lbl['tx']), ty=r16(mem, lbl['ty']), face=mem[lbl['tface']], btim=mem[lbl['btim']], dtim=mem[lbl['dtim']],
                keys=mem[lbl['keysgot']], gems=mem[lbl['gemsgot']], restarts=mem[lbl['restarts']], jumping=mem[lbl['jumping']],
                jumpx=r16(mem, lbl['jumpx']), jumpw=mem[lbl['jumpw']], key_gone=mem[lbl['picked'] + k], gem_gone=mem[lbl['picked'] + gm], scrub_gone=mem[lbl['knocked'] + sc])
-    jx = max(0, min((NC - 40) * 8, tx - 152))
+    jx = max(0, min(const['MAXX'], tx - 152))     # (the level's furthest scroll: its own width)
     want = dict(tx=tx, ty=ty, face=face, btim=bt, dtim=dt, keys=1, gems=0, restarts=1, jumping=1, jumpx=jx, jumpw=jx >> 3, key_gone=1, gem_gone=0, scrub_gone=0)
     mapok = bytes(mem[lbl['tops']:lbl['tops'] + MAPN]) == after
     if saved != (1, 1, 0) or got != want or not mapok:

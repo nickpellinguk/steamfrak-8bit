@@ -104,7 +104,7 @@ wantdir ldx lfront
         lda po,x
         clc
         adc #SMAX
-        cmp #MAXC
+        cmp lv_maxc
         bcs _x
         lda po,x
         adc #8                      ; (carry clear)
