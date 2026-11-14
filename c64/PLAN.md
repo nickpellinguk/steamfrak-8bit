@@ -627,3 +627,25 @@ NTSC machine instead of a garbled screen; the VSP crash test on hardware (VSP.md
 - Not playable yet: the game gives each Scrubbly a fixed sprite (3-7); 9 Poglets need their
   sprites multiplexed (at most 3 on a line on screen), and multicolour; their collision shapes
   and patches (level.mjs's game files are the Scrubbly's); the Poglets' behaviour.
+
+## The Hooter type, first pass (A_3)
+
+- tools/export_hooter.mjs: the BBC's room_A_3 into levels/hooter.json and levels/A_3.txt.
+  - Girders: the BBC's 12-pixel X-truss unit (an hourglass between bars) drawn 16 x 16 and
+    coloured by column: a girder starts 4 into a character, so each unit's middle 8 columns (the
+    hourglass's neck, its holes there cross-hatched) are a character black on yellow, and its 4 at each
+    side, with its neighbour's, a character black on the background (red: the bars' ends, the X's
+    outer arms as outlines, the holes between units see-through); its top and bottom halves black
+    on yellow all the way but for its end characters, so the bars are yellow through. k BBC units stay k (so 4/3 as
+    wide), centred where they were; chains hang under a unit's middle character.
+  - Chains: 8 wide, a whole character: a cap (a half, black on yellow) under their girder, then
+    the BBC's 14-line link cycle stretched to 16 (a hole row more in each link); each half black
+    on whichever of yellow and magenta most of it is, so the links edge on are magenta and face
+    on yellow, as the BBC's.
+  - The Hooter: black outline, 3 characters by 6 halves; its magenta and yellow from a
+    y-expanded multicolour sprite: 1 pixel unlike the BBC's. Its feet a line above its girder.
+  - Squeezed a little: the BBC's lines 49-229 to the map's 12-184 (x 0.956).
+  - Glyphs: 56 of 64 in each set, with the Hooters on any row.
+- Not playable yet, as A_2.
+- Each type file names its background (the ECM register 0, "0" in the pieces): cyan for the
+  Scrubbly, green for the Poglet, red for the Hooter; level.mjs's preview draws it.

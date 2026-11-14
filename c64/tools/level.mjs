@@ -38,7 +38,8 @@ for (const l of lines) {
 }
 for (const k of ['type', 'size', 'width', 'height', 'trogg']) if (!meta[k]) fail(`no "${k}" line`);
 const [NC, ROWS] = meta.size.map(Number), NHR = ROWS * 2, W = NC * 8, HS = ROWS * 8;
-const common = JSON.parse(readFileSync(LV + 'common.json')).pieces, typed = JSON.parse(readFileSync(`${LV}${meta.type[0]}.json`)).pieces;
+const typeFile = JSON.parse(readFileSync(`${LV}${meta.type[0]}.json`));
+const common = JSON.parse(readFileSync(LV + 'common.json')).pieces, typed = typeFile.pieces;
 const pieceOf = n => typed[n] || common[n] || fail(`no piece "${n}"`);
 
 // ---- Pieces' halves as tiles: a glyph (4 bytes, black set) and a background (0-3)
@@ -198,7 +199,8 @@ function preview() {
             for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) { const X = o.x + ox + bx * 2 + dx, Y = o.y + oy + by * 2 + dy; if (X >= 0 && X < W && Y >= 0 && Y < HS && !fg[Y * W + X]) px[Y * W + X] = ch === 'Y' ? 1 : 2; } })); }
         else if (p.sprite) p.sprite.forEach((r, by) => [...r].forEach((ch, bx) => { if (ch !== '#') return;
             for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) { const X = o.x - 8 + bx * 2 + dx, Y = o.y + 1 + by * 2 + dy; if (X >= 0 && X < W && Y >= 0 && Y < HS && !fg[Y * W + X]) px[Y * W + X] = 2; } })); }
-    const pal = [[0, 200, 200], [255, 255, 0], [255, 0, 255], [0, 0, 0]], S = 2, IW = W * S, IH = HS * S;
+    const BG = { cyan: [0, 200, 200], red: [210, 40, 40], green: [40, 190, 60] }[typeFile.background || 'cyan'];   // (the type's background: the ECM register 0)
+    const pal = [BG, [255, 255, 0], [255, 0, 255], [0, 0, 0]], S = 2, IW = W * S, IH = HS * S;
     const raw = Buffer.alloc((IW * 3 + 1) * IH);
     for (let y = 0; y < IH; y++) for (let x = 0; x < IW; x++) raw.set(pal[px[(y / S | 0) * W + (x / S | 0)]], y * (IW * 3 + 1) + 1 + x * 3);
     const crcT = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });

@@ -1,5 +1,6 @@
 {
- "colours": "- transparent; 0 1 2 3 cyan yellow magenta black (the object); c y m b the same, scenery baked in; mcsprite: . clear, Y yellow ($d025), M magenta ($d026), 2x2 blocks",
+ "background": "green",
+ "colours": "- transparent; 0 1 2 3 background (green) yellow magenta black (the object); c y m b the same, scenery baked in; mcsprite: . clear, Y yellow ($d025), M magenta ($d026), 2x2 blocks",
  "type": "poglet",
  "pieces": {
   "log_": {
