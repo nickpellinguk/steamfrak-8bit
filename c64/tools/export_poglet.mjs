@@ -101,8 +101,12 @@ const infill = (art, ox, oy) => {
     for (let by = 0; by < 21; by++) { let row = ''; for (let bx = 0; bx < 12; bx++) {
         const cost = { '.': 0, Y: 0, M: 0 };
         for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) { const x = ox + bx * 2 + dx, y = oy + by * 2 + dy; if (shown(x, y) === 3) continue; const t = target(x, y); cost['.'] += t !== 0; cost.Y += t !== 1; cost.M += t !== 2; }
-        const k = Object.keys(cost).reduce((a, b) => cost[b] < cost[a] ? b : a); row += k; wrong += cost[k];
+        const k = Object.keys(cost).reduce((a, b) => cost[b] < cost[a] ? b : a); row += k;
     } spr.push(row); }
+    // (what's wrong, over every pixel of the piece: those the sprite doesn't reach count too)
+    for (let y = 0; y < art.length; y++) for (let x = 0; x < art[0].length; x++) { if (shown(x, y) === 3) continue;
+        const bx = Math.floor((x - ox) / 2), by = Math.floor((y - oy) / 2), ch = spr[by]?.[bx] ?? '.';
+        if ({ '.': 0, Y: 1, M: 2 }[ch] !== target(x, y)) wrong++; }
     return { spr, wrong };
 };
 const pa = pogArt(false);
