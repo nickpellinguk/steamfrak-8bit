@@ -121,6 +121,7 @@ SPRFRAK = $5600                     ; the FRAK! bubble's 2 (its black, its yello
 SPRBLANK = $5680                    ; a blank sprite (zeros: for a Scrubbly knocked off, yoyo.asm)
 SPRBINF = $56c0                     ; the balloon's infill's 2 (top-justified, bottom-justified)
 SPRBMC  = $5740                     ; the balloon in multicolour (the fallback, mux.asm)
+SPRTIMER = $5780                    ; the timer (tmdraw)
 flippend = zp + 54                  ; (the next frame's scroll, decided in the main program: a pair
 wanto   = zp + 55                   ;  flip for the border to make; the hidden pair's origin wanted;
 nvs     = zp + 56                   ;  the VSP offset)
@@ -329,6 +330,7 @@ start   sei
         bpl -
         .if !TEST
         jsr muxinit                 ; (the multiplexer's: no sprites yet, in either buffer)
+        jsr tmreset                 ; (the timer at 0:00)
         .endif
 
         lda $dd02                   ; VIC bank 1
@@ -1034,8 +1036,6 @@ bordirq sta sava
         ldx row
         cpx #ROWS
         bne +
-        lda #COVERY0                ; (the cover sprite back to the top, for the next frame)
-        sta $d001
         inc frames
         .if !TEST
         lda qn                      ; the next frame made, if there is one: its buffer, and its
@@ -1106,18 +1106,32 @@ t28k    dey
         bne -
 t28n
         .if !TEST
-        cpx #38                     ; tick 37 (line 37): sprites 3-7 parked below the screen, then
-        bne t37n                    ; those set up before the frame (tick 0's slots), and the
-        lda $d012                   ; registers (in time for sprites from line 47, and leaving
-        cmp #41                     ; tick 38 little to do before row 0's). (On line 45, not
-        bcc t37o                    ; 37: a tick was lost, a handler having taken over two; this
-        jmp rl0                     ; is tick 38's, and the count in step again from it)
-t37o    lda #255
+        cpx #ROWS + 5               ; tick 29 (line 285): sprite 0, the cover, done for the frame,
+        bne t29n                    ; made the timer in the top border till tick 37 (tmset)
+        jsr tmset
+        ldx row
+t29n
+        cpx #37                     ; tick 36 (line 29): sprites 3-7 parked below the screen, their
+        bne t36n                    ; pointers blank (there, lines 256-276, they're in the open
+        lda #255                    ; border), before tick 37 sets up those before the frame
         sta $d007
         sta $d009
         sta $d00b
         sta $d00d
         sta $d00f
+        jsr park
+        ldx row
+t36n
+        .endif
+        .if !TEST
+        cpx #38                     ; tick 37 (line 37): sprites 3-7 parked below the screen, then
+        bne t37n                    ; those set up before the frame (tick 0's slots), and the
+        lda $d012                   ; registers (in time for sprites from line 47, and leaving
+        cmp #41                     ; tick 38 little to do before row 0's). (On line 45, not
+        bcc t37o                    ; 37: a tick was lost, a handler having taken over two; this
+        jsr tmcov                   ; is tick 38's, and the count in step again from it)
+        jmp rl0
+t37o    jsr tmcov                   ; (sprite 0 the cover again, the timer done: from line 50)
         ldy bufoff
         lda t010,y
         sta $d010
@@ -1237,6 +1251,115 @@ vspcov  lda vson
 _x      rts
         .send high
         .endif
+        .if !TEST
+; ---- The timer, M:SS, at the top left in the top border: sprite 0 (the cover, from line 50 on),
+; hi-res, black, from tick 29 (line 285, the cover's last piece done, and past line 271, where y
+; TMY would start it again) to tick 37 (line 37): lines TMY + 1 to TMY + 21 (16-36), done by
+; then, its digits on its rows TROW to TROW + 6 (lines 26-32); x at the screen's left edge (the
+; cover's right). (Tick 38 has no time to spare before line 50's VSP write.) Counted in frames,
+; 50 a second, from the level's start (newlevel) till it's won, 9:59 at the most; redrawn when it
+; changes from the three shifted digit sets (timer.inc, build.mjs)
+TMY     = 15
+TMX     = COVERX + 7 + 32
+TROW    = 10
+        .section high
+tmset   lda #(SPRTIMER & $3fff) / 64
+        sta SCR0 + $3f8
+        sta SCR1 + $3f8
+        sta SCR2 + $3f8
+        sta SCR3 + $3f8
+        lda #0
+        sta $d027
+        lda $d017
+        and #$fe
+        sta $d017
+        lda $d01d
+        and #$fe
+        sta $d01d
+        lda $d010
+        and #$fe
+        sta $d010
+        lda #TMX
+        sta $d000
+        lda #TMY
+        sta $d001
+        lda won                     ; (the count: stopped once the level's won)
+        bne _x
+        inc tmf
+        lda tmf
+        cmp #50
+        bcc _x
+        lda #0
+        sta tmf
+        inc tms2
+        lda tms2
+        cmp #10
+        bcc tmdraw
+        lda #0
+        sta tms2
+        inc tms1
+        lda tms1
+        cmp #6
+        bcc tmdraw
+        lda #0
+        sta tms1
+        inc tmm
+        lda tmm
+        cmp #10
+        bcc tmdraw
+        lda #9                      ; (9:59, held)
+        sta tmm
+        sta tms2
+        lda #5
+        sta tms1
+        bne tmdraw
+_x      rts
+tmdraw  .for r = 0, r < 7, r += 1
+        ldx tmm
+        lda tmA + r * 10,x
+        sta SPRTIMER + (TROW + r) * 3
+        ldx tms1
+        lda tmB1 + r * 10,x
+        ora tmcol + r
+        sta SPRTIMER + (TROW + r) * 3 + 1
+        lda tmB2 + r * 10,x
+        ldx tms2
+        ora tmC + r * 10,x
+        sta SPRTIMER + (TROW + r) * 3 + 2
+        .endfor
+        rts
+tmreset lda #0
+        sta tmf
+        sta tms2
+        sta tms1
+        sta tmm
+        jmp tmdraw
+tmcov   lda #(SPRCOVER & $3fff) / 64 ; (and back: the cover)
+        sta SCR0 + $3f8
+        sta SCR1 + $3f8
+        sta SCR2 + $3f8
+        sta SCR3 + $3f8
+        lda #3
+        sta $d027
+        lda $d017
+        ora #1
+        sta $d017
+        lda $d01d
+        ora #1
+        sta $d01d
+        lda #COVERX + 7
+        sta $d000
+        lda #COVERY0
+        sta $d001
+        rts
+tmf     .byte 0
+tms2    .byte 0
+tms1    .byte 0
+tmm     .byte 0
+        .include "timer.inc"
+        .send high
+        .endif
+
         .section high
 vtmp    .byte 0
 v010r   .byte 0                     ; ($d010 with the cover's bit clear, for vspline)
@@ -1516,6 +1639,8 @@ end
         .binary "hazspr.bin", 128, 128  ; (the balloon's infill, top- and bottom-justified)
         .cerror * != SPRBMC
         .binary "hazspr.bin", 256, 64   ; (the balloon in multicolour)
+        .cerror * != SPRTIMER
+        .fill 64, 0                 ; (the timer: drawn by tmdraw)
         .fill CS1 - *, 0
         .binary "charsets.bin", 512, 512
         .fill $6800 - *, 0
