@@ -603,9 +603,11 @@ NTSC machine instead of a garbled screen; the VSP crash test on hardware (VSP.md
 ## The Poglet type, first pass (A_2)
 
 - tools/export_poglet.mjs: the BBC's room_A_2 into levels/poglet.json and levels/A_2.txt.
-  - Logs: 12 lines, top line a half's first (3 halves, black on magenta); 8-pixel caps (corners
-    squared), between them the long log's most seamless 24 columns (seam 0: the grain's period is
-    12) repeated; the stubs under them dropped; widths to the nearest 8 (the BBC's 20 + 12k).
+  - Logs: 12 lines, top line a half's first (3 halves). Each end the BBC's single black column
+    with background above and below it (what makes them logs), in a character of its own (black
+    on cyan); the body between on whole characters (black on magenta): the BBC's first and last 8
+    columns, and between them the long log's most seamless 24 (seam 0: the grain's period is 12)
+    repeated; the stubs under them dropped; bodies to the nearest 8 (the BBC's 18 + 12k).
   - Ropes: the BBC's black edges only (the yellow core would be a third colour in a half),
     columns 2-5 of a character, a kink every 16 lines; snapped along the log they hang from.
   - The Poglet: black outline in the characters, 3 characters by 9 halves; yellow and magenta
@@ -614,7 +616,7 @@ NTSC machine instead of a garbled screen; the VSP crash test on hardware (VSP.md
   - Squeezed: the BBC's lines 56-224 to the map's 36-188 (x 0.905), as its content spans 213
     lines; the physics' ladders scaled with it.
   - The Poglets on odd rows (the type's phase: it moves the logs they sit on least, 14 lines in
-    all, the most 8), so their glyphs split between the sets: 52 and 53 of 64.
+    all, the most 8), so their glyphs split between the sets: 57 and 59 of 64.
 - level.mjs: "rows": "odd" as well as "even"; --preview (checks, glyph counts, a picture, no game
   files; overlaps reported, not refused).
 - Not playable yet: the game gives each Scrubbly a fixed sprite (3-7); 9 Poglets need their

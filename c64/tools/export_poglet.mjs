@@ -1,10 +1,12 @@
 // First pass: a classic Poglet level (A_2) from the BBC's, into the level format (../levels):
 // poglet.json (the type's pieces) and A_2.txt. Redrawn for ECM's 8x4 halves (black on one
 // background each):
-//   - logs: 12 lines, their top line a half's first (so 3 halves, black on magenta); a left cap
-//     and a right cap of 8 (corners squared: no cyan in them), between them a 3-character unit of
-//     the BBC's grain (the most seamless 24 of the long log's: the grain's 12-pixel period twice)
-//     repeated; the stubs under them dropped. log<N>: N characters
+//   - logs: 12 lines, their top line a half's first (so 3 halves); each end the BBC's single black
+//     column with background above and below it, in a character of its own (black on cyan), the
+//     body between on whole characters (black on magenta): the BBC's first and last 8 columns,
+//     and between them a 3-character unit of its grain (the long log's most seamless 24: the
+//     grain's 12-pixel period twice) repeated; the stubs under them dropped. log<N>: a body of N
+//     characters, N + 2 with its ends
 //   - ropes (the ladders): the BBC's black edges only (the yellow core needs a third colour), 4 wide
 //     at columns 2-5 of a character, a kink every 16 lines; rope<N>: N halves
 //   - the Poglet: its black outline in the characters, its yellow and magenta from a multicolour
@@ -38,10 +40,16 @@ let best = null;
 for (let s = long.x + 8; s + 48 <= long.x + long.w - 8; s++) { let c = 0; for (let l = 1; l < 11; l++) if (P(s, long.y + l) !== P(s + 24, long.y + l)) c++; if (!best || c < best.c) best = { s, c }; }
 const unit = rowsOf(best.s, best.s + 24, long.y).map((r, l) => l === 0 || l === 11 ? '3'.repeat(24) : r);
 notes.push(`log grain: the long log's columns ${best.s - long.x}-${best.s - long.x + 23}, seam ${best.c} pixels off`);
-const capL = rowsOf(long.x, long.x + 8, long.y).map(r => r.replace(/0/g, '3'));
-let re = long.x + long.w - 1; while (![...Array(8)].some((_, l) => P(re, long.y + 2 + l))) re--;
-const capR = rowsOf(re - 7, re + 1, long.y).map(r => r.replace(/0/g, '3'));
-const logPiece = n => { const a = []; for (let l = 0; l < 12; l++) { let s = capL[l]; for (let k = 0; k < n - 2; k++) s += unit[l].slice((k % 3) * 8, (k % 3) * 8 + 8); a.push(s + capR[l]); } return { art: a, plats: [[0, 0, n * 8]] }; };
+// (the ends, as the BBC's: a single black column, lines 2-9, background above and below it. On
+// the C64 each is a character to itself, the column at its inner edge, so the body, between
+// them, starts on a character: the end characters black on cyan, the body black on magenta. The
+// body's first and last characters the BBC's columns next to the ends)
+const E = long.x; let RE = long.x + long.w - 1; while (![...Array(8)].some((_, l) => P(RE, long.y + 2 + l))) RE--;
+const edge = x => Array.from({ length: 12 }, (_, l) => D[P(x, long.y + l)] === '0' ? '-' : '3');
+const endL = edge(E).map(c => '-------' + c), endR = edge(RE).map(c => c + '-------');
+const firstB = rowsOf(E + 1, E + 9, long.y), lastB = rowsOf(RE - 8, RE, long.y);
+for (const [n, a] of [['first', firstB], ['last', lastB]]) if (a.some(r => r.includes('0'))) notes.push(`log body's ${n} character has background in it`);
+const logPiece = n => { const a = []; for (let l = 0; l < 12; l++) { let s = endL[l] + firstB[l]; for (let k = 0; k < n - 2; k++) s += unit[l].slice((k % 3) * 8, (k % 3) * 8 + 8); a.push(s + lastB[l] + endR[l]); } return { art: a, plats: [[7, 0, n * 8 + 2]] }; };
 // (the Poglets always on the same row phase, ROWS: even, their piece's top a multiple of 16, or
 // odd, 8 more; so a log a Poglet sits on has its top 36 below that, and every log in the BBC's row
 // of one with it. ROWS from the argument, or whichever moves those logs least)
@@ -54,9 +62,10 @@ notes.push(`Poglets on ${ROWS} rows: the logs they sit on moved ${[...carried].m
 const rowOf = y => [...carried].find(c => Math.abs(c - y) <= 2);       // (a log within 2 lines of a Poglet's row goes with it)
 const logY = y => rowOf(y) !== undefined ? phaseSnap(fy(rowOf(y)), PHASE) : snap4(fy(y));
 const L = logs.map(g => {
-    const x0 = Math.round((g.x + XOFF) / 8) * 8, x1 = Math.round((g.x + g.w + XOFF) / 8) * 8, n = Math.max(2, (x1 - x0) / 8), y = logY(g.y);
+    // (its body, between its end columns, to the nearest characters; the piece a character left of it)
+    const x0 = Math.round((g.x + 1 + XOFF) / 8) * 8, x1 = Math.round((g.x + g.w - 1 + XOFF) / 8) * 8, n = Math.max(2, (x1 - x0) / 8), y = logY(g.y);
     const name = `log${n}`; if (!pieces[name]) pieces[name] = logPiece(n);
-    place.push([name, x0, y]);
+    place.push([name, x0 - 8, y]);
     return { ...g, X: x0, N: n, Y: y };
 });
 // ---- Ropes: from the bottom of the log they hang from (or their own top) to their end
