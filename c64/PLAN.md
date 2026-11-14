@@ -595,3 +595,7 @@ NTSC machine instead of a garbled screen; the VSP crash test on hardware (VSP.md
   Scrubblies there are on an even row; the Scrubbly's feet hide the ledge's top line under them.
 - Next: the C64 stamping the map from the level's placed pieces at load (the pieces' halves as
   codes, once per type), instead of the packed map; then the level editor.
+- The Scrubbly's infill sprite: tools/infill.mjs, each 2x2 block on or off by whichever gets more
+  of its visible pixels right against the BBC's (black pixels hide the sprite either way, so they
+  don't count; the old rule needed 2 of a block's 4 pixels magenta, so blocks half black were
+  holes). 38 pixels unlike the BBC's down to 15: one magenta shown cyan, and the feet's yellow (14).
