@@ -179,11 +179,14 @@ start   sei
         sta $fffa
         lda #>nmi
         sta $fffb
+        lda rstflag                 ; (a restart: the level as it is, Trogg as restart left him)
+        bne _rs
         .if FRONT
         jsr attract                 ; (the attract screen, till a key: front.asm)
         .endif
         lda chosen                  ; (the level chosen: the front end's, else the first)
         jsr loadlevel               ; (the level's own glyphs, sprites, map and tables: loader.asm)
+_rs
         lda #<irq1
         sta $fffe
         lda #>irq1
@@ -345,7 +348,11 @@ covc0   lda #3                      ; (the cover: the level's background colour,
         .if !TEST
         jsr muxinit                 ; (the multiplexer's: no sprites yet, in either buffer)
         jsr fresh                   ; (and what it keeps from frame to frame)
-        jsr tmreset                 ; (the timer at 0:00)
+        lda rstflag                 ; (the timer at 0:00, but for a restart: it goes on)
+        bne +
+        jsr tmreset
++       lda #0
+        sta rstflag
         .endif
 
         lda $dd02                   ; VIC bank 1
@@ -518,6 +525,11 @@ nextframe
         #pst 0
         #pst 2
         jsr gametick                ; (a game tick: the keys, Trogg)
+        lda rstflag                 ; (a restart: the display set up afresh, start)
+        beq +
+        sei
+        jmp start
++
         #pst 4
         jsr decide
         #pst 6

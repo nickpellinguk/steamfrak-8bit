@@ -35,7 +35,10 @@ gametick
         beq _alive
         dec dead
         bne _still
-        jmp restart
+        jsr restart                 ; (then the display and the multiplexer set up afresh round him
+        lda #1                      ;  where he restarts: rstflag, the main loop goes to start, the
+        sta rstflag                 ;  level kept; else what the multiplexer had placed for him
+        rts                         ;  before, above where he now is, could upset his sprites)
 _alive  lda won                     ; the level complete (all the keys): everything still, then
         beq _play                   ; A_1 again from the start (the only level), as the BBC
         lda wint                    ; version's game_tick
@@ -45,7 +48,10 @@ _wd     dec wint
         lda wint
         ora wint+1
         bne _still
-        jmp newlevel
+        jsr newlevel                ; (and the same: set up afresh)
+        lda #1
+        sta rstflag
+        rts
 _play   jsr read_keys
         lda k_esc                   ; Escape (Run/Stop or the left arrow, just pressed): the level
         beq +                       ; from the start, and the program from its start: the attract

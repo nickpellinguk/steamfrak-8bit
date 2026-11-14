@@ -79,6 +79,7 @@ _x      ldx #NS - 1
 level   .byte 0                     ; (the level being played)
 chosen  .byte LSTART                ; (the level to play: front.asm's menu chooses; LSTART, build.mjs --start)
 enfl    .byte 0                     ; (its enemy's sprite's flags, mux.asm)
+rstflag .byte 0                     ; (a restart: start sets the display up afresh, the level kept)
 
 unpack  ldy #0
         lda #$80
