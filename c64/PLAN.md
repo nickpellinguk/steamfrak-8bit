@@ -530,6 +530,15 @@ reference for everything else is that code (`../src/frak.asm`): `check_collision
       test builds (key scripts, --slack, --profile ...) or with --nofront (muxcheck needs it).
       The VICE here has no Commodore ROMs: build.mjs writes a stand-in character ROM
       (tools/standinfont.py, from Pillow's font) so the text shows in tests.
+      Escape in the game (Run/Stop, or the left arrow, where Escape is on a PC's keyboard; read
+      in read_keys, only as it's pressed): the level from the start (newlevel), then the program
+      from its start: the attract screen, then the game set up afresh. What the multiplexer keeps
+      from frame to frame (the Scrubblies' last scroll, Trogg's last rows) reset at the start
+      (fresh), as a second start found them as the last game left them (the Scrubblies without
+      their infill, till that was found). Key scripts take E for Escape; tools/esctest.py knocks
+      the Scrubbly off, presses Escape, and checks the level's back as at the start (Trogg at his
+      start and pixel-exact, nothing knocked off, the timer restarted). The key scripts' replay
+      moved to the high section (the low memory is nearly full: the profile build ends at $3fff).
 14. **Sound.** The sound effects on the SID (`SFX_CHING` for a pickup, `SFX_SQUEAL`, `SFX_DAGGER`,
     `SFX_POP`, `SFX_THUD`), from the BBC version's definitions, played in the border; the music
     (the victory tune) after. Its time measured against the budget from 13.

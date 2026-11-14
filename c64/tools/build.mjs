@@ -247,10 +247,11 @@ scrub.sprite.forEach((row, y) => { for (let k = 0; k < 3; k++) sb[y * 3 + k] = p
 writeFileSync(DIR + 'scrubspr.bin', sb);
 console.log(`row masks (line 3/4): ${masks.map((m, r) => masks3[r] === m ? m.toString(16) : masks3[r].toString(16) + '/' + m.toString(16)).join(' ')}; tails ${masks.map(m => tailFor[m]).join(' ')}`);
 if (!process.argv.includes('--nopack')) execFileSync('node', [TOOLS + 'pack.mjs'], { stdio: 'inherit' });
-// (--keys T:K,T:K...: for a test build, the keys held for T ticks each, K of L R U D Y or -)
+// (--keys T:K,T:K...: for a test build, the keys held for T ticks each, K of L R U D Y E (Escape)
+// or -)
 {
     const steps = String(arg('keys', '1:-')).split(',').map(s => s.split(':'));
-    const bit = k => [...k].reduce((v, c) => v | ({ L: 1, R: 2, U: 4, D: 8, Y: 16 }[c] || 0), 0);
+    const bit = k => [...k].reduce((v, c) => v | ({ L: 1, R: 2, U: 4, D: 8, Y: 16, E: 32 }[c] || 0), 0);
     writeFileSync(DIR + 'keys.inc', `; made by tools/build.mjs (--keys)\nKSCRN = ${steps.length}\n` +
         `kscrn   .byte ${steps.map(s => +s[0]).join(', ')}\nkscrk   .byte ${steps.map(s => bit(s[1])).join(', ')}\n`);
 }

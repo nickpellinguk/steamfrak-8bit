@@ -333,6 +333,7 @@ start   sei
         bpl -
         .if !TEST
         jsr muxinit                 ; (the multiplexer's: no sprites yet, in either buffer)
+        jsr fresh                   ; (and what it keeps from frame to frame)
         jsr tmreset                 ; (the timer at 0:00)
         .endif
 
@@ -1364,6 +1365,20 @@ tmm     .byte 0
         .endif
 
         .section high
+; What the multiplexer keeps from frame to frame, as when loaded: a start after Escape finds it as
+; the last game left it
+fresh   lda #$ff
+        sta gscx
+        sta gscx+1
+        sta traw
+        sta trcw
+        sta tres1w
+        sta tres2w
+        lda #1
+        sta scrchg
+        lda #0
+        sta tmsbw
+        rts
 vtmp    .byte 0
 v010r   .byte 0                     ; ($d010 with the cover's bit clear, for vspline)
         .send high

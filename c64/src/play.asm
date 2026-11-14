@@ -47,6 +47,12 @@ _wd     dec wint
         bne _still
         jmp newlevel
 _play   jsr read_keys
+        lda k_esc                   ; Escape (Run/Stop or the left arrow, just pressed): the level
+        beq +                       ; from the start, and the program from its start: the attract
+        jsr newlevel                ; screen (front.asm), then the game set up afresh
+        sei
+        jmp start
++
         .if !STILL                  ; (--still: a test, Trogg kept where he's put)
         jsr trogg_update
         .endif
@@ -259,6 +265,19 @@ read_keys
         lda #16
         ora joy
         sta joy
++       lda $dc01                   ; Escape: Run/Stop (column 7, row 7) or the left arrow (row
+        and #%10000010              ; 1, where Escape is on a PC's keyboard), only as it's
+        cmp #%10000010              ; pressed (k_esc), not while it's held
+        lda #0
+        bcs +
+        lda #1
++       sta kescn
+        lda kesch
+        eor #1
+        and kescn
+        sta k_esc
+        lda kescn
+        sta kesch
 +       lda joy                     ; (each key: 0 or 1)
         lsr a
         rol k_up
@@ -1274,6 +1293,7 @@ _climb  lda tclimb
         .if KEYTEST
 ; (a test: the keys from a script, --keys in build.mjs: for so many ticks each, keys held (bits:
 ; 1 left, 2 right, 4 up, 8 down, 16 yoyo); then none)
+        .section high               ; (a test's: not in the low memory, which is nearly full)
         .include "keys.inc"         ; kscrn (ticks), kscrk (keys), KSCRN (steps)
 keytest lda kstep
         cmp #KSCRN
@@ -1290,6 +1310,8 @@ keytest lda kstep
         inx
         cpx #5
         bne -
+        and #1                      ; (and bit 32: Escape)
+        sta k_esc
         inc kticks
         lda kticks
         ldx kstep
@@ -1300,6 +1322,7 @@ keytest lda kstep
         inc kstep
 +       rts
 _none   lda #0
+        sta k_esc
         ldx #4
 -       sta k_left,x
         dex
@@ -1307,6 +1330,7 @@ _none   lda #0
         rts
 kstep   .byte 0
 kticks  .byte 0
+        .send high
         .endif
 
         .if CAMTEST
@@ -1419,6 +1443,9 @@ k_up    .byte 0
 k_down  .byte 0
 k_yoyo  .byte 0
 joy     .byte 0
+k_esc   .byte 0                     ; (Escape: just pressed)
+kescn   .byte 0
+kesch   .byte 0
 ktmp    .byte 0
 q_x     .word 0                     ; (the platform and ladder lookups')
 q_y1    .word 0
