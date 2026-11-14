@@ -86,10 +86,10 @@ for (let p = 0; p < W * H; p++) {
 const DOWNX = [[244, 152]];
 const snapPX = (x, y) => DOWNX.some(([hx, hy]) => Math.abs(x - hx) <= 2 && Math.abs(y - hy) <= 2) ? Math.floor(x / 8) * 8 : Math.round(x / 8) * 8;
 const snapTop = y => { let d = ((3 - y) % 4 + 4) % 4; if (d > 2) d -= 4; return y + d; };     // (nearest 3 mod 4: the last line of a half)
-const art = new Uint8Array(W * H);
+const art = new Uint8Array(W * H), ledgeOwner = new Int16Array(W * H).fill(-1), ladOwner = new Int16Array(W * H).fill(-1);   // (EXPORT: whose each pixel is)
 for (const pc of pieces) {
     const dx = snapPX(pc.x0, pc.y0) - pc.x0, dy = snapTop(pc.y0) - pc.y0;
-    for (const q of pc.pix) { const x = q % W + dx, y = ((q / W) | 0) + dy; if (inside(x, y)) art[at2(x, y)] = base[q]; }
+    for (const q of pc.pix) { const x = q % W + dx, y = ((q / W) | 0) + dy; if (inside(x, y)) { art[at2(x, y)] = base[q]; ledgeOwner[at2(x, y)] = pieces.indexOf(pc); } }
 }
 // ... their colours by line: the top black on background, the next 4 magenta and black, the rest
 // black and background, to line 12 (each piece's lines from its own top)
@@ -109,7 +109,7 @@ for (const pc of pieces) {
     for (let x = 0; x < W; x++) {
         let m = false;
         for (let l = 1; l <= 4 && !m; l++) if (inside(x, top + l) && art[at2(x, top + l)] === 2) m = true;
-        if (m) for (let l = 5; l <= 8; l++) if (inside(x, top + l)) art[at2(x, top + l)] = art[at2(x, top + l)] === 3 ? 3 : 1;
+        if (m) for (let l = 5; l <= 8; l++) if (inside(x, top + l)) { art[at2(x, top + l)] = art[at2(x, top + l)] === 3 ? 3 : 1; if (ledgeOwner[at2(x, top + l)] < 0) ledgeOwner[at2(x, top + l)] = pieces.indexOf(pc); }
     }
 }
 
@@ -141,7 +141,7 @@ e.lad_x.forEach((lx, k) => {
         const p = y & 7, row = p >= 1 && p <= 3 ? RUNG[p - 1] : POLE;
         // (in the ledge's area too: its first half, its last, and its poles through its second half,
         // else the right pole's first line there is a hole, where the cone's black doesn't fill it)
-        const put = (x, v) => { if (inside(x, y) && !art[at2(x, y)] && (y < from + 4 || y >= to - 4 || (row === POLE && y < from + 8) || !area[at2(x, y)])) art[at2(x, y)] = v; };
+        const put = (x, v) => { if (inside(x, y) && !art[at2(x, y)] && (y < from + 4 || y >= to - 4 || (row === POLE && y < from + 8) || !area[at2(x, y)])) { if (!process.env.NOLADDERS) art[at2(x, y)] = v; ladOwner[at2(x, y)] = k; } };
         for (let x = 0; x < 12; x++) if (row[x] === '#') put(cx - 6 + x, 3);
     }
     ladMid[k] = cx;
@@ -204,9 +204,8 @@ if (fromTxt) SCRUB = readFileSync(TXT, 'utf8').split('\n').filter(l => /^\s*\d+ 
 // first, so its lines 3-6 are a half) and the ring's middle, round its hole (a column wide), the
 // half beside it: the halves' background then yellow (KEYHALF: its lines there); the ring 9 wide
 // and 10 high; the rest of its yellow as before. Its teeth the BBC's, but 3 yellow columns wide, not 4
-// (the middle one not repeated), and 3 lines, not 4 (the two the same as one): clear of the
-// platform, whose top line is gone under all of the key (its last line, blank: KEYDROP, the key a
-// line further down than its height would put it)
+// (the middle one not repeated), and 3 lines, not 4 (the two the same as one). It and the gems a
+// half above their platforms' top lines, sharing no cell with them (its last line, blank: KEYDROP)
 const KEY = ['.................BBBBB..',
              '................BBYYYBB.',
              '...............BBYYYYYBB',
@@ -247,15 +246,35 @@ e.draw_img.forEach((img, k) => {
         if (band >= 0) {
             let xl = cx0; while (xl > 0 && art[at2(xl - 1, band)] !== 0) xl--;
             xl = Math.round(xl / 8) * 8;
-            const unit = xl + 16 * Math.round((cx0 - xl - 8) / 16);
-            left = unit + Math.floor((16 - iw) / 2); top = band - 1 - ih + (key ? KEYDROP : 0);
-            if (key) {                   // (the key, 24 wide: on a character, its shaft's half all yellow and black,
-                const over = l => { let n = 0; for (let x = l; x < l + iw; x++) if (inside(x, band) && art[at2(x, band)] === 2) n++; return n; };
-                left = over(unit - 8) > over(unit) ? unit - 8 : unit;   // the unit's character or the one before: more over its platform)
+            const unit0 = xl + 16 * Math.round((cx0 - xl - 8) / 16);
+            // (a half higher than on the BBC: clear of the platform's top line's half, so that no
+            // cell is both the key's or gem's and the platform's)
+            top = band - 1 - ih + (key ? KEYDROP : 0) - 4;
+            const over = l => { let n = 0; for (let x = l; x < l + iw; x++) if (inside(x, band) && art[at2(x, band)] === 2) n++; return n; };
+            const clear = l => { if (over(l) < Math.min(iw - 4, over(at(unit0)))) return false;   // (over its platform as much, and
+                for (let y = top & ~3; y < ((top + ih + 3) & ~3); y++)      //  nothing else in its halves:
+                    for (let x = l & ~7; x < ((l + iw + 7) & ~7); x++)      //  a ladder's top, say)
+                        if (!inside(x, y) || (art[at2(x, y)] !== 0 && !tag[at2(x, y)])) return false;   // (a Scrubbly's no matter: not there when it's yo-yoed off)
+                return true; };
+            const at = u => !key ? u + Math.floor((16 - iw) / 2)         // (the key, 24 wide: on a character, its shaft's half all
+                : over(u - 8) > over(u) ? u - 8 : u;                     //  yellow and black: the unit's character or the one before, more over its platform)
+            left = at(unit0);
+            for (let d = 0; d <= 160; d += 16) {                         // (the nearest unit along whose halves are clear)
+                if (clear(at(unit0 - d))) { left = at(unit0 - d); break; }
+                if (clear(at(unit0 + d))) { left = at(unit0 + d); break; }
+                if (d === 160) {                                         // (none: on a ladder's top, the ladder
+                    let n = 0, m = 0;                                    //  going on up behind it; that gone in its
+                    for (let y = top & ~3; y < ((top + ih + 3) & ~3); y++)   //  halves, as before under the key itself)
+                        for (let x = left & ~7; x < ((left + iw + 7) & ~7); x++)
+                            if (inside(x, y) && art[at2(x, y)] && !tag[at2(x, y)]) { if (art[at2(x, y)] === 2) m++; n++; art[at2(x, y)] = 0; }
+                    console.log(`${im.name} ${k}: ${n} pixels of a ladder cleared from its halves`);
+                    if (m) console.error(`${im.name} ${k}: ${m} magenta pixels in its halves`);
+                }
             }
+            if (left !== at(unit0)) console.log(`${im.name} ${k}: moved ${left - at(unit0)} to clear cells`);
         }
-        // (nothing behind it either: a ladder's foot, say)
-        for (let y = 0; y < ih; y++) for (let x = 0; x < iw; x++) if (inside(left + x, top + y)) art[at2(left + x, top + y)] = 0;
+        // (its halves hold nothing else, so its glyphs are its own, the same in every level: the
+        // common ones, pack.mjs)
         picks.push({ name: im.name, left, top, box: tightBox(pix) });
         pickGrids[im.name] = pix;                    // (its pixels: -1 clear; for the collision spans)
         console.log(`${im.name} ${k}: left ${left} (from its unit ${band >= 0 ? left - (left - Math.floor((16 - iw) / 2)) : '?'}, mod 8 ${left & 7}), top ${top} (mod 4 ${top & 3})`);
@@ -268,7 +287,7 @@ e.draw_img.forEach((img, k) => {
 });
 
 // ---- 200 lines: character rows ROW0 to ROW0 + 24
-for (const a of [src, art, tag, ovl]) { a.copyWithin(0, ROW0 * 8 * W, (ROW0 + ROWS) * 8 * W); a.fill(a === ovl ? -1 : 0, ROWS * 8 * W); }
+for (const a of [src, art, tag, ovl, ledgeOwner, ladOwner]) { a.copyWithin(0, ROW0 * 8 * W, (ROW0 + ROWS) * 8 * W); a.fill(a === ovl ? -1 : 0, ROWS * 8 * W); }
 const HS = ROWS * 8;
 
 // ---- As ECM + 4-line FLI shows it
@@ -414,3 +433,9 @@ if (process.env.CHECK) {
 
 // ---- The C64 data, for pack.mjs: the halves as glyphs and ECM backgrounds, every cell's foreground
 writeFileSync(`${OUT}/level${SUF}.json`, JSON.stringify({ NC, ROWS, F: [...cellF], T: halfPat[0], B: halfPat[1], TB: [...halfB[0]], BB: [...halfB[1]] }));
+
+// ---- EXPORT=name: this run's characters as shown and whose each pixel is, for export.mjs
+if (process.env.EXPORT) writeFileSync(`${OUT}/export_${process.env.EXPORT}.json`, JSON.stringify({ W, HS, NC, ROW0, XOFF, w: e.w, h: e.h,
+    shown: [...shownChars.subarray(0, W * HS)], ledgeOwner: [...ledgeOwner.subarray(0, W * HS)], ladOwner: [...ladOwner.subarray(0, W * HS)],
+    plats, lads, trogg: troggStart, ladMid, picks, placed, SH, KEY, SPR, SCRUB, pickGrids, ovl: [...ovl.subarray(0, W * HS)],
+    bbcPlats: e.plat_x.map((x, k) => ({ x, y: e.plat_y[k], w: e.plat_w[k], moving: e.plat_moving[k], bouncy: e.plat_bouncy[k] })) }));

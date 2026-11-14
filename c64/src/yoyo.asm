@@ -9,7 +9,6 @@
 ; (scrpatch.inc) in the level map and in each pair that shows them; a restart puts them back.
 YOYO_MAX = 80
 YV      = NS + NB                   ; (the yoyo's virtual sprite)
-SPRYOYO = $54c0                     ; (its 4 frames' sprites)
 yp      = zp + 88                   ; (2: the main program's)
 ip0     = zp + 90                   ; (2: strapply's, in the border)
 ip1     = zp + 92                   ; (2)

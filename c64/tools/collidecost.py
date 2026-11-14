@@ -2,13 +2,14 @@
 # with 0, 3 and 6 balloons and daggers out at random; cycles per call, least, most and mean.
 #   python3 collidecost.py      (the build as last made)
 import os, random, re
+import os as _os, sys as _sys; _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__))); import c64img   # (the level unpacked: loadlevel)
 from py65.devices.mpu6502 import MPU
 B = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'build')
 lbl = {}
 for line in open(os.path.join(B, 'frak64.lbl')):
     m = re.match(r'^(\w+)\s*=\s*(\$?)([0-9a-fA-F]+)', line)
     if m: lbl[m.group(1)] = int(m.group(3), 16 if m.group(2) else 10)
-prg = open(os.path.join(B, 'frak64.prg'), 'rb').read(); base = bytearray(65536); base[0x801:0x801 + len(prg) - 2] = prg[2:]
+prg = open(os.path.join(B, 'frak64.prg'), 'rb').read(); base = c64img.image(prg)
 stub = 0x033c; base[stub:stub + 3] = bytes([0x20, lbl['collide'] & 255, lbl['collide'] >> 8])
 random.seed(2)
 for nb in (0, 3, 6):

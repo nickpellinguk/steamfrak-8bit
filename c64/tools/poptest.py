@@ -5,6 +5,7 @@
 # hit, compared. (No Scrubbly in reach: they're all yoyoed off first.)
 #   python3 poptest.py [N]      (the build as last made, with the balloons and daggers)
 import json, os, random, re, sys
+import os as _os, sys as _sys; _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__))); import c64img   # (the level unpacked: loadlevel)
 from py65.devices.mpu6502 import MPU
 DIR = os.path.dirname(os.path.abspath(__file__)); B = os.path.join(DIR, '..', 'build')
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 3000
@@ -15,7 +16,7 @@ for line in open(os.path.join(B, 'frak64.lbl')):
 HZ = [json.load(open(os.path.join(B, 'picks.json')))['hazards'][n] for n in ('IMG_Balloon', 'IMG_DaggerLR')]
 NS = 5; NB = int(re.search(r'^NB\s*=\s*(\d+)', open(os.path.join(DIR, '..', 'src', 'frak64.asm')).read(), re.M).group(1))
 prg = open(os.path.join(B, 'frak64.prg'), 'rb').read()
-base = bytearray(65536); base[0x0801:0x0801 + len(prg) - 2] = prg[2:]
+base = c64img.image(prg)
 for i in range(NS): base[lbl['knocked'] + i] = 1
 stub = 0x033c; base[stub:stub + 3] = bytes([0x20, lbl['yoyo_collide'] & 255, lbl['yoyo_collide'] >> 8])
 random.seed(7); bad = 0; hits = 0

@@ -59,9 +59,10 @@ ROM routines.
 
 | File | |
 | --- | --- |
-| `tools/mockup.mjs` | Redraws A_1 for the 8x4 grid and works out what ECM + 4-line FLI shows: `build/mockup.png`, the data for `pack.mjs`, and the platforms and ladders where it draws them, for Trogg's physics (`build/geometry.json`) |
+| `tools/mockup.mjs` | The original redraw of the BBC's A_1 for the 8x4 grid (`build/mockup.png`); with `EXPORT=...`, the dumps `tools/export.mjs` cut into the level format |
+| `tools/export.mjs` | One-off: A_1 cut into pieces, `levels/scrubbly.json`, `levels/common.json` and `levels/A_1.txt` (then edited by hand: see its first line) |
+| `tools/level.mjs` | Builds a level from `levels/<name>.txt` ("name x y" lines) and its type's pieces: the fixed, orthogonal glyph sets by band parity, the map, the patches, the physics (`geometry.json`), the objects (`picks.json`, `scrub.json`) and `build/level.png`; run by `build.mjs` (`--level NAME`) |
 | `tools/trogg.mjs` | Trogg's frames as sprites: a hi-res black outline over a multicolour infill, 24 wide, each sprite used twice down his 34 lines (`build/trogg.png`, `trogg.txt`, `trogg.bin`) |
-| `tools/pack.mjs` | Packs the glyphs into two character sets (by band: a row's bottoms and the next row's tops), with the level's yo-yoed-off variant and 4 characters per set kept for the yoyo's string, and writes the screen codes (glyph + background) for the 97 x 25 level and each Scrubbly's patch knocking it off |
 | `src/frak64.asm` | The demo: the timer interrupt a row, double-buffered screens, scrolling |
 | `src/mux.asm` | The sprite multiplexer, and the demo's "game" (the Scrubblies following the scroll, the balls) |
 | `tools/build.mjs` | Assembles it and the stand-in ROMs, and runs VICE headless for a screenshot |

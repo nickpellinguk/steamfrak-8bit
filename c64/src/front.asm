@@ -8,7 +8,7 @@
 ; is showing only their blank rows): the FRAK! bubble in the top border (opened, as in the game),
 ; Trogg (his top sprites' x moved 2 left between his head and his body), the Scrubbly (2 sprites
 ; across), then the Hooter and the Poglet side by side in the sprites' use. The text: front.inc.
-FRSPR   = $5a00                     ; (the cast's sprite blocks, FEBLOCKS of them)
+FRSPR   = $5200                     ; (the cast's sprite blocks, FEBLOCKS of them: before CS1)
 FECHR   = $4800                     ; (the font: SCR2's place, the game's later)
 FEP     = (FRSPR & $3fff) / 64      ; (the first block's pointer)
 TX      = 117                       ; (Trogg's body's x; his head's 2 more; the Scrubbly's, the

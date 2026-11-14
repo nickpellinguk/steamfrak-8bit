@@ -8,6 +8,7 @@
 # once is reported (more than 6 and the C64 would have missed one).
 #   python3 hazardtest.py [RUNS [TICKS]]      (the C64 build as last made; the BBC one, ../build.sh)
 import ast, os, random, re, sys
+import os as _os, sys as _sys; _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__))); import c64img   # (the level unpacked: loadlevel)
 from py65.devices.mpu6502 import MPU
 from py65.devices.mpu65c02 import MPU as MPU65C02
 DIR = os.path.dirname(os.path.abspath(__file__)); B = os.path.join(DIR, '..', 'build'); BB = os.path.join(DIR, '..', '..', 'build')
@@ -44,7 +45,7 @@ for run in range(RUNS):
     bm[bl['difficulty']] = DIFF; bm[bl['is_vert']] = 0; w16(bm, bl['level_h'], 256); w16(bm, bl['rng'], seed)
     bm[bl['bal_timer']] = bm[bl['dag_timer']] = 0
     for i in range(MAXM): bm[bl['mv_active'] + i] = 0
-    cm = bytearray(65536); cm[0x0801:0x0801 + len(prg) - 2] = prg[2:]
+    cm = c64img.image(prg)
     w16(cm, lbl['hrng'], seed); cm[lbl['btim']] = cm[lbl['dtim']] = 0
     for i in range(NB): cm[lbl['oact'] + i] = 0
     tx, ty = random.randrange(20, 720), random.randrange(30, 240)

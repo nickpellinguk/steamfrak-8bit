@@ -54,7 +54,10 @@ PAUSE   = 50                        ; frames held at each end
 zp      = $02
 
 ; (--profile: CIA 2's timer A, free running, read at each stage of a frame's work into pstage;
-; each frame's record (32 bytes) then copied into a ring at $e000-$fdff (tools/frameprof.py))
+; each frame's record (32 bytes) then copied into a ring at PRING0-PRINGE (tools/frameprof.py);
+; the level map then after the program instead of there: MAPS)
+PRING0  = $e000
+PRINGE  = $fe00
 pst     .macro
         .if PROFILE
 -       lda $dd05
@@ -115,13 +118,21 @@ s01d    = zp + 52
 s01b    = zp + 53
 NS      = 5                         ; the Scrubblies
 NB      = 6                         ; the balloons and daggers (at most)
-SPRBALLOON = $5480                  ; the balloon's sprite (hazards.asm)
-SPRDAGGER = $55c0                   ; the dagger's
-SPRFRAK = $5600                     ; the FRAK! bubble's 2 (its black, its yellow)
-SPRBLANK = $5680                    ; a blank sprite (zeros: for a Scrubbly knocked off, yoyo.asm)
-SPRBINF = $56c0                     ; the balloon's infill's 2 (top-justified, bottom-justified)
-SPRBMC  = $5740                     ; the balloon in multicolour (the fallback, mux.asm)
-SPRTIMER = $5780                    ; the timer (tmdraw)
+; The sprites: the common ones first, together (every level's): the cover (drawn at the start), a
+; blank one, the yoyo's frames, the FRAK! bubble, the timer, the balloon, the dagger, the balloon's
+; infill and its multicolour fallback, Trogg's frames; then the level's own (LSPR on: the loader's)
+SPRCOVER = $5a00                    ; the cover sprite's data
+SPRBLANK = SPRCOVER + $40           ; a blank sprite (zeros: for a Scrubbly knocked off, yoyo.asm)
+SPRYOYO = SPRBLANK + $40            ; the yoyo's 4 frames (yoyo.asm)
+SPRFRAK = SPRYOYO + $100            ; the FRAK! bubble's 2 (its black, its yellow)
+SPRTIMER = SPRFRAK + $80            ; the timer (tmdraw)
+SPRBALLOON = SPRTIMER + $40         ; the balloon's sprite (hazards.asm)
+SPRDAGGER = SPRBALLOON + $40        ; the dagger's
+SPRBINF = SPRDAGGER + $40           ; the balloon's infill's 2 (top-justified, bottom-justified)
+SPRBMC  = SPRBINF + $80             ; the balloon in multicolour (the fallback, mux.asm)
+TROGGAT = SPRBMC + $40              ; Trogg's frames (TROGG)
+LSPR    = TROGGAT + $1000           ; the level's own sprites (loader.asm), to $79bf
+SPRSCRUB = LSPR                     ; (the Scrubblies' body: the level's first)
 flippend = zp + 54                  ; (the next frame's scroll, decided in the main program: a pair
 wanto   = zp + 55                   ;  flip for the border to make; the hidden pair's origin wanted;
 nvs     = zp + 56                   ;  the VSP offset)
@@ -138,8 +149,6 @@ mk2     = zp + 62
 mj      = zp + 63
 mnv     = zp + 64
 shx     = zp + 65                   ; the scroll position shown (its low byte: scrx is the next frame's)
-SPRSCRUB = $5440                    ; the Scrubblies' sprite
-SPRCOVER = $5400                    ; the cover sprite's data
 COVERX  = 24                        ; its x at fine scroll 0
 COVERY0 = 49                        ; its first piece's y (lines 50-91; then 92, 134, 176, 218): from
                                     ; line 50, to hide the VSP line's garbage there (vspcov)
@@ -173,6 +182,7 @@ start   sei
         .if FRONT
         jsr attract                 ; (the attract screen, till a key: front.asm)
         .endif
+        jsr loadlevel               ; (the level's own glyphs, sprites and map: loader.asm)
         lda #<irq1
         sta $fffe
         lda #>irq1
@@ -653,7 +663,7 @@ precord lda frames
 +
         ldx #31
 -       lda pstage,x
-_pd     sta $e000,x
+_pd     sta PRING0,x
         dex
         bpl -
         lda _pd+1
@@ -663,9 +673,9 @@ _pd     sta $e000,x
         bcc +
         inc _pd+2
         lda _pd+2
-        cmp #$fe
+        cmp #>PRINGE
         bcc +
-        lda #$e0
+        lda #>PRING0
         sta _pd+2
 +       rts
 pstage  .fill 32
@@ -1593,6 +1603,7 @@ setx    lda shx
         .include "hazards.asm"
         .include "mux.asm"
         .include "trogg.asm"
+        .include "loader.asm"
         .if FRONT
         .include "front.asm"
         .endif
@@ -1645,35 +1656,47 @@ end
         ; (then the VIC bank: the screens, the cover sprite and the multiplexer's RAM, set up at
         ; the start; and what's loaded straight into it: the character sets, the other sprites)
         .fill CS0 - *, 0
-        .binary "charsets.bin", 0, 512
-        .fill SPRSCRUB - *, 0
-        .binary "scrubspr.bin"      ; (the Scrubblies' bodies)
-        .binary "hazspr.bin", 0, 64 ; (SPRBALLOON: hazards.asm's, from build.mjs)
+        .binary "common.bin"        ; (the common glyphs: then the level's own, the loader's)
+        .fill CS0 + 512 - *, 0
+        .if FRONT
+        .fill FRSPR - *, 0
+        .binary "frontspr.bin"      ; (the front end's cast: front.asm)
+        .cerror * > CS1
+        .endif
+        .fill CS1 - *, 0
+        .binary "common.bin"        ; (the same, in the other set)
+        .fill SPRCOVER - *, 0
+        .fill 128, 0                ; (SPRCOVER, drawn at the start; SPRBLANK)
         .cerror * != SPRYOYO
         .dsection yoyospr           ; (the yoyo's frames: yoyo.asm)
-        .cerror * != SPRDAGGER
-        .binary "hazspr.bin", 64, 64
         .cerror * != SPRFRAK
         .binary "frakspr.bin"       ; (the FRAK! bubble's black, its yellow: build.mjs)
-        .fill 64, 0                 ; (SPRBLANK)
+        .cerror * != SPRTIMER
+        .fill 64, 0                 ; (the timer: drawn by tmdraw)
+        .cerror * != SPRBALLOON
+        .binary "hazspr.bin", 0, 64 ; (hazards.asm's, from build.mjs)
+        .cerror * != SPRDAGGER
+        .binary "hazspr.bin", 64, 64
         .cerror * != SPRBINF
         .binary "hazspr.bin", 128, 128  ; (the balloon's infill, top- and bottom-justified)
         .cerror * != SPRBMC
         .binary "hazspr.bin", 256, 64   ; (the balloon in multicolour)
-        .cerror * != SPRTIMER
-        .fill 64, 0                 ; (the timer: drawn by tmdraw)
-        .fill CS1 - *, 0
-        .binary "charsets.bin", 512, 512
-        .if FRONT
-        .cerror * > FRSPR
-        .fill FRSPR - *, 0
-        .binary "frontspr.bin"      ; (the front end's cast: front.asm)
-        .endif
-        .fill $6800 - *, 0
+        .cerror * != TROGGAT
 TROGG   .binary "trogg.bin"         ; Trogg's sprites: per frame outline P1-P3, infill P1-P3
-        .cerror * > $79ff, "Trogg's sprites run into $79ff"
-        .fill $7a00 - *, 0          ; ($79ff zero: the byte the VIC shows in the open borders, its
-                                    ; idle fetch in ECM)
-tops    .binary "tops.bin"          ; (the level map, past the VIC bank)
-bottoms .binary "bottoms.bin"
+        .cerror * != LSPR
+        .cerror LSPR + LSPRN * 64 > $79c0, "the level's sprites run into $79ff"
+        .fill $7a00 - *, 0          ; (the level's sprites, the loader's; $79ff zero: the byte the
+                                    ; VIC shows in the open borders, its idle fetch in ECM)
+; (the level map: the loader's, at MAPS, past the program, under the KERNAL's ROM, which is
+; switched out; the program's tables (high) straight after the level's sprites. In --profile
+; builds, the profile's ring is there: the map after the program)
+        .if !PROFILE
+MAPS    = $e000
+        .endif
+tops    = MAPS
+bottoms = MAPS + ROWS * NC
         .dsection high              ; (tables that needn't be low: mux.asm's, play.asm's)
+        .if PROFILE
+MAPS    .fill 2 * ROWS * NC         ; (--profile: the level map here, the ring at $e000)
+        .cerror * > MUXRAM, "the level map runs into the multiplexer's RAM"
+        .endif

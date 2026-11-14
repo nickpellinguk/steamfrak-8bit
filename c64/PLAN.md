@@ -566,3 +566,36 @@ NTSC machine instead of a garbled screen; the VSP crash test on hardware (VSP.md
   full again, so any more glyphs would mean a third set.
 - What the physics costs: 1,100-1,450 cycles a tick (milestone 3).
 - How long the fill takes after turning round, and so the dead zone (milestone 4).
+
+## Memory for several levels (Scrubbly, Hooter, Poglet)
+
+- Common glyphs first in both character sets (pack.mjs: NCOMMON = 19): blank, the yo-yo string
+  (1-4), the key and gem halves at both alignments; the level's glyphs from NCOMMON on.
+- Common sprites contiguous from $5a00: cover, blank, yo-yo, FRAK!, timer, balloon, dagger,
+  hazards' shared parts, Trogg; the level's sprites from LSPR ($6d80).
+- The level's own glyphs, sprites and map packed (tools/lz.py, ../tools/pack.py's format) and
+  unpacked at the start by loader.asm (lvlstreams); the map at $e000, under the KERNAL.
+  A_1: 5634 bytes packed to 1299. The program ends at $a9ac (was $b6ac): about 5.7KB free for
+  more packed levels.
+- Next: the per-level tables still compiled in (band sets, geometry, objects, patches, NC) to be
+  loadable as well.
+
+## Levels as pieces (levels/)
+
+- Each level type's graphics in its own file (levels/scrubbly.json; hooter.json and poglet.json
+  to come), keys and gems in levels/common.json: named pieces (ledge1, ladder3, scrubbly...) as
+  strings of colours, cut into 8x4 halves on their own grid; a ledge's platforms and a ladder's
+  physics with it. A level is a text file of "name x y" lines (levels/A_1.txt), placed on the 8x4
+  grid (an enemy on an even character row), later pieces' halves replacing earlier ones'.
+- The glyphs are fixed by the type, not optimised per level: orthogonal (a glyph's two halves of
+  the character the same), set 0 for even bands and set 1 for odd; common glyphs first, then the
+  type's either-band ones, then each set's own (the Scrubbly's). A_1: 55 and 62 of 64.
+- tools/level.mjs builds everything from them (replacing mockup.mjs + pack.mjs in the build).
+- A_1 as rebuilt: its bottom floor 4 lines lower (184, as its right end already was), so the
+  Scrubblies there are on an even row; the Scrubbly's feet hide the ledge's top line under them.
+- Next: the C64 stamping the map from the level's placed pieces at load (the pieces' halves as
+  codes, once per type), instead of the packed map; then the level editor.
+- The Scrubbly's infill sprite: tools/infill.mjs, each 2x2 block on or off by whichever gets more
+  of its visible pixels right against the BBC's (black pixels hide the sprite either way, so they
+  don't count; the old rule needed 2 of a block's 4 pixels magenta, so blocks half black were
+  holes). 38 pixels unlike the BBC's down to 15: one magenta shown cyan, and the feet's yellow (14).
