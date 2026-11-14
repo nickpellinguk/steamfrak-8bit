@@ -505,6 +505,17 @@ reference for everything else is that code (`../src/frak.asm`): `check_collision
       (was 1); Trogg pixel-exact at six places. (Tried and dropped: setting the next row's
       operands or its $d018 before the wait: the x's write then came too late on busy lines, and
       the early $d018 had lines 6-7 read the tops' screen's pointers.)
+      The timer: M:SS at the top left, in the open top border, its left edge at the screen's
+      (the cover's right, x 63). Sprite 0, the cover from line 50 on, is the timer from tick 29
+      (line 285: the cover's last piece done, and past line 271, where y 15 would start it again)
+      to tick 37 (line 37): hi-res, black, lines 16-36, its digits on lines 26-32. 5 x 7 digits a
+      pixel apart, the colon fixed, so three shifted digit sets (timer.inc, build.mjs: shifts 0, 4
+      and 2, for x 0, 12 and 18) and a redraw of 7 rows, once a second. Counted in frames (50 a
+      second) from the level's start (newlevel), stopped once it's won, 9:59 at the most. Tick 37
+      hands sprite 0 back (tick 38 has no time before line 50's VSP write), so the parking of
+      sprites 3-7 (y 255, blank pointers) moved to tick 36 to make room. Checked: no garbage in 80
+      frames (scrolling demo, Insane), the timer in all; rollover and 9:59; keytest exact,
+      muxcheck 0 problems, no overruns.
 14. **Sound.** The sound effects on the SID (`SFX_CHING` for a pickup, `SFX_SQUEAL`, `SFX_DAGGER`,
     `SFX_POP`, `SFX_THUD`), from the BBC version's definitions, played in the border; the music
     (the victory tune) after. Its time measured against the budget from 13.

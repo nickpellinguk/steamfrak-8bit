@@ -187,6 +187,25 @@ writeFileSync(DIR + 'masks.inc', `; made by tools/build.mjs\nmasks   .byte ${mas
                  writeFileSync(DIR + 'frakspr.bin', Buffer.from([...blk('B'), ...blk('Y')]));
                  return `FRAKXO  = ${F.xo}\nFRAKYO  = ${F.yo}\nFRAKDY  = ${dy}\n`; })());
 }
+// The timer (frak64.asm's tmdraw): M:SS in one hi-res sprite, 24 wide: 5 x 7 digits, a pixel
+// apart, the minutes at x 0, the colon at x 6-11 (fixed), the tens of seconds at x 12, the units
+// at x 18. So three sets of the digits, shifted for their places: 0 (byte 0), 4 (byte 1's low
+// nibble and byte 2's top bit), 2 (byte 2, bits 5-1); by row, then digit (row * 10 + digit)
+{
+    const D = ['.###. #...# #..## #.#.# ##..# #...# .###.', '..#.. .##.. ..#.. ..#.. ..#.. ..#.. .###.',
+               '.###. #...# ....# ..##. .#... #.... #####', '.###. #...# ....# ..##. ....# #...# .###.',
+               '...#. ..##. .#.#. #..#. ##### ...#. ...#.', '##### #.... ####. ....# ....# #...# .###.',
+               '..##. .#... #.... ####. #...# #...# .###.', '##### ....# ...#. ..#.. .#... .#... .#...',
+               '.###. #...# #...# .###. #...# #...# .###.', '.###. #...# #...# .#### ....# ...#. .##..']
+        .map(d => d.split(' ').map(r => parseInt(r.replace(/#/g, '1').replace(/\./g, '0'), 2)));
+    if (D.some(d => d.length !== 7)) throw new Error('a timer digit is not 7 rows');
+    const tab = f => { const o = []; for (let r = 0; r < 7; r++) for (let d = 0; d < 10; d++) o.push(f(D[d][r]) & 255); return o; };
+    const B = (n, a) => `${n.padEnd(8)}.byte ${a.join(', ')}\n`;
+    const colon = [0, 0xc0, 0xc0, 0, 0xc0, 0xc0, 0];   // (2 x 2 dots at x 8-9: byte 1's bits 7-6)
+    writeFileSync(DIR + 'timer.inc', '; made by tools/build.mjs: the timer\'s digits, three ways shifted (frak64.asm)\n' +
+        B('tmA', tab(g => g << 3)) + B('tmB1', tab(g => g >> 1)) + B('tmB2', tab(g => (g & 1) << 7)) + B('tmC', tab(g => g << 1)) +
+        B('tmcol', colon));
+}
 const sb = Buffer.alloc(64);
 scrub.sprite.forEach((row, y) => { for (let k = 0; k < 3; k++) sb[y * 3 + k] = parseInt(row.slice(k * 8, k * 8 + 8), 2); });
 writeFileSync(DIR + 'scrubspr.bin', sb);

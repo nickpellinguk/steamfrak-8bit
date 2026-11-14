@@ -57,6 +57,9 @@ _still  jmp trogg_frame
 
 ; The level from the start (after it's complete): no checkpoint, no restarts counted
 newlevel
+        .if !TEST
+        jsr tmreset                 ; (the timer from 0:00)
+        .endif
         lda #0
         sta havecp
         sta savecp

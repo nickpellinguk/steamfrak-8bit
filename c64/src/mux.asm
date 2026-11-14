@@ -2085,15 +2085,17 @@ _tc     lda mk4,x
         jmp _rn
 
 ; ---- In the last border tick: the set-ups before the frame (tick 0's four slots)
-apply0  lda #(SPRBLANK & $3fff) / 64 ; (sprites 3-7, parked at y 255, blank: there they're shown on
-        ldy #7                      ;  lines 256-276, in the open border)
+park    lda #(SPRBLANK & $3fff) / 64 ; (sprites 3-7, parked at y 255, blank: there they're shown on
+        ldy #7                      ;  lines 256-276, in the open border; tick 36)
 -
 apb0    sta SCR0 + $3f8,y
 apb1    sta SCR1 + $3f8,y
         dey
         cpy #3
         bcs -
-        ldx bufoff
+        rts
+
+apply0  ldx bufoff
         lda #4
         sta acnt
 -       ldy e_n,x
