@@ -86,7 +86,11 @@ e.lad_x.forEach((lx, k) => {
     if (g && (cx + 2 < g.X || cx + 6 > g.X + g.N * 8)) notes.push(`rope ${k} at ${cx}: not under its log (${g.X}-${g.X + g.N * 8})`);
 });
 // ---- The Poglet: art at the piece's column 1, row 3 (its feet end on the piece's last line)
-const H = JSON.parse(readFileSync(LV + 'hazards.json')).images.IMG_Poglet, PG = H.grid, PH = PG.length, PW = PG[0].length;
+const H = JSON.parse(readFileSync(LV + 'hazards.json')).images.IMG_Poglet, PG0 = H.grid;
+// (the C64's Poglet: the BBC's with pixels made black (x, y in its image), each completing an
+// infill block that a pixel needing another colour shared)
+const BLACK = [[18, 21], [20, 29]];
+const PG = PG0.map((r, y) => [...r].map((c, x) => BLACK.some(([bx, by]) => bx === x && by === y) ? '3' : c).join('')), PH = PG.length, PW = PG[0].length;
 const PX = 1, PY = 36 - PH, RX = 10;              // (the rope's left, in the piece: columns 2-5 of its second character)
 const pogArt = rope => Array.from({ length: 36 }, (_, y) => { let s = ''; for (let x = 0; x < 24; x++) {
     const g = PG[y - PY]?.[x - PX];
