@@ -1,0 +1,63 @@
+# A_3, first pass from the BBC's room_A_3: squeezed (its lines 49-229 to the map's 12-184), girders and chains on the 8x4 grid
+type hooter
+size 89 25
+width 704
+height 256
+trogg 49 167
+
+chain21_100_13 48 68
+chain11_60_13 160 48
+chain14_74_13 200 48
+chain11_60_13 312 116
+chain15_74_13 280 44
+chain19_75_0 424 24
+chain16_61_0 448 24
+chain11_60_13 464 28
+chain22_88_0 400 24
+chain12_74_13 336 152
+chain21_100_13 608 76
+chain12_48_0 424 116
+girder2 48 52
+girder6 160 32
+girder10 24 168
+girder4 136 172
+girder4 160 164
+girder4 168 156
+girder4 296 100
+girder2 240 156
+girder4 288 156
+girder2 32 112
+girder2 32 72
+girder8 168 100
+girder10 280 28
+girder2 256 64
+girder2 296 64
+girder2 384 48
+girder8 488 60
+girder2 336 136
+girder4 360 184
+girder2 464 12
+girder6 408 176
+girder2 584 116
+girder2 616 100
+girder2 584 88
+girder6 472 164
+girder8 536 152
+girder2 392 116
+girder4 120 92
+girder4 80 84
+girder4 96 52
+girder4 592 60
+hooter 104 28
+hooter 120 68
+hooter 176 132
+hooter 296 76
+hooter 240 132
+hooter 504 36
+key 80 72
+key 304 16
+key 528 48
+gem 200 20
+gem 368 172
+gem 464 0
+gem 600 48
