@@ -1,6 +1,6 @@
 // tour.mjs A8JS XEX OUTDIR SCRIPT: run a program on the WebAssembly atari800 (web/build_emulator.sh)
 // with a joystick script, saving the screen (384 x 240 colour indices) and the 64K memory every
-// EVERY frames: OUTDIR/NNNN.scr, NNNN.mem. SCRIPT: "frames:joy[:fire] ..." (joy: up 1, down 2,
+// EVERY frames: OUTDIR/NNNN.scr, NNNN.mem (and the palette, palette.bin). SCRIPT: "frames:joy[:fire] ..." (joy: up 1, down 2,
 // left 4, right 8). EVERY from the environment (default 7).
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { createRequire } from 'module';
@@ -11,6 +11,7 @@ A.FS.writeFile('/prog.xex', readFileSync(xex));
 const frame = A.cwrap('web_frame', 'number', ['number', 'number', 'number', 'number']);
 A.cwrap('web_start', 'number', ['string'])('/prog.xex');
 mkdirSync(out, { recursive: true });
+{ const p = A._web_palette(); writeFileSync(`${out}/palette.bin`, A.HEAPU8.slice(p, p + 1024)); }   // (256 x 0xRRGGBB, 4 bytes each)
 for (let i = 0; i < 100; i++) frame(0, 0, 0, 0);     // (loading and starting)
 let n = 0, saved = 0;
 for (const step of script.trim().split(/\s+/)) {

@@ -25,14 +25,27 @@ X0, Y0, BG, OUT = 32, 24, 0x9a, 0x90
 YEL, MAG, BLK = L['COL_YEL'], L['COL_MAG'], L['COL_BLK']
 bad_shots = 0; levels = Counter(); partial = 0; most = 0; shifts = set()
 SCR = json.load(open(os.path.join(B, f'{lv}_scrub.json')))
-GR_SCRUB = L['GR_N']
+GR_SCRUB, GR_KEY = L['GR_N'], L['GR_N'] + 1
+PK = json.load(open(os.path.join(B, f'{lv}_picks.json')))
+FONT = open(os.path.join(B, f'{lv}_font.bin'), 'rb').read()
+def lvpix(gone):                                   # the level's pixels with the gems and keys gone
+    px = {}                                        # (bits of gone) changed: {(x, y): set}
+    for i, cs in enumerate(PK['cells']):
+        if gone >> i & 1:
+            for r, c, g, f in cs:
+                for l in range(4):
+                    b = FONT[g * 8 + (l if r % 2 else 4 + l)]
+                    for x in range(8): px[(c * 8 + x, r * 4 + l)] = bool(b & 0x80 >> x)
+    return px
 for scr in sorted(glob.glob(os.path.join(d, '*.scr'))):
     s = open(scr, 'rb').read(); m = open(scr[:-4] + '.mem', 'rb').read()
     ri = m[L['pvi' if m[L['fresh']] else 'shi']]; rr = ri // 16       # the record the picture shows
     F = lambda name, i: m[L['OB_' + name] + ri + i]
     n, sx, hw = m[L['OB_N'] + rr], m[L['OB_SCR'] + rr], m[L['OB_HW'] + rr]
     most = max(most, n)
-    chars = [[exp[2 * sx + x, y] < 128 for x in range(320)] for y in range(208)]
+    gone = m[L['OB_PKL'] + rr] | m[L['OB_PKH'] + rr] << 8
+    gp = lvpix(gone)
+    chars = [[gp.get((2 * sx + x, y), exp[2 * sx + x, y] < 128) for x in range(320)] for y in range(208)]
     pl = [[None] * 320 for _ in range(208)]       # (priority, colour) of the player in front
     desc = []
     def put(prio, colour, data, x0, top, bits, shift, bw=2, lines=None):
@@ -56,6 +69,11 @@ for scr in sorted(glob.glob(os.path.join(d, '*.scr'))):
                 put(pa, MAG, SCR['l'], sxp, top, 8, 0); put(pb, MAG, SCR['r'], sxp + 16, top, 8, 0)
             elif lvl == 1:
                 put(pb, MAG, SCR['d'], sxp + SCR['dx'], top, 8, 0, bw=4)
+            continue
+        if g == GR_KEY:                            # a key's yellow (double width, or none)
+            levels[('KEY', lvl)] += 1
+            desc.append(f'KEY@{x},{top} L{lvl}')
+            if lvl == 1: put(pb, YEL, PK['d'], sxp + PK['dx'], top, 8, 0, bw=4)
             continue
         fr = graphics[g]; shifts.add(x % 8)
         kind = fr['name']; levels[(kind if i else 'TROGG', lvl)] += 1
@@ -95,5 +113,5 @@ n = len(glob.glob(os.path.join(d, '*.scr')))
 drops = m[L['drops']] | m[L['drops'] + 1] << 8
 print(f'{n} screens, {n - bad_shots} exact; frames not made in time: {drops}; most things on a screen {most}, '
       f'partly off the screen {partial} times; shifts {sorted(shifts)}')
-print('drawn (thing, 0 hardware / 1 software outline + hardware infill / 2 software; Scrubblies 0 two players / 1 one double-width / 2 none): ' + ', '.join(f'{k}/{l} {v}' for (k, l), v in sorted(levels.items())))
+print('drawn (thing, 0 hardware / 1 software outline + hardware infill / 2 software; Scrubblies 0 two players / 1 one double-width / 2 none; keys 1 double-width / 2 none): ' + ', '.join(f'{k}/{l} {v}' for (k, l), v in sorted(levels.items())))
 sys.exit(1 if bad_shots else 0)

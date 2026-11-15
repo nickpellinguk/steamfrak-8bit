@@ -50,7 +50,8 @@
 ; back). Then the VBI, all at once: last frame's putting back program and this frame's program
 ; run (6 cycles a cell), the character sets swapped (the static glyphs are in both), the scroll
 ; set.
-;   64tass --atari-xex -D STARTX=x -D STARTY=y: where Trogg starts (his origin, level pixels)
+;   -D INVINCIBLE=1: nothing kills Trogg; -D STARTX=x -D STARTY=y: a test's start instead of the
+;   level's (his origin: level pixels, y the C64's, 24 below the map's line)
 ;   -D NOHAZ=1: no balloons or daggers; -D STRESS=1: one every 40 frames (6 out all the time)
 ;   -D HWOUT=1: outlines on players too (2-pixel resolution: Trogg's from a band down, a balloon's
 ;   with its infill, a dagger's), where they're free; else (the default) outlines are always
@@ -58,8 +59,9 @@
         .weak
 DELAY   = 1
 LEVEL   = "A_1"
-STARTX  = 65
-STARTY  = 187
+INVINCIBLE = 0
+STARTX  = 0                         ; (0: the level's start)
+STARTY  = 0
 NOHAZ   = 0
 STRESS  = 0
 HWOUT   = 0
@@ -75,6 +77,7 @@ NHAZ    = 6                         ; balloons and daggers at once
 NOBJ    = 15                        ; things: Trogg, the Scrubblies, the balloons and daggers (16th:
                                     ; the multiplexer's, for Trogg's outline's bands)
 GR_SCRUB = GR_N                     ; (a Scrubbly: no graphic, only its infill)
+GR_KEY  = GR_N + 1                  ; (a key: likewise, its yellow)
 
 ; the hardware (the OS is switched out: no shadow registers, our own NMI handler)
 HPOSP0  = $d000
@@ -278,6 +281,8 @@ OB_SCR  = OBJS + $153
 OB_N    = OBJS + $156
 OB_M0   = OBJS + $159
 OB_M1   = OBJS + $15c
+OB_PKL  = OBJS + $15f               ; the gems and keys the map shows gone (pkshow), per record
+OB_PKH  = OBJS + $162
 ; the balloons and daggers: kind (0 none, 1 balloon, 2 dagger), x (2), top line + 32, fraction
 hk      = $0680
 hxl     = $0688
@@ -466,12 +471,11 @@ start   sei                         ; the OS switched out: no interrupts till ou
         sta spawnt
         lda #1
         sta spawnk
-        lda #<STARTX
-        sta tx
-        lda #>STARTX
-        sta tx+1
-        lda #STARTY
-        sta ty
+        sta pkshow                  ; (a = 0: the map shows every gem and key)
+        sta pkshow+1
+        jsr newlevel                ; Trogg at the start
+        lda nscrx
+        sta scrx
 -       lda VCOUNT                  ; the display on from a vertical blank
         cmp #124
         bcc -
@@ -499,11 +503,15 @@ main    lda ready                   ; wait for the VBI to show the last frame ma
         bcc +
         lda #4
 +       sta nticks
-tklp    jsr input                   ; a tick: the joystick, Trogg, the camera, the hazards
-        jsr troggpos                ; (his graphic and top left: pg, px, pd)
+tklp    jsr gametick                ; a tick: the joystick and Trogg (move.asm), the camera, the
+        jsr troggpos                ; hazards (his graphic and top left: pg, px, pd)
         jsr camera
       .if !NOHAZ
+        lda dead                    ; (everything still while he's dead or the level's complete)
+        ora won
+        bne +
         jsr hzmove
++
       .endif
         inc tick
         dec nticks
@@ -554,6 +562,7 @@ tklp    jsr input                   ; a tick: the joystick, Trogg, the camera, t
         lda ghit_hi,x
         sta cphi+2
         sta clmhi+2
+        jsr pkpatch                 ; a gem or key picked up (or back) in the map (pick.asm)
         jsr addobj                  ; Trogg
         ldx #0                      ; the Scrubblies (their infill)
 -       cpx #SCR_N
@@ -575,6 +584,7 @@ tklp    jsr input                   ; a tick: the joystick, Trogg, the camera, t
       .if !NOHAZ
         jsr hzlist                  ; the balloons and daggers listed
       .endif
+        jsr pklist                  ; the keys (their yellow)
         jsr mux                     ; hardware sprites given out
         jsr pmdraw                  ; ... their graphics and bands' registers
         ldx #0                      ; the rest drawn in software
@@ -589,7 +599,7 @@ swlp    cpx nob
         beq swnext                  ; (hardware outline: nothing here)
         lda OB_G,y
         cmp #GR_SCRUB
-        beq swnext                  ; (a Scrubbly: in the map)
+        bcs swnext                  ; (a Scrubbly or a key: in the map)
         sta pg
         lda #255                    ; plot's row limit: Trogg's from where his outline's on
         cpx #0                      ; players (rows starting on or after that line not drawn)
@@ -645,6 +655,10 @@ swend
         sta OB_SCR,x
         lda nob
         sta OB_N,x
+        lda pkshow
+        sta OB_PKL,x
+        lda pkshow+1
+        sta OB_PKH,x
         ldx ncell                   ; the claims cleared for the next frame
         beq +
         lda #0
@@ -664,91 +678,6 @@ swend
         jmp main
 fonthi  .byte >FONTA, >FONTB
 
-; ---- The joystick: walking, climbing, the yoyo pose
-XLO     = 16                        ; his origin's range
-XHI     = NCOLS * 8 - 16
-YLO     = 34
-YHI     = 199
-input   lda PORTA                   ; (the joystick's bits as the OS's STICK0: 0 when pushed)
-        and #15
-        sta stick
-        lda stick
-        and #8                      ; right (0 when pushed)
-        bne +
-        lda #0
-        sta tdir
-        lda tx
-        cmp #<XHI
-        lda tx+1
-        sbc #>XHI
-        bcs walk
-        inc tx
-        bne walk
-        inc tx+1
-        jmp walk
-+       lda stick
-        and #4                      ; left
-        bne still
-        lda #1
-        sta tdir
-        lda tx
-        cmp #<(XLO + 1)
-        lda tx+1
-        sbc #>(XLO + 1)
-        bcc walk
-        lda tx
-        bne +
-        dec tx+1
-+       dec tx
-walk    lda tick                    ; walking frames, 4 frames each
-        lsr a
-        lsr a
-        and #3
-        ldx tdir
-        clc
-        adc wframe,x
-        sta tf
-        jmp updown
-still   ldx tdir
-        lda sframe,x
-        sta tf
-updown  lda stick
-        and #1                      ; up
-        bne +
-        lda ty
-        cmp #YLO + 1
-        bcc climb
-        dec ty
-        bcs climb                   ; (always)
-+       lda stick
-        and #2                      ; down
-        bne fire
-        lda ty
-        cmp #YHI
-        bcs climb
-        inc ty
-climb   lda stick
-        and #1
-        tax                         ; 0 going up, 1 down
-        lda tick
-        lsr a
-        lsr a
-        lsr a
-        and #1
-        clc
-        adc cframe,x
-        sta tf
-fire    lda TRIG0                   ; (0 when pressed)
-        bne +
-        ldx tdir
-        lda yframe,x
-        sta tf
-+       rts
-wframe  .byte TF_WR0, TF_WL0
-sframe  .byte TF_SR, TF_SL
-cframe  .byte TF_CU0, TF_CD0
-yframe  .byte TF_YR, TF_YL
-
 ; ---- Trogg's graphic and top left (x even): pg, px, pd
 troggpos ldx tf
         stx pg
@@ -760,12 +689,30 @@ troggpos ldx tf
         lda tx+1
         sbc #0
         sta px+1
-        lda ty                      ; pd = ty - yo + 4 + 32
-        sec
+        lda gy                      ; pd = y - yo + 4 + 32, y the map's line (gy - 24): gy - yo
+        sec                         ; + 12, kept to 0-255
         sbc gr_yo,x
+        tay
+        lda gy+1
+        sbc #0
+        bmi tpneg
+        tax
+        tya
         clc
-        adc #36
-        sta pd
+        adc #12
+        bcc +
+        inx
++       cpx #0
+        beq +
+        lda #255
++       sta pd
+        rts
+tpneg   tya                         ; (above the level: from -12)
+        clc
+        adc #12
+        bcs +
+        lda #0
++       sta pd
         rts
 
 ; ---- The scroll follows him: his x on the screen kept between 100 and 200 pixels
@@ -971,9 +918,12 @@ mxinit  cpx nob
         lda OB_G,y                  ; its height and width (a Scrubbly's infill's)
         tax
         cpx #GR_SCRUB
-        bne +
+        bcc +
         lda #SCR_H
-        sta stmp
+        cpx #GR_KEY
+        bne kh
+        lda #KEY_H
+kh      sta stmp
         lda #32
         bne ++
 +       lda gr_h,x
@@ -1234,7 +1184,7 @@ mxtrog
 
 mxhaz   ldx #0                      ; 4. the balloons and daggers, in order down
 mxh     cpx nob
-        bcs mxend
+        bcs mxkey
         stx midx
         lda order,x
         beq mxhn                    ; (Trogg: done)
@@ -1249,7 +1199,7 @@ mxh     cpx nob
         tay
         ldx OB_G,y
         cpx #GR_SCRUB
-        beq mxhn
+        bcs mxhn
         lda gp_ok,x
         beq mxhn
         cpx #GR_BALLOON
@@ -1295,6 +1245,36 @@ mxdag
 mxhn    ldx midx
         inx
         bne mxh
+mxkey   ldx #0                      ; 5. the keys, in order down: a double-width player each, P3
+mxk     cpx nob                     ; else P0 (yellow; two normal-width players, P0 and P3, would
+        bcs mxend                   ; be 6 writes in a band, over its 5)
+        stx midx
+        lda order,x
+        sta mk
+        tay
+        lda oIn,y
+        beq mxkn
+        tya
+        clc
+        adc obi
+        sta mcnt
+        tay
+        lda OB_G,y
+        cmp #GR_KEY
+        bne mxkn
+        lda #3
+        jsr one
+        bcc +
+        lda #0
+        jsr one
+        bcs mxkn
++       ldy mcnt
+        sta OB_PB,y
+        lda #1
+        sta OB_LV,y
+mxkn    ldx midx
+        inx
+        bne mxk
 mxend   lda hwl                     ; (Trogg's record: his outline's line)
         pha
         lda obi
@@ -1548,7 +1528,11 @@ pmlp    ldx midx
         cmp #2
         bcs pmnext
         lda OB_G,y
-        cmp #GR_SCRUB
+        cmp #GR_KEY
+        bne +
+        jsr pmkey
+        jmp pmnext
++       cmp #GR_SCRUB
         bne +
         jsr pmscr
         lda #0
@@ -1595,6 +1579,20 @@ pmlp    ldx midx
 pmnext  inc midx
         jmp pmlp
 pmhi    .byte >PMG0, >PMG1
+
+pmkey   lda OB_PB,y                 ; a key: its yellow, double width
+        sta mp2
+        lda #<key_d
+        sta msrc
+        lda #>key_d
+        sta msrc+1
+        lda #KEY_DX / 2
+        sta moff
+        lda #1
+        sta msize
+        lda #COL_YEL
+        sta mcol
+        jmp pstrip
 
 pmscr   ldx mk                      ; a Scrubbly: two players, or one double-width (its strips kept
         lda scrw - 1,x              ; apart, written only if they've changed in this set: else only
@@ -2464,11 +2462,11 @@ ghit_hi .byte >ghiA, >ghiB
         .cerror (>glo) != (>glo4), "glo and glo4 must share a page"
         .cerror (<PROGW) | (<PROGR0) | (<PROGR1), "the programs must be page-aligned"
 
-; prefill: the program at page x, 129 entries of lda #0, sta $0000
+; prefill: the program at page x, 150 entries of lda #0, sta $0000
 prefill stx tmp+1
         lda #0
         sta tmp
-        ldx #129
+        ldx #150
 -       ldy #0
         lda #$a9
         sta (tmp),y
@@ -2831,6 +2829,10 @@ dlb15
 
         .include "../build/" .. LEVEL .. "_scrub.inc"   ; the Scrubblies' infill and places
         .include "../build/sprites.inc"
+        .include "../build/" .. LEVEL .. "_geom.inc"    ; the platforms and ladders (geom.py)
+        .include "../build/" .. LEVEL .. "_picks.inc"   ; the gems and keys (screen.py)
+        .include "move.asm"         ; Trogg's movement (the C64's)
+        .include "pick.asm"         ; collisions, gems and keys
         .cerror * > CLEAN, "the program reaches the level's map: ", * - CLEAN, " over"
 
         * = FONTA
