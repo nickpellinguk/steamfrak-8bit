@@ -4,12 +4,18 @@ The start of an Atari 800XL (PAL, 64K) version: ANTIC mode 2 with character rows
 on the C64 port's 8x4 grid, so the C64's levels carry over cell for cell. The plan:
 [`PLAN.md`](PLAN.md).
 
-**Status: Trogg drawn into spare characters** (`build/trogg8x4.xex`): his outline (monochrome:
-no infill yet) on A_1 at any even x and any y, the joystick walking and climbing him (no physics
-yet: he goes through platforms), fire his yoyo pose, the screen following him, at 50 frames a
-second with 4,200-6,200 cycles a frame to spare. Checked in the WebAssembly atari800: 128 screens
-of a joystick tour (all 4 shift positions, all 16 frames it reaches, scrolling), every pixel
-the same as the level's picture with his frame drawn on where the program says he is.
+**Status: Trogg, balloons and daggers drawn into spare characters** (`build/trogg8x4.xex`): their
+outlines (monochrome: no infill yet) on A_1, at any even x and any y, clipped to the screen when
+partly off it. The joystick walks and climbs Trogg (no physics yet: he goes through platforms),
+fire shows his yoyo pose, the screen follows him; balloons rise from below the screen and daggers
+fly in from above it, about him (stand-ins for the game's: a balloon then a dagger every 63
+frames, about Hard's rate). Checked in the WebAssembly atari800: 182 screens of a joystick tour
+(all 4 shift positions, up to 6 things at once, 51 of them partly off the top, bottom, left or
+right edge and 20 wholly off), every pixel the same as the level's picture with each thing drawn
+on where the program recorded it.
+
+**Speed:** Trogg alone, 50 frames a second (1 frame in 1,000 late); with 3-5 hazards out, about
+25 (a frame takes about two): see "How things are drawn".
 
 Before that, **an 8x4 screen demo.** `build/screen8x4.xex` shows the C64 port's A_1 ("FRAK!") on 52
 rows of 4 lines, scrolling back and forth across the level 2 pixels a frame. It's black outlines
@@ -52,7 +58,7 @@ Arrow keys are joystick 1, Space or Ctrl fire, F2-F4 Start, Select and Option.
 | `web/build_emulator.sh` | libatari800 and `web.c` through emscripten into one `a8.js` with the WebAssembly inside |
 | `web/build_page.py` | `page.html` with `a8.js` and the programs put in: `build/frak800.html` |
 
-## How Trogg is drawn
+## How things are drawn
 
 - **10-bit graphics** (`tools/sprites.py`): each of his frames, at each of 4 shift positions (0,
   2, 4 and 6 pixels: the colour clocks that the scroll, and later his infill, move in), is a byte
@@ -62,17 +68,29 @@ Arrow keys are joystick 1, Space or Ctrl fire, F2-F4 Start, Select and Option.
   233, 236 and 252 windows of 256 (the build stops if a shift has more). Each column of a graphic
   is stored top to bottom with 3 transparent bytes above and below, so a character row's 4 lines
   are 4 bytes in a row wherever he starts in it.
-- **Spare characters** from code 64: one for each column of his and pair of rows (its bottoms
-  half for the pair's first row, its tops half for the second): 24 at most.
-- **A frame** (`src/trogg8x4.asm`, `draw`), made while the one before is shown: for each cell he
-  covers that isn't all transparent, the level's half glyph there (read through the clean map,
-  which is never drawn on) copied into a spare character of the character set not shown, his 4
-  lines ANDed and ORed on (`lda (dp),y` `tax` `lda (sp),y` `and andtab,x` `ora ortab,x`
-  `sta (cp),y`: the shift's table page patched in once a frame), the cell's code listed.
-- **The VBI**, all at once: last frame's cells put back from the clean map, this frame's codes
-  written, the two character sets swapped (the level's glyphs are in both), the scroll set. So
-  double buffering costs a character set, not spare characters, and nothing he covers is seen
-  half drawn.
+- **Spare characters** from code 64, given out a cell at a time, bottoms halves (for the first
+  row of a pair) and tops halves (the second) separately: 64 of each, so a code serves a cell of
+  each kind of row.
+- **`plot`** (`src/trogg8x4.asm`) draws a graphic at a top left x (level pixels, signed) and a
+  top line (display line + 32, so things can start above or below the screen), for each cell
+  in the screen's 52 rows and the 41 columns in view where it isn't all transparent: a spare
+  character's half in the character set not shown, started from the level's half glyph there
+  (read through the clean map, which is never drawn on) or, if something has the cell already
+  this frame (a table of the cells in view), from that; its 4 lines ANDed and ORed on
+  (`lda (dp),y` `tax` `lda (sp),y` `and andtab,x` `ora ortab,x` `sta (cp),y`, the shift's table
+  page patched in once a graphic; over blank background, `lda ortab,x` `sta (cp),y` alone).
+- **The VBI's programs:** for each cell, plot writes `lda #code` `sta cell` into this frame's
+  program and `lda #level's code` `sta cell` into a putting-back program. The VBI runs last
+  frame's putting-back program and this frame's (6 cycles a cell), swaps the character sets (the
+  level's glyphs are in both) and sets the scroll (the rows' LMS only when it changes coarsely).
+  So double buffering costs a character set, not spare characters, nothing is seen half drawn,
+  and the VBI stays short (a first version, putting cells back from lists, took about 9,000
+  cycles with 6 hazards out and ran into the first row's DLI).
+- **Cost:** about 330 cycles a cell, about 650 more a hazard (its rows' pointers, the set-up),
+  a hazard 6-12 cells: about 4,000 cycles each. Trogg alone leaves 4,200-6,200 cycles a frame to
+  spare (with the OS's VBI still running). Ways on: running the game a tick a VBI and drawing a
+  frame every other one (as the BBC version does: 25 frames a second, 50 ticks), switching the
+  OS out, and trimming the per-cell work (the programs' entries prefilled; the claims).
 
 ## How the screen works
 

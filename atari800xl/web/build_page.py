@@ -9,7 +9,7 @@ def xex(level):
     return open(os.path.join(B, 'screen8x4.xex'), 'rb').read()
 progs = {}
 subprocess.run(['./build.sh'], cwd=ROOT, check=True, capture_output=True)
-progs['trogg8x4_A_1.xex'] = {'label': 'Trogg on A_1 (joystick)', 'data': base64.b64encode(open(os.path.join(B, 'trogg8x4.xex'), 'rb').read()).decode()}
+progs['trogg8x4_A_1.xex'] = {'label': 'Trogg, balloons, daggers on A_1', 'data': base64.b64encode(open(os.path.join(B, 'trogg8x4.xex'), 'rb').read()).decode()}
 for lv, what in (('A_1', 'Scrubblies'), ('A_2', 'Poglets'), ('A_3', 'Hooters')):
     progs[f'screen8x4_{lv}.xex'] = {'label': f'8x4 screen: {lv} ({what})', 'data': base64.b64encode(xex(lv)).decode()}
 subprocess.run(['./build.sh'], cwd=ROOT, check=True, capture_output=True)    # (A_1 left built)
