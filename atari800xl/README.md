@@ -4,18 +4,20 @@ The start of an Atari 800XL (PAL, 64K) version: ANTIC mode 2 with character rows
 on the C64 port's 8x4 grid, so the C64's levels carry over cell for cell. The plan:
 [`PLAN.md`](PLAN.md).
 
-**Status: Trogg, balloons and daggers drawn into spare characters** (`build/trogg8x4.xex`): their
-outlines (monochrome: no infill yet) on A_1, at any even x and any y, clipped to the screen when
-partly off it. The joystick walks and climbs Trogg (no physics yet: he goes through platforms),
-fire shows his yoyo pose, the screen follows him; balloons rise from below the screen and daggers
-fly in from above it, about him (stand-ins for the game's: a balloon then a dagger every 63
-frames, about Hard's rate). Checked in the WebAssembly atari800: 182 screens of a joystick tour
-(all 4 shift positions, up to 6 things at once, 51 of them partly off the top, bottom, left or
-right edge and 20 wholly off), every pixel the same as the level's picture with each thing drawn
-on where the program recorded it.
+**Status: a sprite multiplexer** (`build/trogg8x4.xex`, without the OS): balloons and daggers on
+hardware sprites where they can be had (a balloon's black outline and magenta infill on a pair of
+players, a dagger's outline on one), else a balloon's infill on a player with its outline drawn
+into spare characters, else software alone; Trogg's outline in software (26 wide: too wide for a
+player) with his yellow and magenta infill on P0 and P1 and their missiles. Players are reused
+down the screen, band by band. On A_1, the joystick walking and climbing Trogg (no physics yet),
+fire his yoyo pose, the screen following him; balloons and daggers about him (stand-ins: about
+Hard's rate, `-D STRESS=1` six all the time). Checked in the WebAssembly atari800, colour for
+colour: 364 screens of two joystick tours (all 4 shift positions, up to 7 things, all three ways
+of drawing, things partly off every edge).
 
-**Speed:** Trogg alone, 50 frames a second (1 frame in 1,000 late); with 3-5 hazards out, about
-25 (a frame takes about two): see "How things are drawn".
+**Speed:** about 25 frames a second: a frame takes just over one (Trogg's software outline and
+his infill's strips); the balloons and daggers on hardware cost almost nothing more. Next: the
+BBC version's 50 ticks and 25 frames a second, and trims (see "The multiplexer").
 
 Before that, **an 8x4 screen demo.** `build/screen8x4.xex` shows the C64 port's A_1 ("FRAK!") on 52
 rows of 4 lines, scrolling back and forth across the level 2 pixels a frame. It's black outlines
@@ -91,6 +93,37 @@ Arrow keys are joystick 1, Space or Ctrl fire, F2-F4 Start, Select and Option.
   spare (with the OS's VBI still running). Ways on: running the game a tick a VBI and drawing a
   frame every other one (as the BBC version does: 25 frames a second, 50 ticks), switching the
   OS out, and trimming the per-cell work (the programs' entries prefilled; the claims).
+
+## The multiplexer
+
+- **Players** (normal width: 8 two-pixel blocks; `tools/sprites.py` makes their graphics from the
+  BBC sprites): a balloon's outline (a block on where either pixel is black) on P0 or P2 with its
+  infill on the next (in front: the outline); a dagger's outline (no infill) on P2 or P0;
+  Trogg's infill on P0 (yellow) and P1 (magenta), each with its missile (a player and a missile
+  per colour: at most 10 of his 200-250 infill pixels wrong). Colours: P1 and P3 always
+  magenta, P2 always black, P0 black or his yellow. Players are in front of the playfield
+  (`PRIOR` 1): mode 2's set pixels show luminance 0 in the hue under them, so outlines drawn in
+  characters stay black over the infills.
+- **Each frame** (`mux`): Trogg first, then the rest in order down the screen; a balloon tries
+  P0+P1, then P2+P3, then P3 or P1 for its infill alone; a dagger P2 or P0. Something not wholly
+  on the screen across goes to software (a player would show over the border); above and below,
+  the players' graphics are clipped.
+- **Bands:** each pair of rows' first DLI (display line 8k + 3) writes the registers that change
+  for the next 8 lines, through a table of 32 blocks by the band's mask. With ANTIC fetching the
+  character codes on the line after, the writes finish two lines later, so a band's registers
+  hold from line 8k + 6; two things share a player if the first ends by line 8k + 2. The DLI
+  must end before the tops row's DLI (or that NMI interrupts it and the rows' order is left the
+  wrong way round): about 150 cycles, so at most 5 register writes a band (P0's position and
+  colour 2, P1-P3's positions 1 each, Trogg's missiles 2), which `mux` keeps to. All measured
+  colour by colour in atari800: a first version wrote all 10 registers every band, which both
+  ran late (a balloon's top line in Trogg's yellow) and overran (whole screens lost).
+- **Double buffering:** two sets of player graphics (`PMBASE` swapped by the VBI with the
+  characters) and of band tables; each frame clears the strips written to its set two frames
+  before.
+- **Cost:** Trogg alone takes just over a frame now (his software outline, the strips of his
+  infill, the DLIs, the players' DMA); balloons and daggers on hardware add little. Next: drawing
+  every other frame with the game ticking every frame (the BBC version's 25 frames and 50
+  ticks), and trims (rewriting only the changed lines of his strips; the programs' entries).
 
 ## How the screen works
 

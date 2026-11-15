@@ -8,7 +8,10 @@ scrolling, pixel-exact against the C64's picture in atari800, as are A_2 and A_3
 drawn into spare characters** (milestone 4's outline, monochrome, ahead of 3): AND and OR tables
 for 4 shift positions (10-bit graphics), at 50 frames a second, pixel-exact on a joystick tour;
 then balloons and daggers through the same plotter, clipped to the screen (about 25 frames a
-second with 3-5 out: the next step is the BBC version's 50 ticks and 25 frames a second). Target: PAL, normal (40-column) width.
+second with 3-5 out: the next step is the BBC version's 50 ticks and 25 frames a second); then
+the OS switched out and a sprite multiplexer: balloons and daggers on hardware sprites where
+they can be had (outline and infill), else software outline and hardware infill, else software;
+Trogg's infill on players and missiles; colour-exact on two joystick tours. Target: PAL, normal (40-column) width.
 This is the first port to start from the C64 port
 (`../c64`) rather than from the BBC version alone. The aim is a largely monochrome game in
 ANTIC mode 2, with colour infills from players and missiles, and without the C64 port's
