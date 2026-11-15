@@ -118,6 +118,22 @@ _txn    lda #255
         lda #6
 +       eor tmsbb                   ; (as a change)
         sta tpen + TM2
+        lda tpen + TY1              ; (out of sight: parked at y 255, which is in the open bottom
+        cmp #255                    ;  border now; or wholly under the cover's columns, which it
+        beq _hid                    ;  doesn't reach into the borders: x 0, in the side border)
+        lda mh
+        bne _vis
+        lda tpen + TXL
+        cmp #COVERR - 25
+        bcs _vis
+_hid    lda #0
+        sta tpen + TXL
+        sta tpen + TXL2
+        sta tpen + TM2
+        sta tmsbb
+        lda #255
+        sta tpen + TXK
+_vis
         cpx tfrw                    ; the pointers (when his frame changes)
         beq +
         stx tfrw
