@@ -428,13 +428,35 @@ covc0   lda #3                      ; (the cover: the level's background colour,
         cpx #ROWS + 1
         bne -
 
-        ; pair 0 filled for window 0 with origin -8 (VSP offset 8) and shown; pair 1 then filled
-        ; the same in the background (po, pvw: scroll.asm)
+        ; pair 0 filled for window w with origin w - 8 (VSP offset 8) and shown; pair 1 then
+        ; filled the same in the background (po, pvw: scroll.asm). w: 0, or after a restart (or
+        ; Escape) the window it chose (jumpw, the scroll jumpx: play.asm), so the screen starts
+        ; there rather than showing the level's start and then jumping
         lda #0
         sta scrx
         sta scrx+1
+        tax
+        lda jumping
+        beq +
+        lda jumpx
+        sta scrx
+        lda jumpx+1
+        sta scrx+1
+        ldx jumpw
+        lda #0
+        sta jumping
++       stx curc
+        stx working
+        stx pvw
+        txa
+        sec
+        sbc #8
+        sta po
+        sta po + 1
+        sta wanto
+        lda scrx
         sta shx
-        sta curc
+        lda #0
         sta front
         sta lfront
         sta frames
@@ -444,7 +466,6 @@ covc0   lda #3                      ; (the cover: the level's background colour,
         sta pause
         lda #0
         sta back
-        sta working
         sta prow
         lda #8
         sta fsh
@@ -457,8 +478,9 @@ covc0   lda #3                      ; (the cover: the level's background colour,
         jsr setvsp
         lda #1
         sta back
-        lda #$f8
-        sta wanto
+        lda #$ff                    ; (pair 1 being filled: its origin and pair 0's set above, both
+        sta pvw + 1                 ;  w - 8, whatever the last game left them as, else after one
+                                    ;  that scrolled the column writes and patches went by those)
         lda #0
         sta prow
         .if !TEST
@@ -1089,7 +1111,49 @@ bordirq sta sava
         cpx #ROWS
         bne +
         jsr trbord                  ; (Trogg's lines below row 24's, this frame's: trogg.asm)
-        inc frames
+        ldx #ROWS
++       inx
+        cpx #39
+        bcc +
+        jmp rl0                     ; (tick 38)
++       stx row
+        cpx #ROWS + 2               ; (ticks 26 and 27: Trogg's lines below row 24's, trbt)
+        beq +
+        cpx #ROWS + 3
+        bne ++
++       txa
+        sbc #1                      ; (carry set: the tick)
+        jsr trbtl
+        ldx row
++       cpx #ROWS + 2               ; tick 26: the bottom border's sprite (bbset)
+        bne t26n
+        .if !TEST
+        jsr bbset
+        .endif
+t26n    ldx row
+        cpx #ROWS + 4               ; tick 28 (line 277): any sprite whose y is under 56 moved to
+        bne t28n                    ; y 100 (a line passed), as on line 256 + y (303-311, the VIC
+        ldy #14                     ; comparing y with the line's low byte) it would start again,
+-       lda $d001,y                 ; its fetches running on into the next frame's top border, now
+        cmp #56                     ; open (its set-up puts its y back before it's next shown)
+        bcs t28k
+        lda #100
+        sta $d001,y
+t28k    dey
+        dey
+        bne -
+t28n
+        .if !TEST
+        cpx #ROWS + 5               ; tick 29 (line 285): sprite 0, the cover, done for the frame,
+        bne t29n                    ; made the timer in the top border till tick 37 (tmset)
+        jsr tmset
+        ldx row
+t29n
+        .endif
+        cpx #31                     ; tick 30 (line 293): the frame's bookkeeping, the next frame's
+        beq +                       ; buffer and settings (here, not at tick 25, so that ticks 25-27,
+        jmp t30n                    ; with Trogg's lines below row 24's, aren't held up by it)
++       inc frames
         .if !TEST
         lda qn                      ; the next frame made, if there is one: its buffer, and its
         beq _nmux                   ; scroll and settings (qapply); else this one again
@@ -1126,55 +1190,23 @@ _dmux
         sta cnt
         sta cnt+1
         .endif
-        ldx #ROWS
-+       inx
-        cpx #39
-        bcc +
-        jmp rl0                     ; (tick 38)
-+       stx row
-        cpx #ROWS + 2               ; (ticks 26 and 27: Trogg's lines below row 24's, trbt)
-        beq +
-        cpx #ROWS + 3
-        bne ++
-+       txa
-        sbc #1                      ; (carry set: the tick)
-        jsr trbtl
         ldx row
-+       cpx #ROWS + 2               ; tick 26: the bottom border's sprite (bbset), then the yoyo's
-        bne t26n                    ; string, if the frame's changed (strapply: not at tick 25,
-        .if !TEST                   ; whose work, with it, could take over two ticks, and one
-        jsr bbset                   ; would be lost)
-        .endif
+t30n    cpx #32                     ; tick 31: the yoyo's string, if the frame's changed: the old put
+        bne t31n                    ; back (strapply; not with the bookkeeping, whose work, with it,
+        lda strpend                 ; could take over two ticks, and one would be lost) ...
+        beq t31n
+        jsr strapply
+        ldx row
+t31n    cpx #33                     ; ... and at tick 32, the new one
+        bne t32n
         lda strpend
-        beq t26n
-        jsr strapply                ; (the old string put back; the new one at tick 27)
-t26n    ldx row                     ; (strapply leaves x changed)
-        cpx #ROWS + 3
-        bne t27n
-        lda strpend
-        beq t27n
+        beq t32n
         lda #0
         sta strpend
         jsr strdraw
-t27n    ldx row
-        cpx #ROWS + 4               ; tick 28 (line 277): any sprite whose y is under 56 moved to
-        bne t28n                    ; y 100 (a line passed), as on line 256 + y (303-311, the VIC
-        ldy #14                     ; comparing y with the line's low byte) it would start again,
--       lda $d001,y                 ; its fetches running on into the next frame's top border, now
-        cmp #56                     ; open (its set-up puts its y back before it's next shown)
-        bcs t28k
-        lda #100
-        sta $d001,y
-t28k    dey
-        dey
-        bne -
-t28n
-        .if !TEST
-        cpx #ROWS + 5               ; tick 29 (line 285): sprite 0, the cover, done for the frame,
-        bne t29n                    ; made the timer in the top border till tick 37 (tmset)
-        jsr tmset
         ldx row
-t29n
+t32n
+        .if !TEST
         cpx #36                     ; tick 35 (line 21): the top border's hazard on sprite 7 (btset)
         bne t35n
         jsr btset
