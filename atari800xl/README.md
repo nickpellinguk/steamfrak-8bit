@@ -77,7 +77,12 @@ Arrow keys are joystick 1, Space or Ctrl fire, F2-F4 Start, Select and Option.
   moving graphics (Trogg, balloons, daggers, the yoyo, the FRAK! bubble) share the tables: 250,
   233, 236 and 252 windows of 256 (the build stops if a shift has more). Each column of a graphic
   is stored top to bottom with 3 transparent bytes above and below, so a character row's 4 lines
-  are 4 bytes in a row wherever he starts in it.
+  are 4 bytes in a row wherever he starts in it. After the columns, a block of flags laid out the
+  same: for each 4 lines from a place in a column, 2 if they're all transparent (the cell's
+  skipped, on one load), 1 if none of their pixels is (the cell's covered: its background doesn't
+  matter, so the OR alone, `lda ortab,x` `sta`, as over blank background), else 0. Trogg's
+  software drawing: 168 lines a frame on average, from 194 (nearly all from the skips: most of his
+  covered cells are over blank background, which was drawn with the OR alone already).
 - **Spare characters** from code 64, given out a cell at a time, bottoms halves (for the first
   row of a pair) and tops halves (the second) separately: 64 of each, so a code serves a cell of
   each kind of row.
@@ -164,6 +169,7 @@ Arrow keys are joystick 1, Space or Ctrl fire, F2-F4 Start, Select and Option.
 | --- | --- |
 | `tools/screen.py` | A level's character set and map for the 8x4 screen, from the C64 build's picture of it (`c64/build/<level>/chars.bin`); `build/<level>_expect.png`, the picture the Atari should show |
 | `src/screen8x4.asm` | The demo: display list, row DLIs, scrolling VBI (with the OS, for now) |
+| `src/trogg8x4.asm` | (memory: the program `$0800-$8fff`, the level's map `$9000`, the character sets `$ac00` and `$b000`, the display list `$b400`, the VBI's programs `$b500-$bd80`; under the OS, which ANTIC sees as the CPU does: the players' graphics `$c000` and `$c800`, the screen's map `$d800`, the bands' registers `$f200`, the claims `$f580`) |
 | `src/trogg8x4.asm` | The same with Trogg: the joystick, the camera, drawing him into spare characters, the VBI showing a frame |
 | `tools/sprites.py` | The moving graphics as 10-bit graphics (`build/sprites.inc`) and the AND and OR tables; `build/sprites.json` for the checks |
 | `test/tour.mjs` | A program on the WebAssembly atari800 with a joystick script, saving the screen and memory every few frames |

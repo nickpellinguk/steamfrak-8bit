@@ -11,7 +11,11 @@
 #
 # Each graphic at each shift is stored a column (8 pixels across) at a time, top to bottom, with
 # 3 bytes of index 0 (all transparent) above and below each column: a character row's 4 lines
-# then come from 4 bytes in a row, wherever he starts in it, with nothing to check.
+# then come from 4 bytes in a row, wherever he starts in it, with nothing to check. After the
+# columns, a block of flags laid out the same (a byte for each, at the same place plus the
+# block's offset, tg_fo): for the 4 lines from there in that column, 2 if all transparent (the
+# cell's skipped), 1 if none of their pixels is (the cell's covered: the OR alone, no background),
+# else 0.
 #
 # Player graphics (normal width: 8 two-pixel blocks a byte, for the hardware sprites):
 #  - balloons and daggers: an outline (a block on where either pixel is black, so the outline stays
@@ -49,6 +53,8 @@ TROGG = [('SR', 'sTrogg_sr_Beeb', 0), ('SL', 'sTrogg_sl_Beeb', 0)] + \
 OTHERS = [('BALLOON', 'sBalloon_Beeb', 0), ('DAGGERLR', 'sDaggerLR_Beeb', 0), ('DAGGERUD', 'sDaggerUD_Beeb', 0),
           ('DAGGER', 'sDagger_Beeb', 0)] + [(f'YOYO{i}', 'sYoyo_Beeb', i) for i in range(4)] + [('FRAK', 'sFrak_Beeb', 0)]
 GRAPHICS = TROGG + OTHERS
+# compiled now (the rest counted in the tables, so they'll fit when the game draws them)
+USED = {n for n, _, _ in TROGG} | {'BALLOON', 'DAGGERLR'}
 SHIFTS = (0, 2, 4, 6)
 
 def windows(g, s):
@@ -139,25 +145,38 @@ for nm, idx in (('gp_ax', 3), ('gp_bx', 4), ('gp_max', 5), ('gp_mbx', 6)):
 for nm, idx in (('gp_a', 0), ('gp_b', 1), ('gp_m', 2)):
     out.append(f'{nm}_lo .byte ' + ', '.join(f'<gp_{n}_{idx}' if p else '<gp_none' for (n, _, _), p in zip(GRAPHICS, players)))
     out.append(f'{nm}_hi .byte ' + ', '.join(f'>gp_{n}_{idx}' if p else '>gp_none' for (n, _, _), p in zip(GRAPHICS, players)))
+out.append('      .if HWOUT                   ; (only when outlines go on players)')
 for nm, idx in (('go_l', 0), ('go_r', 1), ('go_ah', 2), ('go_bh', 3), ('go_mh', 4)):
     out.append(f'{nm}_lo .byte ' + ', '.join(f'<go_{n}_{idx}' for n, _, _ in TROGG) + '     ; Trogg\'s outline on players: halves, holed infill')
     out.append(f'{nm}_hi .byte ' + ', '.join(f'>go_{n}_{idx}' for n, _, _ in TROGG))
 for (n, _, _), o in zip(TROGG, outlines):
     for idx in range(5): out.append(f'go_{n}_{idx} .byte ' + ', '.join(map(str, o[idx])))
+out.append('      .endif')
 out.append('gp_none .byte 0')
 for (n, _, _), p in zip(GRAPHICS, players):
     if not p: continue
     for idx in range(3): out.append(f'gp_{n}_{idx} .byte ' + ', '.join(map(str, p[idx])))
 # the index data
-data, nbs, labels = [], [], []
+data, nbs, labels, fos = [], [], [], []
 for i, (n, k, f) in enumerate(GRAPHICS):
     g = frame(k, f)
     for si, s in enumerate(SHIFTS):
+        if n not in USED:
+            nbs.append(0); labels.append('gp_none - 3'); fos.append(0); continue
         ws = windows(g, s); nbs.append(len(ws[0])); labels.append(f'tg_{n}_{si}')
-        cols = []
-        for j in range(len(ws[0])): cols += [0, 0, 0] + [tables[si][row[j]] for row in ws] + [0, 0, 0]
-        data.append((labels[-1], cols))
+        cols, flags = [], []
+        H = len(ws)
+        for j in range(len(ws[0])):
+            col = [None] * 3 + [row[j] for row in ws] + [None] * 3
+            cols += [0 if c is None else tables[si][c] for c in col]
+            for k in range(H + 6):
+                four = [col[k + i] if k + i < H + 6 else None for i in range(4)]
+                px = [p for c in four for p in (c if c else ('T',) * 8)]
+                flags.append(2 if all(p == 'T' for p in px) else 1 if all(p != 'T' for p in px) else 0)
+        fos.append(len(cols))
+        data.append((labels[-1], cols + flags))
 out.append('tg_nb   .byte ' + ', '.join(map(str, nbs)) + '     ; bytes across, by frame * 4 + shift')
+out.append('tg_fo   .byte ' + ', '.join(map(str, fos)) + '     ; the flags\' offset from the indices')
 out.append('tg_lo   .byte ' + ', '.join(f'<({l} + 3)' for l in labels) + '     ; (column 0\'s first line)')
 out.append('tg_hi   .byte ' + ', '.join(f'>({l} + 3)' for l in labels))
 out.append('')

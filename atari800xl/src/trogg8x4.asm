@@ -104,20 +104,23 @@ NMIEN   = $d40e
 NMIST   = $d40f
 NMIRES  = $d40f
 
-; memory (64K, the OS and BASIC switched out)
-SCREEN  = $7000                     ; the map shown: 52 rows of 128 bytes
-PROGW   = $8a00                     ; the VBI's programs: this frame's codes in, and putting each
-PROGR0  = $8d00                     ; frame's cells back (two: built a frame, run the next)
-PROGR1  = $b800                     ; (each 128 x "lda #, sta abs" and an rts: $281 bytes)
-CLEAN   = $9000                     ; the level's map, never drawn on (SCREEN + $2000)
+; memory (64K, the OS and BASIC switched out: ANTIC sees the RAM under it as the CPU does)
+;   $0800-$8fff the program;  $9000 the level's map;  $ac00, $b000 the character sets;  $b400 the
+;   display list;  $b500, $b800, $bb00 the VBI's programs;  under the OS: $c000, $c800 the players'
+;   graphics, $d800 the screen's map, $f200 the bands' registers, $f580 the claims
+CLEAN   = $9000                     ; the level's map, never drawn on (loaded)
 FONTA   = $ac00                     ; the two character sets (the static glyphs in both)
 FONTB   = $b000
 DLIST   = $b400
-CLAIM   = $c000                     ; (under the OS) the cells drawn this frame: 52 rows of 64 (the
-                                    ; 41 columns in view), the spare character's code there or 0
-PMG0    = $d800                     ; the players' and missiles' graphics, two (2K each, 1-line
-PMG1    = $e000                     ; resolution: missiles at + $300, player n at + $400 + n * $100)
-BT      = $e800                     ; the bands' registers, both frames' (interleaved: band j's at
+PROGW   = $b500                     ; the VBI's programs: this frame's codes in, and putting each
+PROGR1  = $b800                     ; frame's cells back (two: built a frame, run the next)
+PROGR0  = $bb00                     ; (each 128 x "lda #, sta abs" and an rts: $281 bytes)
+PMG0    = $c000                     ; the players' and missiles' graphics, two (2K each, 1-line
+PMG1    = $c800                     ; resolution: missiles at + $300, player n at + $400 + n * $100)
+SCREEN  = $d800                     ; the map shown: 52 rows of 128 bytes (to $f1ff)
+CLAIM   = $f580                     ; the cells drawn this frame: 52 rows of 42 (the 41 columns in
+                                    ; view), the spare character's code there or 0 (to $fde7)
+BT      = $f200                     ; the bands' registers, both frames' (interleaved: band j's at
                                     ; (j + 1) * 2 + set; the top 4 lines', set by the VBI, at set):
 BT_HP   = BT                        ; HPOSP0-3 (4 x 64)
 BT_C    = BT + $100                 ; COLPM0-3 (4 x 64: P0's and P3's used)
@@ -219,7 +222,9 @@ tgr     = $76
 snum    = $77
 cnum    = $f0
 cfix    = $f1
-uidx    = $f2                       ; chooseb's: 1 to keep the thing's band (a second player)
+uidx    = $f2
+foff    = $f3                       ; plot's: the flags' offset from the indices (tg_fo)
+cfull   = $f4                       ; plot's: 1 if the cell's covered (no transparent pixel)                       ; chooseb's: 1 to keep the thing's band (a second player)
 oWB     = $e0                       ; (16) the line of the band each thing's registers are written
                                     ; for: its top's band, or an earlier one with room (the VBI's
                                     ; for the top, 32, if nothing's above it on its players)
@@ -310,18 +315,19 @@ start   sei                         ; the OS switched out: no interrupts till ou
         sta FONTB+$300,x
         inx
         bne -
-        lda #<CLAIM
+        lda #<BT                    ; the bands' registers and the claims clear
         sta mp
-        lda #>CLAIM
+        lda #>BT
         sta mp+1
         lda #0
-        ldx #>(NROWS * 64)
+        ldx #(CLAIM + NROWS * 42 - BT + 255) >> 8
+        .cerror BT + (CLAIM + NROWS * 42 - BT + 255) & $ff00 > $ff00, "the clear reaches the vectors"
 -       sta (mp),y
         iny
         bne -
         inc mp+1
         dex
-        bpl -
+        bne -
         ldx #NHAZ - 1
 -       sta hk,x
         dex
@@ -389,7 +395,7 @@ start   sei                         ; the OS switched out: no interrupts till ou
         sta mdst
         lda #>PMG0
         sta mdst+1
-        ldx #(PMG1 + $800 - PMG0 + $400) >> 8
+        ldx #(PMG1 + $800 - PMG0) >> 8
         lda #0
         tay
 -       sta (mdst),y
@@ -1521,10 +1527,12 @@ pmtrog  ldx OB_G,y                  ; Trogg: his infill, P0 yellow and P1 magent
         sta msrc
         lda gp_a_hi,x
         sta msrc+1
+      .if HWOUT
         lda go_ah_lo,x
         sta hsrc
         lda go_ah_hi,x
         sta hsrc+1
+      .endif
         lda gp_ax,x
         sta moff
         lda #COL_YEL
@@ -1537,10 +1545,12 @@ pmtrog  ldx OB_G,y                  ; Trogg: his infill, P0 yellow and P1 magent
         sta msrc
         lda gp_b_hi,x
         sta msrc+1
+      .if HWOUT
         lda go_bh_lo,x
         sta hsrc
         lda go_bh_hi,x
         sta hsrc+1
+      .endif
         lda gp_bx,x
         sta moff
         lda #COL_MAG
@@ -1551,10 +1561,12 @@ pmtrog  ldx OB_G,y                  ; Trogg: his infill, P0 yellow and P1 magent
         sta msrc
         lda gp_m_hi,x
         sta msrc+1
+      .if HWOUT
         lda go_mh_lo,x
         sta hsrc
         lda go_mh_hi,x
         sta hsrc+1
+      .endif
         lda #$ff                    ; (no player: the missiles' memory)
         sta mp2
         jsr pstrip2
@@ -1573,6 +1585,7 @@ pmtrog  ldx OB_G,y                  ; Trogg: his infill, P0 yellow and P1 magent
         clc
         adc gp_mbx,x
         sta OB_M1,y
+      .if HWOUT
         lda hwl                     ; his outline on P2 (left 16) and P3 (right 16)
         cmp #255
         beq +
@@ -1598,7 +1611,9 @@ pmtrog  ldx OB_G,y                  ; Trogg: his infill, P0 yellow and P1 magent
         lda #8
         sta moff
         jsr hwstrip
-+       rts
++
+      .endif
+        rts
 
 ; a strip of thing mk's graphic (msrc) on player mp2, from its top line on the screen; in the band
 ; holding at its top, the player's position (oHP + moff), colour (mcol), width (msize), its bit
@@ -1811,6 +1826,8 @@ plotx   rts
         tax
         lda tg_nb,x
         sta nb
+        lda tg_fo,x
+        sta foff
         lda tg_lo,x
         sta dptr
         lda tg_hi,x
@@ -1890,19 +1907,13 @@ rowlp   lda rq                      ; rows above the screen skipped, below it th
         clc
         adc #>SCREEN
         sta mp+1
-        adc #>(CLEAN - SCREEN)
+        adc #((CLEAN - SCREEN) >> 8) & $ff
         sta tp+1
-        pla                         ; the claims: CLAIM + row * 64
-        sta cl+1
-        lda #0
-        lsr cl+1
-        ror a
-        lsr cl+1
-        ror a
+        pla                         ; the claims: CLAIM + row * 42
+        tax
+        lda clrl,x
         sta cl
-        lda cl+1
-        clc
-        adc #>CLAIM
+        lda clrh,x
         sta cl+1
         lda half                    ; half = 4 on bottoms rows (row even), 0 on tops rows
         eor #$80
@@ -1923,17 +1934,13 @@ celllp  lda scol                    ; columns left of the view skipped, right of
         cmp #41
         bcc +
         jmp rownext
-+       ldy #3                      ; all transparent here?
-        lda (dp),y
-        dey
-        ora (dp),y
-        dey
-        ora (dp),y
-        dey
-        ora (dp),y
++       ldy foff                    ; the cell's flag: 2 all transparent (skipped), 1 covered (the
+        lda (dp),y                  ; OR alone: no background), 0 mixed
+        cmp #2
         bne +
         jmp next
-+       ldy scol                    ; drawn already this frame?
++       sta cfull
+        ldy scol                    ; drawn already this frame?
         lda (cl),y
         beq new
         tax                         ; then on from what's there: sp = cp
@@ -1946,7 +1953,10 @@ celllp  lda scol                    ; columns left of the view skipped, right of
         adc bfhi
         sta cp+1
         sta sp+1
-        jmp draw4
+        lda cfull                   ; (covered: the OR alone)
+        beq +
+        jmp orpath
++       jmp draw4
 full    jmp next                    ; (no spare character left: not drawn)
 new     ldx half                    ; a spare character's half
         bne +
@@ -1972,7 +1982,9 @@ new     ldx half                    ; a spare character's half
         sta cp+1
         lda (tp),y                  ; sp = the level's glyph there, its half
         sta orig
-        beq +                       ; (blank: drawn with OR alone, below)
+        beq +                       ; (blank, or the cell's covered: drawn with OR alone, below)
+        ldx cfull
+        bne +
         tax
         lda glo,x
         ora half
@@ -1985,9 +1997,10 @@ new     ldx half                    ; a spare character's half
         ldx ncell                   ; its claim, to clear
         tya
         clc
-        adc cl                      ; (no carry: a row's cells are within its 64)
+        adc cl                      ; (a row of claims can cross a page: the carry kept)
         sta cl_lo,x
         lda cl+1
+        adc #0
         sta cl_hi,x
         tya                         ; the programs' entries: lda #code / lda #orig, sta cell
         clc
@@ -2028,7 +2041,10 @@ new     ldx half                    ; a spare character's half
         inc rp+1
 +       inc ncell
         lda orig
-        bne draw4
+        beq orpath
+        lda cfull
+        beq draw4
+orpath
         ldy #0                      ; over blank: OR alone
         lda (dp),y
         tax
@@ -2098,6 +2114,12 @@ rownext lda rq
         jmp rowlp
 +       rts
 
+clrl    .for r = 0, r < NROWS, r += 1   ; the claims' rows
+        .byte <(CLAIM + r * 42)
+        .endfor
+clrh    .for r = 0, r < NROWS, r += 1
+        .byte >(CLAIM + r * 42)
+        .endfor
 glo     .for c = 0, c < 128, c += 1 ; a character's offset in its set
         .byte <(c * 8)
         .endfor
@@ -2442,7 +2464,7 @@ dlb15
 
         .include "../build/" .. LEVEL .. "_scrub.inc"   ; the Scrubblies' infill and places
         .include "../build/sprites.inc"
-        .cerror * > SCREEN, "the program reaches the screen's map"
+        .cerror * > CLEAN, "the program reaches the level's map: ", * - CLEAN, " over"
 
         * = FONTA
         .binary "../build/" .. LEVEL .. "_font.bin"
