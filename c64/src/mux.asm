@@ -999,6 +999,8 @@ _ck
         .endif
         lda vfl,y
         bmi _rm
+        jsr varef               ; (its settings, va, as they are now, before anything uses them:
+        ldy mv                  ;  retick, the sweep)
         lda vy,y
         cmp #47
         bcc _rm
@@ -1299,15 +1301,11 @@ _yes    stx mt
         tax
         tya
         sta tinst,x
-        lda mcur
-        bne _regs
-        txa                     ; (no register change)
-        ora nb
-        tax
-        lda #0
-        sta trch,x
-        jmp _fin
-_regs   ldx mh                  ; (its hardware sprite's bits, and its settings)
+_regs   ldx mh                  ; (its hardware sprite's bits, and its settings: whether or not
+                                ;  its old set-up wrote the registers, those in force at the new
+                                ;  tick needn't suit it, a set-up between (as it moves up past
+                                ;  others, a balloon rising) having set its sprite's bits for
+                                ;  another)
         lda bits,x
         sta mbit
         eor #$ff
@@ -1340,7 +1338,25 @@ _regs   ldx mh                  ; (its hardware sprite's bits, and its settings)
         lda t01c,y
         sta t01c,x
         jsr setbits
-        lda #1
+        lda t010,x              ; (as those in force already, with its settings: no write there,
+        cmp t010,y              ;  and nothing between to change)
+        bne _rw
+        lda t017,x
+        cmp t017,y
+        bne _rw
+        lda t01d,x
+        cmp t01d,y
+        bne _rw
+        lda t01b,x
+        cmp t01b,y
+        bne _rw
+        lda t01c,x
+        cmp t01c,y
+        bne _rw
+        lda #0
+        sta trch,x
+        jmp _fin
+_rw     lda #1
         sta trch,x
         lda mt                  ; the ticks between: their registers with its settings
         sta mj
@@ -1847,6 +1863,23 @@ _en     dex
         sta mv
         sec
         rts
+
+; Sprite mv's settings (va) as its flags and x's bit 8 now have them, if they've changed since
+; they were last taken (vflp, vxhp: update's _ok, place), and a sweep if va changes
+varef   lda vfl,y
+        cmp vflp,y
+        bne +
+        lda vxhi,y
+        cmp vxhp,y
+        beq _x
++       jsr attrof
+        ldy mv
+        cmp va,y
+        beq _x
+        sta va,y
+        lda #1
+        sta regdirty
+_x      rts
 
 ; Drop sprite mv: off its hardware sprite's list, its tick freed, its rows cleared
 remove
@@ -2401,8 +2434,8 @@ putregs lda s010
         sta t01c,x
         rts
 
-setattr jsr attrof              ; (sprite mv's settings into the registers: mcur, if they change)
-        ldy mv
+setattr ldy mv                  ; (sprite mv's settings, va (update keeps it as they are now:
+        lda va,y                ;  varef), into the registers: mcur, if they change)
         ldx vh,y
         cmp hattr,x
         bne +
