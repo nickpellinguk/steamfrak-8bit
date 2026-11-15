@@ -4,22 +4,28 @@ The start of an Atari 800XL (PAL, 64K) version: ANTIC mode 2 with character rows
 on the C64 port's 8x4 grid, so the C64's levels carry over cell for cell. The plan:
 [`PLAN.md`](PLAN.md).
 
-**Status: a sprite multiplexer** (`build/trogg8x4.xex`, without the OS), giving out the four
-players band by band in this order: Trogg's infill (yellow and magenta, on P0 and P1 and their
-missiles); the Scrubblies' bodies (one double-width player each, then two normal-width where a
-second is free: exact for the C64's); Trogg's outline from one of his bands on down (on P2 and
-P3, his infill holed there; above, his outline's in software); balloons and daggers (a
-balloon's outline and infill on a pair, else its infill alone, else software; a dagger's
-outline on a player, else software). On A_1, the joystick walking and climbing Trogg (no
-physics yet), fire his yoyo pose, the screen following him; balloons and daggers about him
-(stand-ins: about Hard's rate, `-D STRESS=1` six all the time). Checked in the WebAssembly
-atari800, colour for colour: 501 screens of three joystick tours (all 4 shift positions, up to
-12 things, every way of drawing each, things partly off every edge).
+**Status: a sprite multiplexer, graphics first** (`build/trogg8x4.xex`, without the OS). Every
+outline is drawn in software at full resolution (players are 2 hires pixels a block at their
+finest, so an outline on one would be at half resolution), and the four players carry the
+infills, given out band by band in this order: Trogg's (yellow and magenta, on P0 and P1 and
+their missiles); the Scrubblies' bodies (one double-width player each, then two normal-width
+where a second is free: exact for the C64's); the balloons' (magenta). Daggers have no infill.
+`-D HWOUT=1` puts outlines on players too where they're free (Trogg's from one of his bands
+down, a balloon's with its infill, a dagger's), for when speed has to win. On A_1, the joystick
+walking and climbing Trogg (no physics yet), fire his yoyo pose, the screen following him;
+balloons and daggers about him (stand-ins: about Hard's rate, `-D STRESS=1` six all the time).
+Checked in the WebAssembly atari800, colour for colour: 501 screens of three joystick tours.
 
-**Speed:** about 20-25 frames a second: a frame takes two or more (`mux` about 54 lines, the
-players' strips most of a frame: every strip cleared and copied every frame, Trogg's infill
-written twice where it's holed). Next: the BBC version's 50 ticks and 25 frames a second, and
-keeping the Scrubblies' strips (static) instead of rewriting them (see "The multiplexer").
+**What's still short of the original's look:** Trogg's infill is in 2-pixel blocks (at most 10 of
+his 200-250 infill pixels wrong); a Scrubbly on one double-width player has 21 of its 540
+magenta pixels wrong; the balloon's yellow highlight, the dagger's yellow blade and the
+Scrubbly's yellow eyes and teeth aren't coloured; something partly off the screen across has
+no infill (a player would show over the border); Poglets and Hooters have none yet.
+
+**Speed:** about 17 frames a second (a frame takes about three): every outline in software, and
+the players' strips all rewritten each frame. To come, before any compromise on the graphics:
+the BBC version's 50 ticks and 25 frames a second, keeping the Scrubblies' strips, and trimming
+the software drawing.
 
 Before that, **an 8x4 screen demo.** `build/screen8x4.xex` shows the C64 port's A_1 ("FRAK!") on 52
 rows of 4 lines, scrolling back and forth across the level 2 pixels a frame. It's black outlines
@@ -112,8 +118,13 @@ Arrow keys are joystick 1, Space or Ctrl fire, F2-F4 Start, Select and Option.
   in front of the playfield (`PRIOR` 1): mode 2's set pixels show luminance 0 in the hue under
   them, so outlines drawn in characters stay black over the infills.
 - **Each frame** (`mux`), in this order: Trogg's infill; the Scrubblies (a double-width player
-  each, P3, P1 or P0, then a second for two normal-width where one's free); a band of Trogg's on
-  down for his outline (not his first: its writes are his infill's); the balloons and daggers.
+  each, P3, P1 or P0, then a second for two normal-width where one's free); the balloons'
+  infills (P3, P1 or P0). With `HWOUT=1`, also Trogg's outline from one of his bands down (not
+  his first: its writes are his infill's), a balloon's outline with its infill on a pair, and a
+  dagger's outline.
+- **Which band writes a thing's registers:** any from the one after the thing above it on its
+  player has ended (by line 8k + 2) down to its top's, or the VBI if nothing's above it: the
+  latest with room in its 5 writes is chosen (a Scrubbly's second player keeps its first's).
   Something not wholly on the screen across gets no player (it would show over the border);
   above and below, the players' graphics are clipped. Trogg's rows from his outline's band on
   aren't drawn in software.

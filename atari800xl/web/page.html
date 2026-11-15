@@ -76,7 +76,7 @@ a { color: var(--amber); }
     <section>
       <h2>What this is</h2>
       <p>The 8x4 screen demo for the Atari 800XL port: the C64 port's levels on ANTIC mode 2 rows 4 lines high. Each pair of rows shows glyph lines 4–7 and then 0–3 of its characters, so every character code holds two 4-line glyphs.</p>
-      <p>Trogg, balloons and daggers on A_1, with a multiplexer giving out the four hardware sprites band by band: Trogg's yellow and magenta infill first, then the Scrubblies' bodies, then Trogg's outline on sprites from one of his bands down (software above), then balloons and daggers (sprites, else an outline in spare characters over a sprite infill, else software alone). The joystick walks and climbs Trogg; fire shows his yoyo pose.</p>
+      <p>Trogg, balloons and daggers on A_1. Every outline is drawn at full resolution in spare characters; a multiplexer gives the four hardware sprites out band by band for the infills: Trogg's yellow and magenta first, then the Scrubblies' bodies, then the balloons. The joystick walks and climbs Trogg; fire shows his yoyo pose.</p>
       <p>The 4-line row test draws a staircase: each row of a pair should show four steps. Five steps, or rows 8 lines high, mean the timing is off.</p>
     </section>
     <section>

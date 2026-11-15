@@ -16,11 +16,13 @@
 ;  2. the Scrubblies' bodies (magenta): first one double-width player each (P3, P1 or P0: 21 of
 ;     540 pixels wrong), then two normal-width players side by side where a second is free
 ;     (exact for the C64's), else none;
-;  3. Trogg's outline from a band of his on down (not his first), on P2 and P3 (black: his left
-;     and right 16 pixels), his infill there with holes where the outline is (it's behind);
-;  4. balloons and daggers: a balloon's outline and infill on a pair (P0 and P1, or P2 and P3:
-;     the outline the first, in front), else its infill alone on P3 or P1 with its outline in
-;     software, else software; a dagger's outline on P2 or P0, else software.
+;  3. (HWOUT only) Trogg's outline from a band of his on down (not his first), on P2 and P3
+;     (black: his left and right 16 pixels), his infill there with holes where the outline is;
+;  4. balloons and daggers: (HWOUT only) a balloon's outline and infill on a pair (P0 and P1, or P2
+;     and P3: the outline the first, in front); else its infill alone on P3, P1 or P0 with its
+;     outline in software, else software; (HWOUT only) a dagger's outline on P2 or P0, else
+;     software. Players are 2 hires pixels a block at their finest, so outlines on them are at
+;     half resolution: by default outlines are always drawn in software, players carry infills.
 ; Colours: P1 always magenta, P2 always black; P0 black, Trogg's yellow or magenta and P3 magenta
 ; or black, set band by band, with P0's, P1's and P3's widths. Things not wholly on the screen across are left to
 ; software (a player would show over the border); above and below, the players' graphics are
@@ -29,7 +31,9 @@
 ; line (display line 8k + 3) and, with ANTIC fetching the character codes on the next line, its
 ; writes are only done during the line after that: so band k's registers hold from display line
 ; 8k + 6, and a thing on a player must end by line 8k + 2 for another to start there in band k
-; (4 lines before the band starts). The DLI must be done before the tops row's DLI 4 lines on
+; (4 lines before the band starts). A thing's registers can be written in any band from the one
+; after the thing above it on its player has ended (by line 8k + 2) down to its top's, or by the
+; VBI if nothing's above it: the latest with room is chosen. The DLI must be done before the tops row's DLI 4 lines on
 ; (an NMI would interrupt it, and it would leave the rows' order the wrong way round): with
 ; ANTIC's fetches that's about 150 cycles, so a band gets at most 5 register writes, which the
 ; allocator keeps to: a player's change writes its position, and P0's colour and width, P1's
@@ -48,6 +52,9 @@
 ; set.
 ;   64tass --atari-xex -D STARTX=x -D STARTY=y: where Trogg starts (his origin, level pixels)
 ;   -D NOHAZ=1: no balloons or daggers; -D STRESS=1: one every 40 frames (6 out all the time)
+;   -D HWOUT=1: outlines on players too (2-pixel resolution: Trogg's from a band down, a balloon's
+;   with its infill, a dagger's), where they're free; else (the default) outlines are always
+;   drawn in software, at full resolution, and players only carry infills
         .weak
 DELAY   = 1
 LEVEL   = "A_1"
@@ -55,6 +62,7 @@ STARTX  = 65
 STARTY  = 187
 NOHAZ   = 0
 STRESS  = 0
+HWOUT   = 0
         .endweak
 SPAWN   = STRESS ? 40 : 63          ; frames between balloons and daggers (63: a balloon every
                                     ; 126 and a dagger every 126, about Hard's 120 and 132)
@@ -209,6 +217,12 @@ rqmax   = $73                       ; plot's: rows from this on (+ 8) not drawn
 hsrc    = $74                       ; (2: Trogg's holed infill)
 tgr     = $76
 snum    = $77
+cnum    = $f0
+cfix    = $f1
+uidx    = $f2                       ; chooseb's: 1 to keep the thing's band (a second player)
+oWB     = $e0                       ; (16) the line of the band each thing's registers are written
+                                    ; for: its top's band, or an earlier one with room (the VBI's
+                                    ; for the top, 32, if nothing's above it on its players)
 cl_lo   = $0200                     ; this frame's cells' claims, to clear (128 at most)
 cl_hi   = $0280
 iv_T    = $0300                     ; things on each player: top, bottom, band start (p * 16 + k)
@@ -812,6 +826,8 @@ mux     lda #0
         sta ivn+3
         lda #255
         sta hwl
+        lda #0
+        sta cfix
         lda pmshow                  ; the set being made: its bands' masks and writes clear
         eor #1
         sta mset
@@ -959,14 +975,14 @@ srtd    lda nob
         beq mxscr
         lda #0
         sta mk
+        sta mp2
+        lda #1
+        sta msize
+        jsr chooseb                 ; (his band: P0 3, P1 2; nothing's on them yet)
         lda #0
         jsr reserve
         lda #1
         jsr reserve
-        ldx #0                      ; (his band's writes: P0 3, P1 2)
-        jsr tband
-        lda #5
-        sta BT_W,y
         ldy obi
         lda #1
         sta OB_LV,y
@@ -1012,8 +1028,12 @@ mxt     cpx nob
         ldy mcnt
         cmp OB_PB,y
         beq ++
-        stx mlast
+        stx uidx
+        ldy #1                      ; (in the band it has: its first player's set there)
+        sty cfix
         jsr one
+        ldy #0
+        sty cfix
         bcs +
         ldy mcnt                    ; (the first the left, this the right)
         sta OB_PA,y
@@ -1026,7 +1046,7 @@ mxt     cpx nob
         lda #0
         sta OB_LV,y
         beq mxtn
-+       ldx mlast
++       ldx uidx
 +       dex
         bpl -
 mxtn    ldx midx
@@ -1052,7 +1072,11 @@ scrthing lda order,x                ; the thing x down: mk, its record mcnt; car
 +       sec
         rts
 
-mxtrog  lda oIn                     ; 3. Trogg's outline on P2 and P3 from a band of his on down
+mxtrog
+      .if !HWOUT
+        jmp mxhaz
+      .endif
+        lda oIn                     ; 3. Trogg's outline on P2 and P3 from a band of his on down
         beq mxhaz                   ; (not his first: its writes are P0's and P1's)
         lda oT
         jsr bstart
@@ -1116,6 +1140,7 @@ mxh     cpx nob
         beq mxhn
         cpx #GR_BALLOON
         bne mxdag
+      .if HWOUT
         lda #0                      ; a balloon: a pair, outline and infill (P0 and P1, P2 and P3)
         ldx #1
         jsr pair2
@@ -1124,10 +1149,14 @@ mxh     cpx nob
         ldx #3
         jsr pair2
         bcc mxhn
-        lda #3                      ; or a player for its infill: P3, else P1
+      .endif
+        lda #3                      ; or a player for its infill: P3, else P1, else P0
         jsr one
         bcc +
         lda #1
+        jsr one
+        bcc +
+        lda #0
         jsr one
         bcs mxhn
 +       ldy mcnt
@@ -1135,7 +1164,11 @@ mxh     cpx nob
         lda #1
         sta OB_LV,y
         bne mxhn
-mxdag   lda #2                      ; a dagger: a player for its outline: P2, else P0
+mxdag
+      .if !HWOUT
+        jmp mxhn                    ; (a dagger: software)
+      .endif
+        lda #2                      ; a dagger: a player for its outline: P2, else P0
         jsr one
         bcc +
         lda #0
@@ -1168,17 +1201,8 @@ pair2   sta mp2                     ; players a and x for thing mk (record mcnt)
         lda msize
         jsr free
         bcs ++
-        ldx mk
-        jsr tband
-        ldx mp2
-        lda wcost,x
-        ldx msize
-        clc
-        adc wcost,x
-        adc BT_W,y
-        cmp #WMAX + 1
+        jsr chooseb
         bcs ++
-        sta BT_W,y
         lda mp2
         jsr reserve
         ldy mcnt
@@ -1193,18 +1217,13 @@ pair2   sta mp2                     ; players a and x for thing mk (record mcnt)
 +
 +       rts
 
-one     sta mp2                     ; player a for thing mk, if free and its band has room for the
+one     sta mp2                     ; player a for thing mk, if free and a band has room for the
         jsr free                    ; writes: carry clear if so (a kept)
         bcs +
-        ldx mk
-        jsr tband
-        ldx mp2
-        lda wcost,x
-        clc
-        adc BT_W,y
-        cmp #WMAX + 1
+        lda #$ff
+        sta msize
+        jsr chooseb
         bcs +
-        sta BT_W,y
         lda mp2
         jsr reserve
         clc
@@ -1218,6 +1237,85 @@ wcost   .byte 3, 2, 1, 3            ; register writes for a player's change (pos
 tband   lda oT,x                    ; y: the band holding at thing x's top (this set's index)
         jsr bidx
         tay
+        rts
+
+; chooseb: the band for thing mk's registers on player mp2 (and msize, unless $ff): the latest from
+; its top's band up, after the things above it on those players (4 lines after their bottoms),
+; with room for the writes (the VBI's, line 32, always has room). Carry clear if one: oWB and
+; oBS the band's line, its writes counted
+chooseb ldx mk
+        lda #32                     ; mlast: the earliest line it can be
+        sta mlast
+        lda mp2
+        jsr above
+        lda msize
+        bmi +
+        jsr above
++       ldy mp2                     ; cnum: the writes
+        lda wcost,y
+        ldy msize
+        bmi +
+        clc
+        adc wcost,y
++       sta cnum
+        lda oBS,x
+cblp    cmp mlast
+        bcc cbno
+        ldy cfix                    ; (keeping its band: that one or none)
+        beq +
+        cmp oBS,x
+        bne cbno
++
+        cmp #38
+        bcc cbyes                   ; (the VBI's: always room)
+        pha
+        jsr bidx
+        tay
+        lda BT_W,y
+        clc
+        adc cnum
+        cmp #WMAX + 1
+        bcs +
+        sta BT_W,y
+        pla
+        jmp cbyes
++       pla
+        sec                         ; the band before
+        sbc #8
+        cmp #38
+        bcs cblp
+        lda #32
+        bcc cblp
+cbyes   sta oWB,x
+        sta oBS,x
+        clc
+        rts
+cbno    sec
+        rts
+
+above   stx stmp                    ; mlast raised to 4 past the bottoms of things on player a above
+        tay                         ; thing x (x kept)
+        lda ivn,y
+        beq abend
+        sta mdst
+        tya
+        asl a
+        asl a
+        asl a
+        asl a
+        tay
+-       lda iv_B,y
+        cmp oT,x
+        bcs +                       ; (not above)
+        clc
+        adc #4
+        cmp mlast
+        bcc +
+        sta mlast
++       iny
+        dec mdst
+        bne -
+abend   ldx stmp
         rts
 
 free    stx stmp                    ; player a free for thing mk? carry clear if so (x kept)
@@ -1517,7 +1615,7 @@ pstrip  ldy mcnt
 +       lda oT,x
         jsr pdest
         jsr strip
-        lda oT,x
+        lda oWB,x
 regs    jsr bidx                    ; (the band holding at line a)
         sta mdst
         ldy mp2
@@ -1579,7 +1677,7 @@ pstrip2 ldy obi                     ; (his record)
 +       lda mp2
         bmi +
         ldx #0
-        lda oT
+        lda oWB
         jmp regs
 +       rts
 
