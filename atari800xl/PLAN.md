@@ -1,6 +1,9 @@
 # Plan: Frak! for the Atari 800XL
 
-Status: **plan only, nothing built yet.** This is the first port to start from the C64 port
+Status: **milestone 0 under way: 4-line rows work in atari800** (exactly 4 + 4 lines a pair of
+rows, with and without horizontal scrolling and players: [`test/README.md`](test/README.md));
+to be confirmed in Altirra and on a real PAL 800XL. Target: PAL, normal (40-column) width.
+This is the first port to start from the C64 port
 (`../c64`) rather than from the BBC version alone. The aim is a largely monochrome game in
 ANTIC mode 2, with colour infills from players and missiles, and without the C64 port's
 row-by-row interrupt and multiplexer machinery. The C64's levels, data tools, game logic and
@@ -17,12 +20,12 @@ then the remaining levels.
   The C64's map (a tops screen and a bottoms screen, each 97 x 25) becomes one 50-row map, a
   tops row then a bottoms row. Its levels, geometry and collision data carry over cell for cell,
   and so does the physics that was checked against the original with `conn64.mjs`.
-- **Glyphs as the C64 has them:** orthogonal (the same picture in a character's top and bottom
-  4 lines), in character sets chosen per band of rows. `level.mjs` already packs them this way.
-  Because a glyph is the same in both halves, the picture is right whichever half of the
-  character a 4-line row shows. Only the row's *height* has to be right (see "4-line rows").
-  Atari sets have 128 characters to the C64's 64, so the budget that kept filling up on the C64
-  (set 0: 60 of 64) roughly doubles.
+- **Two glyphs in every character:** the first row of each pair of rows shows glyph lines 4-7
+  of its characters, the second lines 0-3 (measured: see "4-line rows"). So each of the 128
+  codes holds a 4-line glyph for the "bottoms" rows and another for the "tops" rows: 256 glyphs
+  a set, in character sets chosen per band of rows as on the C64. (The C64's glyphs are
+  orthogonal, the same picture in both halves; that would waste half of each set, see "Glyph
+  budget".)
 - **Meanies (Scrubblies, Poglets, Hooters), gems and keys are drawn into the map** as outlines,
   as on the C64. They are knocked off or picked up by the C64's patches (`patchon`/`patchoff`),
   which swap a few cells' codes for what's behind.
@@ -63,33 +66,53 @@ Lessons from the C64's PLAN that shape this plan:
 
 ## The display
 
-### 4-line rows: milestone 0
+### 4-line rows: milestone 0 (working in atari800)
 
-ANTIC's mode 2 rows are 8 lines. A DLI only fires at the end of a row, so a row 4 lines high has
-to be made by misusing vertical scrolling. As I understand ANTIC (to be measured, in Altirra,
-which models it exactly, and then on a real machine):
+ANTIC's mode 2 rows are 8 lines. A DLI only fires at the end of a row, so a row 4 lines high is
+made by misusing vertical scrolling:
 
 - A row with the vertical-scroll bit set, after one without, *starts* at glyph line `VSCROL`.
 - A row without the bit, after one with, *ends* at glyph line `VSCROL`.
-- So alternating rows (bit on, bit off) give pairs of lines `VSCROL..7` then `0..VSCROL`. With
-  `VSCROL` at 4 for the first row of a pair and 3 for the second, each pair is 4 lines of glyph
-  lines 4-7 (bottoms) and then 4 lines of glyph lines 0-3 (tops). That is exactly a C64 band:
-  one row's bottoms and the next row's tops, under one character set.
-- The difficulty: `VSCROL` must read 3 at the end of a pair and 4 at the start of the next, and
-  those are the same moment. Milestone 0 finds whether a write just after `WSYNC` on a pair's
-  last line can land between the two. On the Atari a write after `WSYNC` lands on a fixed cycle
-  (the DMA slots are fixed), so this is far tamer than the C64's slide. If it can't be done, the
-  fallbacks are, in order:
-  1. A different arrangement of the scroll bits that gives 4 lines a row.
-  2. Pairs of 4 + 5 lines with a constant `VSCROL` and no write at all, the fifth line showing a
-     repeated glyph line.
-  3. Ordinary 8-line rows (an 8x8 grid): simpler, but the C64's levels no longer carry over cell
-     for cell.
+- So alternating rows (bit on, bit off) give pairs of rows, glyph lines `VSCROL..7` then
+  `0..VSCROL`. With `VSCROL` 4 at the start of the first row of a pair and 3 at the end of the
+  second, each pair is glyph lines 4-7 (bottoms) then 0-3 (tops): a C64 band, one row's bottoms
+  and the next row's tops, under one character set.
+- `VSCROL` must read 3 at the end of a pair and 4 at the start of the next. The first row's DLI
+  sets 3 (any time); the second's does `sta WSYNC`, one `nop`, `sta VSCROL` with 4, and the write
+  lands between ANTIC's end-of-row check and its next row's start.
 
-Orthogonal glyphs mean the picture doesn't depend on which half each row shows. The trick of
-two glyphs per character (a different picture in each half, chosen by the row's half, or by
-`CHACTL` bit 2, vertical reflect, with the second glyph stored upside down) is kept as an option
-for later, if the glyph budget ever needs it. It applies first to the overlay pool (below).
+Measured in atari800 5.0 (`test/rows4.asm`, `test/README.md`): exactly 4 + 4 lines, all 20 pairs
+of the test, glyph lines 4-7 then 0-3, with 1-3 `nop`s without horizontal scrolling and 0-2 with
+it (the wide fetch takes a little more of the next line), players fetched or not; 1 `nop` is
+inside both. Held constant at 4, `VSCROL` gives pairs of 4 + 5 lines. To confirm in Altirra and
+on a real machine, as the window is only 2-3 cycles wide.
+
+Consequences:
+
+- `CHACTL` isn't needed and nothing is stored upside down: the row's half chooses the glyph.
+- The display starts with a first row of a pair, showing bottoms: it shows a blank row's (or is
+  1 line, with `VSCROL` 7 at the top), then the pairs follow the C64's bands.
+- The second row's DLI waits on `WSYNC`, about 90 cycles a pair, 2,250 a frame. Its register
+  writes for the next band (`CHBASE`, player positions) go before the `WSYNC`, in time that would
+  be waited out anyway.
+- The rows' DLIs must reach the `WSYNC` before the line ends, so nothing else may hold up the
+  NMI: no other code waits on `WSYNC`, and the VBI is short enough to end before the first DLI.
+
+### Glyph budget
+
+Measured on the C64's A_1-A_3 (`tools/budget.py`: their pictures, black pixels only, the
+knocked-off and picked-up versions too): the codes the static graphics need in a set.
+
+| | 8x8, one set | 8x8, 4 bands | 8x4, a glyph in each half, one set | 4 bands | 8x4 orthogonal, one set |
+| --- | --- | --- | --- | --- | --- |
+| A_1 | 62 | 33 | 46 | 26 | 78 |
+| A_2 | 93 | 61 | 57 | 44 | 70 |
+| A_3 | 60 | 41 | 41 | 34 | 52 |
+
+That leaves 71-87 codes in one set for the overlay pool (below), which needs about 31 on a typical
+screen and 64 at the worst (Trogg, the yoyo and 6 balloons and daggers). 8x8 in 128 codes would
+leave 35-68, against about 44 and 89. Later levels are wider and will need more: `budget.py` is
+run on each as the C64 gets it.
 
 ### The row DLI
 
@@ -135,22 +158,30 @@ row DLI:  VSCROL (per pair) · CHBASE[band] · HPOSP2[row], HPOSP3[row] (optiona
   black. The coloured areas with no black in them would become blank: the platforms' magenta
   band, the yellow lattice's ground, the chains' yellow and magenta halves. The Atari output of
   `level.mjs` maps each colour to a pattern per level type (e.g. cyan empty, yellow a sparse dot,
-  magenta a dither), and the preview PNG is for judging that.
+  magenta a dither), and the preview PNG is for judging that. In A_1-A_3 each 4-line pattern of
+  black only ever has one background colour, so patterns fixed to the grid add no glyphs.
 - NTSC: hi-res pixels fringe with artefact colours on composite video. PAL first.
 
 ### Overlays: moving outlines in characters
 
-- **The pool:** a block of codes at the same place in every set (the C64's common glyphs, 0-18,
-  are first in both sets; the pool follows). Trogg covers at most 4 x 8 cells (24 pixels wide,
-  34 lines); the yoyo and up to 6 balloons and daggers (3 x 3 cells each) share the rest.
-  Pool characters needn't be orthogonal: a code can serve a tops row through its glyph lines
-  0-3 and a bottoms row through lines 4-7, two cells for each code.
+- **The pool:** a block of codes at the same place in every set (the common glyphs first, then
+  the pool). Trogg covers at most 4-5 x 10 cells (24-26 pixels wide, 34 lines); the yoyo and up
+  to 6 balloons and daggers (3 x 4 cells at most each) share the rest. A code serves a tops row's
+  cell through its glyph lines 0-3 and a bottoms row's through lines 4-7: about 25 codes for
+  Trogg at the worst, 64 for everything.
 - **A frame:** for each object, for each cell it covers, the background's 4 bytes from the
   band's set, AND the mask, OR the image (shifted with 8 shift tables), into a pool character.
-  Overlapping objects share a cell. The pool is double-buffered (A and B).
+  Overlapping objects share a cell.
+- **Double buffering by character set:** every set comes twice, the static glyphs the same in
+  both and the pool's codes the same, and the frame is drawn into the pool of the copy not
+  shown; the VBI flips `CHBASE` (the row DLIs' table) to it. So double buffering costs 1KB a set,
+  not codes: the pool is one frame's cells. Each copy's pool is two frames old when it's drawn
+  into, so everything moving is drawn every frame, and anything that changes static glyphs
+  (animated meanies) writes both copies.
 - **The VBI:** the last frame's cells put back (a list of address and old code, kept as they
   were written), patches applied (knocked-off meanies, picked-up gems), the new frame's codes
-  written, the pool flipped, `HSCROL`, the LMS addresses and the player positions set, all
+  written (all of these together with the flip, as the map is shared by both copies: about
+  60-120 bytes written, 1,000 cycles), the set copies flipped, `HSCROL`, the LMS addresses and the player positions set, all
   together. This is the C64's border tick that applies the string, the scroll and the sprite
   buffers at once, so outlines and infills never part.
 - Trogg's frames are drawn from the bitmap, so his head 2 pixels from his body costs nothing
@@ -177,8 +208,7 @@ the display list. With `HSCROL` on, the wide fetch (48 codes) adds about 40. So:
 
 - About 8,000-10,000 cycles a frame free in the 200 lines shown.
 - About 10,000 in the 112 lines that aren't.
-- Less the DLIs: 50 short ones, or up to about 2,500 if each pair's `VSCROL` write waits on
-  `WSYNC`.
+- Less the DLIs: 25 short ones and 25 that wait on `WSYNC` (about 3,000 in all).
 
 That is about 15,000-18,000 cycles a frame for the game, against the C64's 6,000-7,000. There is
 also no multiplexer (C64: 3,100-4,200) and no fill (C64: about 3,300). NTSC has fewer spare
@@ -190,7 +220,7 @@ to be laid out by a `memmap.py` like the C64's:
 | | |
 | --- | --- |
 | Zero page | All ours with the OS out |
-| Character sets | 2 (3 if a level needs it) x 1KB, each on a 1KB boundary |
+| Character sets | 1-4 bands, each twice (double buffering): 2-8KB, each on a 1KB boundary |
 | Players and missiles | 2KB on a 2KB boundary (1-line resolution) |
 | Display list | about 160 bytes (50 LMS rows, HUD), within one 1KB block |
 | Map | 6.25KB (50 x 128) |
@@ -210,10 +240,10 @@ one key at a time anyway. `read_keys` is the only part of `play.asm` to rewrite.
 - **Assembler: 64tass**, as the C64 port uses, so `play.asm`, `collide.asm`, `yoyo.asm`,
   `hazards.asm` and `loader.asm` can be shared rather than copied. A `build.mjs` writes the XEX
   segments and the ATR.
-- **Emulators:** Altirra (under Wine here) for the timing-critical milestone 0, as it is the
-  accurate one. For headless screenshots, atari800, which has AltirraOS built in, so it needs
-  no Atari ROMs, the way the C64 tests use a stand-in ROM. A `atari.py` drives it as `vice.py`
-  drives VICE: screenshots, memory, breakpoints.
+- **Emulators:** atari800 5.0 (it has AltirraOS built in, so no Atari ROMs, the way the C64
+  tests use a stand-in ROM), under Xvfb: `test/shot.sh` captures its window, as it has no
+  headless screenshot. Altirra (the accurate one, under Wine) for the timing-critical checks,
+  where it can be downloaded. An `atari.py` will drive atari800 as `vice.py` drives VICE.
 - **Checks reused:** `conn64.mjs` (movement, from every start holding every key), the py65 logic
   tests, `troggshot.py`-style pixel checks of Trogg, and `compare.py`-style row checks of the
   screen against `level.mjs`'s preview.
@@ -225,9 +255,8 @@ one key at a time anyway. `read_keys` is the only part of `play.asm` to rewrite.
 
 Each is checked before the next, and this file is updated as they're done.
 
-0. **The display, measured.** Small test programs in Altirra, then on a real 800XL:
-   - 4-line rows: which glyph lines each row shows, whether the `VSCROL` write can be made, or
-     which fallback.
+0. **The display, measured.** Small test programs in atari800, Altirra, then on a real 800XL:
+   - 4-line rows (**done in atari800**: `test/rows4.asm`; Altirra and the real machine to do).
    - Players in front of `PF2` under black hi-res pixels: the luminance rule as described.
    - The cycles free, with and without `HSCROL`'s wide fetch, with 50 DLIs.
    - Blank-line fine vertical scrolling.
@@ -259,17 +288,17 @@ Each is checked before the next, and this file is updated as they're done.
 
 ## Unknowns, to measure early
 
-- **4-line rows (milestone 0).** Everything above assumes them. The fallbacks are listed.
+- **4-line rows on real hardware.** They work in atari800 with a window of 2-3 cycles. If a real
+  machine disagrees: 8x8 rows with 4 bands and the pool capped (the glyph budget shows how tight).
 - The overlay engine's cost with Trogg, the yoyo and six hazards out (milestone 4, then 6).
 - Whether two players are enough for the meanies' infills on every screen of a level: `level.mjs`
   reports the worst row. If not: the missiles, or a meanie without infill there.
 - Whether the monochrome patterns read well enough without the C64's colour bands (milestone 1's
   preview).
-- Glyph budgets with the patterns and the pool: probably comfortable at 128 a set, to be counted.
+- Glyph budgets on the later, wider levels (`tools/budget.py` on each).
 
 ## Decisions for you
 
-- PAL only at first (as the C64)? This plan assumes so.
 - The C64's map as is (the levels as squeezed into 200 lines), or the BBC's own heights? This
   plan assumes the C64's, for the reuse.
 - Sharing the logic source with the C64 (moving it to a common directory) or copying it here.
