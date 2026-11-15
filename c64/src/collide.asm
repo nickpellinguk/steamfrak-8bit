@@ -45,18 +45,6 @@ collide lda dead
         #cedge tbx1, tx, ctr
         #cedge tby0, ty, ctt
         #cedge tby1, ty, ctb
-        lda ctl+1                   ; (and his columns, for a quick first test: ctl / 8 to ctr / 8,
-        bpl +                       ; from 0)
-        lda #0
-        sta tc0
-        beq ++
-+       ldy ctl
-        jsr _c8
-        sta tc0
-+       lda ctr+1
-        ldy ctr
-        jsr _c8
-        sta tc1
         .if !NOBALLS
         ; The balloons and daggers: the box test by its origin less his (dx, dy), against his
         ; frame's limits for its kind (collide.inc's cbxn1 ...; biased by $80, the max plus 1)
@@ -148,8 +136,52 @@ _xt     eor #$80
 +       jmp trogg_dies
 _bdone
         .endif
-        lda #0                      ; the enemies, gems and keys in his columns (colml, colmh, colmx:
-        sta cmh                     ; each column's, bit k enemy k, then gem or key k - NS)
+        lda tx                      ; the enemies, gems and keys in his columns: as last tick if his
+        cmp ccx                     ; x and frame are (ccm: the masks then; they're the level's,
+        bne _cc                     ; whatever's knocked off or picked up, which is seen to later)
+        lda tx+1
+        cmp ccx+1
+        bne _cc
+        lda tfr
+        cmp ccf
+        bne _cc
+        lda ccm+1
+        sta cmh
+        lda ccm+2
+        sta cmx
+        lda ccm
+        jmp _cdn
+_cc     lda ctl+1                   ; (his columns: ctl / 8 to ctr / 8, from 0)
+        bpl +
+        lda #0
+        sta tc0
+        beq ++
++       ldy ctl
+        jsr _c8
+        sta tc0
++       lda ctr+1
+        ldy ctr
+        jsr _c8
+        sta tc1
+        cmp cc1                     ; (the same columns as those kept: their masks)
+        bne +
+        lda tc0
+        cmp cc0
+        bne +
+        lda tx
+        sta ccx
+        lda tx+1
+        sta ccx+1
+        lda tfr
+        sta ccf
+        lda ccm+1
+        sta cmh
+        lda ccm+2
+        sta cmx
+        lda ccm
+        jmp _cdn
++       lda #0                      ; (colml, colmh, colmx: each column's, bit k enemy k, then gem
+        sta cmh                     ;  or key k - NS)
         sta cmx
         ldy tc0
 -       ora colml,y
@@ -164,13 +196,50 @@ _bdone
         cpy tc1
         iny
         bcc -
-        sta cml
+        sta ccm                     ; (kept for the next tick)
+        lda tc0
+        sta cc0
+        lda tc1
+        sta cc1
+        lda cmh
+        sta ccm+1
+        lda cmx
+        sta ccm+2
+        lda tx
+        sta ccx
+        lda tx+1
+        sta ccx+1
+        lda tfr
+        sta ccf
+        lda ccm
+_cdn    sta cml
         ora cmh
         ora cmx
         bne +
 _none   rts                         ; (none)
-+       lda ctb+1                   ; and in his bands of 32 lines (bandml, bandmh), his y kept to
-        bmi _none                   ; the level's 0-255
++       lda ty                      ; and in his bands of 32 lines (bandml, bandmh, bandmx), his y
+        cmp cby                     ; kept to the level's 0-255: as last tick if his y and frame
+        bne _bc                     ; are (cbm)
+        lda ty+1
+        cmp cby+1
+        bne _bc
+        lda tfr
+        cmp cbf
+        bne _bc
+        lda cbm+1
+        sta bmh
+        lda cbm+2
+        sta bmx
+        lda cbm
+        jmp _bdn
+_bz     lda #$ff                    ; (none: his box out of the level's lines)
+        sta cb0
+        lda #0
+        sta bmh
+        sta bmx
+        beq _bk
+_bc     lda ctb+1
+        bmi _bz
         beq +
         lda #7
         bne ++
@@ -183,7 +252,7 @@ _none   rts                         ; (none)
 +       sta cband1
         lda ctt+1
         beq +
-        bpl _none
+        bpl _bz
         lda #0
         beq ++
 +       lda ctt
@@ -193,6 +262,26 @@ _none   rts                         ; (none)
         lsr
         lsr
 +       tay
+        cmp cb0                     ; (the same bands as those kept: their masks)
+        bne +
+        lda cband1
+        cmp cb1
+        bne +
+        lda ty
+        sta cby
+        lda ty+1
+        sta cby+1
+        lda tfr
+        sta cbf
+        lda cbm+1
+        sta bmh
+        lda cbm+2
+        sta bmx
+        lda cbm
+        jmp _bdn
++       sty cb0
+        lda cband1
+        sta cb1
         lda #0
         sta bmh
         sta bmx
@@ -208,7 +297,19 @@ _none   rts                         ; (none)
         cpy cband1
         iny
         bcc -
-        and cml
+_bk     sta cbm                     ; (kept for the next tick)
+        lda bmh
+        sta cbm+1
+        lda bmx
+        sta cbm+2
+        lda ty
+        sta cby
+        lda ty+1
+        sta cby+1
+        lda tfr
+        sta cbf
+        lda cbm
+_bdn    and cml
         sta cml
         lda bmh
         and cmh
@@ -536,6 +637,16 @@ stl     .byte 0
 sto     .byte 0
 tc0     .byte 0                     ; (his columns)
 tc1     .byte 0
+ccx     .word 0                     ; (the columns' masks kept: for his x and frame (ccf: $ff,
+ccf     .byte $ff                   ;  none: loadlevel), the masks)
+ccm     .fill 3
+cby     .word 0                     ; (the bands' likewise: his y, frame, the masks)
+cbf     .byte $ff
+cbm     .fill 3
+cc0     .byte $ff                   ; (the columns and bands those masks are for)
+cc1     .byte $ff
+cb0     .byte $ff
+cb1     .byte $ff
 ptouch  .byte $ff                   ; (the gem or key last touched; $ff: none yet)
 ptouchn .byte 0                     ; (ticks touching one)
         .send high

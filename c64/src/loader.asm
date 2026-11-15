@@ -59,6 +59,11 @@ loadlevel
         bne -
 _x      lda #$35                    ; (the I/O back)
         sta $01
+        lda #$ff                    ; (collide's masks kept for his place: none, a new level's)
+        sta ccf
+        sta cbf
+        sta cc0
+        sta cb0
         ldx #NS - 1
 -       lda knock0,x
         sta knocked,x
