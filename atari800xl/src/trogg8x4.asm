@@ -223,8 +223,10 @@ snum    = $77
 cnum    = $f0
 cfix    = $f1
 uidx    = $f2
-foff    = $f3                       ; plot's: the flags' offset from the indices (tg_fo)
-cfull   = $f4                       ; plot's: 1 if the cell's covered (no transparent pixel)                       ; chooseb's: 1 to keep the thing's band (a second player)
+eml     = $f3                       ; plot's: the left and right columns' empty cells, a bit a row
+emr     = $f5                       ; (2 each: shifted out a row at a time)
+eb      = $f7                       ; this row's: bit 0 the left column's empty, bit 1 the right's
+lastj   = $f8                       ; the last column (nb - 1)                       ; chooseb's: 1 to keep the thing's band (a second player)
 oWB     = $e0                       ; (16) the line of the band each thing's registers are written
                                     ; for: its top's band, or an earlier one with room (the VBI's
                                     ; for the top, 32, if nothing's above it on its players)
@@ -1826,8 +1828,39 @@ plotx   rts
         tax
         lda tg_nb,x
         sta nb
-        lda tg_fo,x
-        sta foff
+        sec
+        sbc #1
+        sta lastj
+        lda pd                      ; the side columns' empty cells for its phase (pd & 3): the
+        and #3                      ; tables' blocks of 128 (tmp: the block's offset), by x
+        lsr a
+        sta tmp+1
+        lda #0
+        ror a
+        sta tmp
+        txa
+        ora tmp
+        tay
+        lda tmp+1
+        clc
+        adc #>tel_lo
+        sta tmsk+2
+        adc #>(ter_lo - tel_lo)
+        sta tmsk3+2
+        lda tmp+1
+        clc
+        adc #>tel_hi
+        sta tmsk2+2
+        adc #>(ter_hi - tel_hi)
+        sta tmsk4+2
+tmsk    lda tel_lo & $ff00,y
+        sta eml
+tmsk2   lda tel_hi & $ff00,y
+        sta eml+1
+tmsk3   lda ter_lo & $ff00,y
+        sta emr
+tmsk4   lda ter_hi & $ff00,y
+        sta emr+1
         lda tg_lo,x
         sta dptr
         lda tg_hi,x
@@ -1865,7 +1898,15 @@ plotx   rts
         jmp rowlp
 +       lda #63
         sta rqlast
-rowlp   lda rq                      ; rows above the screen skipped, below it the end
+rowlp   lda #0                      ; this row's side cells: empty?
+        lsr emr+1
+        ror emr
+        rol a
+        lsr eml+1
+        ror eml
+        rol a
+        sta eb                      ; (bit 0 the left, bit 1 the right)
+        lda rq                      ; rows above the screen skipped, below it the end
         cmp #8
         bcs +
         jmp rownext
@@ -1934,13 +1975,19 @@ celllp  lda scol                    ; columns left of the view skipped, right of
         cmp #41
         bcc +
         jmp rownext
-+       ldy foff                    ; the cell's flag: 2 all transparent (skipped), 1 covered (the
-        lda (dp),y                  ; OR alone: no background), 0 mixed
-        cmp #2
++       lda jj                      ; a side column's cell all transparent? (skipped)
         bne +
-        jmp next
-+       sta cfull
-        ldy scol                    ; drawn already this frame?
+        lda eb
+        lsr a
+        bcs ++
+        lda jj
++       cmp lastj
+        bne ++
+        lda eb
+        and #2
+        beq ++
++       jmp next
++       ldy scol                    ; drawn already this frame?
         lda (cl),y
         beq new
         tax                         ; then on from what's there: sp = cp
@@ -1953,10 +2000,7 @@ celllp  lda scol                    ; columns left of the view skipped, right of
         adc bfhi
         sta cp+1
         sta sp+1
-        lda cfull                   ; (covered: the OR alone)
-        beq +
-        jmp orpath
-+       jmp draw4
+        jmp draw4
 full    jmp next                    ; (no spare character left: not drawn)
 new     ldx half                    ; a spare character's half
         bne +
@@ -1982,9 +2026,7 @@ new     ldx half                    ; a spare character's half
         sta cp+1
         lda (tp),y                  ; sp = the level's glyph there, its half
         sta orig
-        beq +                       ; (blank, or the cell's covered: drawn with OR alone, below)
-        ldx cfull
-        bne +
+        beq +                       ; (blank: drawn with OR alone, below)
         tax
         lda glo,x
         ora half
@@ -2041,9 +2083,7 @@ new     ldx half                    ; a spare character's half
         inc rp+1
 +       inc ncell
         lda orig
-        beq orpath
-        lda cfull
-        beq draw4
+        bne draw4
 orpath
         ldy #0                      ; over blank: OR alone
         lda (dp),y

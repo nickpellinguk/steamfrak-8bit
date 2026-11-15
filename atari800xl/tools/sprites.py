@@ -11,11 +11,11 @@
 #
 # Each graphic at each shift is stored a column (8 pixels across) at a time, top to bottom, with
 # 3 bytes of index 0 (all transparent) above and below each column: a character row's 4 lines
-# then come from 4 bytes in a row, wherever he starts in it, with nothing to check. After the
-# columns, a block of flags laid out the same (a byte for each, at the same place plus the
-# block's offset, tg_fo): for the 4 lines from there in that column, 2 if all transparent (the
-# cell's skipped), 1 if none of their pixels is (the cell's covered: the OR alone, no background),
-# else 0.
+# then come from 4 bytes in a row, wherever he starts in it, with nothing to check. Where the
+# empty space is, at the sides: for the first and last columns, for each of the 4 lines a
+# character row can start on relative to the graphic's top (its top display line & 3), a bit
+# for each character row it covers (bit 0 the first), 1 where that column's cell is all
+# transparent (skipped).
 #
 # Player graphics (normal width: 8 two-pixel blocks a byte, for the hardware sprites):
 #  - balloons and daggers: an outline (a block on where either pixel is black, so the outline stays
@@ -157,26 +157,38 @@ for (n, _, _), p in zip(GRAPHICS, players):
     if not p: continue
     for idx in range(3): out.append(f'gp_{n}_{idx} .byte ' + ', '.join(map(str, p[idx])))
 # the index data
-data, nbs, labels, fos = [], [], [], []
+data, nbs, labels = [], [], []
+masks = {'l': [], 'r': []}
 for i, (n, k, f) in enumerate(GRAPHICS):
     g = frame(k, f)
     for si, s in enumerate(SHIFTS):
         if n not in USED:
-            nbs.append(0); labels.append('gp_none - 3'); fos.append(0); continue
+            nbs.append(0); labels.append('gp_none - 3'); masks['l'] += [0] * 4; masks['r'] += [0] * 4; continue
         ws = windows(g, s); nbs.append(len(ws[0])); labels.append(f'tg_{n}_{si}')
-        cols, flags = [], []
-        H = len(ws)
-        for j in range(len(ws[0])):
+        cols = []
+        H = len(ws); nb = len(ws[0])
+        for j in range(nb):
             col = [None] * 3 + [row[j] for row in ws] + [None] * 3
             cols += [0 if c is None else tables[si][c] for c in col]
-            for k in range(H + 6):
-                four = [col[k + i] if k + i < H + 6 else None for i in range(4)]
-                px = [p for c in four for p in (c if c else ('T',) * 8)]
-                flags.append(2 if all(p == 'T' for p in px) else 1 if all(p != 'T' for p in px) else 0)
-        fos.append(len(cols))
-        data.append((labels[-1], cols + flags))
+        for ph in range(4):
+            for side, j in (('l', 0), ('r', nb - 1)):
+                m = 0
+                for k, r0 in enumerate(range(-ph, H, 4)):
+                    px = [p for r in range(r0, r0 + 4) for p in (ws[r][j] if 0 <= r < H else ('T',) * 8)]
+                    if all(p == 'T' for p in px): m |= 1 << k
+                masks[side].append(m)
+        data.append((labels[-1], cols))
 out.append('tg_nb   .byte ' + ', '.join(map(str, nbs)) + '     ; bytes across, by frame * 4 + shift')
-out.append('tg_fo   .byte ' + ', '.join(map(str, fos)) + '     ; the flags\' offset from the indices')
+# (the masks: 4 tables, left and right, low and high bytes, each 4 blocks of 128 by phase, then
+# graphic * 4 + shift)
+for side in 'lr':
+    for half, sh in (('lo', 0), ('hi', 8)):
+        out.append(f'        .align $100')
+        out.append(f'te{side}_{half}')
+        for ph in range(4):
+            vals = [masks[side][gs * 4 + ph] >> sh & 255 for gs in range(len(masks[side]) // 4)]
+            vals += [0] * (128 - len(vals))
+            out.append('        .byte ' + ', '.join(map(str, vals)))
 out.append('tg_lo   .byte ' + ', '.join(f'<({l} + 3)' for l in labels) + '     ; (column 0\'s first line)')
 out.append('tg_hi   .byte ' + ', '.join(f'>({l} + 3)' for l in labels))
 out.append('')

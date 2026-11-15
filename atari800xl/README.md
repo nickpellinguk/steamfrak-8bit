@@ -77,12 +77,13 @@ Arrow keys are joystick 1, Space or Ctrl fire, F2-F4 Start, Select and Option.
   moving graphics (Trogg, balloons, daggers, the yoyo, the FRAK! bubble) share the tables: 250,
   233, 236 and 252 windows of 256 (the build stops if a shift has more). Each column of a graphic
   is stored top to bottom with 3 transparent bytes above and below, so a character row's 4 lines
-  are 4 bytes in a row wherever he starts in it. After the columns, a block of flags laid out the
-  same: for each 4 lines from a place in a column, 2 if they're all transparent (the cell's
-  skipped, on one load), 1 if none of their pixels is (the cell's covered: its background doesn't
-  matter, so the OR alone, `lda ortab,x` `sta`, as over blank background), else 0. Trogg's
-  software drawing: 168 lines a frame on average, from 194 (nearly all from the skips: most of his
-  covered cells are over blank background, which was drawn with the OR alone already).
+  are 4 bytes in a row wherever he starts in it. The empty space is at the sides (45% of his
+  first and last columns' cells are all transparent, 3% of the middle ones'), so for the first
+  and last columns, for each of the 4 lines a character row can start on relative to the
+  graphic's top, a bitmask with a bit for each character row: 1 where that cell's all
+  transparent, and skipped (shifted out a row at a time). Trogg's software drawing: 187 lines a
+  frame on average (194 checking every cell's 4 indices; 168 with a flag for every cell
+  position, which took about 10KB to the masks' 1.7KB).
 - **Spare characters** from code 64, given out a cell at a time, bottoms halves (for the first
   row of a pair) and tops halves (the second) separately: 64 of each, so a code serves a cell of
   each kind of row.
