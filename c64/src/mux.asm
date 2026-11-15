@@ -1301,11 +1301,15 @@ _yes    stx mt
         tax
         tya
         sta tinst,x
-_regs   ldx mh                  ; (its hardware sprite's bits, and its settings: whether or not
-                                ;  its old set-up wrote the registers, those in force at the new
-                                ;  tick needn't suit it, a set-up between (as it moves up past
-                                ;  others, a balloon rising) having set its sprite's bits for
-                                ;  another)
+        lda mcur
+        bne _regs
+        txa                     ; (no register change)
+        ora nb
+        tax
+        lda #0
+        sta trch,x
+        jmp _fin
+_regs   ldx mh                  ; (its hardware sprite's bits, and its settings)
         lda bits,x
         sta mbit
         eor #$ff
@@ -1338,25 +1342,7 @@ _regs   ldx mh                  ; (its hardware sprite's bits, and its settings:
         lda t01c,y
         sta t01c,x
         jsr setbits
-        lda t010,x              ; (as those in force already, with its settings: no write there,
-        cmp t010,y              ;  and nothing between to change)
-        bne _rw
-        lda t017,x
-        cmp t017,y
-        bne _rw
-        lda t01d,x
-        cmp t01d,y
-        bne _rw
-        lda t01b,x
-        cmp t01b,y
-        bne _rw
-        lda t01c,x
-        cmp t01c,y
-        bne _rw
-        lda #0
-        sta trch,x
-        jmp _fin
-_rw     lda #1
+        lda #1
         sta trch,x
         lda mt                  ; the ticks between: their registers with its settings
         sta mj
