@@ -263,6 +263,7 @@ muxinit lda #<mdata             ; (all 0 first)
         sta vl + BTV
         sta btw
         sta bton
+        sta btwas
         sta btbon                   ; (no border sprites in any buffer)
         sta btbon + 32
         sta btbon + 64
@@ -723,6 +724,7 @@ btxh    .byte 0
 btmc    .byte 0
 btptr   .byte 0
 btw     .byte 0                     ; (its settings as the registers were last swept for: btset)
+btwas   .byte 0                     ; (one last frame: btvmux's)
 btnx    .byte 0
 
 ; The top border's hazard, its virtual sprite BTV at the head of sprite 7: its lines (from line
@@ -730,7 +732,15 @@ btnx    .byte 0
 ; nothing on sprite 7 is set up before the frame (tick 37) while it's shown; none: 0), its rows'
 ; masks, and its settings for the IRQ (tick 35, the buffer being made's); a change of its x's bit
 ; 8 or kind (hi-res or multicolour) a sweep of the registers
-btvmux  lda #NV + 1
+btvmux  lda bton                    ; (none this frame or last: only this buffer's flag)
+        ora btwas
+        bne +
+        ldy nb
+        sta btbon,y
+        rts
++       lda bton
+        sta btwas
+        lda #NV + 1
         sta mv
         lda #7
         sta mh
@@ -873,11 +883,22 @@ scrchg  .byte 1
 kptr    .byte 0, (SPRBALLOON & $3fff) / 64, (SPRDAGGER & $3fff) / 64   ; (each kind's sprite: 1 balloon, 2 dagger)
 
 ; ---- Sort: the virtual sprites down the screen (order, kept from frame to frame, so nearly in
-; order already: an insertion sort)
-sort    ldy order               ; (in order, mostly: each compared with the one before, and only
-        lda vy,y                ; one that's out of order moved back to its place)
+; order already: an insertion sort). A quick pass (unrolled: 17 cycles a sprite) while they're in
+; order; from the first that isn't, the insertion sort's loop
+        .section high
+sort    ldy order
+        lda vy,y
         sta mkey
-        ldx #1
+        .for k = 1, k < NVS, k += 1
+        ldy order + k
+        lda vy,y
+        cmp mkey
+        bcs +
+        ldx #k
+        jmp _ins
++       sta mkey
+        .endfor
+        rts
 _next   cpx #NVS
         bcs _done
         ldy order,x
@@ -913,6 +934,7 @@ _on     ldx mi                  ; (the one now here is the highest so far)
         inx
         bne _next
 _done   rts
+        .send high
 
 ; ---- Down the screen: each sprite shown, kept where it is if it still can be (and what's changed
 ; written), or dropped; then those not shown placed, as many as there's time for; then the
@@ -1117,6 +1139,15 @@ troggmux
         inx
         bne -
 _kept
+        lda tpen + TY1              ; (his y as last frame: his lines, rows and tails as they were)
+        cmp ty1w
+        bne +
+        lda tyv
+        bne _tm
++       lda tpen + TY1
+        sta ty1w
+        lda #1
+        sta tyv
         lda #NV
         sta mv
         lda #8
@@ -1163,7 +1194,8 @@ _rd     ldy traw
         ldy tra
         iny
         jsr _row
-+       lda tmsbb
++
+_tm     lda tmsbb
         cmp tmsbw
         beq +
         sta tmsbw
@@ -1188,6 +1220,8 @@ trcw    .byte $ff
 tres1w  .byte $ff
 tres2w  .byte $ff
 tmsbw   .byte 0
+ty1w    .byte 0                 ; (his y last frame, if tyv: troggmux)
+tyv     .byte 0
 
 ; Sprite mv on the list of those waiting to be placed (wlist, mwait long), if it can be shown
 wadd    ldy mv
