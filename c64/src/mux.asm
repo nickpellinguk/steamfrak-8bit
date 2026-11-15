@@ -2336,16 +2336,17 @@ _s      ldx ms
         lda ms
         cmp #4
         bne _s
-        ldx nb
+        ldx nb                  ; (written, and noted for replay, only where they differ from
+        jsr regseq              ;  what's there: most of a sweep's ticks come out as they were)
+        beq +
         jsr putregs
         ldx #0
         lda #4
         jsr dirtyt
-        lda #1
-        sta mt
-_t      ldx mt
-        ldy tinst,x
++       ldx #1                  ; (the tick in x, quick past those with no set-up)
+_t      ldy tinst,x
         bmi _tn
+        stx mt
         sty mv
         jsr setattr
         lda mt
@@ -2353,21 +2354,40 @@ _t      ldx mt
         tax
         lda mcur
         cmp trch,x
-        bne +
+        bne _w
         cmp #0                  ; (no writes there, before or now: nothing changed, nothing
-        beq _tn                 ; for replay to copy)
-+       sta trch,x
+        beq _tl                 ; for replay to copy)
+        jsr regseq              ; (writes there before and now: the same ones?)
+        beq _tl
+        lda #1
+_w      sta trch,x
         cmp #0
         beq +
         jsr putregs
 +       ldx mt
         lda #4
         jsr dirtyt
-_tn     inc mt
-        lda mt
-        cmp #26
-        bne _t
+_tl     ldx mt
+_tn     inx
+        cpx #26
+        bcc _t
         rts
+
+regseq  lda s010                ; (z: list x's registers as these already)
+        cmp t010,x
+        bne +
+        lda s017
+        cmp t017,x
+        bne +
+        lda s01d
+        cmp t01d,x
+        bne +
+        lda s01b
+        cmp t01b,x
+        bne +
+        lda s01c
+        cmp t01c,x
++       rts
 
 putregs lda s010
         sta t010,x
