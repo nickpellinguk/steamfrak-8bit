@@ -1,4 +1,5 @@
 build/*
 !build/screen8x4.xex
+!build/trogg8x4.xex
 !build/rows4.xex
 !build/frak800.html

@@ -4,7 +4,14 @@ The start of an Atari 800XL (PAL, 64K) version: ANTIC mode 2 with character rows
 on the C64 port's 8x4 grid, so the C64's levels carry over cell for cell. The plan:
 [`PLAN.md`](PLAN.md).
 
-**Status: an 8x4 screen demo.** `build/screen8x4.xex` shows the C64 port's A_1 ("FRAK!") on 52
+**Status: Trogg drawn into spare characters** (`build/trogg8x4.xex`): his outline (monochrome:
+no infill yet) on A_1 at any even x and any y, the joystick walking and climbing him (no physics
+yet: he goes through platforms), fire his yoyo pose, the screen following him, at 50 frames a
+second with 4,200-6,200 cycles a frame to spare. Checked in the WebAssembly atari800: 128 screens
+of a joystick tour (all 4 shift positions, all 16 frames it reaches, scrolling), every pixel
+the same as the level's picture with his frame drawn on where the program says he is.
+
+Before that, **an 8x4 screen demo.** `build/screen8x4.xex` shows the C64 port's A_1 ("FRAK!") on 52
 rows of 4 lines, scrolling back and forth across the level 2 pixels a frame. It's black outlines
 on one background colour: no infills, Trogg or game yet. Checked in atari800 against the C64's
 picture of the level: every pixel the same at 11 scroll positions (each fine-scroll phase, both
@@ -16,6 +23,12 @@ machine.
     ./build.sh                 # build/screen8x4.xex (and build/rows4.xex, the row test)
     LEVEL=A_2 ./build.sh       # another of the C64 port's levels (A_1, A_2, A_3 so far)
     STILLX=100 ./build.sh      # held at a scroll position (colour clocks) instead of moving
+
+Trogg's sprites come from the steamfrak repository's `assets/sprites` (alongside this one, or
+`STEAMFRAK=...`). Checking Trogg (after building the emulator, see "In a browser"):
+
+    node test/tour.mjs build/a8.js build/trogg8x4.xex /tmp/tour "120:8 40:1 60:8:1 50:2 150:4"
+    python3 test/checktrogg.py /tmp/tour A_1
 
 It needs node (the C64 port's `tools/level.mjs` makes the level's picture), Python 3 with Pillow,
 and [64tass](https://sourceforge.net/projects/tass64/). Run the `.xex` on a PAL 800XL (or any XL/XE
@@ -39,6 +52,28 @@ Arrow keys are joystick 1, Space or Ctrl fire, F2-F4 Start, Select and Option.
 | `web/build_emulator.sh` | libatari800 and `web.c` through emscripten into one `a8.js` with the WebAssembly inside |
 | `web/build_page.py` | `page.html` with `a8.js` and the programs put in: `build/frak800.html` |
 
+## How Trogg is drawn
+
+- **10-bit graphics** (`tools/sprites.py`): each of his frames, at each of 4 shift positions (0,
+  2, 4 and 6 pixels: the colour clocks that the scroll, and later his infill, move in), is a byte
+  for each 8-pixel window, an index into that shift's 256-byte AND and OR tables. A pixel is set
+  (the outline), clear or transparent; AND has a 1 where transparent, OR a 1 where set. All the
+  moving graphics (Trogg, balloons, daggers, the yoyo, the FRAK! bubble) share the tables: 250,
+  233, 236 and 252 windows of 256 (the build stops if a shift has more). Each column of a graphic
+  is stored top to bottom with 3 transparent bytes above and below, so a character row's 4 lines
+  are 4 bytes in a row wherever he starts in it.
+- **Spare characters** from code 64: one for each column of his and pair of rows (its bottoms
+  half for the pair's first row, its tops half for the second): 24 at most.
+- **A frame** (`src/trogg8x4.asm`, `draw`), made while the one before is shown: for each cell he
+  covers that isn't all transparent, the level's half glyph there (read through the clean map,
+  which is never drawn on) copied into a spare character of the character set not shown, his 4
+  lines ANDed and ORed on (`lda (dp),y` `tax` `lda (sp),y` `and andtab,x` `ora ortab,x`
+  `sta (cp),y`: the shift's table page patched in once a frame), the cell's code listed.
+- **The VBI**, all at once: last frame's cells put back from the clean map, this frame's codes
+  written, the two character sets swapped (the level's glyphs are in both), the scroll set. So
+  double buffering costs a character set, not spare characters, and nothing he covers is seen
+  half drawn.
+
 ## How the screen works
 
 - **4-line rows:** the display list alternates mode 2 rows with vertical scrolling on and off.
@@ -59,6 +94,10 @@ Arrow keys are joystick 1, Space or Ctrl fire, F2-F4 Start, Select and Option.
 | --- | --- |
 | `tools/screen.py` | A level's character set and map for the 8x4 screen, from the C64 build's picture of it (`c64/build/<level>/chars.bin`); `build/<level>_expect.png`, the picture the Atari should show |
 | `src/screen8x4.asm` | The demo: display list, row DLIs, scrolling VBI (with the OS, for now) |
+| `src/trogg8x4.asm` | The same with Trogg: the joystick, the camera, drawing him into spare characters, the VBI showing a frame |
+| `tools/sprites.py` | The moving graphics as 10-bit graphics (`build/sprites.inc`) and the AND and OR tables; `build/sprites.json` for the checks |
+| `test/tour.mjs` | A program on the WebAssembly atari800 with a joystick script, saving the screen and memory every few frames |
+| `test/checktrogg.py` | Each saved screen against the level with Trogg drawn on where the program's VBI says he is, pixel by pixel |
 | `tools/budget.py` | Codes the static graphics need per set: 8x8 against 8x4, by bands of rows |
 | `test/rows4.asm`, `readrows.py` | The 4-line row test, and its reader |
 | `test/shot.sh` | Runs a program in atari800 (PAL 800XL) under Xvfb and captures its window |
