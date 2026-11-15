@@ -11,7 +11,10 @@ then balloons and daggers through the same plotter, clipped to the screen (about
 second with 3-5 out: the next step is the BBC version's 50 ticks and 25 frames a second); then
 the OS switched out and a sprite multiplexer: balloons and daggers on hardware sprites where
 they can be had (outline and infill), else software outline and hardware infill, else software;
-Trogg's infill on players and missiles; colour-exact on two joystick tours. Target: PAL, normal (40-column) width.
+Trogg's infill on players and missiles; colour-exact on two joystick tours. Then the
+Scrubblies' bodies on players (two normal-width, else one double-width) and Trogg's outline on
+players band by band where they're free (software above); colour-exact on three tours; about
+20-25 frames a second (the players' strips: next to trim). Target: PAL, normal (40-column) width.
 This is the first port to start from the C64 port
 (`../c64`) rather than from the BBC version alone. The aim is a largely monochrome game in
 ANTIC mode 2, with colour infills from players and missiles, and without the C64 port's

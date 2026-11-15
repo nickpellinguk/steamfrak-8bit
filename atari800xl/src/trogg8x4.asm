@@ -10,25 +10,31 @@
 ; given out a cell at a time, their bottoms halves and tops halves separately (so a code serves
 ; a cell of a bottoms row and one of a tops row), 64 of each.
 ;
-; Hardware sprites where they can be had (mux): a balloon's outline and infill on a pair of
-; players (P0 and P1, or P2 and P3: the outline the pair's first, in front), a dagger's outline on
-; a player; failing that, a balloon's infill on a player with its outline in software; failing
-; that, software alone. Trogg (26 wide: too wide for a player) has his outline in software and
-; his infill on P0 (yellow) and P1 (magenta) with their missiles. A player serves several things
-; down the screen: each pair of rows' first DLI sets the players' and missiles' positions and
-; colours for the next band of 8 lines. The DLI fires on the bottoms row's last line (display
-; line 8k + 3) and, with ANTIC fetching the character codes on the next line, its writes are only
-; done during the line after that: so band k's registers hold from display line 8k + 6, and a
-; thing on a player must end by line 8k + 2 for another to start there in band k (4 lines
-; before the band starts). Measured in atari800, colour by colour (test/checktrogg.py). The DLI
-; must be done before the tops row's DLI 4 lines on (an NMI would interrupt it, and it would
-; leave the rows' order the wrong way round): with ANTIC's fetches that's about 150 cycles, so a
-; band gets at most 5 register writes, which the allocator keeps to: P0's position and colour
-; (black outlines, Trogg's yellow), P1-P3's positions (P1 and P3 always magenta: infills; P2
-; always black: outlines), the missiles' two positions (Trogg's). A dagger's outline goes on P2
-; or P0; a balloon's infill alone on P3 or P1. Things not wholly on the
-; screen across are left to software (a player would show over the border); above and below,
-; the players' graphics are clipped.
+; Hardware sprites where they can be had (mux), in this order:
+;  1. Trogg's infill: P0 yellow and P1 magenta, with missiles 0 and 1 (his outline, 26 wide, is
+;     too wide for a player: it's drawn in software, or on players band by band, 3 below);
+;  2. the Scrubblies' bodies (magenta): first one double-width player each (P3, P1 or P0: 21 of
+;     540 pixels wrong), then two normal-width players side by side where a second is free
+;     (exact for the C64's), else none;
+;  3. Trogg's outline from a band of his on down (not his first), on P2 and P3 (black: his left
+;     and right 16 pixels), his infill there with holes where the outline is (it's behind);
+;  4. balloons and daggers: a balloon's outline and infill on a pair (P0 and P1, or P2 and P3:
+;     the outline the first, in front), else its infill alone on P3 or P1 with its outline in
+;     software, else software; a dagger's outline on P2 or P0, else software.
+; Colours: P1 always magenta, P2 always black; P0 black, Trogg's yellow or magenta and P3 magenta
+; or black, set band by band, with P0's, P1's and P3's widths. Things not wholly on the screen across are left to
+; software (a player would show over the border); above and below, the players' graphics are
+; clipped. A player serves several things down the screen: each pair of rows' first DLI sets the
+; registers that change for the next band of 8 lines. The DLI fires on the bottoms row's last
+; line (display line 8k + 3) and, with ANTIC fetching the character codes on the next line, its
+; writes are only done during the line after that: so band k's registers hold from display line
+; 8k + 6, and a thing on a player must end by line 8k + 2 for another to start there in band k
+; (4 lines before the band starts). The DLI must be done before the tops row's DLI 4 lines on
+; (an NMI would interrupt it, and it would leave the rows' order the wrong way round): with
+; ANTIC's fetches that's about 150 cycles, so a band gets at most 5 register writes, which the
+; allocator keeps to: a player's change writes its position, and P0's colour and width, P1's
+; width, P3's colour and width (3, 2, 1, 3). The missiles (Trogg's alone) are set once a frame by the VBI.
+; Measured in atari800, colour by colour (test/checktrogg.py).
 ;
 ; Each frame (the main program, while the frame before is shown), plot draws each thing in
 ; software (Trogg; balloons and daggers without a hardware outline): for
@@ -58,7 +64,9 @@ POOL0   = 64                        ; the first spare character
 NPOOL   = 128 - POOL0
         .cerror NCODES > POOL0, "the level's glyphs reach the spare characters"
 NHAZ    = 6                         ; balloons and daggers at once
-NOBJ    = NHAZ + 1                  ; things drawn: Trogg, then them
+NOBJ    = 15                        ; things: Trogg, the Scrubblies, the balloons and daggers (16th:
+                                    ; the multiplexer's, for Trogg's outline's bands)
+GR_SCRUB = GR_N                     ; (a Scrubbly: no graphic, only its infill)
 
 ; the hardware (the OS is switched out: no shadow registers, our own NMI handler)
 HPOSP0  = $d000
@@ -104,11 +112,11 @@ PMG1    = $e000                     ; resolution: missiles at + $300, player n a
 BT      = $e800                     ; the bands' registers, both frames' (interleaved: band j's at
                                     ; (j + 1) * 2 + set; the top 4 lines', set by the VBI, at set):
 BT_HP   = BT                        ; HPOSP0-3 (4 x 64)
-BT_HM   = BT + $100                 ; HPOSM0-1 (2 x 64)
-BT_C    = BT + $180                 ; COLPM0-3 (4 x 64)
-BT_M    = BT + $280                 ; which change in the band: bit n player n, bit 4 the missiles
-                                    ; (only those are written: registers hold down the screen)
-BT_W    = BT + $2c0                 ; the register writes in the band, so far (5 at most)
+BT_C    = BT + $100                 ; COLPM0-3 (4 x 64: P0's and P3's used)
+BT_S    = BT + $200                 ; SIZEP0-3 (4 x 64: P1's and P3's used)
+BT_M    = BT + $300                 ; which change in the band: bit n player n (only those are
+                                    ; written: registers hold down the screen)
+BT_W    = BT + $340                 ; the register writes in the band, so far (5 at most)
 WMAX    = 5
 COL_BLK = $00                       ; outlines
 COL_MAG = $58                       ; balloons', Trogg's magenta
@@ -173,61 +181,70 @@ dliv    = $d0                       ; the next DLI's handler (2 bytes)
 stick   = $d2                       ; the joystick this frame
 pmshow  = $d3                       ; the players' graphics and bands' set shown (0, 1)
 bandx   = $d4                       ; the next band's registers (the DLIs')
-; the multiplexer's, per thing this frame (8 each): its top and bottom line on the screen
+; the multiplexer's, per thing this frame (16 each): its top and bottom line on the screen
 ; (display line + 32: the players' memory's line, clipped to the screen's 32-239), the line
 ; its band starts (the band of its top: a player's position can change there), its position
 ; for a player, whether it's wholly on the screen across, and the things in order down
-oT      = $10
-oB      = $18
+oT      = $00
+oB      = $10
 oBS     = $20
-oHP     = $28
-oIn     = $30
-order   = $38
-ivn     = $40                       ; things on each player (4)
-mk      = $44                       ; (the multiplexer's scratch)
-mp2     = $45
-mcol    = $46
-moff    = $47
-msrc    = $48                       ; (2)
-mdst    = $4a                       ; (2)
-mcnt    = $4c
-mset    = $4d                       ; the set being made
-midx    = $4e
-mlast   = $4f
-stmp    = $50
-dmask   = $51                       ; (the DLIs' and VBI's)
-iv_T    = $0400                     ; things on each player: top, bottom, band start (p * 8 + k)
-iv_B    = $0420
-iv_BS   = $0440
-pc_lo   = $0700                     ; each set's player strips, to clear (set * 16 + k)
-pc_hi   = $0720
-pc_n    = $0740
-pc_cnt  = $0760                     ; (2)
+oHP     = $30
+oIn     = $40
+order   = $50
+ivn     = $60                       ; things on each player (4)
+mk      = $64                       ; (the multiplexer's scratch)
+mp2     = $65
+mcol    = $66
+moff    = $67
+msrc    = $68                       ; (2)
+mdst    = $6a                       ; (2)
+mcnt    = $6c
+mset    = $6d                       ; the set being made
+midx    = $6e
+mlast   = $6f
+stmp    = $70
+msize   = $71
+hwl     = $72                       ; the line Trogg's outline goes onto players from (255: not)
+rqmax   = $73                       ; plot's: rows from this on (+ 8) not drawn
+hsrc    = $74                       ; (2: Trogg's holed infill)
+tgr     = $76
+snum    = $77
+cl_lo   = $0200                     ; this frame's cells' claims, to clear (128 at most)
+cl_hi   = $0280
+iv_T    = $0300                     ; things on each player: top, bottom, band start (p * 16 + k)
+iv_B    = $0340
+iv_BS   = $0380
+pc_cnt  = $03c0                     ; each set's player strips, to clear (2)
+pc_lo   = $0400                     ; (set * 32 + k)
+pc_hi   = $0440
+pc_n    = $0480
 
-; the things drawn: three records of graphic, x (2), top line + 32, how it's drawn (0 hardware
-; outline and infill, 1 software outline and hardware infill, 2 software), its players (outline
-; or yellow; infill or magenta; $ff none) (8 each), the scroll and how many, at OBJS + obi, shi,
-; pvi: the frame being made, the frame shown, and the one before (what a frame's picture shows,
-; when its VBI shows a new frame)
-OBJS    = $0600
+; the things drawn: three records (r = 0, 1, 2) of, per thing (16: at OB_x + 16 r + i), graphic, x
+; (2), top line + 32, how it's drawn (0 hardware outline and infill, or for a Scrubbly two
+; players; 1 software outline and hardware infill, or for a Scrubbly one double-width; 2
+; software, or no infill), its players (outline, yellow or left; infill, magenta or right; $ff
+; none); and (at OB_x + r) the line Trogg's outline is on players from, the scroll, how many, the
+; missiles' positions. obi, shi, pvi (16 r): the frame being made, the frame shown, the one before
+; (what a frame's picture shows, when its VBI shows a new frame)
+OBJS    = $0500
 OB_G    = OBJS
-OB_XL   = OBJS + 8
-OB_XH   = OBJS + 16
-OB_D    = OBJS + 24
-OB_LV   = OBJS + 32
-OB_PA   = OBJS + 40
-OB_PB   = OBJS + 48
-OB_SCR  = OBJS + 56
-OB_N    = OBJS + 57
+OB_XL   = OBJS + $30
+OB_XH   = OBJS + $60
+OB_D    = OBJS + $90
+OB_LV   = OBJS + $c0
+OB_PA   = OBJS + $f0
+OB_PB   = OBJS + $120
+OB_HW   = OBJS + $150
+OB_SCR  = OBJS + $153
+OB_N    = OBJS + $156
+OB_M0   = OBJS + $159
+OB_M1   = OBJS + $15c
 ; the balloons and daggers: kind (0 none, 1 balloon, 2 dagger), x (2), top line + 32, fraction
-hk      = $06c0
-hxl     = $06c8
-hxh     = $06d0
-hy      = $06d8
-hfr     = $06e0
-; this frame's cells' claims, to clear (128 at most: 64 of each half)
-cl_lo   = $0480
-cl_hi   = $0500
+hk      = $0680
+hxl     = $0688
+hxh     = $0690
+hy      = $0698
+hfr     = $06a0
 
         * = $0800                   ; (no DOS: low memory is ours from here)
 start   sei                         ; the OS switched out: no interrupts till ours are set
@@ -321,13 +338,17 @@ start   sei                         ; the OS switched out: no interrupts till ou
         sta rprev
         lda #0
         sta obi
-        lda #64
+        lda #16
         sta shi
-        lda #128
+        lda #32
         sta pvi
         lda #0
-        sta OBJS + 64 + 57
-        sta OBJS + 128 + 57
+        sta OB_N + 1
+        sta OB_N + 2
+        sta OB_M0 + 1
+        sta OB_M1 + 1
+        sta OB_M0 + 2
+        sta OB_M1 + 2
         sta pmshow
         sta pc_cnt
         sta pc_cnt+1
@@ -340,9 +361,8 @@ start   sei                         ; the OS switched out: no interrupts till ou
         dex
         bpl -
         sta SIZEM
-        lda #COL_MAG                ; P1 and P3 magenta (infills), P2 black (outlines)
+        lda #COL_MAG                ; P1 magenta (infills), P2 black (outlines)
         sta COLPM0 + 1
-        sta COLPM0 + 3
         lda #COL_BLK
         sta COLPM0 + 2
         lda #1
@@ -427,6 +447,23 @@ main    lda ready                   ; wait for the VBI to show the last frame ma
         lda rcur
         sta rp+1
         jsr addobj                  ; Trogg
+        ldx #0                      ; the Scrubblies (their infill)
+-       cpx #SCR_N
+        bcs +
+        stx hslot
+        lda #GR_SCRUB
+        sta pg
+        lda scr_xl,x
+        sta px
+        lda scr_xh,x
+        sta px+1
+        lda scr_pd,x
+        sta pd
+        jsr addobj
+        ldx hslot
+        inx
+        bne -
++
       .if !NOHAZ
         jsr hazards                 ; the balloons and daggers moved, started, listed
       .endif
@@ -443,7 +480,23 @@ swlp    cpx nob
         lda OB_LV,y
         beq swnext                  ; (hardware outline: nothing here)
         lda OB_G,y
+        cmp #GR_SCRUB
+        beq swnext                  ; (a Scrubbly: in the map)
         sta pg
+        lda #255                    ; plot's row limit: Trogg's from where his outline's on
+        cpx #0                      ; players (rows starting on or after that line not drawn)
+        bne +
+        lda hwl
+        clc
+        adc #3
+        bcc +
+        lda #255
++       lsr a
+        lsr a
+        cpx #0
+        beq +
+        lda #63
++       sta rqmax
         lda OB_XL,y
         sta px
         lda OB_XH,y
@@ -459,7 +512,12 @@ swend
         ldy #0
         sta (wp),y
         sta (rp),y
-        ldx obi                     ; the record: the scroll, how many
+        lda obi                     ; the record: the scroll, how many (r = obi / 16)
+        lsr a
+        lsr a
+        lsr a
+        lsr a
+        tax
         lda nscrx
         sta OB_SCR,x
         lda nob
@@ -745,13 +803,15 @@ addobj  lda nob
 ; ---- mux: hardware sprites given out for this frame's things
 ; Each thing's lines on the screen (oT-oB, display line + 32: the players' memory's lines), its
 ; band start (oBS), its player position (oHP) and whether it's wholly on the screen across (oIn);
-; the things put in order down (order). Then Trogg (thing 0) gets P0 and P1 for his infill; then
-; in order down, a balloon a pair (outline and infill) or a player (infill), a dagger a player.
+; the things put in order down (order). Then, in this order: Trogg's infill; the Scrubblies'; a
+; band of Trogg's on down for his outline; the balloons and daggers (see the top of the file).
 mux     lda #0
         sta ivn
         sta ivn+1
         sta ivn+2
         sta ivn+3
+        lda #255
+        sta hwl
         lda pmshow                  ; the set being made: its bands' masks and writes clear
         eor #1
         sta mset
@@ -778,9 +838,18 @@ mxinit  cpx nob
         clc
         adc obi
         tay
-        lda OB_G,y
-        sta mcnt                    ; (the graphic)
+        lda OB_G,y                  ; its height and width (a Scrubbly's infill's)
         tax
+        cpx #GR_SCRUB
+        bne +
+        lda #SCR_H
+        sta stmp
+        lda #32
+        bne ++
++       lda gr_h,x
+        sta stmp
+        lda gr_w,x
++       sta mcnt
         lda OB_D,y                  ; its top, clipped to the screen's (32)
         cmp #32
         bcs +
@@ -788,7 +857,7 @@ mxinit  cpx nob
 +       sta mp2
         lda OB_D,y                  ; its bottom, clipped to the screen's (239)
         clc
-        adc gr_h,x
+        adc stmp
         bcs mxbig
         sbc #0                      ; (carry clear: - 1)
         cmp #240
@@ -798,16 +867,8 @@ mxbig   lda #239
         sta oB,x
         lda mp2
         sta oT,x
-        cmp #38                     ; its band's start: 32 above line 38, else 38 + 8k
-        bcs +
-        lda #32
-        bne ++
-+       sec
-        sbc #38
-        and #$f8
-        clc
-        adc #38
-+       sta oBS,x
+        jsr bstart                  ; its band's start
+        sta oBS,x
         lda #0                      ; wholly on the screen across? (and seen at all)
         sta oIn,x
         lda oT,x
@@ -822,10 +883,9 @@ mxbig   lda #239
         sbc mdst+1
         bmi mxnext                  ; (off the left)
         sta msrc+1
-        ldy mcnt                    ; on the screen if x <= 320 - its width
-        lda #<320
+        lda #<320                   ; on the screen if x <= 320 - its width
         sec
-        sbc gr_w,y
+        sbc mcnt
         sta mlast
         lda #>320
         sbc #0
@@ -846,6 +906,17 @@ mxbig   lda #239
         sta oIn,x
 mxnext  inx
         jmp mxinit
+
+bstart  cmp #38                     ; the band holding at line a: its start (32 above line 38,
+        bcs +                       ; else 38 + 8k)
+        lda #32
+        rts
++       sec
+        sbc #38
+        and #$f8
+        clc
+        adc #38
+        rts
 
 mxsort  ldx #0                      ; in order down: an insertion sort by top
 -       cpx nob
@@ -881,20 +952,18 @@ srt3    lda mk
         ldx mlast
         inx
         bne srt1
-srtd
-        lda nob                     ; Trogg: P0 (yellow) and P1 (magenta) for his infill
+srtd    lda nob
         bne +
         rts
-+
-        lda oIn
-        beq mxhaz
++       lda oIn                     ; 1. Trogg's infill: P0 and P1
+        beq mxscr
         lda #0
         sta mk
         lda #0
         jsr reserve
         lda #1
         jsr reserve
-        ldx #0                      ; his band's writes: P0 2, P1 1, the missiles 2
+        ldx #0                      ; (his band's writes: P0 3, P1 2)
         jsr tband
         lda #5
         sta BT_W,y
@@ -905,7 +974,127 @@ srtd
         sta OB_PA,y
         lda #1
         sta OB_PB,y
-mxhaz   ldx #0                      ; the rest in order down
+
+mxscr   ldx #0                      ; 2. the Scrubblies, in order down: a double-width player each
+mxs     cpx nob
+        bcs mxs2
+        stx midx
+        jsr scrthing
+        bcs mxsn
+        lda #3                      ; P3, else P1, else P0
+        jsr one
+        bcc +
+        lda #1
+        jsr one
+        bcc +
+        lda #0
+        jsr one
+        bcs mxsn
++       ldy mcnt
+        sta OB_PB,y
+        lda #1
+        sta OB_LV,y
+mxsn    ldx midx
+        inx
+        bne mxs
+mxs2    ldx #0                      ; then a second player (normal width, both) where one's free
+mxt     cpx nob
+        bcs mxtrog
+        stx midx
+        jsr scrthing
+        bcs mxtn
+        ldy mcnt
+        lda OB_LV,y
+        cmp #1
+        bne mxtn
+        ldx #2                      ; the others of P3, P1, P0
+-       lda scrp,x
+        ldy mcnt
+        cmp OB_PB,y
+        beq ++
+        stx mlast
+        jsr one
+        bcs +
+        ldy mcnt                    ; (the first the left, this the right)
+        sta OB_PA,y
+        lda OB_PA,y
+        pha
+        lda OB_PB,y
+        sta OB_PA,y
+        pla
+        sta OB_PB,y
+        lda #0
+        sta OB_LV,y
+        beq mxtn
++       ldx mlast
++       dex
+        bpl -
+mxtn    ldx midx
+        inx
+        bne mxt
+scrp    .byte 3, 1, 0
+
+scrthing lda order,x                ; the thing x down: mk, its record mcnt; carry clear if it's a
+        sta mk                      ; Scrubbly wholly on the screen across
+        tay
+        lda oIn,y
+        beq +
+        tya
+        clc
+        adc obi
+        sta mcnt
+        tay
+        lda OB_G,y
+        cmp #GR_SCRUB
+        bne +
+        clc
+        rts
++       sec
+        rts
+
+mxtrog  lda oIn                     ; 3. Trogg's outline on P2 and P3 from a band of his on down
+        beq mxhaz                   ; (not his first: its writes are P0's and P1's)
+        lda oT
+        jsr bstart
+        clc
+        adc #8                      ; (his second band's start)
+-       cmp oB
+        beq +
+        bcs mxhaz                   ; (none of his bands left)
++       sta oT + 15                 ; (thing 15: those lines of his)
+        sta oBS + 15
+        sta mp2
+        lda oB
+        sta oB + 15
+        lda #15
+        sta mk
+        lda #2
+        jsr free
+        bcs +
+        lda #3
+        jsr free
+        bcs +
+        ldx #15                     ; (writes: P2 1, P3 3)
+        jsr tband
+        lda BT_W,y
+        clc
+        adc #4
+        cmp #WMAX + 1
+        bcs +
+        sta BT_W,y
+        lda #2
+        jsr reserve
+        lda #3
+        jsr reserve
+        lda mp2
+        sta hwl
+        jmp mxhaz
++       lda mp2                     ; the next band of his
+        clc
+        adc #8
+        bcc -
+
+mxhaz   ldx #0                      ; 4. the balloons and daggers, in order down
 mxh     cpx nob
         bcs mxend
         stx midx
@@ -921,15 +1110,19 @@ mxh     cpx nob
         sta mcnt                    ; (its record)
         tay
         ldx OB_G,y
+        cpx #GR_SCRUB
+        beq mxhn
         lda gp_ok,x
         beq mxhn
         cpx #GR_BALLOON
         bne mxdag
-        lda #0                      ; a balloon: a pair, outline and infill
-        jsr pair
+        lda #0                      ; a balloon: a pair, outline and infill (P0 and P1, P2 and P3)
+        ldx #1
+        jsr pair2
         bcc mxhn
         lda #2
-        jsr pair
+        ldx #3
+        jsr pair2
         bcc mxhn
         lda #3                      ; or a player for its infill: P3, else P1
         jsr one
@@ -955,22 +1148,33 @@ mxdag   lda #2                      ; a dagger: a player for its outline: P2, el
 mxhn    ldx midx
         inx
         bne mxh
-mxend   rts
+mxend   lda hwl                     ; (Trogg's record: his outline's line)
+        pha
+        lda obi
+        lsr a
+        lsr a
+        lsr a
+        lsr a
+        tax
+        pla
+        sta OB_HW,x
+        rts
 
-pair    sta mp2                     ; players a and a + 1 for thing mk (record mcnt), if both free
-        jsr free                    ; and its band has room for their writes: carry clear if so
+pair2   sta mp2                     ; players a and x for thing mk (record mcnt), if both free and
+        stx mlast+0                 ; its band has room for their writes: carry clear if so
+        stx msize                   ; (msize: the second)
+        jsr free
         bcs ++
-        lda mp2
-        clc
-        adc #1
+        lda msize
         jsr free
         bcs ++
         ldx mk
         jsr tband
-        ldx mp2                     ; (writes: P0 2, others 1)
+        ldx mp2
         lda wcost,x
+        ldx msize
         clc
-        adc wcost + 1,x
+        adc wcost,x
         adc BT_W,y
         cmp #WMAX + 1
         bcs ++
@@ -979,8 +1183,7 @@ pair    sta mp2                     ; players a and a + 1 for thing mk (record m
         jsr reserve
         ldy mcnt
         sta OB_PA,y
-        clc
-        adc #1
+        lda msize
         jsr reserve
         ldy mcnt
         sta OB_PB,y
@@ -1009,14 +1212,15 @@ one     sta mp2                     ; player a for thing mk, if free and its ban
 +       lda mp2
         sec
         rts
-wcost   .byte 2, 1, 1, 1            ; register writes for a player's change (P0: and its colour)
+wcost   .byte 3, 2, 1, 3            ; register writes for a player's change (position; P0's colour
+                                    ; and width, P1's width, P3's colour and width)
 
 tband   lda oT,x                    ; y: the band holding at thing x's top (this set's index)
         jsr bidx
         tay
         rts
 
-free    stx mlast                   ; player a free for thing mk? carry clear if so (x kept)
+free    stx stmp                    ; player a free for thing mk? carry clear if so (x kept)
         pha
         tay
         lda ivn,y
@@ -1024,6 +1228,7 @@ free    stx mlast                   ; player a free for thing mk? carry clear if
         sta mdst                    ; (the count; mdst is free here)
         pla
         pha
+        asl a
         asl a
         asl a
         asl a
@@ -1042,14 +1247,14 @@ free    stx mlast                   ; player a free for thing mk? carry clear if
         beq +
         bcc +
         pla
-        ldx mlast
+        ldx stmp
         sec
         rts
 +       iny
         dec mdst
         bne -
 frok    pla
-        ldx mlast
+        ldx stmp
         clc
         rts
 
@@ -1061,6 +1266,7 @@ reserve pha                         ; player a to thing mk (a kept)
         adc #1
         sta ivn,y
         tya
+        asl a
         asl a
         asl a
         asl a
@@ -1087,6 +1293,7 @@ pmdraw  ldx mset
         asl a
         asl a
         asl a
+        asl a
         tax
 -       lda pc_lo,x
         sta mdst
@@ -1105,10 +1312,20 @@ pmcd    ldx mset
         lda #0
         sta pc_cnt,x
         sta midx
+        lda obi                     ; (the missiles off the screen unless Trogg's on it)
+        lsr a
+        lsr a
+        lsr a
+        lsr a
+        tax
+        lda #0
+        sta OB_M0,x
+        sta OB_M1,x
 pmlp    ldx midx
         cpx nob
-        bcs pmend
-        lda order,x
+        bcc +
+        rts
++       lda order,x
         sta mk
         clc
         adc obi
@@ -1117,7 +1334,16 @@ pmlp    ldx midx
         lda OB_LV,y
         cmp #2
         bcs pmnext
-        lda OB_PA,y                 ; its outline (or Trogg's yellow)
+        lda OB_G,y
+        cmp #GR_SCRUB
+        bne +
+        jsr pmscr
+        jmp pmnext
++       lda mk
+        bne +
+        jsr pmtrog
+        jmp pmnext
++       lda OB_PA,y                 ; a balloon's or dagger's outline (black)
         bmi +
         sta mp2
         ldx OB_G,y
@@ -1125,42 +1351,159 @@ pmlp    ldx midx
         sta msrc
         lda gp_a_hi,x
         sta msrc+1
-        lda gp_ax,x
+        lda #0
         sta moff
+        sta msize
         lda #COL_BLK
-        ldx mk
-        bne ++
-        lda #COL_YEL
-+
-+       sta mcol
-        ldy mcnt
-        lda OB_PA,y
-        bmi +
+        sta mcol
         jsr pstrip
-+       ldy mcnt                    ; its infill (or Trogg's magenta)
++       ldy mcnt                    ; its infill (magenta)
         lda OB_PB,y
-        bmi +
+        bmi pmnext
         sta mp2
         ldx OB_G,y
         lda gp_b_lo,x
         sta msrc
         lda gp_b_hi,x
         sta msrc+1
+        lda #0
+        sta moff
+        sta msize
+        lda #COL_MAG
+        sta mcol
+        jsr pstrip
+pmnext  inc midx
+        jmp pmlp
+pmhi    .byte >PMG0, >PMG1
+
+pmscr   lda OB_LV,y                 ; a Scrubbly: two players, or one double-width
+        bne +
+        lda OB_PA,y                 ; (the left)
+        sta mp2
+        lda #<scr_l
+        sta msrc
+        lda #>scr_l
+        sta msrc+1
+        lda #0
+        sta moff
+        sta msize
+        lda #COL_MAG
+        sta mcol
+        jsr pstrip
+        ldy mcnt                    ; (the right, 16 pixels on)
+        lda OB_PB,y
+        sta mp2
+        lda #<scr_r
+        sta msrc
+        lda #>scr_r
+        sta msrc+1
+        lda #8
+        sta moff
+        jmp pstrip
++       lda OB_PB,y
+        sta mp2
+        lda #<scr_d
+        sta msrc
+        lda #>scr_d
+        sta msrc+1
+        lda #SCR_DX / 2
+        sta moff
+        lda #1
+        sta msize
+        lda #COL_MAG
+        sta mcol
+        jmp pstrip
+
+pmtrog  ldx OB_G,y                  ; Trogg: his infill, P0 yellow and P1 magenta (holed from his
+        stx tgr                     ; outline's line on), the missiles; his outline on P2 and P3
+        lda #0                      ; from that line
+        sta mp2
+        sta msize
+        lda gp_a_lo,x
+        sta msrc
+        lda gp_a_hi,x
+        sta msrc+1
+        lda go_ah_lo,x
+        sta hsrc
+        lda go_ah_hi,x
+        sta hsrc+1
+        lda gp_ax,x
+        sta moff
+        lda #COL_YEL
+        sta mcol
+        jsr pstrip2
+        ldx tgr
+        lda #1
+        sta mp2
+        lda gp_b_lo,x
+        sta msrc
+        lda gp_b_hi,x
+        sta msrc+1
+        lda go_bh_lo,x
+        sta hsrc
+        lda go_bh_hi,x
+        sta hsrc+1
         lda gp_bx,x
         sta moff
         lda #COL_MAG
         sta mcol
-        jsr pstrip
-+       lda mk                      ; Trogg's missiles
-        bne pmnext
-        jsr mstrip
-pmnext  inc midx
-        jmp pmlp
-pmend   rts
-pmhi    .byte >PMG0, >PMG1
+        jsr pstrip2
+        ldx tgr                     ; the missiles: their strip, their positions in the record
+        lda gp_m_lo,x
+        sta msrc
+        lda gp_m_hi,x
+        sta msrc+1
+        lda go_mh_lo,x
+        sta hsrc
+        lda go_mh_hi,x
+        sta hsrc+1
+        lda #$ff                    ; (no player: the missiles' memory)
+        sta mp2
+        jsr pstrip2
+        ldx tgr
+        lda obi
+        lsr a
+        lsr a
+        lsr a
+        lsr a
+        tay
+        lda oHP
+        clc
+        adc gp_max,x
+        sta OB_M0,y
+        lda oHP
+        clc
+        adc gp_mbx,x
+        sta OB_M1,y
+        lda hwl                     ; his outline on P2 (left 16) and P3 (right 16)
+        cmp #255
+        beq +
+        lda #2
+        sta mp2
+        lda go_l_lo,x
+        sta msrc
+        lda go_l_hi,x
+        sta msrc+1
+        lda #0
+        sta moff
+        sta msize
+        lda #COL_BLK
+        sta mcol
+        jsr hwstrip
+        ldx tgr
+        lda #3
+        sta mp2
+        lda go_r_lo,x
+        sta msrc
+        lda go_r_hi,x
+        sta msrc+1
+        lda #8
+        sta moff
+        jsr hwstrip
++       rts
 
 ; a strip of thing mk's graphic (msrc) on player mp2, from its top line on the screen; in the band
-; holding at its top, the player's position (oHP + moff) and colour (mcol), and its bit
+; holding at its top, the player's position (oHP + moff), colour (mcol), width (msize), its bit
 pstrip  ldy mcnt
         ldx mk
         lda oT,x                    ; (lines above the screen skipped)
@@ -1172,23 +1515,17 @@ pstrip  ldy mcnt
         bcc +
         inc msrc+1
 +       lda oT,x
-        sta mdst
-        lda mp2
-        clc
-        adc #4                      ; (players at + $400)
-        ldy mset
-        adc pmhi,y
-        sta mdst+1
+        jsr pdest
         jsr strip
-        lda oT,x                    ; the band holding at its top: its position, colour and bit
-        jsr bidx
+        lda oT,x
+regs    jsr bidx                    ; (the band holding at line a)
         sta mdst
-        ldy mp2                     ; (each register's table: 64 bytes)
+        ldy mp2
         lda pbit,y
         ldy mdst
         ora BT_M,y
         sta BT_M,y
-        lda mp2
+        lda mp2                     ; (each register's table: 64 bytes)
         lsr a
         ror a
         ror a
@@ -1200,22 +1537,15 @@ pstrip  ldy mcnt
         sta BT_HP,y
         lda mcol
         sta BT_C,y
+        lda msize
+        sta BT_S,y
         rts
 pbit    .byte 1, 2, 4, 8
 
-; Trogg's missiles: M0 and M1 from his graphic's missile bytes
-mstrip  ldy mcnt
-        ldx OB_G,y
-        lda gp_m_lo,x
-        sta msrc
-        lda gp_m_hi,x
-        sta msrc+1
-        lda gp_max,x
-        sta moff
-        lda gp_mbx,x
-        sta mcol                    ; (M1's offset, here)
-        ldx mk
-        lda oT,x
+; Trogg's infill's strip on player mp2 (or the missiles, $ff): msrc from his top, and from his
+; outline's line on (hwl) the holed graphic (mlast, midx: low and high); his band's registers
+pstrip2 ldy obi                     ; (his record)
+        lda oT                      ; (lines above the screen skipped)
         sec
         sbc OB_D,y
         clc
@@ -1223,34 +1553,73 @@ mstrip  ldy mcnt
         sta msrc
         bcc +
         inc msrc+1
-+       lda oT,x
-        sta mdst
-        ldy mset
-        lda pmhi,y
-        clc
-        adc #3                      ; (missiles at + $300)
-        sta mdst+1
++       lda oT
+        jsr pdest
+        ldx #0
         jsr strip
-        lda oT,x                    ; the band holding at his top: the missiles' positions
-        jsr bidx
-        tay
-        lda BT_M,y
-        ora #$10
-        sta BT_M,y
-        lda oHP,x
+        lda hwl                     ; the holed lines over them, from hwl
+        cmp #255
+        beq +
+        ldy obi
+        sec
+        sbc OB_D,y                  ; (hwl - his top: the graphic's line)
         clc
-        adc moff
-        sta BT_HM,y
-        lda oHP,x
+        adc hsrc
+        sta msrc
+        lda hsrc+1
+        adc #0
+        sta msrc+1
+        lda hwl
+        sta oT + 15                 ; (thing 15: those lines)
+        jsr pdest
+        lda oB
+        sta oB + 15
+        ldx #15
+        jsr strip
++       lda mp2
+        bmi +
+        ldx #0
+        lda oT
+        jmp regs
++       rts
+
+; Trogg's outline's strip on player mp2 (msrc: from his top): from his outline's line (hwl) to his
+; bottom, and its band's registers
+hwstrip ldy mcnt
+        lda hwl
+        sec
+        sbc OB_D,y
         clc
-        adc mcol
-        sta BT_HM + 64,y
+        adc msrc
+        sta msrc
+        bcc +
+        inc msrc+1
++       lda hwl
+        sta oT + 15
+        jsr pdest
+        lda oB
+        sta oB + 15
+        ldx #15
+        jsr strip
+        lda hwl
+        ldx #0
+        jmp regs
+
+; mdst: line a of player mp2's memory in the set being made (mp2 $ff: the missiles')
+pdest   sta mdst
+        lda mp2
+        clc
+        adc #4                      ; (players at + $400, missiles at + $300: $ff + 4 = 3)
+        ldy mset
+        clc
+        adc pmhi,y
+        sta mdst+1
         rts
 
 ; copy thing x's lines from msrc to mdst, and list the strip for clearing (x kept)
 strip   ldy mset
         lda pc_cnt,y
-        sta stmp                    ; (the strip's slot)
+        sta snum
         clc
         adc #1
         sta pc_cnt,y
@@ -1259,7 +1628,8 @@ strip   ldy mset
         asl a
         asl a
         asl a
-        adc stmp
+        asl a
+        adc snum
         tay
         lda mdst
         sta pc_lo,y
@@ -1267,12 +1637,13 @@ strip   ldy mset
         sta pc_hi,y
         lda oB,x
         sec
-        sbc oT,x
-        sta stmp                    ; (lines - 1)
+        sbc oT,x                    ; (lines - 1)
+        pha
         clc
         adc #1
         sta pc_n,y
-        ldy stmp
+        pla
+        tay
 -       lda (msrc),y
         sta (mdst),y
         dey
@@ -1384,6 +1755,9 @@ rowlp   lda rq                      ; rows above the screen skipped, below it th
         bcs +
         jmp rownext
 +       cmp #8 + NROWS
+        bcc +
+        rts
++       cmp rqmax                   ; (and from the row limit on)
         bcc +
         rts
 +       asl a                       ; dp = column 0 at the row's first line: dptr + rq * 4 - pd
@@ -1718,12 +2092,26 @@ vbiend  ldx pmshow                  ; the top band's players' registers, every f
         sta HPOSP0 + 2
         lda BT_HP + 192,x
         sta HPOSP0 + 3
-        lda BT_HM,x
-        sta HPOSM0
-        lda BT_HM + 64,x
-        sta HPOSM0 + 1
         lda BT_C,x
         sta COLPM0
+        lda BT_C + 192,x
+        sta COLPM0 + 3
+        lda BT_S,x
+        sta SIZEP0
+        lda BT_S + 64,x
+        sta SIZEP0 + 1
+        lda BT_S + 192,x
+        sta SIZEP0 + 3
+        lda shi                     ; the missiles, as the frame shown has them
+        lsr a
+        lsr a
+        lsr a
+        lsr a
+        tax
+        lda OB_M0,x
+        sta HPOSM0
+        lda OB_M1,x
+        sta HPOSM0 + 1
         ldx pmshow
         inx
         inx
@@ -1745,12 +2133,12 @@ vbiend  ldx pmshow                  ; the top band's players' registers, every f
 dlia    pha                         ; a bottoms row's last line: VSCROL 3 for the tops row's end;
         txa                         ; the next band's players' registers, those that change
         pha                         ; (written while this line and the ones after are drawn:
-        lda #3                      ; things ending on a player end before), through a table of
-        sta VSCROL                  ; 32 blocks by the band's mask
+        lda #3                      ; things ending on a player end before)
+        sta VSCROL
         ldx bandx
         lda BT_M,x
         asl a
-        sta dlj+1
+        sta dlj+1                   ; (16 blocks by the band's mask)
 dlj     jmp (dltab)
 dlend   inx
         inx
@@ -1776,7 +2164,7 @@ dlib    pha                         ; a tops row's last line: VSCROL 4 for the n
         .cerror (>dlia) != (>dlib), "the DLIs must share a page (only dliv's low byte changes)"
 
         .align $100
-dltab   .word dlb0, dlb1, dlb2, dlb3, dlb4, dlb5, dlb6, dlb7, dlb8, dlb9, dlb10, dlb11, dlb12, dlb13, dlb14, dlb15, dlb16, dlb17, dlb18, dlb19, dlb20, dlb21, dlb22, dlb23, dlb24, dlb25, dlb26, dlb27, dlb28, dlb29, dlb30, dlb31
+dltab   .word dlb0, dlb1, dlb2, dlb3, dlb4, dlb5, dlb6, dlb7, dlb8, dlb9, dlb10, dlb11, dlb12, dlb13, dlb14, dlb15
 dlb0
         jmp dlend
 dlb1
@@ -1784,18 +2172,26 @@ dlb1
         sta HPOSP0
         lda BT_C,x
         sta COLPM0
+        lda BT_S,x
+        sta SIZEP0
         jmp dlend
 dlb2
         lda BT_HP + 64,x
         sta HPOSP0 + 1
+        lda BT_S + 64,x
+        sta SIZEP0 + 1
         jmp dlend
 dlb3
         lda BT_HP,x
         sta HPOSP0
         lda BT_C,x
         sta COLPM0
+        lda BT_S,x
+        sta SIZEP0
         lda BT_HP + 64,x
         sta HPOSP0 + 1
+        lda BT_S + 64,x
+        sta SIZEP0 + 1
         jmp dlend
 dlb4
         lda BT_HP + 128,x
@@ -1806,12 +2202,16 @@ dlb5
         sta HPOSP0
         lda BT_C,x
         sta COLPM0
+        lda BT_S,x
+        sta SIZEP0
         lda BT_HP + 128,x
         sta HPOSP0 + 2
         jmp dlend
 dlb6
         lda BT_HP + 64,x
         sta HPOSP0 + 1
+        lda BT_S + 64,x
+        sta SIZEP0 + 1
         lda BT_HP + 128,x
         sta HPOSP0 + 2
         jmp dlend
@@ -1820,252 +2220,129 @@ dlb7
         sta HPOSP0
         lda BT_C,x
         sta COLPM0
+        lda BT_S,x
+        sta SIZEP0
         lda BT_HP + 64,x
         sta HPOSP0 + 1
+        lda BT_S + 64,x
+        sta SIZEP0 + 1
         lda BT_HP + 128,x
         sta HPOSP0 + 2
         jmp dlend
 dlb8
         lda BT_HP + 192,x
         sta HPOSP0 + 3
+        lda BT_C + 192,x
+        sta COLPM0 + 3
+        lda BT_S + 192,x
+        sta SIZEP0 + 3
         jmp dlend
 dlb9
         lda BT_HP,x
         sta HPOSP0
         lda BT_C,x
         sta COLPM0
+        lda BT_S,x
+        sta SIZEP0
         lda BT_HP + 192,x
         sta HPOSP0 + 3
+        lda BT_C + 192,x
+        sta COLPM0 + 3
+        lda BT_S + 192,x
+        sta SIZEP0 + 3
         jmp dlend
 dlb10
         lda BT_HP + 64,x
         sta HPOSP0 + 1
+        lda BT_S + 64,x
+        sta SIZEP0 + 1
         lda BT_HP + 192,x
         sta HPOSP0 + 3
+        lda BT_C + 192,x
+        sta COLPM0 + 3
+        lda BT_S + 192,x
+        sta SIZEP0 + 3
         jmp dlend
 dlb11
         lda BT_HP,x
         sta HPOSP0
         lda BT_C,x
         sta COLPM0
+        lda BT_S,x
+        sta SIZEP0
         lda BT_HP + 64,x
         sta HPOSP0 + 1
+        lda BT_S + 64,x
+        sta SIZEP0 + 1
         lda BT_HP + 192,x
         sta HPOSP0 + 3
+        lda BT_C + 192,x
+        sta COLPM0 + 3
+        lda BT_S + 192,x
+        sta SIZEP0 + 3
         jmp dlend
 dlb12
         lda BT_HP + 128,x
         sta HPOSP0 + 2
         lda BT_HP + 192,x
         sta HPOSP0 + 3
+        lda BT_C + 192,x
+        sta COLPM0 + 3
+        lda BT_S + 192,x
+        sta SIZEP0 + 3
         jmp dlend
 dlb13
         lda BT_HP,x
         sta HPOSP0
         lda BT_C,x
         sta COLPM0
+        lda BT_S,x
+        sta SIZEP0
         lda BT_HP + 128,x
         sta HPOSP0 + 2
         lda BT_HP + 192,x
         sta HPOSP0 + 3
+        lda BT_C + 192,x
+        sta COLPM0 + 3
+        lda BT_S + 192,x
+        sta SIZEP0 + 3
         jmp dlend
 dlb14
         lda BT_HP + 64,x
         sta HPOSP0 + 1
+        lda BT_S + 64,x
+        sta SIZEP0 + 1
         lda BT_HP + 128,x
         sta HPOSP0 + 2
         lda BT_HP + 192,x
         sta HPOSP0 + 3
+        lda BT_C + 192,x
+        sta COLPM0 + 3
+        lda BT_S + 192,x
+        sta SIZEP0 + 3
         jmp dlend
 dlb15
         lda BT_HP,x
         sta HPOSP0
         lda BT_C,x
         sta COLPM0
+        lda BT_S,x
+        sta SIZEP0
         lda BT_HP + 64,x
         sta HPOSP0 + 1
+        lda BT_S + 64,x
+        sta SIZEP0 + 1
         lda BT_HP + 128,x
         sta HPOSP0 + 2
         lda BT_HP + 192,x
         sta HPOSP0 + 3
-        jmp dlend
-dlb16
-        lda BT_HM,x
-        sta HPOSM0
-        lda BT_HM + 64,x
-        sta HPOSM0 + 1
-        jmp dlend
-dlb17
-        lda BT_HP,x
-        sta HPOSP0
-        lda BT_C,x
-        sta COLPM0
-        lda BT_HM,x
-        sta HPOSM0
-        lda BT_HM + 64,x
-        sta HPOSM0 + 1
-        jmp dlend
-dlb18
-        lda BT_HP + 64,x
-        sta HPOSP0 + 1
-        lda BT_HM,x
-        sta HPOSM0
-        lda BT_HM + 64,x
-        sta HPOSM0 + 1
-        jmp dlend
-dlb19
-        lda BT_HP,x
-        sta HPOSP0
-        lda BT_C,x
-        sta COLPM0
-        lda BT_HP + 64,x
-        sta HPOSP0 + 1
-        lda BT_HM,x
-        sta HPOSM0
-        lda BT_HM + 64,x
-        sta HPOSM0 + 1
-        jmp dlend
-dlb20
-        lda BT_HP + 128,x
-        sta HPOSP0 + 2
-        lda BT_HM,x
-        sta HPOSM0
-        lda BT_HM + 64,x
-        sta HPOSM0 + 1
-        jmp dlend
-dlb21
-        lda BT_HP,x
-        sta HPOSP0
-        lda BT_C,x
-        sta COLPM0
-        lda BT_HP + 128,x
-        sta HPOSP0 + 2
-        lda BT_HM,x
-        sta HPOSM0
-        lda BT_HM + 64,x
-        sta HPOSM0 + 1
-        jmp dlend
-dlb22
-        lda BT_HP + 64,x
-        sta HPOSP0 + 1
-        lda BT_HP + 128,x
-        sta HPOSP0 + 2
-        lda BT_HM,x
-        sta HPOSM0
-        lda BT_HM + 64,x
-        sta HPOSM0 + 1
-        jmp dlend
-dlb23
-        lda BT_HP,x
-        sta HPOSP0
-        lda BT_C,x
-        sta COLPM0
-        lda BT_HP + 64,x
-        sta HPOSP0 + 1
-        lda BT_HP + 128,x
-        sta HPOSP0 + 2
-        lda BT_HM,x
-        sta HPOSM0
-        lda BT_HM + 64,x
-        sta HPOSM0 + 1
-        jmp dlend
-dlb24
-        lda BT_HP + 192,x
-        sta HPOSP0 + 3
-        lda BT_HM,x
-        sta HPOSM0
-        lda BT_HM + 64,x
-        sta HPOSM0 + 1
-        jmp dlend
-dlb25
-        lda BT_HP,x
-        sta HPOSP0
-        lda BT_C,x
-        sta COLPM0
-        lda BT_HP + 192,x
-        sta HPOSP0 + 3
-        lda BT_HM,x
-        sta HPOSM0
-        lda BT_HM + 64,x
-        sta HPOSM0 + 1
-        jmp dlend
-dlb26
-        lda BT_HP + 64,x
-        sta HPOSP0 + 1
-        lda BT_HP + 192,x
-        sta HPOSP0 + 3
-        lda BT_HM,x
-        sta HPOSM0
-        lda BT_HM + 64,x
-        sta HPOSM0 + 1
-        jmp dlend
-dlb27
-        lda BT_HP,x
-        sta HPOSP0
-        lda BT_C,x
-        sta COLPM0
-        lda BT_HP + 64,x
-        sta HPOSP0 + 1
-        lda BT_HP + 192,x
-        sta HPOSP0 + 3
-        lda BT_HM,x
-        sta HPOSM0
-        lda BT_HM + 64,x
-        sta HPOSM0 + 1
-        jmp dlend
-dlb28
-        lda BT_HP + 128,x
-        sta HPOSP0 + 2
-        lda BT_HP + 192,x
-        sta HPOSP0 + 3
-        lda BT_HM,x
-        sta HPOSM0
-        lda BT_HM + 64,x
-        sta HPOSM0 + 1
-        jmp dlend
-dlb29
-        lda BT_HP,x
-        sta HPOSP0
-        lda BT_C,x
-        sta COLPM0
-        lda BT_HP + 128,x
-        sta HPOSP0 + 2
-        lda BT_HP + 192,x
-        sta HPOSP0 + 3
-        lda BT_HM,x
-        sta HPOSM0
-        lda BT_HM + 64,x
-        sta HPOSM0 + 1
-        jmp dlend
-dlb30
-        lda BT_HP + 64,x
-        sta HPOSP0 + 1
-        lda BT_HP + 128,x
-        sta HPOSP0 + 2
-        lda BT_HP + 192,x
-        sta HPOSP0 + 3
-        lda BT_HM,x
-        sta HPOSM0
-        lda BT_HM + 64,x
-        sta HPOSM0 + 1
-        jmp dlend
-dlb31
-        lda BT_HP,x
-        sta HPOSP0
-        lda BT_C,x
-        sta COLPM0
-        lda BT_HP + 64,x
-        sta HPOSP0 + 1
-        lda BT_HP + 128,x
-        sta HPOSP0 + 2
-        lda BT_HP + 192,x
-        sta HPOSP0 + 3
-        lda BT_HM,x
-        sta HPOSM0
-        lda BT_HM + 64,x
-        sta HPOSM0 + 1
+        lda BT_C + 192,x
+        sta COLPM0 + 3
+        lda BT_S + 192,x
+        sta SIZEP0 + 3
         jmp dlend
 
+        .include "../build/" .. LEVEL .. "_scrub.inc"   ; the Scrubblies' infill and places
         .include "../build/sprites.inc"
         .cerror * > SCREEN, "the program reaches the screen's map"
 

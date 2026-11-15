@@ -20,7 +20,9 @@
 #  - Trogg's infill: yellow from one player and its missile, magenta from another and its missile
 #    (normal width: 8 blocks and 2), each placed where it gets most of his pixels right, a block on
 #    where more of its visible (not black) pixels are that colour than aren't (as the C64's
-#    tools/infill.mjs).
+#    tools/infill.mjs); and, for the bands where his outline is on players, his outline in two
+#    halves (blocks 0-7 and 8-15 from his left: a block on where either pixel is black) and his
+#    infill with holes where the outline's blocks are (the outline's players are behind).
 import json, re, os, sys, itertools
 from PIL import Image
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -97,11 +99,24 @@ def fit(g, col):
     return po, mo, pl, ms
 
 players = []          # per graphic: (bytes A, bytes B, missile bytes, offset A, offset B, offset MA, offset MB)
+outlines = []         # Trogg's: (left half, right half, A holed, B holed, missiles holed)
+def holes(bytes_, off, bits, outline_blocks):
+    out = []
+    for v, ob in zip(bytes_, outline_blocks):
+        for i in range(bits):
+            if ob >> (15 - (off + i)) & 1 if 0 <= off + i < 16 else False: v &= ~(1 << (bits - 1 - i))
+        out.append(v)
+    return out
 for i, (n, k, f) in enumerate(GRAPHICS):
     g = frame(k, f)
     if i < len(TROGG):
         y = fit(g, 'Y'); m = fit(g, 'M')
         players.append((y[2], m[2], [a | b << 2 for a, b in zip(y[3], m[3])], y[0], m[0], y[1], m[1]))
+        w = len(g[0])
+        ob = [sum(0x8000 >> b for b in range(16) if 'S' in [row[x] if x < w else 'T' for x in (2 * b, 2 * b + 1)]) for row in g]
+        ya, mb = holes(y[2], y[0], 8, ob), holes(m[2], m[0], 8, ob)
+        ym, mm = holes(y[3], y[1], 2, ob), holes(m[3], m[1], 2, ob)
+        outlines.append(([v >> 8 for v in ob], [v & 255 for v in ob], ya, mb, [a | b << 2 for a, b in zip(ym, mm)]))
     elif len(g[0]) <= 16:
         outline = blocks(g, lambda px: 'S' in px)
         infill = blocks(g, lambda px: sum(p in 'YMC' for p in px) > sum(p == 'T' for p in px)) if n == 'BALLOON' else [0] * len(g)
@@ -124,6 +139,11 @@ for nm, idx in (('gp_ax', 3), ('gp_bx', 4), ('gp_max', 5), ('gp_mbx', 6)):
 for nm, idx in (('gp_a', 0), ('gp_b', 1), ('gp_m', 2)):
     out.append(f'{nm}_lo .byte ' + ', '.join(f'<gp_{n}_{idx}' if p else '<gp_none' for (n, _, _), p in zip(GRAPHICS, players)))
     out.append(f'{nm}_hi .byte ' + ', '.join(f'>gp_{n}_{idx}' if p else '>gp_none' for (n, _, _), p in zip(GRAPHICS, players)))
+for nm, idx in (('go_l', 0), ('go_r', 1), ('go_ah', 2), ('go_bh', 3), ('go_mh', 4)):
+    out.append(f'{nm}_lo .byte ' + ', '.join(f'<go_{n}_{idx}' for n, _, _ in TROGG) + '     ; Trogg\'s outline on players: halves, holed infill')
+    out.append(f'{nm}_hi .byte ' + ', '.join(f'>go_{n}_{idx}' for n, _, _ in TROGG))
+for (n, _, _), o in zip(TROGG, outlines):
+    for idx in range(5): out.append(f'go_{n}_{idx} .byte ' + ', '.join(map(str, o[idx])))
 out.append('gp_none .byte 0')
 for (n, _, _), p in zip(GRAPHICS, players):
     if not p: continue
@@ -160,8 +180,9 @@ open(os.path.join(HERE, '..', 'build', 'sprites.inc'), 'w').write('\n'.join(out)
 # and the same as JSON, for the checks
 json.dump({'graphics': [{'name': n, 'w': len(frame(k, f)[0]), 'h': len(frame(k, f)), 'xo': meta[k]['xo'], 'yo': meta[k]['yo'],
                       'grid': [''.join(r) for r in frame(k, f)],
-                      'players': None if not p else {'a': p[0], 'b': p[1], 'm': p[2], 'ax': p[3], 'bx': p[4], 'max': p[5], 'mbx': p[6]}}
-                     for (n, k, f), p in zip(GRAPHICS, players)]},
+                      'players': None if not p else {'a': p[0], 'b': p[1], 'm': p[2], 'ax': p[3], 'bx': p[4], 'max': p[5], 'mbx': p[6]},
+                      'outline': None if i >= len(TROGG) else {'l': outlines[i][0], 'r': outlines[i][1], 'ah': outlines[i][2], 'bh': outlines[i][3], 'mh': outlines[i][4]}}
+                     for i, ((n, k, f), p) in enumerate(zip(GRAPHICS, players))]},
           open(os.path.join(HERE, '..', 'build', 'sprites.json'), 'w'))
 print('sprites: windows per shift ' + ', '.join(str(len(t)) for t in tables) + f' (of 256); {len(GRAPHICS)} graphics, '
       f'{sum(len(b) for _, b in data)} index bytes')

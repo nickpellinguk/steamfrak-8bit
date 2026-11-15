@@ -4,20 +4,22 @@ The start of an Atari 800XL (PAL, 64K) version: ANTIC mode 2 with character rows
 on the C64 port's 8x4 grid, so the C64's levels carry over cell for cell. The plan:
 [`PLAN.md`](PLAN.md).
 
-**Status: a sprite multiplexer** (`build/trogg8x4.xex`, without the OS): balloons and daggers on
-hardware sprites where they can be had (a balloon's black outline and magenta infill on a pair of
-players, a dagger's outline on one), else a balloon's infill on a player with its outline drawn
-into spare characters, else software alone; Trogg's outline in software (26 wide: too wide for a
-player) with his yellow and magenta infill on P0 and P1 and their missiles. Players are reused
-down the screen, band by band. On A_1, the joystick walking and climbing Trogg (no physics yet),
-fire his yoyo pose, the screen following him; balloons and daggers about him (stand-ins: about
-Hard's rate, `-D STRESS=1` six all the time). Checked in the WebAssembly atari800, colour for
-colour: 364 screens of two joystick tours (all 4 shift positions, up to 7 things, all three ways
-of drawing, things partly off every edge).
+**Status: a sprite multiplexer** (`build/trogg8x4.xex`, without the OS), giving out the four
+players band by band in this order: Trogg's infill (yellow and magenta, on P0 and P1 and their
+missiles); the Scrubblies' bodies (one double-width player each, then two normal-width where a
+second is free: exact for the C64's); Trogg's outline from one of his bands on down (on P2 and
+P3, his infill holed there; above, his outline's in software); balloons and daggers (a
+balloon's outline and infill on a pair, else its infill alone, else software; a dagger's
+outline on a player, else software). On A_1, the joystick walking and climbing Trogg (no
+physics yet), fire his yoyo pose, the screen following him; balloons and daggers about him
+(stand-ins: about Hard's rate, `-D STRESS=1` six all the time). Checked in the WebAssembly
+atari800, colour for colour: 501 screens of three joystick tours (all 4 shift positions, up to
+12 things, every way of drawing each, things partly off every edge).
 
-**Speed:** about 25 frames a second: a frame takes just over one (Trogg's software outline and
-his infill's strips); the balloons and daggers on hardware cost almost nothing more. Next: the
-BBC version's 50 ticks and 25 frames a second, and trims (see "The multiplexer").
+**Speed:** about 20-25 frames a second: a frame takes two or more (`mux` about 54 lines, the
+players' strips most of a frame: every strip cleared and copied every frame, Trogg's infill
+written twice where it's holed). Next: the BBC version's 50 ticks and 25 frames a second, and
+keeping the Scrubblies' strips (static) instead of rewriting them (see "The multiplexer").
 
 Before that, **an 8x4 screen demo.** `build/screen8x4.xex` shows the C64 port's A_1 ("FRAK!") on 52
 rows of 4 lines, scrolling back and forth across the level 2 pixels a frame. It's black outlines
@@ -96,34 +98,40 @@ Arrow keys are joystick 1, Space or Ctrl fire, F2-F4 Start, Select and Option.
 
 ## The multiplexer
 
-- **Players** (normal width: 8 two-pixel blocks; `tools/sprites.py` makes their graphics from the
-  BBC sprites): a balloon's outline (a block on where either pixel is black) on P0 or P2 with its
-  infill on the next (in front: the outline); a dagger's outline (no infill) on P2 or P0;
-  Trogg's infill on P0 (yellow) and P1 (magenta), each with its missile (a player and a missile
-  per colour: at most 10 of his 200-250 infill pixels wrong). Colours: P1 and P3 always
-  magenta, P2 always black, P0 black or his yellow. Players are in front of the playfield
-  (`PRIOR` 1): mode 2's set pixels show luminance 0 in the hue under them, so outlines drawn in
-  characters stay black over the infills.
-- **Each frame** (`mux`): Trogg first, then the rest in order down the screen; a balloon tries
-  P0+P1, then P2+P3, then P3 or P1 for its infill alone; a dagger P2 or P0. Something not wholly
-  on the screen across goes to software (a player would show over the border); above and below,
-  the players' graphics are clipped.
+- **Players** (normal width: 8 two-pixel blocks, unless double-width: 4-pixel blocks;
+  `tools/sprites.py` and `tools/screen.py` make their graphics):
+  - Trogg's infill on P0 (yellow) and P1 (magenta), each with its missile (a player and a
+    missile per colour: at most 10 of his 200-250 infill pixels wrong); his outline in two halves
+    (P2 his left 16 pixels, P3 his right), a block on where either pixel is black, and his infill
+    with holes there (the outline's players are behind it);
+  - a Scrubbly's body from the C64's (where its magenta sprite shows): two normal-width players
+    side by side (exact) or one double-width (21 of 540 pixels wrong);
+  - a balloon's outline (a block on where either pixel is black) and infill; a dagger's outline.
+- **Colours and widths:** P1 always magenta, P2 always black; P0 black, Trogg's yellow or
+  magenta, and P3 magenta or black, set band by band with P0's, P1's and P3's widths. Players are
+  in front of the playfield (`PRIOR` 1): mode 2's set pixels show luminance 0 in the hue under
+  them, so outlines drawn in characters stay black over the infills.
+- **Each frame** (`mux`), in this order: Trogg's infill; the Scrubblies (a double-width player
+  each, P3, P1 or P0, then a second for two normal-width where one's free); a band of Trogg's on
+  down for his outline (not his first: its writes are his infill's); the balloons and daggers.
+  Something not wholly on the screen across gets no player (it would show over the border);
+  above and below, the players' graphics are clipped. Trogg's rows from his outline's band on
+  aren't drawn in software.
 - **Bands:** each pair of rows' first DLI (display line 8k + 3) writes the registers that change
-  for the next 8 lines, through a table of 32 blocks by the band's mask. With ANTIC fetching the
+  for the next 8 lines, through a table of 16 blocks by the band's mask. With ANTIC fetching the
   character codes on the line after, the writes finish two lines later, so a band's registers
   hold from line 8k + 6; two things share a player if the first ends by line 8k + 2. The DLI
   must end before the tops row's DLI (or that NMI interrupts it and the rows' order is left the
-  wrong way round): about 150 cycles, so at most 5 register writes a band (P0's position and
-  colour 2, P1-P3's positions 1 each, Trogg's missiles 2), which `mux` keeps to. All measured
-  colour by colour in atari800: a first version wrote all 10 registers every band, which both
-  ran late (a balloon's top line in Trogg's yellow) and overran (whole screens lost).
+  wrong way round): about 150 cycles, so at most 5 register writes a band (P0 3, P1 2, P2 1, P3 3),
+  which `mux` keeps to. The missiles (Trogg's alone) are set by the VBI. All measured colour by
+  colour in atari800.
 - **Double buffering:** two sets of player graphics (`PMBASE` swapped by the VBI with the
   characters) and of band tables; each frame clears the strips written to its set two frames
   before.
-- **Cost:** Trogg alone takes just over a frame now (his software outline, the strips of his
-  infill, the DLIs, the players' DMA); balloons and daggers on hardware add little. Next: drawing
-  every other frame with the game ticking every frame (the BBC version's 25 frames and 50
-  ticks), and trims (rewriting only the changed lines of his strips; the programs' entries).
+- **Cost:** `mux` about 54 lines, the strips most of a frame. To do: keep the Scrubblies' strips
+  where they haven't changed (they're static: only their players change), write Trogg's infill
+  once (plain above his outline's line, holed below), and draw every other frame with the game
+  ticking every frame (the BBC version's 25 frames and 50 ticks).
 
 ## How the screen works
 
