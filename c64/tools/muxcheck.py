@@ -3,7 +3,8 @@
 # its sprite, that no hardware sprite is set up while it's shown, that each row's slide constant
 # and tail suit the sprites on its lines 3 and 4 (Trogg's included, and his rows' own tails), that
 # the registers in force fit every sprite on every line it's shown, that nothing is set up in the
-# ticks left to Trogg, and that the cover sprite is expanded.
+# ticks left to Trogg, and that the cover sprite is expanded. The top border's hazard (BTV, at the
+# head of sprite 7) counts in rows 0-2's masks, as the program has it: lines 47 to its last.
 #   python3 muxcheck.py [FRAMES [SECONDS]]     (defaults 8 frames, from 6 s; on the last build,
 #                                              made with --nofront: the game, not the attract screen)
 import os, re, subprocess, sys
@@ -41,6 +42,7 @@ for f in range(N):
     TYv=tp[0]; tmsb,tra,trb,tres1,tres2,trc=tm[:6]; TL=min(255,TYv+42)
     B={n:buf[i*BL:(i+1)*BL] for i,n in enumerate(bufnames)}
     V={n:vm[i*NV:(i+1)*NV] for i,n in enumerate(vnames)}
+    md=vals(bl[k-len(per)+2]); BTVY=V['vy'][NV-1]; BTVL=md[3*NV+NV-1]   # (the top border's hazard, BTV, the last: lines 47 to its last, on sprite 7)
     # set-ups in the buffer
     ins=[]
     for s in range(4):
@@ -72,6 +74,8 @@ for f in range(N):
         m3=1; m4=1
         if TYv+1<=54+8*r<=TL: m3|=6
         if TYv+1<=55+8*r<=TL: m4|=6
+        if BTVY and BTVY<=54+8*r<=BTVL: m3|=0x80
+        if BTVY and BTVY<=55+8*r<=BTVL: m4|=0x80
         for i in ins:
             if i['y']+1<=54+8*r<=i['l']: m3|=1<<i['h']
             if i['y']+1<=55+8*r<=i['l']: m4|=1<<i['h']

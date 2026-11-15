@@ -1584,6 +1584,7 @@ fresh   lda #$ff
         sta scrchg
         lda #0
         sta tmsbw
+        sta tyv
         rts
 vtmp    .byte 0
 v010r   .byte 0                     ; ($d010 with the cover's bit clear, for vspline)
