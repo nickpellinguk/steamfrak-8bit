@@ -1979,11 +1979,7 @@ _ch     ldx mh
         lda ob
         cmp nd
         beq _l3
-+       lda #<mk4
-        sta mptr
-        lda #>mk4
-        sta mptr+1
-        jsr rng
++       jsr rng4
 _l3     ldy mv
         lda v3lo,y
         sta oa
@@ -2001,23 +1997,20 @@ _l3     ldy mv
         lda ob
         cmp nd
         beq _x
-+       lda #<mk3
-        sta mptr
-        lda #>mk3
-        sta mptr+1
-        jmp rng
++       jmp rng3
 _x      rts
 
-; Rows oa to ob (before) to nc to nd (now), bit mbit in mptr's rows (mk3 or mk4): when they
-; overlap, only the ends that moved (a row or so); else the old cleared and the new set
-rng     lda oa
+; Rows oa to ob (before) to nc to nd (now), bit mbit in mk4's rows (rng4) or mk3's (rng3): when
+; they overlap, only the ends that moved (a row or so); else the old cleared and the new set. (A
+; copy for each, with their rows' routines, addressed directly: no pointer, rdirty inline)
+rng4    lda oa
         cmp #NONE
         bne +
         lda nc                  ; (none before)
         sta mlo
         lda nd
         sta mhi
-        jmp rset
+        jmp rset4
 +       lda nc
         cmp #NONE
         bne +
@@ -2025,7 +2018,7 @@ rng     lda oa
         sta mlo
         lda ob
         sta mhi
-        jmp rclr
+        jmp rclr4
 +       lda nc
         cmp ob
         beq +
@@ -2040,7 +2033,7 @@ rng     lda oa
         ldx nc
         dex
         stx mhi
-        jsr rclr
+        jsr rclr4
 +       lda nc
         cmp oa
         bcs +
@@ -2048,7 +2041,7 @@ rng     lda oa
         ldx oa
         dex
         stx mhi
-        jsr rset
+        jsr rset4
 +       lda nd                  ; the bottom: up (cleared), or down (set)
         cmp ob
         bcs +
@@ -2057,7 +2050,7 @@ rng     lda oa
         stx mlo
         lda ob
         sta mhi
-        jsr rclr
+        jsr rclr4
 +       lda ob
         cmp nd
         bcs +
@@ -2066,42 +2059,163 @@ rng     lda oa
         stx mlo
         lda nd
         sta mhi
-        jmp rset
+        jmp rset4
 +       rts
 _dis    lda oa
         sta mlo
         lda ob
         sta mhi
-        jsr rclr
+        jsr rclr4
         lda nc
         sta mlo
         lda nd
         sta mhi
-        jmp rset
+        jmp rset4
 
-rclr    ldy mlo                 ; (rows mlo to mhi: bit mbit cleared, and marked as changed)
+rng3    lda oa
+        cmp #NONE
+        bne +
+        lda nc                  ; (none before)
+        sta mlo
+        lda nd
+        sta mhi
+        jmp rset3
++       lda nc
+        cmp #NONE
+        bne +
+        lda oa                  ; (none now)
+        sta mlo
+        lda ob
+        sta mhi
+        jmp rclr3
++       lda nc
+        cmp ob
+        beq +
+        bcs _dis
++       lda nd
+        cmp oa
+        bcc _dis
+        lda oa                  ; the top: down (cleared), or up (set)
+        cmp nc
+        bcs +
+        sta mlo
+        ldx nc
+        dex
+        stx mhi
+        jsr rclr3
++       lda nc
+        cmp oa
+        bcs +
+        sta mlo
+        ldx oa
+        dex
+        stx mhi
+        jsr rset3
++       lda nd                  ; the bottom: up (cleared), or down (set)
+        cmp ob
+        bcs +
+        tax
+        inx
+        stx mlo
+        lda ob
+        sta mhi
+        jsr rclr3
++       lda ob
+        cmp nd
+        bcs +
+        tax
+        inx
+        stx mlo
+        lda nd
+        sta mhi
+        jmp rset3
++       rts
+_dis    lda oa
+        sta mlo
+        lda ob
+        sta mhi
+        jsr rclr3
+        lda nc
+        sta mlo
+        lda nd
+        sta mhi
+        jmp rset3
+
+rclr4   ldy mlo                 ; (rows mlo to mhi: bit mbit cleared in mk4, and marked as changed)
 -       cpy mhi
         beq +
-        bcs ++
-+       lda (mptr),y
+        bcs _x
++       lda mk4,y
         and mkey
-        sta (mptr),y
-        jsr rdirty
-        iny
+        sta mk4,y
+        lda rdf,y               ; (rdirty, inline)
+        bne +
+        lda #1
+        sta rdf,y
+        ldx rdn
+        tya
+        sta rdl,x
+        inc rdn
++       iny
         bne -
-+       rts
+_x      rts
 
-rset    ldy mlo                 ; (... set)
+rset4   ldy mlo                 ; (rows mlo to mhi: bit mbit set in mk4, and marked as changed)
 -       cpy mhi
         beq +
-        bcs ++
-+       lda (mptr),y
+        bcs _x
++       lda mk4,y
         ora mbit
-        sta (mptr),y
-        jsr rdirty
-        iny
+        sta mk4,y
+        lda rdf,y               ; (rdirty, inline)
+        bne +
+        lda #1
+        sta rdf,y
+        ldx rdn
+        tya
+        sta rdl,x
+        inc rdn
++       iny
         bne -
-+       rts
+_x      rts
+
+rclr3   ldy mlo                 ; (rows mlo to mhi: bit mbit cleared in mk3, and marked as changed)
+-       cpy mhi
+        beq +
+        bcs _x
++       lda mk3,y
+        and mkey
+        sta mk3,y
+        lda rdf,y               ; (rdirty, inline)
+        bne +
+        lda #1
+        sta rdf,y
+        ldx rdn
+        tya
+        sta rdl,x
+        inc rdn
++       iny
+        bne -
+_x      rts
+
+rset3   ldy mlo                 ; (rows mlo to mhi: bit mbit set in mk3, and marked as changed)
+-       cpy mhi
+        beq +
+        bcs _x
++       lda mk3,y
+        ora mbit
+        sta mk3,y
+        lda rdf,y               ; (rdirty, inline)
+        bne +
+        lda #1
+        sta rdf,y
+        ldx rdn
+        tya
+        sta rdl,x
+        inc rdn
++       iny
+        bne -
+_x      rts
 
 rdirty  lda rdf,y               ; (row y changed)
         bne +
