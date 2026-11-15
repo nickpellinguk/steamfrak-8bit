@@ -21,6 +21,24 @@ It needs node (the C64 port's `tools/level.mjs` makes the level's picture), Pyth
 and [64tass](https://sourceforge.net/projects/tass64/). Run the `.xex` on a PAL 800XL (or any XL/XE
 with 64K), or in an emulator set to PAL: `atari800 -xl -pal -run build/screen8x4.xex`.
 
+## In a browser
+
+`build/frak800.html` is a PAL 800XL in one web page: atari800 5.0 (GPL-2.0) built as libatari800,
+compiled to WebAssembly, with its own AltirraOS (no Atari ROMs needed), and the programs above
+built in (the demo on A_1, A_2 and A_3, and the row test). Open it in a browser, locally or from
+any web host; it can also load another `.xex` or `.atr` (a button, or drop the file on the screen).
+Arrow keys are joystick 1, Space or Ctrl fire, F2-F4 Start, Select and Option.
+
+    ATARI800_SRC=/path/to/atari800-5.0.0 web/build_emulator.sh   # build/a8.js (needs emscripten)
+    python3 web/build_page.py build/a8.js                          # build/frak800.html
+
+| File | |
+| --- | --- |
+| `web/web.c` | The emulator's side: start a PAL 800XL with a program, run a frame with the joystick, keys and console keys, and hand over the screen, palette and sound |
+| `web/page.html` | The page: the canvas (the emulator's 336 x 240 picture at 50 frames a second), the controls, keys, sound |
+| `web/build_emulator.sh` | libatari800 and `web.c` through emscripten into one `a8.js` with the WebAssembly inside |
+| `web/build_page.py` | `page.html` with `a8.js` and the programs put in: `build/frak800.html` |
+
 ## How the screen works
 
 - **4-line rows:** the display list alternates mode 2 rows with vertical scrolling on and off.
