@@ -999,6 +999,8 @@ _ck
         .endif
         lda vfl,y
         bmi _rm
+        jsr varef               ; (its settings, va, as they are now, before anything uses them:
+        ldy mv                  ;  retick, the sweep)
         lda vy,y
         cmp #47
         bcc _rm
@@ -1848,6 +1850,23 @@ _en     dex
         sec
         rts
 
+; Sprite mv's settings (va) as its flags and x's bit 8 now have them, if they've changed since
+; they were last taken (vflp, vxhp: update's _ok, place), and a sweep if va changes
+varef   lda vfl,y
+        cmp vflp,y
+        bne +
+        lda vxhi,y
+        cmp vxhp,y
+        beq _x
++       jsr attrof
+        ldy mv
+        cmp va,y
+        beq _x
+        sta va,y
+        lda #1
+        sta regdirty
+_x      rts
+
 ; Drop sprite mv: off its hardware sprite's list, its tick freed, its rows cleared
 remove
         .if MUXTIME
@@ -2401,8 +2420,8 @@ putregs lda s010
         sta t01c,x
         rts
 
-setattr jsr attrof              ; (sprite mv's settings into the registers: mcur, if they change)
-        ldy mv
+setattr ldy mv                  ; (sprite mv's settings, va (update keeps it as they are now:
+        lda va,y                ;  varef), into the registers: mcur, if they change)
         ldx vh,y
         cmp hattr,x
         bne +
