@@ -2,7 +2,9 @@
 
 Status: **milestone 0 under way: 4-line rows work in atari800** (exactly 4 + 4 lines a pair of
 rows, with and without horizontal scrolling and players: [`test/README.md`](test/README.md));
-to be confirmed in Altirra and on a real PAL 800XL. Target: PAL, normal (40-column) width.
+to be confirmed in Altirra and on a real PAL 800XL. **An 8x4 screen demo** (ahead of milestones
+1-2: [`README.md`](README.md)): A_1 on 52 rows of 4 lines, two glyphs a character (46 codes),
+scrolling, pixel-exact against the C64's picture in atari800, as are A_2 and A_3. Target: PAL, normal (40-column) width.
 This is the first port to start from the C64 port
 (`../c64`) rather than from the BBC version alone. The aim is a largely monochrome game in
 ANTIC mode 2, with colour infills from players and missiles, and without the C64 port's

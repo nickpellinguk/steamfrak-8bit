@@ -1,0 +1,3 @@
+build/*
+!build/screen8x4.xex
+!build/rows4.xex
