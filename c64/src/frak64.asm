@@ -138,6 +138,8 @@ nvs     = zp + 56                   ;  the VSP offset)
 muxbusy = zp + 57
 qn      = zp + 119                  ; (frames made and waiting to be shown: 0-2; mux.asm)
 nlast   = zp + 120                  ; (the buffer made last)
+lag     = zp + 125                  ; (fields shown again for want of a frame, 0-2: nextframe's extra ticks)
+xticks  = zp + 126                  ; (nextframe's: extra ticks left this frame)
 nf      = zp + 121                  ; (the buffer a frame's being copied from: nlast, as it was)
 fliphere = zp + 122                 ; (the frame being made flips the pairs: cstep, camera)
 MUXRAM  = $c000                     ; (the multiplexer's model and buffers: mux.asm)
@@ -317,6 +319,7 @@ covc0   lda #3                      ; (the cover: the level's background colour,
         sta bufoff
         sta nlast
         sta qn
+        sta lag
         sta muxready
         sta muxreq
         sta muxbusy
@@ -576,7 +579,21 @@ nextframe
         jmp start
 +
         #pst 4
-        jsr decide
+        jsr decide                  ; (the camera, a pixel a tick)
+        lda #3                      ; a field shown again for want of a frame: another tick (and
+        sta xticks                  ; camera step) in this one, three more at most, as the BBC
+_xt     lda lag                     ; version runs more ticks a frame when drawing takes longer,
+        beq +                       ; so the game keeps its speed when the display can't
+        dec lag
+        jsr gametick
+        lda rstflag
+        beq _rs
+        sei
+        jmp start
+_rs     jsr decide
+        dec xticks
+        bne _xt
++
         #pst 6
         jsr trogset                 ; (Trogg's sprites, for the next frame's scroll)
         #pst 8
@@ -1176,7 +1193,11 @@ _nmux   .if SLACK
         .if PROFILE
         inc pheld
         .endif
-        jsr setx
+        lda lag                     ; (a field without a new frame: the game a tick behind, made
+        cmp #3                      ;  up by the next frame's extra ticks, nextframe; three at most)
+        bcs +
+        inc lag
++       jsr setx
 _dmux
         .else
         jsr frame

@@ -602,15 +602,21 @@ _on     sta vxhi + NS,x
         sta vfl + NS,x
         lda vh + BIV,x              ; (its infill placed, on a try: back to hi-res)
         bpl _bk
-        lda bifail,x                ; (a try failed: tried again in 16 frames)
-        beq +
-        lda #0
+        lda bifail,x                ; (a try failed: tried again after twice as long as last time,
+        beq +                       ;  16 frames at first, 128 at most: a failed try costs a place
+        lda #0                      ;  and the rows' work, some 4,500 cycles)
         sta bifail,x
         sta bmct,x
+        lda bwait,x
+        bmi +
+        asl
+        sta bwait,x
 +       inc bmct,x
         lda bmct,x
-        and #15
-        bne _ihj
+        cmp bwait,x
+        bcc _ihj
+        lda #0
+        sta bmct,x
         beq _hr0
 _bk     lda #0
         sta bmc,x
@@ -625,6 +631,8 @@ _hr     lda bifail,x                ; hi-res: its infill's place sought (both it
         lda #0
         sta bifail,x
         sta bmct,x
+        lda #16
+        sta bwait,x
         lda #1
         sta bmc,x
         lda #(SPRBMC & $3fff) / 64
@@ -2384,6 +2392,7 @@ bivar   .fill NB                ; (each balloon's infill's image: 0 top, 1 botto
 bmc     .fill NB                ; (each balloon: 1 in multicolour; its infill's try failed; frames
 bifail  .fill NB                ;  since, for the next try)
 bmct    .fill NB
+bwait   .fill NB                ; (each balloon in multicolour: frames till its infill's next try)
 pyb     .byte 0                 ; (place's, for the infill's two images: the second's y, last
 pmlb    .byte 0                 ;  line, tick, slot; whether each has a tick; the first's tick,
 ptb     .byte 0                 ;  slot, last line; the second's neighbours; its best)
