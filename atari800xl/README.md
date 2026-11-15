@@ -81,9 +81,15 @@ Arrow keys are joystick 1, Space or Ctrl fire, F2-F4 Start, Select and Option.
   first and last columns' cells are all transparent, 3% of the middle ones'), so for the first
   and last columns, for each of the 4 lines a character row can start on relative to the
   graphic's top, a bitmask with a bit for each character row: 1 where that cell's all
-  transparent, and skipped (shifted out a row at a time). Trogg's software drawing: 187 lines a
-  frame on average (194 checking every cell's 4 indices; 168 with a flag for every cell
-  position, which took about 10KB to the masks' 1.7KB).
+  transparent, and skipped (shifted out a row at a time).
+- **A cell's cost:** its 4 lines unrolled (`lda (dp),y` `tax` `lda (sp),y` `and andtab,x`
+  `ora ortab,x` `sta (cp),y`, 28 cycles a line; the OR alone, 19), and around them the cell's
+  spare character, claim and the VBI programs' entries. The programs are prefilled with
+  `lda #` `sta abs` entries, so a cell writes only their operands (an `rts` ends each frame's,
+  put back to `lda` when the program's next built); the programs are page-aligned, so one
+  pointer step does both; the characters' addresses come from tables chosen once a frame (the
+  set) and once a row (the half) instead of adds. Trogg's software drawing: 136 lines a frame
+  on average, from 187 (194 before the side masks).
 - **Spare characters** from code 64, given out a cell at a time, bottoms halves (for the first
   row of a pair) and tops halves (the second) separately: 64 of each, so a code serves a cell of
   each kind of row.

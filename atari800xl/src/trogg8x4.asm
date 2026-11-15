@@ -226,7 +226,9 @@ uidx    = $f2
 eml     = $f3                       ; plot's: the left and right columns' empty cells, a bit a row
 emr     = $f5                       ; (2 each: shifted out a row at a time)
 eb      = $f7                       ; this row's: bit 0 the left column's empty, bit 1 the right's
-lastj   = $f8                       ; the last column (nb - 1)                       ; chooseb's: 1 to keep the thing's band (a second player)
+lastj   = $f8                       ; the last column (nb - 1)
+wend    = $f9                       ; (2) where this frame's program's rts went (for its lda back)
+rend    = $fb                       ; (4: low 0, 1, high 0, 1) likewise each putting back program's                       ; chooseb's: 1 to keep the thing's band (a second player)
 oWB     = $e0                       ; (16) the line of the band each thing's registers are written
                                     ; for: its top's band, or an earlier one with room (the VBI's
                                     ; for the top, 32, if nothing's above it on its players)
@@ -350,10 +352,26 @@ start   sei                         ; the OS switched out: no interrupts till ou
         sta dliv
         lda #>dlia
         sta dliv+1
-        lda #$60                    ; the VBI's programs: nothing to do yet
+        ldx #>PROGW                 ; the VBI's programs: entries prefilled (lda #, sta abs: only
+        jsr prefill                 ; the operands are written), nothing to do yet
+        ldx #>PROGR0
+        jsr prefill
+        ldx #>PROGR1
+        jsr prefill
+        lda #$60                    ; (each ends at once: an rts in its first entry's place)
         sta PROGW
         sta PROGR0
         sta PROGR1
+        lda #<PROGW
+        sta wend
+        sta rend
+        sta rend+1
+        lda #>PROGW
+        sta wend+1
+        lda #>PROGR0
+        sta rend+2
+        lda #>PROGR1
+        sta rend+3
         lda #>PROGR0
         sta rcur
         lda #>PROGR1
@@ -462,12 +480,37 @@ main    lda ready                   ; wait for the VBI to show the last frame ma
         sta nbot
         sta ntop
         sta nob
-        sta wp                      ; the programs started
-        sta rp
+        sta wp                      ; the programs started (page-aligned: their low bytes go
+        sta rp                      ; together), the last ends' lda put back
         lda #>PROGW
         sta wp+1
         lda rcur
         sta rp+1
+        ldy #0
+        lda #$a9
+        sta (wend),y
+        ldx #0
+        lda rcur
+        cmp #>PROGR1
+        bcc +
+        cmp #>PROGR0
+        bcs +
+        inx
++       lda rend,x
+        sta tmp
+        lda rend+2,x
+        sta tmp+1
+        lda #$a9
+        sta (tmp),y
+        lda front                   ; the set not shown's table of characters' high bytes
+        eor #1
+        tax
+        lda ghit_lo,x
+        sta cphi+1
+        sta clmhi+1
+        lda ghit_hi,x
+        sta cphi+2
+        sta clmhi+2
         jsr addobj                  ; Trogg
         ldx #0                      ; the Scrubblies (their infill)
 -       cpx #SCR_N
@@ -530,10 +573,25 @@ swnext  ldx hslot
         inx
         bne swlp
 swend
-        lda #$60                    ; the programs ended (rts)
-        ldy #0
+        lda #$60                    ; the programs ended (an rts over the next entry's lda: put back
+        ldy #0                      ; when the program's next built)
         sta (wp),y
         sta (rp),y
+        lda wp
+        sta wend
+        lda wp+1
+        sta wend+1
+        ldx #0                      ; (which putting back program: 0 PROGR0, 1 PROGR1)
+        lda rp+1
+        cmp #>PROGR1
+        bcc +
+        cmp #>PROGR0
+        bcs +
+        inx
++       lda rp
+        sta rend,x
+        lda rp+1
+        sta rend+2,x
         lda obi                     ; the record: the scroll, how many (r = obi / 16)
         lsr a
         lsr a
@@ -1964,6 +2022,11 @@ rowlp   lda #0                      ; this row's side cells: empty?
         lsr a
         lsr a
         sta half
+        tax                         ; (the characters' offsets with it: glo or glo4)
+        lda glht,x
+        sta cplo+1
+        sta splo+1
+        sta clmlo+1
         lda #0
         sta jj
         lda scol0
@@ -1991,13 +2054,10 @@ celllp  lda scol                    ; columns left of the view skipped, right of
         lda (cl),y
         beq new
         tax                         ; then on from what's there: sp = cp
-        lda glo,x
-        ora half
+clmlo   lda glo,x
         sta cp
         sta sp
-        lda ghi,x
-        clc
-        adc bfhi
+clmhi   lda ghiA,x
         sta cp+1
         sta sp+1
         jmp draw4
@@ -2017,23 +2077,17 @@ new     ldx half                    ; a spare character's half
         sta code
         sta (cl),y                  ; claimed
         tax                         ; cp = the set not shown + code * 8 + half
-        lda glo,x
-        ora half
+cplo    lda glo,x
         sta cp
-        lda ghi,x
-        clc
-        adc bfhi
+cphi    lda ghiA,x
         sta cp+1
         lda (tp),y                  ; sp = the level's glyph there, its half
         sta orig
         beq +                       ; (blank: drawn with OR alone, below)
         tax
-        lda glo,x
-        ora half
+splo    lda glo,x
         sta sp
-        lda ghi,x
-        clc
-        adc #>FONTA
+        lda ghiA,x                  ; (FONTA)
         sta sp+1
 +
         ldx ncell                   ; its claim, to clear
@@ -2044,42 +2098,28 @@ new     ldx half                    ; a spare character's half
         lda cl+1
         adc #0
         sta cl_hi,x
-        tya                         ; the programs' entries: lda #code / lda #orig, sta cell
-        clc
-        adc mp                      ; (likewise its 128)
-        sta tmp
-        ldy #0
-        lda #$a9
-        sta (wp),y
-        sta (rp),y
-        iny
-        lda code
-        sta (wp),y
-        lda orig
-        sta (rp),y
-        iny
-        lda #$8d
-        sta (wp),y
-        sta (rp),y
-        iny
-        lda tmp
+        tya                         ; the programs' entries (prefilled lda #, sta abs): the code /
+        clc                         ; the level's code, and the cell
+        adc mp                      ; (no carry: a row's cells are within its 128)
+        ldy #3
         sta (wp),y
         sta (rp),y
         iny
         lda mp+1
         sta (wp),y
         sta (rp),y
-        lda wp
+        ldy #1
+        lda code
+        sta (wp),y
+        lda orig
+        sta (rp),y
+        lda wp                      ; the next entries (the low bytes together)
         clc
         adc #5
         sta wp
-        bcc +
-        inc wp+1
-+       lda rp
-        clc
-        adc #5
         sta rp
         bcc +
+        inc wp+1
         inc rp+1
 +       inc ncell
         lda orig
@@ -2160,12 +2200,53 @@ clrl    .for r = 0, r < NROWS, r += 1   ; the claims' rows
 clrh    .for r = 0, r < NROWS, r += 1
         .byte >(CLAIM + r * 42)
         .endfor
-glo     .for c = 0, c < 128, c += 1 ; a character's offset in its set
-        .byte <(c * 8)
+        .align $100                 ; (glo and glo4 in one page: only the low byte's patched)
+glo     .for c = 0, c < 128, c += 1 ; a character's offset in its set (low), and with the bottoms
+        .byte <(c * 8)              ; half (+ 4)
         .endfor
-ghi     .for c = 0, c < 128, c += 1
-        .byte >(c * 8)
+glo4    .for c = 0, c < 128, c += 1
+        .byte <(c * 8 + 4)
         .endfor
+ghiA    .for c = 0, c < 128, c += 1 ; its address's high byte in each set
+        .byte >(FONTA + c * 8)
+        .endfor
+ghiB    .for c = 0, c < 128, c += 1
+        .byte >(FONTB + c * 8)
+        .endfor
+glht    .byte <glo, 0, 0, 0, <glo4  ; (by the half)
+ghit_lo .byte <ghiA, <ghiB          ; (by the set not shown: 0 A, 1 B... indexed by front ^ 1)
+ghit_hi .byte >ghiA, >ghiB
+        .cerror (>glo) != (>glo4), "glo and glo4 must share a page"
+        .cerror (<PROGW) | (<PROGR0) | (<PROGR1), "the programs must be page-aligned"
+
+; prefill: the program at page x, 129 entries of lda #0, sta $0000
+prefill stx tmp+1
+        lda #0
+        sta tmp
+        ldx #129
+-       ldy #0
+        lda #$a9
+        sta (tmp),y
+        iny
+        lda #0
+        sta (tmp),y
+        iny
+        lda #$8d
+        sta (tmp),y
+        iny
+        lda #0
+        sta (tmp),y
+        iny
+        sta (tmp),y
+        lda tmp
+        clc
+        adc #5
+        sta tmp
+        bcc +
+        inc tmp+1
++       dex
+        bne -
+        rts
 
 ; ---- NMIs: the row DLIs, and the VBI
 nmi     bit NMIST
