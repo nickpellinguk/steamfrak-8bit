@@ -60,6 +60,9 @@ with 64K), or in an emulator set to PAL: `atari800 -xl -pal -run build/screen8x4
 compiled to WebAssembly, with its own AltirraOS (no Atari ROMs needed), and the programs above
 built in (the demo on A_1, A_2 and A_3, and the row test). Open it in a browser, locally or from
 any web host; it can also load another `.xex` or `.atr` (a button, or drop the file on the screen).
+Not inside a host whose security policy forbids compiling WebAssembly (claude.ai's artifact
+viewer, for one): there the page says so instead. (An asm.js build, `-s WASM=0`, compiled with
+emscripten 3.1.6 but didn't run atari800's CPU, so there's no fallback yet.)
 Arrow keys are joystick 1, Space or Ctrl fire, F2-F4 Start, Select and Option.
 
     ATARI800_SRC=/path/to/atari800-5.0.0 web/build_emulator.sh   # build/a8.js (needs emscripten)

@@ -127,7 +127,18 @@ const PROGRAMS = {"trogg8x4_A_1.xex": {"label": "Trogg, balloons, daggers on A_1
   let A, frame, paused = false, started = false;
 
   try { A = await Atari800({ print: () => {}, printErr: () => {} }); }
-  catch (e) { status.textContent = 'The emulator failed to load: ' + e.message; return; }
+  catch (e) {
+    const blocked = /Content Security Policy|unsafe-eval|CompileError/.test(String(e && e.message));
+    status.textContent = blocked ? 'WebAssembly is blocked here' : 'The emulator failed to load: ' + e.message;
+    const note = document.createElement('div');
+    note.className = 'drop';
+    note.style.padding = '24px'; note.style.textAlign = 'center'; note.style.lineHeight = '1.6';
+    note.textContent = blocked
+      ? 'This page\'s host blocks WebAssembly (its security policy forbids compiling it), so the emulator can\'t start here. Open the same file, atari800xl/build/frak800.html in the steamfrak-8bit repository, from your own computer or any ordinary web host (GitHub Pages, itch.io) and it runs.'
+      : 'The emulator failed to load: ' + e.message;
+    document.getElementById('drop').replaceWith(note);
+    return;
+  }
   frame = A.cwrap('web_frame', 'number', ['number', 'number', 'number', 'number']);
   const start = A.cwrap('web_start', 'number', ['string']);
   const reboot = A.cwrap('web_reboot', 'number', ['string']);
