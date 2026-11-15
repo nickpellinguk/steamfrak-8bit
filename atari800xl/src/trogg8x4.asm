@@ -227,6 +227,22 @@ eml     = $f3                       ; plot's: the left and right columns' empty 
 emr     = $f5                       ; (2 each: shifted out a row at a time)
 eb      = $f7                       ; this row's: bit 0 the left column's empty, bit 1 the right's
 lastj   = $f8                       ; the last column (nb - 1)
+vbcnt   = $d5                       ; fields counted by the VBI, and as of the last frame made
+lastvb  = $d6
+nticks  = $d7
+norec   = $d8                       ; strip's: 1 not to list the strip for clearing (kept apart)
+sold    = $d9                       ; (scratch: a Scrubbly's old key)
+nocopy  = $da                       ; strip's: 1 to skip the copy (the strip's there already)
+mk2     = $db                       ; (keepclr's: lines)
+mk3     = $dc
+mk4     = $dd
+mk5     = $de
+mk3s    = $df
+scrk    = $06b0                     ; each set's Scrubblies' strips there: lv | pa << 2 | pb << 4
+                                    ; (255 none) (set * 8 + s)
+scrw    = $06c0                     ; this frame's: 1 if a Scrubbly's strips are to be written
+trT     = $06c8                     ; each set's Trogg's strips' lines there (top, bottom; top 0 none)
+trB     = $06ca
 wend    = $f9                       ; (2) where this frame's program's rts went (for its lda back)
 rend    = $fb                       ; (4: low 0, 1, high 0, 1) likewise each putting back program's                       ; chooseb's: 1 to keep the thing's band (a second player)
 oWB     = $e0                       ; (16) the line of the band each thing's registers are written
@@ -392,6 +408,15 @@ start   sei                         ; the OS switched out: no interrupts till ou
         sta pmshow
         sta pc_cnt
         sta pc_cnt+1
+        sta norec
+        sta trT
+        sta trT+1
+        ldx #15
+        lda #255
+-       sta scrk,x
+        dex
+        bpl -
+        lda #0
         lda #2
         sta bandx
         ldx #7                      ; the players: normal width, in front of the playfield
@@ -463,9 +488,27 @@ main    lda ready                   ; wait for the VBI to show the last frame ma
         bne main
         inc idle+1
         jmp main
-+       jsr input
-        jsr troggpos                ; his graphic and top left: pg, px, pd
++       lda vbcnt                   ; game ticks: one for each field since the last frame made (1
+        tax                         ; to 4: as the C64 version makes up for late frames, and the
+        sec                         ; BBC version runs more ticks a frame when drawing's slow)
+        sbc lastvb
+        stx lastvb
+        bne +
+        lda #1
++       cmp #5
+        bcc +
+        lda #4
++       sta nticks
+tklp    jsr input                   ; a tick: the joystick, Trogg, the camera, the hazards
+        jsr troggpos                ; (his graphic and top left: pg, px, pd)
         jsr camera
+      .if !NOHAZ
+        jsr hzmove
+      .endif
+        inc tick
+        dec nticks
+        bne tklp
+        jsr troggpos                ; (his, for the frame)
         lda nscrx                   ; the frame's first column in view, the set to draw in
         lsr a
         lsr a
@@ -530,7 +573,7 @@ main    lda ready                   ; wait for the VBI to show the last frame ma
         bne -
 +
       .if !NOHAZ
-        jsr hazards                 ; the balloons and daggers moved, started, listed
+        jsr hzlist                  ; the balloons and daggers listed
       .endif
         jsr mux                     ; hardware sprites given out
         jsr pmdraw                  ; ... their graphics and bands' registers
@@ -616,8 +659,7 @@ swend
         sta (tmp),y
         txa
         bne -
-+       inc tick
-        lda #1
++       lda #1
         sta ready
         jmp main
 fonthi  .byte >FONTA, >FONTB
@@ -760,7 +802,7 @@ right   lda nscrx
 ; above the screen and flies left, a pixel a frame, and down, 11/16 of a line a frame, till it's
 ; below it or off the level's left. One starts every SPAWN frames, a balloon then a dagger, about
 ; Trogg (a balloon -64 to +63 pixels across from him, a dagger 40 to 167 to his right).
-hazards ldx #NHAZ - 1
+hzmove  ldx #NHAZ - 1                ; a tick of them: moved, gone, started
 hzlp    lda hk,x
         beq hznext
         cmp #1
@@ -793,20 +835,7 @@ hzdag   lda hxl,x                   ; a dagger: left a pixel
 hzgone  lda #0
         sta hk,x
         beq hznext
-hzdraw  stx hslot                   ; listed
-        lda hk,x
-        tay
-        lda hzgr - 1,y
-        sta pg
-        lda hxl,x
-        and #$fe
-        sta px
-        lda hxh,x
-        sta px+1
-        lda hy,x
-        sta pd
-        jsr addobj
-        ldx hslot
+hzdraw
 hznext  dex
         bpl hzlp
         dec spawnt                  ; a new one?
@@ -854,6 +883,25 @@ hznext  dex
         adc tx+1
         sta hxh,x
 hzend   rts
+hzlist  ldx #NHAZ - 1                ; the frame's: each listed to be drawn
+-       lda hk,x
+        beq +
+        stx hslot
+        tay
+        lda hzgr - 1,y
+        sta pg
+        lda hxl,x
+        and #$fe
+        sta px
+        lda hxh,x
+        sta px+1
+        lda hy,x
+        sta pd
+        jsr addobj
+        ldx hslot
++       dex
+        bpl -
+        rts
 hzgr    .byte GR_BALLOON, GR_DAGGERLR
 hzy0    .byte 32 + 208, 32 - 10     ; where they start: below the screen, above it
 
@@ -1472,7 +1520,8 @@ pmdraw  ldx mset
         inx
         dec mlast
         bne --
-pmcd    ldx mset
+pmcd    jsr keepclr                 ; the Scrubblies' and Trogg's: only what's changed
+        ldx mset
         lda #0
         sta pc_cnt,x
         sta midx
@@ -1502,10 +1551,17 @@ pmlp    ldx midx
         cmp #GR_SCRUB
         bne +
         jsr pmscr
+        lda #0
+        sta norec
+        sta nocopy
         jmp pmnext
 +       lda mk
         bne +
+        lda #1                      ; (Trogg's infill's strips kept apart: their old lines
+        sta norec                   ; cleared by keepclr)
         jsr pmtrog
+        lda #0
+        sta norec
         jmp pmnext
 +       lda OB_PA,y                 ; a balloon's or dagger's outline (black)
         bmi +
@@ -1540,7 +1596,13 @@ pmnext  inc midx
         jmp pmlp
 pmhi    .byte >PMG0, >PMG1
 
-pmscr   lda OB_LV,y                 ; a Scrubbly: two players, or one double-width
+pmscr   ldx mk                      ; a Scrubbly: two players, or one double-width (its strips kept
+        lda scrw - 1,x              ; apart, written only if they've changed in this set: else only
+        eor #1                      ; its registers)
+        sta nocopy
+        lda #1
+        sta norec
+        lda OB_LV,y
         bne +
         lda OB_PA,y                 ; (the left)
         sta mp2
@@ -1649,6 +1711,8 @@ pmtrog  ldx OB_G,y                  ; Trogg: his infill, P0 yellow and P1 magent
         lda hwl                     ; his outline on P2 (left 16) and P3 (right 16)
         cmp #255
         beq +
+        lda #0                      ; (his outline's strips listed as usual)
+        sta norec
         lda #2
         sta mp2
         lda go_l_lo,x
@@ -1790,7 +1854,9 @@ pdest   sta mdst
         rts
 
 ; copy thing x's lines from msrc to mdst, and list the strip for clearing (x kept)
-strip   ldy mset
+strip   lda norec                   ; (kept apart: not listed for clearing)
+        bne strnr
+        ldy mset
         lda pc_cnt,y
         sta snum
         clc
@@ -1810,17 +1876,196 @@ strip   ldy mset
         sta pc_hi,y
         lda oB,x
         sec
-        sbc oT,x                    ; (lines - 1)
-        pha
+        sbc oT,x
         clc
         adc #1
         sta pc_n,y
-        pla
+strnr   lda nocopy                  ; (there already: not copied)
+        beq +
+        rts
++       lda oB,x
+        sec
+        sbc oT,x                    ; (lines - 1)
         tay
 -       lda (msrc),y
         sta (mdst),y
         dey
         bpl -
+        rts
+
+; keepclr: the strips kept apart, in the set being made. Each Scrubbly's this frame (its key:
+; lv | pa << 2 | pb << 4, or 255 for none) against that set's: if they differ, the old strips
+; cleared and the new to be written (scrw), else left as they are. Trogg's infill's: of the
+; lines his strips had in that set, those his new ones don't cover cleared (P0, P1, missiles).
+keepclr ldx #0
+kcs     cpx #SCR_N
+        bcc +
+        jmp kctr
++       stx stmp
+        txa
+        sec                         ; (its record: thing s + 1)
+        adc obi
+        tay
+        lda #255
+        sta mlast
+        lda OB_LV,y
+        cmp #2
+        bcs ++
+        lda OB_PB,y
+        asl a
+        asl a
+        asl a
+        asl a
+        ora OB_LV,y
+        sta mlast
+        lda OB_LV,y
+        bne ++
+        lda OB_PA,y
+        asl a
+        asl a
+        ora mlast
+        sta mlast
++
++       lda mset
+        asl a
+        asl a
+        asl a
+        ora stmp
+        tax
+        lda scrk,x
+        ldy stmp
+        cmp mlast
+        bne +
+        lda #0                      ; (the same: left)
+        sta scrw,y
+        beq kcn
++       sta sold
+        lda mlast
+        sta scrk,x
+        lda #1
+        sta scrw,y
+        lda sold                    ; the old strips cleared
+        cmp #255
+        beq kcn
+        ldx stmp                    ; (its lines: thing s + 1's)
+        inx
+        lda oT,x
+        sta mk2
+        lda oB,x
+        sta mk3
+        lda sold
+        lsr a
+        lsr a
+        lsr a
+        lsr a
+        and #3
+        jsr zplayer                 ; (pb)
+        lda sold
+        and #3
+        bne kcn                     ; (one double-width: done)
+        lda sold
+        lsr a
+        lsr a
+        and #3
+        jsr zplayer                 ; (pa)
+kcn     ldx stmp
+        inx
+        jmp kcs
+
+kctr    lda #0                      ; Trogg: his new lines (none: 0 and 0)
+        sta mk3
+        sta mk4
+        ldy obi
+        lda nob
+        beq +
+        lda OB_LV,y
+        cmp #1
+        bne +
+        lda oT
+        sta mk3
+        lda oB
+        sta mk4
++       ldx mset
+        lda trT,x
+        beq kcdone                  ; (none there)
+        sta mk2                     ; the old lines above his new top (or all, if none)
+        lda trB,x
+        sta sold
+        lda mk3
+        beq +
+        sec
+        sbc #1
+        cmp sold
+        bcc ++
++       lda sold
++       sta mk5                     ; (old top to min(old bottom, new top - 1))
+        jsr zrange
+        lda mk4                     ; and below his new bottom
+        beq kcdone
+        clc
+        adc #1
+        cmp mk2
+        bcs +
+        lda mk2
++       sta mk2                     ; (max(old top, new bottom + 1) to old bottom)
+        lda sold
+        sta mk5
+        jsr zrange
+kcdone  ldx mset
+        lda mk3
+        sta trT,x
+        lda mk4
+        sta trB,x
+        rts
+
+zrange  lda mk2                     ; lines mk2-mk5 cleared in P0, P1 and the missiles (if any)
+        cmp mk5
+        beq +
+        bcs ++
++       lda mk5
+        sta mk3s
+        lda #0
+        jsr zp1
+        lda #1
+        jsr zp1
+        lda #$ff
+        jsr zp1
++       rts
+zp1     sta mp2
+        jsr zbase
+        lda mk3s
+        sec
+        sbc mk2
+        tay
+        lda #0
+-       sta (mdst),y
+        dey
+        cpy #$ff
+        bne -
+        rts
+
+zplayer sta mp2                     ; player a's lines mk2-mk3 cleared (a Scrubbly's old strip)
+        jsr zbase
+        lda mk3
+        sec
+        sbc mk2
+        tay
+        lda #0
+-       sta (mdst),y
+        dey
+        cpy #$ff
+        bne -
+        rts
+
+zbase   lda mk2                     ; mdst: line mk2 of player mp2's memory ($ff: the missiles')
+        sta mdst
+        lda mp2
+        clc
+        adc #4
+        ldy mset
+        clc
+        adc pmhi,y
+        sta mdst+1
         rts
 
 bidx    cmp #38                     ; the band holding at line a: its index in this set's tables
@@ -2261,6 +2506,7 @@ vbi     pha
         pha
         tya
         pha
+        inc vbcnt                   ; (fields, for the game's ticks)
         lda ready
         sta fresh
         bne vshow

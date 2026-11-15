@@ -17,7 +17,10 @@ players band by band where they're free (software above); colour-exact on three 
 20-25 frames a second (the players' strips: next to trim). Graphics first, by the user's
 priority: every outline in software at full resolution by default, players only for infills
 (`HWOUT=1` for half-resolution outlines on players); a thing's registers written in the latest
-band with room; about 17 frames a second, to be won back by optimisation before any compromise. Target: PAL, normal (40-column) width.
+band with room; about 17 frames a second, to be won back by optimisation before any compromise. Then the
+game at 50 ticks a second whatever the frame rate (a tick for each field since the last frame, as
+the C64 version), the Scrubblies' strips kept while unchanged and only Trogg's uncovered old lines
+cleared: 25 frames a second with Trogg alone, about 17 with hazards out. Target: PAL, normal (40-column) width.
 This is the first port to start from the C64 port
 (`../c64`) rather than from the BBC version alone. The aim is a largely monochrome game in
 ANTIC mode 2, with colour infills from players and missiles, and without the C64 port's

@@ -22,10 +22,14 @@ magenta pixels wrong; the balloon's yellow highlight, the dagger's yellow blade 
 Scrubbly's yellow eyes and teeth aren't coloured; something partly off the screen across has
 no infill (a player would show over the border); Poglets and Hooters have none yet.
 
-**Speed:** about 17 frames a second (a frame takes about three): every outline in software, and
-the players' strips all rewritten each frame. To come, before any compromise on the graphics:
-the BBC version's 50 ticks and 25 frames a second, keeping the Scrubblies' strips, and trimming
-the software drawing.
+**Speed:** the game runs at 50 ticks a second whatever the drawing takes (the VBI counts fields;
+each frame made runs a tick for each field since the last, up to 4, as the C64 version makes up
+for late frames). Frames: 25 a second with Trogg alone (a frame takes about 400 lines: 1.3
+fields), about 17 with balloons and daggers out (every outline in software: about 2.3 fields).
+The players' strips take 127-134 lines a frame, from 213-236: the Scrubblies' strips are kept
+in each set while their players don't change, and of Trogg's only the old lines his new ones
+don't cover are cleared. Next: the software drawing (Trogg about 180 lines; each hazard's
+outline the rest) and the multiplexer (60-170 lines).
 
 Before that, **an 8x4 screen demo.** `build/screen8x4.xex` shows the C64 port's A_1 ("FRAK!") on 52
 rows of 4 lines, scrolling back and forth across the level 2 pixels a frame. It's black outlines
