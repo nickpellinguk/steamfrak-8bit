@@ -4,11 +4,11 @@
 ; (build/<level>_geom.inc, by tools/geom.py from the C64 build's geometry.json), in the same
 ; level coordinates: x in pixels (tx), y in pixels and twentieths of a pixel (gy, tyf: the C64's
 ; ty, 24 more than the Atari map's line), y velocity in twentieths a tick (tv, + up). Only the
-; keys (the joystick here) and what's around it (gametick, restart) are the Atari's own. The yoyo
-; is still to come (fire does nothing).
+; keys (the joystick here) and what's around it (gametick, restart) are the Atari's own. Fire
+; throws the yoyo (yoyo.asm).
 ;
-; Death (landing at 1.6 pixels a tick or faster, falling off the bottom, or touching a Scrubbly:
-; collide) restarts him after a second, at the last checkpoint (a key picked up) or the start.
+; Death (landing at 1.6 pixels a tick or faster, falling off the bottom, or touching a Scrubbly,
+; balloon or dagger: collide) restarts him after a second, at the last checkpoint (a key picked up) or the start.
 
 TX0     = STARTX ? STARTX : TSTARTX
 TY0     = STARTX ? STARTY : TSTARTY
@@ -43,7 +43,11 @@ _wd     dec wint
         jmp _still
 _play   jsr read_keys
         jsr trogg_update
-        jsr collide                 ; (what he's touching: the Scrubblies, the gems and keys)
+      .if !NOHAZ
+        jsr hazards                 ; (the balloons and daggers: hazards.asm)
+      .endif
+        jsr collide                 ; (what he's touching: the Scrubblies, balloons, daggers, gems
+                                    ; and keys)
         jsr checkcp                 ; (a checkpoint, if one's due)
 _still  jsr trogg_frame
         ldx tfr                     ; (the C64's frame numbering to sprites.py's)
@@ -76,8 +80,11 @@ restart lda havecp
         lda #0
         sta tyf
         sta tface
-        sta pkgone0                 ; (the gems and keys back, as of the start: none gone)
-        sta pkgone0+1
+        sta btim                    ; (a balloon and a dagger at once)
+        sta dtim
+        sta pgone0                  ; (the gems, keys and Scrubblies back, as of the start)
+        sta pgone0+1
+        sta pgone0+2
         beq _all
 _cp     inc restarts
         lda cptx
@@ -92,10 +99,15 @@ _cp     inc restarts
         sta tyf
         lda cpface
         sta tface
-        lda cpgone                  ; (the gems and keys gone as of the checkpoint)
-        sta pkgone0
-        lda cpgone+1
-        sta pkgone0+1
+        lda cpbtim
+        sta btim
+        lda cpdtim
+        sta dtim
+        ldx #2                      ; (the gems, keys and Scrubblies gone as of the checkpoint)
+-       lda cpgone,x
+        sta pgone0,x
+        dex
+        bpl -
 _all    jsr pkreset                 ; (the map to match: pick.asm)
         lda tx                      ; the camera on him: the scroll (colour clocks) (x - 160) / 2,
         sec                         ; kept to 0-XMAX
@@ -125,16 +137,16 @@ _all    jsr pkreset                 ; (the map to match: pick.asm)
         sta anim
         sta animf
         sta won
+        sta yo_len                  ; (the yoyo in)
+        sta yo_len+1
         lda #1                      ; (a stick held through the restart does nothing till let go)
         sta ud_db
         sta lr_db
-        ldx #NHAZ - 1               ; (no balloons or daggers)
+        ldx #NHZ - 1                 ; (no balloons or daggers)
         lda #0
--       sta hk,x
+-       sta oact,x
         dex
         bpl -
-        lda #40
-        sta spawnt
         rts
 
 ; A checkpoint (the BBC version's): once one's due (a key picked up, not the last), when he's
@@ -162,10 +174,15 @@ checkcp lda savecp
         sta cptyf
         lda tface
         sta cpface
-        lda pkgone
-        sta cpgone
-        lda pkgone+1
-        sta cpgone+1
+        lda btim
+        sta cpbtim
+        lda dtim
+        sta cpdtim
+        ldx #2
+-       lda pgone,x
+        sta cpgone,x
+        dex
+        bpl -
 _x      rts
 
 ; The joystick (port 1: PORTA's low 4 bits, 0 when pushed; the trigger TRIG0), with the C64's
@@ -1196,14 +1213,6 @@ level_complete
 winlo   .byte <(7 * 50), <(6 * 50), <(5 * 50), <(4 * 50)
 winhi   .byte >(7 * 50), >(6 * 50), >(5 * 50), >(4 * 50)
 
-; the yoyo: still to come (Trogg stands)
-start_yoyo
-yoyo_out
-yoyo_back
-        lda #ST_STAND
-        sta tstate
-        rts
-
 ; ---- Data
 tyf     .byte 0                     ; (his y's twentieths: tx, gy in trogg.asm)
 tstate  .byte ST_STAND
@@ -1263,4 +1272,6 @@ cptx    .word 0
 cpty    .word 0
 cptyf   .byte 0
 cpface  .byte 0
-cpgone  .word 0
+cpbtim  .byte 0
+cpdtim  .byte 0
+cpgone  .fill 3

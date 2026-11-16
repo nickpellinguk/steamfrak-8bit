@@ -4,7 +4,7 @@
 # and invisible part above its visible top (ext), and for each 8-pixel column the platforms (the
 # last first) and ladders (within 6 pixels) over it. Level pixels: x across, y down from 24 above
 # the C64 screen's top (Y0: the C64 map's line 0 is y 24; the Atari's map line is the same as
-# the C64's). Also Trogg's and the Scrubblies' collision boxes. Writes atari800xl/build/<level>_geom.inc.
+# the C64's). Also Trogg's, the Scrubblies', the balloon's and the dagger's collision boxes. Writes atari800xl/build/<level>_geom.inc.
 import json, os, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 LV = sys.argv[1] if len(sys.argv) > 1 else 'A_1'
@@ -28,8 +28,49 @@ def tbox(gr):
     return (min(x for x, _ in pts) - gr['xo'], max(x for x, _ in pts) - gr['xo'], min(y for _, y in pts) - gr['yo'], max(y for _, y in pts) - gr['yo'])
 tb = [tbox(gr) for gr in SP]
 cdir = os.path.join(HERE, '..', '..', 'c64', 'build', LV)
-E = json.load(open(os.path.join(cdir, 'scrub.json')))['placed']
+SCJ = json.load(open(os.path.join(cdir, 'scrub.json'))); E = SCJ['placed']
 sbx = json.load(open(os.path.join(cdir, 'picks.json'))).get('scrubBox') or {'x0': 0, 'x1': 0, 'y0': 0, 'y1': 0}
+# the balloon's and dagger's boxes (kinds 1 and 2): their images' solid pixels from the origin
+HZ = json.load(open(os.path.join(cdir, 'picks.json')))['hazards']
+def hbox(h):
+    pts = [(x, y) for y, r in enumerate(h['grid']) for x, c in enumerate(r) if c >= 0]
+    return (min(x for x, _ in pts) - h['xo'], max(x for x, _ in pts) - h['xo'], min(y for _, y in pts) - h['yo'], max(y for _, y in pts) - h['yo'])
+hb = [hbox(HZ['IMG_Balloon']), hbox(HZ['IMG_DaggerLR'])]
+# The second stage's spans (pick.asm's spans, the C64's): each row's leftmost and rightmost solid
+# pixel (255, 255 for an empty row), from the image's left: Trogg's frames (as the Atari draws
+# them: sprites.json), the Scrubbly, a gem, a key (picks.json), the balloon, the dagger; and each
+# object's image's corner in the level (x, y the C64's: + 24)
+def spans(rows, solid):
+    out = []
+    for r in rows:
+        xs = [x for x, c in enumerate(r) if solid(c)]
+        out += [xs[0], xs[-1]] if xs else [255, 255]
+    return out
+PJ = json.load(open(os.path.join(cdir, 'picks.json')))
+PK, GR = PJ['picks'], PJ['grids']
+sb = lambda n, v: f'{n:<10}.byte ' + ', '.join(str(x) for x in v)
+spanout = []
+for i, gr in enumerate(SP):
+    spanout.append(sb(f'tsp{i}', spans(gr['grid'], lambda c: c != 'T')))
+spanout += ['tspl      .byte ' + ', '.join(f'<tsp{i}' for i in range(len(SP))),
+            'tsph      .byte ' + ', '.join(f'>tsp{i}' for i in range(len(SP)))]
+solid = lambda c: c >= 0
+spanout += [sb('scrsp', spans(GR['IMG_Scrubbly'], solid) if 'IMG_Scrubbly' in GR else [255, 255]),
+            f'SCRH = {len(GR["IMG_Scrubbly"]) if "IMG_Scrubbly" in GR else 1}',
+            sb('gemsp', spans(GR['IMG_Gem'], solid) if 'IMG_Gem' in GR else [255, 255]),
+            sb('keysp', spans(GR['IMG_Key'], solid) if 'IMG_Key' in GR else [255, 255]),
+            sb('balsp', spans(HZ['IMG_Balloon']['grid'], solid)), sb('dagsp', spans(HZ['IMG_DaggerLR']['grid'], solid)),
+            'kspl      .byte <balsp, <dagsp     ; (the balloon\'s, the dagger\'s: their spans, height, corner from the origin)',
+            'ksph      .byte >balsp, >dagsp',
+            sb('khz', [len(HZ['IMG_Balloon']['grid']), len(HZ['IMG_DaggerLR']['grid'])]),
+            sb('kw', [len(HZ['IMG_Balloon']['grid'][0]), len(HZ['IMG_DaggerLR']['grid'][0])]),
+            f"ENW = {SCJ['w']}", f"ENH = {SCJ['h']}",
+            sb('kxo', [HZ['IMG_Balloon']['xo'], HZ['IMG_DaggerLR']['xo']]), sb('kyo', [HZ['IMG_Balloon']['yo'], HZ['IMG_DaggerLR']['yo']]),
+            sb('scil', [lo(p['ax']) for p in E] or [0]), sb('scih', [hi(p['ax']) for p in E] or [0]), sb('scit', [p['ay'] + 24 for p in E] or [0]),
+            sb('pkil', [lo(p['left']) for p in PK] or [0]), sb('pkih', [hi(p['left']) for p in PK] or [0]), sb('pkit', [p['top'] for p in PK] or [0]),
+            sb('pkh', [len(GR[p['name']]) for p in PK] or [0]),
+            'pkspl     .byte ' + (', '.join('<keysp' if p['name'] == 'IMG_Key' else '<gemsp' for p in PK) or '0'),
+            'pksph     .byte ' + (', '.join('>keysp' if p['name'] == 'IMG_Key' else '>gemsp' for p in PK) or '0')]
 B = lambda name, v: f'{name:<10}.byte ' + ', '.join(str(x) for x in v)
 xmax, levh = g['w'] - 10, g['h']
 out = ['; made by tools/geom.py from c64/build/' + LV + '/geometry.json',
@@ -46,6 +87,9 @@ out = ['; made by tools/geom.py from c64/build/' + LV + '/geometry.json',
        f'NSCR = {len(E)}', B('scbll', [lo(p['ax'] + sbx['x0']) for p in E] or [0]), B('scblh', [hi(p['ax'] + sbx['x0']) for p in E] or [0]),
        B('scbrl', [lo(p['ax'] + sbx['x1']) for p in E] or [0]), B('scbrh', [hi(p['ax'] + sbx['x1']) for p in E] or [0]),
        B('scbt', [p['ay'] + 24 + sbx['y0'] for p in E] or [0]), B('scbb', [p['ay'] + 24 + sbx['y1'] for p in E] or [0]),
+       B('hbx0', [h[0] & 255 for h in hb]), B('hbx1', [h[1] & 255 for h in hb]),
+       B('hby0', [h[2] & 255 for h in hb]), B('hby1', [h[3] & 255 for h in hb]),
+       *spanout,
        f'TSTARTX = {g["trogg"][0]}', f'TSTARTY = {g["trogg"][1]}']
 open(os.path.join(HERE, '..', 'build', f'{LV}_geom.inc'), 'w').write('\n'.join(out) + '\n')
 print(f'{LV}: {len(P)} platforms, {len(L)} ladders')

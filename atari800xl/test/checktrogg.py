@@ -6,7 +6,8 @@
 # in front of the playfield, P0/M0 first; a set character pixel shows its colour's luminance 0
 # (COLPF1) in the hue of whatever is under it (PF2, or a player). The record: a frame's VBI comes
 # after its picture, so the picture shows the frame before's (pvi) when that VBI showed a new
-# frame ("fresh"), else still the one shown (shi). Every pixel of the 320 x 240 play area.
+# frame ("fresh"), else still the one shown (shi). The things are drawn in their order, Trogg last
+# (on top), the yoyo's string (from the record) just before the yoyo. Every pixel of the 320 x 240 play area.
 import sys, os, json, glob
 from collections import Counter
 from PIL import Image
@@ -44,7 +45,7 @@ for scr in sorted(glob.glob(os.path.join(d, '*.scr'))):
     F = lambda name, i: m[L['OB_' + name] + ri + i]
     n, sx, hw = m[L['OB_N'] + rr], m[L['OB_SCR'] + rr], m[L['OB_HW'] + rr]
     most = max(most, n)
-    gone = m[L['OB_PKL'] + rr] | m[L['OB_PKH'] + rr] << 8
+    gone = m[L['OB_PK'] + rr] | m[L['OB_PK'] + 3 + rr] << 8 | m[L['OB_PK'] + 6 + rr] << 16
     gp = lvpix(gone)
     chars = [[gp.get((2 * sx + x, y), exp[2 * sx + x, y] < 128) for x in range(320)] for y in range(H)]
     pl = [[None] * 320 for _ in range(H)]       # (priority, colour) of the player in front
@@ -58,8 +59,13 @@ for scr in sorted(glob.glob(os.path.join(d, '*.scr'))):
                     for k in range(bw):
                         xx = x0 + bw * b + k
                         if 0 <= xx < 320 and (pl[y][xx] is None or pl[y][xx][0] > prio): pl[y][xx] = (prio, colour)
-    for i in range(n):
+    for i in list(range(1, n)) + [0] if n else []:   # (in order, then Trogg on top: the BBC version's)
         g = F('G', i)
+        if L['GR_YOYO0'] <= g <= L['GR_YOYO3'] and m[L['OB_SY'] + rr]:     # (the yoyo: its string first)
+            s0 = m[L['OB_S0'] + rr] | m[L['OB_S0'] + 3 + rr] << 8; s1 = m[L['OB_S1'] + rr] | m[L['OB_S1'] + 3 + rr] << 8
+            y = m[L['OB_SY'] + rr] - TOPL
+            for xl in range(max(s0, 2 * sx), min(s1, 2 * sx + 319) + 1): chars[y][xl - 2 * sx] = True
+            desc.append(f'STRING {s0}-{s1},{y}')
         x = (F('XL', i) | F('XH', i) << 8) - (65536 if F('XH', i) & 0x80 else 0)
         top = F('D', i) - TOPL; lvl, pa, pb = F('LV', i), F('PA', i), F('PB', i)
         sxp = x - 2 * sx
