@@ -4,7 +4,7 @@
 # and invisible part above its visible top (ext), and for each 8-pixel column the platforms (the
 # last first) and ladders (within 6 pixels) over it. Level pixels: x across, y down from 24 above
 # the C64 screen's top (Y0: the C64 map's line 0 is y 24; the Atari's map line is the same as
-# the C64's). Also Trogg's and the Scrubblies' collision boxes. Writes atari800xl/build/<level>_geom.inc.
+# the C64's). Also Trogg's, the Scrubblies', the balloon's and the dagger's collision boxes. Writes atari800xl/build/<level>_geom.inc.
 import json, os, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 LV = sys.argv[1] if len(sys.argv) > 1 else 'A_1'
@@ -30,6 +30,12 @@ tb = [tbox(gr) for gr in SP]
 cdir = os.path.join(HERE, '..', '..', 'c64', 'build', LV)
 E = json.load(open(os.path.join(cdir, 'scrub.json')))['placed']
 sbx = json.load(open(os.path.join(cdir, 'picks.json'))).get('scrubBox') or {'x0': 0, 'x1': 0, 'y0': 0, 'y1': 0}
+# the balloon's and dagger's boxes (kinds 1 and 2): their images' solid pixels from the origin
+HZ = json.load(open(os.path.join(cdir, 'picks.json')))['hazards']
+def hbox(h):
+    pts = [(x, y) for y, r in enumerate(h['grid']) for x, c in enumerate(r) if c >= 0]
+    return (min(x for x, _ in pts) - h['xo'], max(x for x, _ in pts) - h['xo'], min(y for _, y in pts) - h['yo'], max(y for _, y in pts) - h['yo'])
+hb = [hbox(HZ['IMG_Balloon']), hbox(HZ['IMG_DaggerLR'])]
 B = lambda name, v: f'{name:<10}.byte ' + ', '.join(str(x) for x in v)
 xmax, levh = g['w'] - 10, g['h']
 out = ['; made by tools/geom.py from c64/build/' + LV + '/geometry.json',
@@ -46,6 +52,8 @@ out = ['; made by tools/geom.py from c64/build/' + LV + '/geometry.json',
        f'NSCR = {len(E)}', B('scbll', [lo(p['ax'] + sbx['x0']) for p in E] or [0]), B('scblh', [hi(p['ax'] + sbx['x0']) for p in E] or [0]),
        B('scbrl', [lo(p['ax'] + sbx['x1']) for p in E] or [0]), B('scbrh', [hi(p['ax'] + sbx['x1']) for p in E] or [0]),
        B('scbt', [p['ay'] + 24 + sbx['y0'] for p in E] or [0]), B('scbb', [p['ay'] + 24 + sbx['y1'] for p in E] or [0]),
+       B('hbx0', [h[0] & 255 for h in hb]), B('hbx1', [h[1] & 255 for h in hb]),
+       B('hby0', [h[2] & 255 for h in hb]), B('hby1', [h[3] & 255 for h in hb]),
        f'TSTARTX = {g["trogg"][0]}', f'TSTARTY = {g["trogg"][1]}']
 open(os.path.join(HERE, '..', 'build', f'{LV}_geom.inc'), 'w').write('\n'.join(out) + '\n')
 print(f'{LV}: {len(P)} platforms, {len(L)} ladders')

@@ -1,6 +1,6 @@
 ; ---- Collisions, gems and keys
 ; collide: Trogg's box (his frame's solid pixels' extent, tbx0 ... from geom.py) against each
-; Scrubbly's (kills him) and each gem's and key's not yet picked up (picks it up), in level
+; Scrubbly's, balloon's and dagger's (kills him) and each gem's and key's not yet picked up (picks it up), in level
 ; coordinates (x pixels, y the C64's: gy), as the first stage of the C64's collide (its second,
 ; the spans, is still to come). A key picked up, not the last, makes a checkpoint due; the last
 ; completes the level.
@@ -67,6 +67,46 @@ cslp    lda scbll,x                 ; (off if its left > his right, its right < 
         ldx cpk
 +       dex
         bpl cslp
+      .if !NOHAZ
+        ldx #NHZ - 1                ; the balloons and daggers: each one's box from its origin
+chlp    lda oact,x                  ; (hbx0 ..., by its kind: geom.py)
+        beq chn
+        stx cpk
+        tay
+        dey
+        lda oxl,x
+        sta hb
+        lda oxh,x
+        sta hb+1
+        lda hbx0,y
+        jsr hbadd
+        sta cbl
+        stx cbl+1
+        lda hbx1,y
+        jsr hbadd
+        sta cbr
+        stx cbr+1
+        ldx cpk
+        lda oy,x
+        sta hb
+        lda oyh,x
+        sta hb+1
+        lda hby0,y
+        jsr hbadd
+        sta cbt
+        stx cbt+1
+        lda hby1,y
+        jsr hbadd
+        sta cbb
+        stx cbb+1
+        ldx cpk
+        jsr overlap
+        bcs chn
+        jsr trogg_dies
+        ldx cpk
+chn     dex
+        bpl chlp
+      .endif
         ldx #NPK - 1                ; the gems and keys
 cplp    lda pkbitl,x
         and pkgone
@@ -113,6 +153,20 @@ cplp    lda pkbitl,x
         ldx cpk
 cpnext  dex
         bpl cplp
+        rts
+
+; hb + a (signed): a low, x high (y kept)
+hbadd   sta hbt
+        clc
+        adc hb
+        pha
+        lda hbt
+        and #$80
+        beq +
+        lda #$ff
++       adc hb+1
+        tax
+        pla
         rts
 
 ; carry clear if the box cbl-cbr, cbt-cbb overlaps his (x kept)
@@ -272,6 +326,8 @@ pkgone  .word 0                     ; (the gems and keys picked up: bit i)
 pkshow  .word 0                     ; (those the map shows gone)
 pkgone0 .word 0                     ; (those gone at the restart: the checkpoint's)
 cbl     .word 0                     ; (an object's box)
+hb      .word 0                     ; (hbadd's)
+hbt     .byte 0
 cbr     .word 0
 cbt     .word 0                     ; (high bytes 0)
 cbb     .word 0

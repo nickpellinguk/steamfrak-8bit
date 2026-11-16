@@ -1,9 +1,9 @@
 ; Trogg, balloons and daggers on the 8x4 screen: their outlines drawn into spare characters, AND
 ; then OR, a byte (8 pixels) at a time from the 10-bit graphics (tools/sprites.py: for each of 4
 ; shift positions, a byte a window, an index into that shift's AND and OR tables), at any
-; position, partly or wholly off the screen. The joystick walks Trogg (left, right), climbs him
-; (up, down), fire shows his yoyo pose; the screen follows him. Balloons rise from below the
-; screen and daggers fly in from above it, about him (stand-ins for the game's, for now).
+; position, partly or wholly off the screen. Trogg moves as in the game (move.asm, the C64's
+; movement), the screen following him; balloons rise from the level's bottom and daggers fly in
+; from its top, as in the game (hazards.asm, the C64's).
 ;
 ; The display is screen8x4.asm's: 60 rows of 4 lines (240 lines, ANTIC's most: scanlines 8-247,
 ; the level's lines 16-255), a bottoms row (glyph lines 4-7) then a tops row (0-3), so each
@@ -53,7 +53,8 @@
 ; set.
 ;   -D INVINCIBLE=1: nothing kills Trogg; -D STARTX=x -D STARTY=y: a test's start instead of the
 ;   level's (his origin: level pixels, y the C64's, 24 below the map's line)
-;   -D NOHAZ=1: no balloons or daggers; -D STRESS=1: one every 40 frames (6 out all the time)
+;   -D NOHAZ=1: no balloons or daggers; -D STRESS=1: one every 20 ticks or so (6 out all the time);
+;   -D INSANE=1: Insane's numbers (Hard's by default)
 ;   -D HWOUT=1: outlines on players too (2-pixel resolution: Trogg's from a band down, a balloon's
 ;   with its infill, a dagger's), where they're free; else (the default) outlines are always
 ;   drawn in software, at full resolution, and players only carry infills
@@ -65,16 +66,14 @@ STARTX  = 0                         ; (0: the level's start)
 STARTY  = 0
 NOHAZ   = 0
 STRESS  = 0
+INSANE  = 0
 HWOUT   = 0
         .endweak
-SPAWN   = STRESS ? 40 : 63          ; frames between balloons and daggers (63: a balloon every
-                                    ; 126 and a dagger every 126, about Hard's 120 and 132)
         .include "../build/" .. LEVEL .. ".inc"
 XMAX    = (NCOLS - 40) * 4          ; the scroll's range, in colour clocks (2 pixels)
 POOL0   = 64                        ; the first spare character
 NPOOL   = 128 - POOL0
         .cerror NCODES > POOL0, "the level's glyphs reach the spare characters"
-NHAZ    = 6                         ; balloons and daggers at once
 NOBJ    = 15                        ; things: Trogg, the Scrubblies, the balloons and daggers (16th:
                                     ; the multiplexer's, for Trogg's outline's bands)
 GR_SCRUB = GR_N                     ; (a Scrubbly: no graphic, only its infill)
@@ -200,8 +199,6 @@ nob    = $c8                       ; things drawn this frame
 obi     = $c9                       ; the three records of things drawn (OBJS + 0, 40, 80): the
 shi     = $ca                       ; frame being made's, the one shown's, the one before's
 pvi     = $c3
-spawnt  = $cb                       ; frames to the next balloon or dagger
-spawnk  = $cc                       ; which comes next: 1 balloon, 2 dagger
 hslot   = $cd
 rcur    = $ce                       ; the putting back programs: being built (high byte), to run
 rprev   = $cf
@@ -299,11 +296,6 @@ OB_M1   = OBJS + $15c
 OB_PKL  = OBJS + $15f               ; the gems and keys the map shows gone (pkshow), per record
 OB_PKH  = OBJS + $162
 ; the balloons and daggers: kind (0 none, 1 balloon, 2 dagger), x (2), top line + 32, fraction
-hk      = $0680
-hxl     = $0688
-hxh     = $0690
-hy      = $0698
-hfr     = $06a0
 
         * = $0800                   ; (no DOS: low memory is ours from here)
 start   sei                         ; the OS switched out: no interrupts till ours are set
@@ -376,10 +368,6 @@ start   sei                         ; the OS switched out: no interrupts till ou
 -       dey
         sta CLAIMC,y
         bne -
-        ldx #NHAZ - 1
--       sta hk,x
-        dex
-        bpl -
         lda #<DLIST
         sta DLISTL
         lda #>DLIST
@@ -490,10 +478,7 @@ start   sei                         ; the OS switched out: no interrupts till ou
         sta drops+1
         sta idle
         sta idle+1
-        lda #40
-        sta spawnt
-        lda #1
-        sta spawnk
+        lda #0
         sta pkshow                  ; (a = 0: the map shows every gem and key)
         sta pkshow+1
         jsr newlevel                ; Trogg at the start
@@ -526,16 +511,10 @@ main    lda ready                   ; wait for the VBI to show the last frame ma
         bcc +
         lda #4
 +       sta nticks
-tklp    jsr gametick                ; a tick: the joystick and Trogg (move.asm), the camera, the
-        jsr troggpos                ; hazards (his graphic and top left: pg, px, pd)
+tklp    jsr gametick                ; a tick: the joystick, Trogg, the balloons and daggers
+        jsr troggpos                ; (move.asm, hazards.asm), the camera (his graphic and top
+                                    ; left: pg, px, pd)
         jsr camera
-      .if !NOHAZ
-        lda dead                    ; (everything still while he's dead or the level's complete)
-        ora won
-        bne +
-        jsr hzmove
-+
-      .endif
         inc tick
         dec nticks
         bne tklp
@@ -763,113 +742,46 @@ right   lda nscrx
         inc nscrx
 +       rts
 
-; ---- The balloons and daggers: moved, started, drawn (stand-ins for the game's)
-; A balloon starts below the screen and rises a line a frame till it's above it; a dagger starts
-; above the screen and flies left, a pixel a frame, and down, 11/16 of a line a frame, till it's
-; below it or off the level's left. One starts every SPAWN frames, a balloon then a dagger, about
-; Trogg (a balloon -64 to +63 pixels across from him, a dagger 40 to 167 to his right).
-hzmove  ldx #NHAZ - 1                ; a tick of them: moved, gone, started
-hzlp    lda hk,x
-        beq hznext
-        cmp #1
-        bne hzdag
-        dec hy,x                    ; a balloon: up a line
-        lda hy,x
-        cmp #1                      ; gone at the players' memory's top (its bottom 2 lines into
-        bcs hzdraw                  ; the screen: as close as a byte goes)
-        bcc hzgone
-hzdag   lda hxl,x                   ; a dagger: left a pixel
-        bne +
-        dec hxh,x
-+       dec hxl,x
-        lda hfr,x                   ; down 11/16 of a line
-        clc
-        adc #11
-        cmp #16
-        and #15
-        sta hfr,x
-        bcc +
-        inc hy,x
-+       lda hy,x
-        cmp #LASTL + 1              ; gone when its top's below the screen's bottom
-        bcs hzgone
-        lda hxh,x                   ; or it's off the level's left (x < -12)
-        bpl hzdraw
-        lda hxl,x
-        cmp #<-12
-        bcs hzdraw
-hzgone  lda #0
-        sta hk,x
-        beq hznext
-hzdraw
-hznext  dex
-        bpl hzlp
-        dec spawnt                  ; a new one?
-        bne hzend
-        lda #SPAWN
-        sta spawnt
-        ldx #NHAZ - 1               ; a free slot
--       lda hk,x
-        beq +
-        dex
-        bpl -
-        rts
-+       lda spawnk
-        sta hk,x
-        eor #3
-        sta spawnk
-        lda #0
-        sta hfr,x
-        lda RANDOM
-        and #127
-        ldy hk,x
-        cpy #1
-        bne +
-        sec                         ; a balloon: -64 to +63 from him, below the screen
-        sbc #64
-        sta tmp
-        and #$80                    ; (its sign)
-        beq ++
-        lda #$ff
-        bne ++
-+       clc                         ; a dagger: 40 to 167 to his right, above the screen
-        adc #40
-        sta tmp
-        lda #0
-+       sta tmp+1
-        lda hk,x
-        tay
-        lda hzy0 - 1,y
-        sta hy,x
-        lda tmp                     ; x = his x + the offset
-        clc
-        adc tx
-        sta hxl,x
-        lda tmp+1
-        adc tx+1
-        sta hxh,x
-hzend   rts
-hzlist  ldx #NHAZ - 1                ; the frame's: each listed to be drawn
--       lda hk,x
-        beq +
+; ---- The balloons and daggers (hazards.asm) listed for the frame: each from its origin (level
+; pixels, y the C64's) less its graphic's: px = (x - xo) & ~1, pd = y - yo - 8 (the scanline).
+; One whose top is above the players' memory's (pd < 0: its bottom at most a line into the
+; screen) isn't drawn
+hzlist  ldx #NHZ - 1
+hzl     lda oact,x
+        beq hzln
         stx hslot
         tay
         lda hzgr - 1,y
         sta pg
-        lda hxl,x
+        tay
+        lda oxl,x
+        sec
+        sbc gr_xo,y
         and #$fe
         sta px
-        lda hxh,x
+        lda oxh,x
+        sbc #0
         sta px+1
-        lda hy,x
+        lda oy,x
+        sec
+        sbc gr_yo,y
+        sta tmp
+        lda oyh,x
+        sbc #0
+        sta tmp+1
+        lda tmp
+        sec
+        sbc #8
         sta pd
+        lda tmp+1
+        sbc #0
+        bne +                       ; (above the players' memory: not drawn)
         jsr addobj
-        ldx hslot
-+       dex
-        bpl -
++       ldx hslot
+hzln    dex
+        bpl hzl
         rts
 hzgr    .byte GR_BALLOON, GR_DAGGERLR
-hzy0    .byte LASTL + 1, 0          ; where they start: below the screen, above it (2 lines in)
 
 ; ---- addobj: the thing pg at px, pd listed for this frame
 addobj  lda nob
@@ -2856,6 +2768,7 @@ dlb15
         .include "../build/" .. LEVEL .. "_picks.inc"   ; the gems and keys (screen.py)
         .include "move.asm"         ; Trogg's movement (the C64's)
         .include "pick.asm"         ; collisions, gems and keys
+        .include "hazards.asm"      ; the balloons and daggers (the C64's)
         .cerror * > CLEAN, "the program reaches the level's map: ", * - CLEAN, " over"
         .cerror CLEAN + NROWS * 128 > DLIST, "the level's map reaches the display list"
 

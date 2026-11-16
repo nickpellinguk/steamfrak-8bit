@@ -19,9 +19,12 @@ climbing, jumping, falling, on the C64's platforms and ladders, in its coordinat
 joystick in port 1. Landing too hard, falling off the bottom or touching a Scrubbly kills him
 (`src/pick.asm`: box collisions); a gem or key touched is picked up, and goes from the map; a
 key makes a checkpoint, the last completes the level (7 seconds' pause, then it starts again).
-Still to come: the yoyo (fire does nothing), the real balloons and daggers (these are stand-ins
-that don't hurt: about Hard's rate, `-D STRESS=1` six all the time) and the collisions' second,
-finer stage. Checked in the WebAssembly atari800, colour for colour: 791 screens of five joystick
+The balloons and daggers are the game's (`src/hazards.asm`, the C64 port's, itself the BBC
+version's): Hard's timings and speeds (`-D INSANE=1` Insane's; `-D STRESS=1`, a test, six out
+all the time), a balloon rising from the level's bottom about Trogg, a dagger aimed to arrive
+where he is, each held still a moment first; touching one kills him. Still to come: the yoyo
+(fire does nothing) and the collisions' second, finer stage (the C64 tests each image's
+spans once the boxes touch; here the boxes alone decide, a little more generously). Checked in the WebAssembly atari800, colour for colour: 791 screens of five joystick
 tours (`test/tours.sh`), with gems and keys going and coming back.
 
 **What's still short of the original's look:** Trogg's infill is in 2-pixel blocks (at most 10 of
@@ -36,7 +39,8 @@ for late frames). Frames, measured standing at A_1's start: 16.7 a second with T
 fields a frame; 25 before the game's logic and the keys' yellow came in), about 10 with the
 stand-in balloons and daggers out (every outline in software; 12.5 at 208 lines: the taller
 screen costs about 1,900 cycles a field in ANTIC's fetches and 8 more DLIs, and keeps each
-hazard on the screen longer). With Trogg alone the 240 lines cost no frames.
+hazard on the screen longer). With Trogg alone the 240 lines cost no frames. With the game's
+balloons and daggers (more of them out at once than the stand-ins had), about 9.
 The players' strips take 127-134 lines a frame, from 213-236: the Scrubblies' strips are kept
 in each set while their players don't change, and of Trogg's only the old lines his new ones
 don't cover are cleared. Next: the software drawing (Trogg about 180 lines; each hazard's
@@ -61,6 +65,7 @@ Trogg's sprites come from the steamfrak repository's `assets/sprites` (alongside
     node test/tour.mjs build/a8.js build/trogg8x4.xex /tmp/tour "30:0 100:1 50:8 100:0"
     python3 test/checktrogg.py /tmp/tour A_1     # every screen, colour for colour
     python3 test/state.py /tmp/tour              # Trogg's place and state in each
+    python3 test/hzstate.py /tmp/tour            # the balloons and daggers in each
     python3 test/scr2png.py /tmp/tour/0012.scr shot.png
     test/tours.sh build/a8.js                    # all the checks: five tours on four builds
 
@@ -212,7 +217,8 @@ Arrow keys are joystick 1, Space or Ctrl fire, F2-F4 Start, Select and Option.
 | `tools/sprites.py` | The moving graphics as 10-bit graphics (`build/sprites.inc`) and the AND and OR tables; `build/sprites.json` for the checks |
 | `test/tour.mjs` | A program on the WebAssembly atari800 with a joystick script, saving the screen and memory every few frames |
 | `test/checktrogg.py` | Each saved screen against the level (with the gems and keys gone that the program's record says) and the things drawn on as it says, pixel by pixel |
-| `test/state.py`, `scr2png.py`, `tours.sh` | Trogg's state in each saved memory; a saved screen as a picture; all the checks |
+| `src/hazards.asm` | The balloons and daggers: the C64 port's, spawned, moved and gone as in the game |
+| `test/state.py`, `hzstate.py`, `scr2png.py`, `tours.sh` | Trogg's state, and the balloons' and daggers', in each saved memory; a saved screen as a picture; all the checks |
 | `tools/budget.py` | Codes the static graphics need per set: 8x8 against 8x4, by bands of rows |
 | `test/rows4.asm`, `readrows.py` | The 4-line row test, and its reader |
 | `test/shot.sh` | Runs a program in atari800 (PAL 800XL) under Xvfb and captures its window |

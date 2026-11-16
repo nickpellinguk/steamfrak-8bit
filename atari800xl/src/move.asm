@@ -43,7 +43,11 @@ _wd     dec wint
         jmp _still
 _play   jsr read_keys
         jsr trogg_update
-        jsr collide                 ; (what he's touching: the Scrubblies, the gems and keys)
+      .if !NOHAZ
+        jsr hazards                 ; (the balloons and daggers: hazards.asm)
+      .endif
+        jsr collide                 ; (what he's touching: the Scrubblies, balloons, daggers, gems
+                                    ; and keys)
         jsr checkcp                 ; (a checkpoint, if one's due)
 _still  jsr trogg_frame
         ldx tfr                     ; (the C64's frame numbering to sprites.py's)
@@ -76,6 +80,8 @@ restart lda havecp
         lda #0
         sta tyf
         sta tface
+        sta btim                    ; (a balloon and a dagger at once)
+        sta dtim
         sta pkgone0                 ; (the gems and keys back, as of the start: none gone)
         sta pkgone0+1
         beq _all
@@ -92,6 +98,10 @@ _cp     inc restarts
         sta tyf
         lda cpface
         sta tface
+        lda cpbtim
+        sta btim
+        lda cpdtim
+        sta dtim
         lda cpgone                  ; (the gems and keys gone as of the checkpoint)
         sta pkgone0
         lda cpgone+1
@@ -128,13 +138,11 @@ _all    jsr pkreset                 ; (the map to match: pick.asm)
         lda #1                      ; (a stick held through the restart does nothing till let go)
         sta ud_db
         sta lr_db
-        ldx #NHAZ - 1               ; (no balloons or daggers)
+        ldx #NHZ - 1                 ; (no balloons or daggers)
         lda #0
--       sta hk,x
+-       sta oact,x
         dex
         bpl -
-        lda #40
-        sta spawnt
         rts
 
 ; A checkpoint (the BBC version's): once one's due (a key picked up, not the last), when he's
@@ -162,6 +170,10 @@ checkcp lda savecp
         sta cptyf
         lda tface
         sta cpface
+        lda btim
+        sta cpbtim
+        lda dtim
+        sta cpdtim
         lda pkgone
         sta cpgone
         lda pkgone+1
@@ -1263,4 +1275,6 @@ cptx    .word 0
 cpty    .word 0
 cptyf   .byte 0
 cpface  .byte 0
+cpbtim  .byte 0
+cpdtim  .byte 0
 cpgone  .word 0
