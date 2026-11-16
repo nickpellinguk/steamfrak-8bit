@@ -1,4 +1,4 @@
-# front.py [LEVEL]: the front end's screen (src/front.asm), as the C64 port's (c64/src/front.asm,
+# front.py: the front end's screen (src/front.asm), as the C64 port's (c64/src/front.asm,
 # its layout from c64/tools/build.mjs): "The Cast", the FRAK! bubble at the top, Trogg, a
 # Scrubbly, a Hooter and a Poglet down the middle with their names, then the closing lines. One
 # 320 x 220 hi-res bitmap (ANTIC mode F, scanlines 8-227: the bubble in the first 19 lines, the
@@ -15,7 +15,7 @@ import json, os, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, '..', '..', 'tools'))
 from pack import compress, decompress
-LV = sys.argv[1] if len(sys.argv) > 1 else 'A_1'
+LV = 'A_1'                                                 # (the cast's images: any level's would do)
 OUT = os.path.join(HERE, '..', 'build')
 H = json.load(open(os.path.join(HERE, '..', '..', 'c64', 'build', LV, 'picks.json')))['hazards']
 G = {g['name']: g for g in json.load(open(os.path.join(OUT, 'sprites.json')))['graphics']}

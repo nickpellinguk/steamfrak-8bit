@@ -12,7 +12,8 @@ LEVEL=${LEVEL:-A_1}
 python3 tools/screen.py $LEVEL
 python3 tools/sprites.py
 python3 tools/geom.py $LEVEL
-python3 tools/front.py $LEVEL
+# (the front end: the same for every level, and slow to pack: only when front.py's changed)
+[ build/front_bm.lz -nt tools/front.py ] && [ -f build/front.inc ] || python3 tools/front.py
 OPT=""; [ -n "$STILLX" ] && OPT="-D STILLX=$STILLX"
 (cd src && 64tass --atari-xex -q -D LEVEL=\"$LEVEL\" $OPT screen8x4.asm -o ../build/screen8x4.xex)
 (cd src && 64tass --atari-xex -q -D LEVEL=\"$LEVEL\" trogg8x4.asm -o ../build/trogg8x4.xex --labels=../build/trogg8x4.lbl)
