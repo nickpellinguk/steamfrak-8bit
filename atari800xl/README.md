@@ -32,15 +32,18 @@ no infill (a player would show over the border); Poglets and Hooters have none y
 
 **Speed:** the game runs at 50 ticks a second whatever the drawing takes (the VBI counts fields;
 each frame made runs a tick for each field since the last, up to 4, as the C64 version makes up
-for late frames). Frames: 25 a second with Trogg alone (a frame takes about 400 lines: 1.3
-fields), about 17 with balloons and daggers out (every outline in software: about 2.3 fields).
+for late frames). Frames, measured standing at A_1's start: 16.7 a second with Trogg alone (3
+fields a frame; 25 before the game's logic and the keys' yellow came in), about 10 with the
+stand-in balloons and daggers out (every outline in software; 12.5 at 208 lines: the taller
+screen costs about 1,900 cycles a field in ANTIC's fetches and 8 more DLIs, and keeps each
+hazard on the screen longer). With Trogg alone the 240 lines cost no frames.
 The players' strips take 127-134 lines a frame, from 213-236: the Scrubblies' strips are kept
 in each set while their players don't change, and of Trogg's only the old lines his new ones
 don't cover are cleared. Next: the software drawing (Trogg about 180 lines; each hazard's
 outline the rest) and the multiplexer (60-170 lines).
 
-Before that, **an 8x4 screen demo.** `build/screen8x4.xex` shows the C64 port's A_1 ("FRAK!") on 52
-rows of 4 lines, scrolling back and forth across the level 2 pixels a frame. It's black outlines
+Before that, **an 8x4 screen demo.** `build/screen8x4.xex` shows the C64 port's A_1 ("FRAK!") on 60
+rows of 4 lines (240 lines: 52 at first, 208), scrolling back and forth across the level 2 pixels a frame. It's black outlines
 on one background colour: no infills, Trogg or game yet. Checked in atari800 against the C64's
 picture of the level: every pixel the same at 11 scroll positions (each fine-scroll phase, both
 ends) and in captures while it moves; A_2 and A_3 too. Not yet tried in Altirra or on a real
@@ -112,8 +115,8 @@ Arrow keys are joystick 1, Space or Ctrl fire, F2-F4 Start, Select and Option.
   row of a pair) and tops halves (the second) separately: 64 of each, so a code serves a cell of
   each kind of row.
 - **`plot`** (`src/trogg8x4.asm`) draws a graphic at a top left x (level pixels, signed) and a
-  top line (display line + 32, so things can start above or below the screen), for each cell
-  in the screen's 52 rows and the 41 columns in view where it isn't all transparent: a spare
+  top line (its scanline, the screen 8-247, so things can start above or below it), for each cell
+  in the screen's 60 rows and the 41 columns in view where it isn't all transparent: a spare
   character's half in the character set not shown, started from the level's half glyph there
   (read through the clean map, which is never drawn on) or, if something has the cell already
   this frame (a table of the cells in view), from that; its 4 lines ANDed and ORed on
@@ -183,10 +186,17 @@ Arrow keys are joystick 1, Space or Ctrl fire, F2-F4 Start, Select and Option.
   [`test/README.md`](test/README.md).
 - **Two glyphs a character:** the first row of a pair shows its characters' bytes 4-7 (a
   "bottoms" row), the second bytes 0-3 (a "tops" row), so each code holds two 4-line glyphs,
-  numbered independently. The C64's character row n (tops then bottoms) becomes Atari rows
-  bottoms(n-1), tops(n) paired: 52 rows from the C64's 25, the first and last blank. A_1 needs
-  46 codes (41 tops glyphs, 46 bottoms), A_2 57, A_3 41: one character set each.
-- **Scrolling:** every row has its own LMS into the map (52 rows of 128 bytes, the level from
+  numbered independently. A_1 needs 46 codes, A_2 57, A_3 41: one character set each.
+- **240 lines:** ANTIC's most (scanlines 8-247, on PAL as on NTSC: it forces the vertical blank
+  at 248). 60 rows show the original's level lines 16-255 (it's 256 high; the top 16 were its
+  HUD's margin), against the C64's 200 (lines 24-223). The Atari's row r shows the C64's half
+  row r - 2 (its character row n's halves are 2n and 2n + 1), so the rows above and below the
+  C64's are blank: the C64's level files hold its 200 lines' worth, and on A_1 the original's
+  margins are empty too. The display list has no blank lines, and its last row no DLI (the VBI
+  follows). The VBI reloads `DLISTL` every field: with 240 lines ANTIC reaches the vertical blank
+  before fetching the list's JVB, and left alone would fetch it at the top of the next frame and
+  wait out that whole frame, blank (found when every other screen came out empty).
+- **Scrolling:** every row has its own LMS into the map (60 rows of 128 bytes, the level from
   byte 4), and `HSCROL` is on for the fine steps. The deferred VBI sets `HSCROL` = -x & 3 and each
   row's LMS to row + (x + 3) / 4, for a scroll position x in colour clocks.
 
@@ -194,7 +204,7 @@ Arrow keys are joystick 1, Space or Ctrl fire, F2-F4 Start, Select and Option.
 | --- | --- |
 | `tools/screen.py` | A level's character set and map for the 8x4 screen, from the C64 build's picture of it (`c64/build/<level>/chars.bin`); `build/<level>_expect.png`, the picture the Atari should show; the Scrubblies' and keys' infill fitted to players; each gem's and key's cells with it gone (`_picks.inc`) |
 | `src/screen8x4.asm` | The demo: display list, row DLIs, scrolling VBI (with the OS, for now) |
-| `src/trogg8x4.asm` | (memory: the program `$0800-$8fff`, the level's map `$9000`, the character sets `$ac00` and `$b000`, the display list `$b400`, the VBI's programs `$b500-$bdee`; under the OS, which ANTIC sees as the CPU does: the players' graphics `$c000` and `$c800`, the screen's map `$d800`, the bands' registers `$f200`, the claims `$f580`) |
+| `src/trogg8x4.asm` | (memory: the program `$0800-$8fff`, the level's map `$9000-$adff`, the display list `$ae00`, the character sets `$b000` and `$b400`, the VBI's programs `$b800`, `$bb00` and `$c000` (the last in the first players' graphics' unused `$300`); under the OS, which ANTIC sees as the CPU does: the players' graphics `$c000` and `$c800`, the screen's map `$d800-$f5ff`, the bands' registers `$f600`; the claims in three parts, `$f980`, `$c800` (the second players' graphics' unused `$300`) and `$be00`) |
 | `src/trogg8x4.asm` | The same with Trogg: the game's ticks, the camera, drawing into spare characters, the multiplexer, the VBI showing a frame |
 | `src/move.asm` | Trogg's movement: the C64 port's (`c64/src/play.asm`), on the joystick; dying, checkpoints, the level complete |
 | `src/pick.asm` | Collisions (Scrubblies, gems, keys); gems and keys going from the map (and coming back) through the VBI's programs; the keys listed for their yellow |
