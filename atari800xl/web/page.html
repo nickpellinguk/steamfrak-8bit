@@ -75,9 +75,10 @@ a { color: var(--amber); }
   <div class="notes">
     <section>
       <h2>What this is</h2>
-      <p>The 8x4 screen demo for the Atari 800XL port: the C64 port's levels on ANTIC mode 2 rows 4 lines high. Each pair of rows shows glyph lines 4–7 and then 0–3 of its characters, so every character code holds two 4-line glyphs.</p>
-      <p>Trogg, balloons and daggers on A_1. Every outline is drawn at full resolution in spare characters; a multiplexer gives the four hardware sprites out band by band for the infills: Trogg's yellow and magenta first, then the Scrubblies' bodies, then the balloons. The joystick walks and climbs Trogg; fire shows his yoyo pose.</p>
-      <p>The 4-line row test draws a staircase: each row of a pair should show four steps. Five steps, or rows 8 lines high, mean the timing is off.</p>
+      <p>Frak! on a PAL Atari 800XL. It starts on the front end: press <kbd>1</kbd>, <kbd>2</kbd> or <kbd>3</kbd> to choose a level (Scrubblies, Poglets or Hooters), then fire or <kbd>F2</kbd> to play. <kbd>Esc</kbd> goes back to the front end.</p>
+      <p>Collect all the keys. The yoyo knocks Scrubblies off and pops balloons and daggers; touching any of them kills Trogg, and he says so. The display is 240 lines of ANTIC mode 2 rows only 4 lines high. Every outline is drawn in software into spare characters, and a multiplexer gives the four hardware sprites out band by band for the infills.</p>
+      <p>Press <b>Sound</b> to hear the music: the BBC version's player on the POKEY, with the bass on two joined channels. <kbd>M</kbd> changes the music (all tracks, the tune alone, off) and <kbd>S</kbd> turns the sound effects off and on.</p>
+      <p>The other programs are the 8x4 screen demo for each level and the 4-line row test, a staircase in which each row of a pair should show four steps.</p>
     </section>
     <section>
       <h2>Keys</h2>
