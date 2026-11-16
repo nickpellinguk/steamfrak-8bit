@@ -7,14 +7,14 @@
 # (COLPF1) in the hue of whatever is under it (PF2, or a player). The record: a frame's VBI comes
 # after its picture, so the picture shows the frame before's (pvi) when that VBI showed a new
 # frame ("fresh"), else still the one shown (shi). The things are drawn in their order, Trogg last
-# (on top), the yoyo's string (from the record) just before the yoyo. Every pixel of the 320 x 240 play area.
+# (on top), then the FRAK! bubble (its yellow on one quad-width player), the yoyo's string (from the record) just before the yoyo. Every pixel of the 320 x 240 play area.
 import sys, os, json, glob
 from collections import Counter
 from PIL import Image
 HERE = os.path.dirname(os.path.abspath(__file__)); B = os.path.join(HERE, '..', 'build')
 d, lv = sys.argv[1], sys.argv[2]
 exp = Image.open(os.path.join(B, f'{lv}_expect.png')).load()
-graphics = json.load(open(os.path.join(B, 'sprites.json')))['graphics']
+SP = json.load(open(os.path.join(B, 'sprites.json'))); graphics, FRAK = SP['graphics'], SP['frak']
 L = {}
 for l in open(os.path.join(B, 'trogg8x4.lbl')):
     f = l.split()
@@ -60,7 +60,8 @@ for scr in sorted(glob.glob(os.path.join(d, '*.scr'))):
                     for k in range(bw):
                         xx = x0 + bw * b + k
                         if 0 <= xx < 320 and (pl[y][xx] is None or pl[y][xx][0] > prio): pl[y][xx] = (prio, colour)
-    for i in list(range(1, n)) + [0] if n else []:   # (in order, then Trogg on top: the BBC version's)
+    rest = [i for i in range(1, n) if F('G', i) != L['GR_FRAK']]   # (in order, then Trogg on top, then
+    for i in rest + [0] + [i for i in range(1, n) if i not in rest] if n else []:   # the FRAK! bubble: the BBC version's)
         g = F('G', i)
         if L['GR_YOYO0'] <= g <= L['GR_YOYO3'] and m[L['OB_SY'] + rr]:     # (the yoyo: its string first)
             s0 = m[L['OB_S0'] + rr] | m[L['OB_S0'] + 3 + rr] << 8; s1 = m[L['OB_S1'] + rr] | m[L['OB_S1'] + 3 + rr] << 8
@@ -106,17 +107,23 @@ for scr in sorted(glob.glob(os.path.join(d, '*.scr'))):
             if hw != 255:
                 put(2, BLK, o['l'], sxp, top, 8, 0, lines=below); put(3, BLK, o['r'], sxp + 16, top, 8, 0, lines=below)
             continue
+        if g == L['GR_FRAK']:                      # the bubble's yellow: one quad-width player
+            if pb < 4: put(pb, YEL, FRAK['y'], sxp + FRAK['x'], top, 8, 0, bw=8)
+            continue
         if pa < 4: put(pa, BLK, p['a'], sxp, top, 8, 0)
         if pb < 4: put(pb, MAG, p['b'], sxp, top, 8, 0)
-    bad = 0
+    bad = 0; wh = []
     for y in range(H):
         for x in range(320):
             q = pl[y][x]
             want = ((q[1] & 0xf0) if q else OUT) if chars[y][x] else (q[1] if q else BG)
-            bad += s[(Y0 + y) * 384 + X0 + x] != want
+            if s[(Y0 + y) * 384 + X0 + x] != want:
+                bad += 1
+                if os.environ.get('WHERE'): wh.append((x, y, s[(Y0 + y) * 384 + X0 + x], want))
     if bad:
         bad_shots += 1
         print(f'{os.path.basename(scr)}: {bad} pixels differ; scroll {sx}; ' + ', '.join(desc))
+        if wh: print('  (x, y, shown, wanted):', wh[:6], '... x', min(w[0] for w in wh), '-', max(w[0] for w in wh), 'y', min(w[1] for w in wh), '-', max(w[1] for w in wh))
 n = len(glob.glob(os.path.join(d, '*.scr')))
 drops = m[L['drops']] | m[L['drops'] + 1] << 8
 print(f'{n} screens, {n - bad_shots} exact; frames not made in time: {drops}; most things on a screen {most}, '

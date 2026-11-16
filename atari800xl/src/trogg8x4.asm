@@ -684,20 +684,27 @@ tklp    jsr gametick                ; a tick: the joystick, Trogg, the balloons 
       .endif
         jsr yolist                  ; the yoyo and its string
         jsr pklist                  ; the keys (their yellow)
+        jsr fraklist                ; the FRAK! bubble, if he's dead
         jsr mux                     ; hardware sprites given out
         jsr pmdraw                  ; ... their graphics and bands' registers
         ldx #1                      ; the rest drawn in software: each thing in order, then
 swlp    cpx nob                     ; Trogg on top (as the BBC version: the hazards, the string,
-        bcs swtr                    ; the yoyo, him)
+        bcs swtr                    ; the yoyo, him), then the FRAK! bubble
+        cpx fslot
+        beq +
         stx hslot
         jsr swone
         ldx hslot
-        inx
++       inx
         bne swlp
 swtr    ldx #0
         stx hslot
         jsr swone
-        jmp swend
+        ldx fslot
+        beq +
+        stx hslot
+        jsr swone
++       jmp swend
 swone   txa                         ; thing x
         clc
         adc obi
@@ -934,6 +941,38 @@ hzln    dex
         bpl hzl
         rts
 hzgr    .byte GR_BALLOON, GR_DAGGERLR
+
+; ---- The FRAK! bubble (while he's dead, as the BBC version): its corner at (tx + 12, gy - 44),
+; x down to a multiple of 4 (sprites.py compiles it at shifts 0 and 4 only: at most 2 pixels left
+; of the BBC version's); its thing's number fslot (0: none), drawn after Trogg
+fraklist lda #0
+        sta fslot
+        lda dead
+        beq +
+        lda #GR_FRAK
+        sta pg
+        lda tx
+        clc
+        adc #12
+        and #$fc
+        sta px
+        lda tx+1
+        adc #0
+        sta px+1
+        lda gy                      ; (the scanline: gy - 44 - 8)
+        sec
+        sbc #52
+        sta pd
+        lda gy+1
+        sbc #0
+        bne +                       ; (above the players' memory: not drawn)
+        lda nob
+        cmp #NOBJ
+        bcs +
+        sta fslot
+        jmp addobj
++       rts
+fslot   .byte 0
 
 ; ---- The yoyo (yoyo.asm) listed for the frame, after the balloons and daggers (so drawn after
 ; them, before Trogg), from its origin (yo_x, yo_y) as they are; and its string (the BBC version's):
@@ -1671,7 +1710,9 @@ mxtrog
 
 mxhaz   ldx #0                      ; 4. the balloons and daggers, in order down
 mxh     cpx nob
-        bcs mxkey
+        bcc +
+        jmp mxkey
++
         stx midx
         lda order,x
         beq mxhn                    ; (Trogg: done)
@@ -1687,7 +1728,11 @@ mxh     cpx nob
         ldx OB_G,y
         cpx #GR_SCRUB
         bcs mxhn
-        lda gp_ok,x
+        cpx #GR_FRAK                ; (the FRAK! bubble: its yellow, as a key's)
+        bne +
+        jsr yelp
+        jmp mxhn
++       lda gp_ok,x
         beq mxhn
         cpx #GR_BALLOON
         bne mxdag
@@ -1731,7 +1776,7 @@ mxdag
         sta OB_LV,y
 mxhn    ldx midx
         inx
-        bne mxh
+        jmp mxh
 mxkey   ldx #0                      ; 5. the keys, in order down: a double-width player each, P3
 mxk     cpx nob                     ; else P0 (yellow; two normal-width players, P0 and P3, would
         bcs mxend                   ; be 6 writes in a band, over its 5)
@@ -1749,16 +1794,7 @@ mxk     cpx nob                     ; else P0 (yellow; two normal-width players,
         lda OB_G,y
         cmp #GR_KEY
         bne mxkn
-        lda #3
-        jsr one
-        bcc +
-        lda #0
-        jsr one
-        bcs mxkn
-+       ldy mcnt
-        sta OB_PB,y
-        lda #1
-        sta OB_LV,y
+        jsr yelp
 mxkn    ldx midx
         inx
         bne mxk
@@ -1773,6 +1809,18 @@ mxend   lda hwl                     ; (Trogg's record: his outline's line)
         pla
         sta OB_HW,x
         rts
+
+yelp    lda #3                      ; a yellow player for thing mk (record mcnt): P3, else P0
+        jsr one
+        bcc +
+        lda #0
+        jsr one
+        bcs ++
++       ldy mcnt
+        sta OB_PB,y
+        lda #1
+        sta OB_LV,y
++       rts
 
 pair2   sta mp2                     ; players a and x for thing mk (record mcnt), if both free and
         stx mlast+0                 ; its band has room for their writes: carry clear if so
@@ -2019,6 +2067,10 @@ pmlp    ldx midx
         bne +
         jsr pmkey
         jmp pmnext
++       cmp #GR_FRAK
+        bne +
+        jsr pmfrak
+        jmp pmnext
 +       cmp #GR_SCRUB
         bne +
         jsr pmscr
@@ -2067,6 +2119,16 @@ pmnext  inc midx
         jmp pmlp
 pmhi    .byte >PMG0, >PMG1
 
+pmfrak  lda OB_PB,y                 ; the FRAK! bubble: its yellow, quad width (sprites.py)
+        sta mp2
+        lda #<frak_y
+        sta msrc
+        lda #>frak_y
+        sta msrc+1
+        lda #FRAK_YX / 2
+        sta moff
+        lda #3
+        bne pmyel
 pmkey   lda OB_PB,y                 ; a key: its yellow, double width
         sta mp2
         lda #<key_d
@@ -2076,7 +2138,7 @@ pmkey   lda OB_PB,y                 ; a key: its yellow, double width
         lda #KEY_DX / 2
         sta moff
         lda #1
-        sta msize
+pmyel   sta msize
         lda #COL_YEL
         sta mcol
         jmp pstrip
@@ -2606,8 +2668,8 @@ plot    ldx pg
         beq +                       ; 0 to 255 columns on: in view if 40 or fewer
         cmp #$ff
         bne plotx                   ; far off: not drawn
-        lda scol0                   ; to the left: in view if its 4 columns can reach
-        cmp #$fc
+        lda scol0                   ; to the left: in view if its columns can reach (8 at most: the
+        cmp #$f8                    ; FRAK! bubble's)
         bcs ++
 plotx   rts
 +       lda scol0

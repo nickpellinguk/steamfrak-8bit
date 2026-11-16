@@ -451,7 +451,6 @@ _tone   ldy v_env,x                 ; pitch envelope: this tick's offset, then o
         clc
         adc v_epos,x
         sta snd_tmp
-        clc
         adc #1
         cmp env_end,y
         bcc +
@@ -459,75 +458,57 @@ _tone   ldy v_env,x                 ; pitch envelope: this tick's offset, then o
 +       sec
         sbc env_start,y
         sta v_epos,x
-        lda v_semi,x                ; p = semitone * 8 + offset (eighths of a semitone)
-        sta snd_p
-        lda #0
-        sta snd_p+1
-        asl snd_p
-        rol snd_p+1
-        asl snd_p
-        rol snd_p+1
-        asl snd_p
-        rol snd_p+1
-        ldy snd_tmp
-        lda env_data,y
-        pha
-        clc
-        adc snd_p
-        sta snd_p
-        pla
-        bmi +
-        lda #0
-        beq ++
-+       lda #$ff
-+       adc snd_p+1
-        sta snd_p+1
-        bpl +
-        lda #0
-        sta snd_p
-        sta snd_p+1
-+       lda v_raised,x              ; (the CPC version's: a track the BBC version plays an octave
-        beq +                       ;  up, for its chip's lowest note, down again)
-        lda snd_p
-        sec
-        sbc #96
-        tay
-        lda snd_p+1
-        sbc #0
+        ldy #0                      ; the semitone: its octave (Y) and eighths in it (A)
+        lda v_semi,x
+-       cmp #12
         bcc +
-        sta snd_p+1
-        sty snd_p
-+       ldy #0                      ; octave (Y) and the eighth of a semitone in it (snd_p)
-_oct    lda snd_p
-        sec
-        sbc #96
-        sta snd_tmp
-        lda snd_p+1
-        sbc #0
-        bcc _in
-        sta snd_p+1
-        lda snd_tmp
-        sta snd_p
+        sbc #12
         iny
-        bne _oct
-_in     sty snd_tmp                 ; its clock count: pt16 >> (octave + 2), rounded
+        bne -
++       asl a
+        asl a
+        asl a
+        sty snd_p
+        ldy snd_tmp                 ; plus this tick's offset (-8 to 48 eighths), across octaves
+        clc
+        adc env_data,y
         ldy snd_p
-        lda pt16_lo,y
-        sta v_nl,x
+        bcs _up2                    ; (a negative offset, still in this octave)
+        cmp #$f8                    ; (else under it: -8 to -1; a positive one, 0-136)
+        bcc _up2
+-       dey                         ; (below it: down an octave, or the lowest note)
+        bmi _low
+        adc #96
+        bcc -
+        bcs _in
+_low    lda #0
+        tay
+        beq _in
+_up2    cmp #96                     ; (at or over the octave: up)
+        bcc _in
+        sbc #96
+        iny
+        bne _up2
+_in     sta snd_p+1
+        lda v_raised,x              ; (the CPC version's: a track the BBC version plays an octave
+        beq +                       ;  up, for its chip's lowest note, down again)
+        tya
+        beq +
+        dey
++       sty snd_tmp                 ; its clock count: pt16 >> (octave + 2), rounded
+        ldy snd_p+1
         lda pt16_hi,y
-        sta v_nh,x
+        sta snd_p
+        lda pt16_lo,y
         ldy snd_tmp
         iny
-_sh     lsr v_nh,x
-        ror v_nl,x
+-       lsr snd_p
+        ror a
         dey
-        bne _sh
-        lsr v_nh,x
-        ror v_nl,x
-        lda v_nl,x
+        bpl -
         adc #0
         sta v_nl,x
-        lda v_nh,x
+        lda snd_p
         adc #0
         sta v_nh,x
         rts
@@ -640,35 +621,18 @@ _ch     ldy snd_owner,x
         lda ins_noise,y
         and #3
         tay
-        lda pnoise,y
-        sta snd_dl
-        lda #0
-        sta snd_dh
         lda snd_c
         ora #$80
         sta snd_c
+        lda pnoise,y                ; (an 8-bit channel's divider; the 16-bit one's, pnoise16)
+        sta snd_dl
         cpx #0
         bne _cf
-        lda snd_dl                  ; (on the 16-bit channel: (N + 1) * 28 - 7)
-        sec                         ; (+ 1, then * 28 = * 32 - * 4, then - 7)
-        adc #0
+        lda pn16_lo,y
         sta snd_dl
-        jsr snd_x4
-        lda snd_dl
-        sta snd_ql
-        lda snd_dh
-        sta snd_qh
-        jsr snd_x4
-        jsr snd_x4
-        jsr snd_x2
-        lda snd_dl
-        sec
-        sbc snd_ql
-        sta snd_dl
-        lda snd_dh
-        sbc snd_qh
+        lda pn16_hi,y
         sta snd_dh
-        jmp _c16
+        jmp _cf
 _cton   lda v_nl,y                  ; a tone: its clock count D
         sta snd_dl
         lda v_nh,y
@@ -719,10 +683,6 @@ _cc     lda chc,x                   ; the volume and distortion, if they've chan
 +       rts
 chf     .byte 0, 4, 6               ; (each channel's divider: AUDF1 (and AUDF2), AUDF3, AUDF4)
 chc     .byte 3, 5, 7               ; (... its control: AUDC2, AUDC3, AUDC4)
-snd_x4  jsr snd_x2
-snd_x2  asl snd_dl
-        rol snd_dh
-        rts
 ; snd_dl/dh = (D + 14) / 28 (D in snd_dl/dh; whole)
 snd_div28
         lda snd_dl
@@ -821,11 +781,6 @@ _no     clc
 
 ; The POKEY as the player wants it, and nothing playing
 snd_init
-        ldx #42
-        lda #0
--       sta SV,x
-        dex
-        bpl -
         lda #$50                    ; (channel 1 on 1.79MHz, joined to 2: 16 bits)
         sta AUDCTL
         ldx #7
@@ -833,21 +788,15 @@ snd_init
 -       sta AUDF1,x
         dex
         bpl -
-        ldx #2
-        lda #$ff
--       sta snd_owner,x
-        sta last_fl,x
-        sta last_c,x
+        ldx #42                     ; the variables: 0, then $ff for the channels' owners and what
+-       sta SV,x                    ; was last written (none), the noise channel, the requests
         dex
         bpl -
-        sta snd_nch
-        sta snd_music_req
-        sta snd_sfx_req
-        sta snd_sfx_req2
-        sta last_fh
-        lda #0
-        sta snd_tune
-        sta snd_cur
+        ldx #snd_sfx_req2 - snd_owner
+        lda #$ff
+-       sta snd_owner,x
+        dex
+        bpl -
         ldx #NV - 1
 -       jsr snd_silence
         lda #0
@@ -891,24 +840,24 @@ snd_tmp = SV + 14
 snd_p   = SV + 15                   ; (2)
 snd_m_last = SV + 17
 snd_s_last = SV + 18
-snd_owner = SV + 19                 ; (3: the voice each channel is playing: $ff none)
-snd_nch = SV + 22                   ; (the noise voice's channel: $ff none)
-snd_nv  = SV + 23                   ; (the noise voice this tick: $ff none)
-last_fl = SV + 24                   ; (3: each channel's divider and control as last written)
-last_fh = SV + 27
-last_c  = SV + 28                   ; (3)
-snd_y   = SV + 31
-snd_qa  = SV + 32
-snd_qc  = SV + 33
-snd_c   = SV + 34
-snd_dl  = SV + 35
-snd_dh  = SV + 36
-snd_ql  = SV + 37
-snd_qh  = SV + 38
-snd_music_req = SV + 39             ; (the game's requests)
-snd_sfx_req = SV + 40
-snd_sfx_req2 = SV + 41
-snd_cur = SV + 42
+snd_y   = SV + 19
+snd_qa  = SV + 20
+snd_qc  = SV + 21
+snd_c   = SV + 22
+snd_dl  = SV + 23
+snd_dh  = SV + 24
+snd_ql  = SV + 25
+snd_qh  = SV + 26
+snd_cur = SV + 27
+snd_nv  = SV + 28                   ; (the noise voice this tick: $ff none)
+snd_owner = SV + 29                 ; ($ff from here, by snd_init: 3: the voice each channel is playing)
+snd_nch = SV + 32                   ; (the noise voice's channel)
+last_fl = SV + 33                   ; (3: each channel's divider and control as last written)
+last_fh = SV + 36
+last_c  = SV + 37                   ; (3)
+snd_music_req = SV + 40             ; (the game's requests)
+snd_sfx_req = SV + 41
+snd_sfx_req2 = SV + 42
         .cerror SV + 43 > $0500, "the player's variables reach OBJS"
 ; ... and $0730-$07ff: per voice (the tracks, then the two sound effects)
 VV      = $0730
