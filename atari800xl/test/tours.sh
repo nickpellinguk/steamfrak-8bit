@@ -7,12 +7,13 @@
 set -e
 A8=$1; OUT=${OUT:-/tmp/tours}; LV=${LEVEL:-A_1}
 build() { (cd src && 64tass --atari-xex -q -D LEVEL=\"$LV\" -D FRONTEND=${FR:-0} $2 trogg8x4.asm -o ../build/$1.xex --labels=../build/$1.lbl); }
-tour() {   # name build script [c: the collisions checked too (not for the INVINCIBLE builds)]
+tour() {   # name build script [c: the collisions checked too (not for the INVINCIBLE builds)] [level]
+    TL=${5:-$LV}
     rm -rf $OUT/$1; node test/tour.mjs $A8 build/$2.xex $OUT/$1 "$3" >/dev/null
     cp build/$2.lbl build/trogg8x4.lbl.tmp; cp build/trogg8x4.lbl build/trogg8x4.lbl.keep; cp build/$2.lbl build/trogg8x4.lbl
-    python3 test/checktrogg.py $OUT/$1 $LV | sed "s/^/$1: /" | tail -2 || FAIL=1
+    python3 test/checktrogg.py $OUT/$1 $TL | sed "s/^/$1: /" | tail -2 || FAIL=1
     python3 test/state.py $OUT/$1 | tail -1 | sed "s/^/$1: end /"
-    [ "$4" = c ] && { python3 test/collcheck.py $OUT/$1 | tail -1 | sed "s/^/$1: /" || FAIL=1; }
+    [ "$4" = c ] && { LEVEL=$TL python3 test/collcheck.py $OUT/$1 | tail -1 | sed "s/^/$1: /" || FAIL=1; }
     cp build/trogg8x4.lbl.keep build/trogg8x4.lbl; rm build/trogg8x4.lbl.tmp build/trogg8x4.lbl.keep
 }
 FAIL=0
@@ -22,6 +23,9 @@ GEM="30:0 100:1 50:8 50:4 100:1 200:8 100:0"            # up the F, the gem, up 
 KEY="30:0 40:4 30:0 60:8 300:0"                          # a key at once, off the edge: back at the checkpoint
 YOYO="30:0 100:1 50:8 50:4 100:1 20:8 60:0:1 60:0 150:8 100:0"   # up the F, the yoyo at its Scrubbly, through where it was
 WALK="100:1 60:8 30:9 60:8 40:10 100:8 60:9 200:8 60:6 200:8 80:5 200:8 100:4 200:8"   # across the level, jumping
+build t_l2 "-D LSTART=1"; build t_l3 "-D LSTART=2"
+LWALK="60:0 200:8 60:9 100:8 100:0 200:4 60:5 200:4 100:0 300:8"     # (A_2, A_3: about the start)
+tour l2 t_l2 "$LWALK" c A_2; tour l3 t_l3 "$LWALK" c A_3
 tour gem t_def "$GEM" c; tour key t_key "$KEY" c; tour yoyo t_def "$YOYO" c; tour walk t_inv "$WALK"; tour stress t_str "$WALK"; tour hwout t_hw "$WALK"
 # the front end (a FRONTEND build): its screen, colour for colour, while it's up
 FR=1 build t_fe ""

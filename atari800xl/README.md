@@ -8,7 +8,15 @@ on the C64 port's 8x4 grid, so the C64's levels carry over cell for cell. The pl
 It starts on a front end like the C64 port's: "The Cast", the FRAK! bubble, Trogg, a Scrubbly, a
 Hooter and a Poglet with their names, then "Collect all the keys to win!" (`src/front.asm`,
 `tools/front.py`): a hi-res bitmap, the text from the machine's ROM font, every infill on players
-and exact; fire, Start, Space, Return, P or Y plays, and Escape in the game comes back to it. Every
+and exact; fire, Start, Space, Return, P or Y plays, 1, 2 or 3 chooses the level, and Escape in the
+game comes back to it. **Three levels**, one of each type, as the C64 port has: A_1 (Scrubblies,
+on cyan), A_2 (Poglets, on green), A_3 (Hooters, on red). As the C64's loader does, each level's
+own tables and numbers sit at fixed places in a block, as long as the longest level's
+(`tools/levels.py`), so the code is the same for any; each level's block, character set and map
+are packed in the program and unpacked at the start (`levelset`). The Poglets' and Hooters'
+infill is their magenta (from the C64's multicolour sprite), on players as the Scrubblies' is;
+their yellow is still to come. Only the enemies near the view are listed each frame (A_2 has 9).
+Every
 outline is drawn in software at full resolution (players are 2 hires pixels a block at their
 finest, so an outline on one would be at half resolution), and the four players carry the
 infills, given out band by band in this order: Trogg's (yellow and magenta, on P0 and P1 and
@@ -72,7 +80,7 @@ machine.
 ## Building and running
 
     ./build.sh                 # build/screen8x4.xex (and build/rows4.xex, the row test)
-    LEVEL=A_2 ./build.sh       # another of the C64 port's levels (A_1, A_2, A_3 so far)
+    LEVEL=A_2 ./build.sh       # the screen demo on another level (the game carries all three)
     STILLX=100 ./build.sh      # held at a scroll position (colour clocks) instead of moving
 
 Trogg's sprites come from the steamfrak repository's `assets/sprites` (alongside this one, or
@@ -232,10 +240,11 @@ Arrow keys are joystick 1, Space or Ctrl fire, F2-F4 Start, Select and Option.
 | --- | --- |
 | `tools/screen.py` | A level's character set and map for the 8x4 screen, from the C64 build's picture of it (`c64/build/<level>/chars.bin`); `build/<level>_expect.png`, the picture the Atari should show; the Scrubblies' and keys' infill fitted to players; each gem's and key's cells with it gone (`_picks.inc`) |
 | `src/screen8x4.asm` | The demo: display list, row DLIs, scrolling VBI (with the OS, for now) |
-| `src/trogg8x4.asm` | (memory: the program `$0800-$abff`, its page-aligned tables first, the level's map packed at its end (about 9K free after it; 6K with `HWOUT=1`), what's under the spare characters drawn `$ac00` and `$ad00`, the display list `$ae00`, the character sets `$b000` and `$b400`, the VBI's programs `$b800`, `$bb00` and `$c000` (the last in the first players' graphics' unused `$300`), its patch program `$be80`; under the OS, which ANTIC sees as the CPU does: the players' graphics `$c000` and `$c800`, the screen's map `$d800-$f5ff`, the bands' registers `$f600`; the claims in three parts, `$f980`, `$c800` (the second players' graphics' unused `$300`) and `$be00`) |
+| `src/trogg8x4.asm` | (memory: the program `$0800-$abff`, its page-aligned tables first, the three levels packed at its end (174 bytes free after them; `HWOUT=1` builds carry A_1 alone, 2.7K free), the level's block below `$ac00` (`LVL`, 2.6K), what's under the spare characters drawn `$ac00` and `$ad00`, the display list `$ae00`, the character sets `$b000` and `$b400`, the VBI's programs `$b800`, `$bb00` and `$c000` (the last in the first players' graphics' unused `$300`), its patch program `$be80`; under the OS, which ANTIC sees as the CPU does: the players' graphics `$c000` and `$c800`, the screen's map `$d800-$f5ff`, the bands' registers `$f600`; the claims in three parts, `$f980`, `$c800` (the second players' graphics' unused `$300`) and `$be00`) |
 | `src/trogg8x4.asm` | The same with Trogg: the game's ticks, the camera, drawing into spare characters, the multiplexer, the VBI showing a frame |
 | `src/move.asm` | Trogg's movement: the C64 port's (`c64/src/play.asm`), on the joystick; dying, checkpoints, the level complete |
 | `src/pick.asm` | Collisions (Scrubblies, gems, keys); gems and keys going from the map (and coming back) through the VBI's programs; the keys listed for their yellow |
+| `tools/levels.py` | The levels' blocks: each level's tables and numbers (`<level>_geom.json`, `_screen.json`) at fixed places, packed with its character set and map: `build/levels.inc` |
 | `tools/geom.py` | A level's platforms and ladders (the C64 build's `geometry.json`), Trogg's and the Scrubblies' collision boxes: `build/<level>_geom.inc` |
 | `tools/sprites.py` | The moving graphics as 10-bit graphics (`build/sprites.inc`) and the AND and OR tables; `build/sprites.json` for the checks |
 | `test/tour.mjs` | A program on the WebAssembly atari800 with a joystick script, saving the screen and memory every few frames |

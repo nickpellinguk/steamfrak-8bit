@@ -55,10 +55,13 @@ collide lda dead
         #cedge tbx1, tx, ctr
         #cedge tby0, gy, ctt
         #cedge tby1, gy, ctb
-        ldx #NSCR - 1               ; the Scrubblies
+        ldx lv_nscr                 ; the Scrubblies
+        bne +
+        jmp csd
++       dex
 cslp    stx cpk
-        ldy pby + NPK,x             ; (knocked off: not looked at)
-        lda pbm + NPK,x
+        ldy pby + NP,x              ; (knocked off: not looked at)
+        lda pbm + NP,x
         and pgone,y
         bne csn
         lda scbll,x                 ; (off if its left > his right, its right < his left, its top
@@ -90,7 +93,7 @@ cslp    stx cpk
         sta osp
         lda #>scrsp
         sta osp+1
-        lda #SCRH
+        lda lv_scrhh
         sta oh
         jsr spans
         bcc ++
@@ -100,6 +103,7 @@ cslp    stx cpk
 csn     ldx cpk
         dex
         bpl cslp
+csd
       .if !NOHAZ
         ldx #NHZ - 1                ; the balloons and daggers: each one's box from its origin
 chlp    lda oact,x                  ; (hbx0 ..., by its kind: geom.py)
@@ -168,7 +172,10 @@ chn     dex
         jmp chlp
 +
       .endif
-        ldx #NPK - 1                ; the gems and keys
+        ldx lv_npk                  ; the gems and keys
+        bne +
+        rts
++       dex
 cplp    ldy pby,x                   ; (gone already: not looked at)
         lda pbm,x
         and pgone,y
@@ -203,9 +210,10 @@ cplp    ldy pby,x                   ; (gone already: not looked at)
         sta oit
         lda #0
         sta oit+1
-        lda pkspl,x
+        ldy pkkey,x                 ; (a gem's spans or a key's)
+        lda pkspl,y
         sta osp
-        lda pksph,x
+        lda pksph,y
         sta osp+1
         lda pkh,x
         sta oh
@@ -222,12 +230,12 @@ cplp    ldy pby,x                   ; (gone already: not looked at)
         beq cpnext
         stx cpk                     ; a key: the last? (all the keys' bits gone)
         lda pgone
-        and #<KEYBITS
-        cmp #<KEYBITS
+        and lv_keyb
+        cmp lv_keyb
         bne +
         lda pgone+1
-        and #>KEYBITS
-        cmp #>KEYBITS
+        and lv_keyb+1
+        cmp lv_keyb+1
         bne +
         jsr level_complete
         ldx cpk
@@ -441,7 +449,7 @@ pkpatch ldx #NROWS - 1              ; (no rows flagged)
         sta ppn
         beq ppx
         tax
-ppl     ldy #2                      ; each cell's row flagged
+ppl     ldy #0                      ; each cell's row flagged
         lda (sp1),y
         tay
         lda #1
@@ -464,7 +472,7 @@ pkorig  sta pko
         lda ppp+1
         sta sp2+1
         ldx ppn
-pol     ldy #2
+pol     ldy #0
         lda (sp2),y
         cmp prow
         bne pon
@@ -472,7 +480,7 @@ pol     ldy #2
         lda (sp2),y
         cmp pkcol
         bne pon
-        ldy #4                      ; (its cell: gone, the code with it gone, else with it there)
+        ldy #2                      ; (its cell: gone, the code with it gone, else with it there)
         lda ppg
         bne +
         iny
@@ -481,7 +489,7 @@ pol     ldy #2
         rts
 pon     lda sp2
         clc
-        adc #6
+        adc #4
         sta sp2
         bcc +
         inc sp2+1
@@ -490,9 +498,9 @@ pon     lda sp2
         lda pko
         ldy pky
         rts
-ppnext  lda sp1                     ; (the next cell's record: 6 bytes on)
+ppnext  lda sp1                     ; (the next cell's record: 4 bytes on)
         clc
-        adc #6
+        adc #4
         sta sp1
         bcc +
         inc sp1+1
@@ -511,7 +519,7 @@ pkprog  lda #<PROGP
         sta sp1
         lda ppp+1
         sta sp1+1
-pgl     ldy #3                      ; in view? (its column less the first in view, 0-40)
+pgl     ldy #1                      ; in view? (its column less the first in view, 0-40)
         lda (sp1),y
         sec
         sbc leftc
@@ -528,10 +536,10 @@ pgl     ldy #3                      ; in view? (its column less the first in vie
         ldy stmp
         lda (tmp),y
         bne pgn
-pgw     ldy #0                      ; lda #code, sta cell
+pgw     ldy #0                      ; lda #code, sta cell (SCREEN + row * 128 + 4 + column)
         lda #$a9
         sta (sp2),y
-        ldy #4
+        ldy #2
         lda ppg
         bne +
         iny
@@ -542,12 +550,21 @@ pgw     ldy #0                      ; lda #code, sta cell
         lda #$8d
         sta (sp2),y
         ldy #0
-        lda (sp1),y
+        lda (sp1),y                 ; (the row)
+        lsr a
+        pha
+        lda #0
+        ror a
+        ora #4
+        ldy #1
+        clc
+        adc (sp1),y                 ; (+ the column: no carry, a row's cells within its 128)
         ldy #3
         sta (sp2),y
-        ldy #1
-        lda (sp1),y
-        ldy #4
+        pla
+        clc
+        adc #>SCREEN
+        iny
         sta (sp2),y
         lda sp2
         clc
@@ -591,7 +608,10 @@ pklist  lda nscrx                   ; (the view's left, less 32, and right, in l
         lda cbl+1
         adc #>(320 + 32)
         sta cbr+1
-        ldx #NPK - 1
+        ldx lv_npk
+        bne +
+        rts
++       dex
 pkl     lda pkkey,x
         beq pkln
         ldy pby,x
@@ -623,6 +643,8 @@ pkln    dex
         bpl pkl
         rts
 
+pkspl   .byte <gemsp, <keysp        ; (a gem's spans, a key's)
+pksph   .byte >gemsp, >keysp
 pby     .for i = 0, i < NPO, i += 1 ; (patch object i's bit: its byte, its mask)
         .byte i >> 3
         .endfor

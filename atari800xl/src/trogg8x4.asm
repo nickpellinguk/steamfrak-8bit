@@ -64,7 +64,9 @@
 ;   drawn in software, at full resolution, and players only carry infills
         .weak
 DELAY   = 1
-LEVEL   = "A_1"
+LEVEL   = "A_1"                     ; (only screen8x4.asm's)
+LSTART  = 0                         ; the level played first (0-2: A_1, A_2, A_3; the front end's
+                                    ; 1, 2, 3 choose)
 INVINCIBLE = 0
 FRONTEND = 1                        ; (0: no front end, the game at once: the tests)
 STARTX  = 0                         ; (0: the level's start)
@@ -74,11 +76,12 @@ STRESS  = 0
 INSANE  = 0
 HWOUT   = 0
         .endweak
-        .include "../build/" .. LEVEL .. ".inc"
-XMAX    = (NCOLS - 40) * 4          ; the scroll's range, in colour clocks (2 pixels)
+NROWS   = 60                        ; the screen's rows (of 4 lines)
+LVCOUNT = HWOUT ? 1 : 3             ; the levels carried (levels.inc: HWOUT's builds have room for A_1
+                                    ; alone)
+PMAX    = 76                        ; the most cells a patch object changes (screen.py)
 POOL0   = 64                        ; the first spare character
 NPOOL   = 128 - POOL0
-        .cerror NCODES > POOL0, "the level's glyphs reach the spare characters"
 NOBJ    = 15                        ; things: Trogg, the Scrubblies, the balloons and daggers (16th:
                                     ; the multiplexer's, for Trogg's outline's bands)
 GR_SCRUB = GR_N                     ; (a Scrubbly: no graphic, only its infill)
@@ -262,9 +265,11 @@ mk3     = $dc
 mk4     = $dd
 mk5     = $de
 mk3s    = $df
-scrk    = $06b0                     ; each set's Scrubblies' strips there: lv | pa << 2 | pb << 4
-                                    ; (255 none) (set * 8 + s)
-scrw    = $06c0                     ; this frame's: 1 if a Scrubbly's strips are to be written
+scrk    = $0700                     ; each set's Scrubblies' strips there: lv | pa << 2 | pb << 4
+                                    ; (255 none) (set * 16 + s)
+scrw    = $0720                     ; this frame's: 1 if a Scrubbly's strips are to be written
+enthing = $0678                     ; each enemy's thing this frame (255: not listed: off the view,
+thenemy = $0681                     ; or knocked off), and each thing's enemy (16)
 trT     = $06c8                     ; each set's Trogg's strips' lines there (top, bottom; top 0 none)
 trB     = $06ca
 wend    = $f9                       ; (2) where this frame's program's rts went (for its lda back)
@@ -405,16 +410,8 @@ start   sei                         ; the OS switched out: no interrupts till ou
       .if FRONTEND
         jsr attract                 ; the attract screen, till a key (front.asm)
       .endif
-        lda #<lvmap                 ; the screen's map unpacked (unpack.asm: the level's, packed
-        sta usrc                    ; by screen.py), the second set from the first, the claims
-        lda #>lvmap                 ; clear
-        sta usrc+1
-        lda #<SCREEN
-        sta udp
-        lda #>SCREEN
-        sta udp+1
-        jsr unpack
-        ldx #0
+        jsr levelset                ; the level chosen: its tables, characters and map (levels.inc)
+        ldx #0                      ; the second set from the first, the claims clear
 -       lda FONTA,x
         sta FONTB,x
         lda FONTA+$100,x
@@ -454,7 +451,7 @@ start   sei                         ; the OS switched out: no interrupts till ou
         sta CHBASE
         lda #$00                    ; the outlines: luminance 0
         sta COLPF1
-        lda #$9a                    ; the background (PF2)
+        lda lv_bg                   ; the background (PF2: the level type's: cyan, green, red)
         sta COLPF2
         lda #$00
         sta COLBK
@@ -505,7 +502,7 @@ start   sei                         ; the OS switched out: no interrupts till ou
         sta norec
         sta trT
         sta trT+1
-        ldx #15
+        ldx #31
         lda #255
 -       sta scrk,x
         dex
@@ -659,29 +656,7 @@ tklp    jsr gametick                ; a tick: the joystick, Trogg, the balloons 
         sta origp2+2
         jsr pkpatch                 ; a gem, key or Scrubbly gone (or back) (pick.asm)
         jsr addobj                  ; Trogg
-        ldx #0                      ; the Scrubblies (their infill)
--       cpx #SCR_N
-        bcs +
-        stx hslot
-        lda #GR_SCRUB
-        sta pg
-        lda scr_xl,x
-        sta px
-        lda scr_xh,x
-        sta px+1
-        lda scr_pd,x
-        sta pd
-        ldy pby + NPK,x             ; (knocked off, as the map shows: below the screen, unseen)
-        lda pbm + NPK,x
-        and pshow,y
-        beq skn
-        lda #250
-        sta pd
-skn     jsr addobj
-        ldx hslot
-        inx
-        bne -
-+
+        jsr enlist                  ; the enemies near the view (their infill)
       .if !NOHAZ
         jsr hzlist                  ; the balloons and daggers listed
       .endif
@@ -869,7 +844,7 @@ left    lda nscrx
         dec nscrx
 +       rts
 right   lda nscrx
-        cmp #XMAX
+        cmp lv_xmaxs
         bcs +
         inc nscrx
 +       rts
@@ -1251,6 +1226,106 @@ stfst   .byte 0
 stmk    .byte 0
 stsc2   .byte 0
 
+; ---- enlist: the enemies (their infill) listed: those not knocked off (as the map shows), left
+; of the view's right and right of its left - 32; each one's thing (enthing) and each thing's
+; enemy (thenemy) noted, for keepclr and pmscr
+enlist  ldx #NS - 1
+        lda #255
+-       sta enthing,x
+        dex
+        bpl -
+        lda nscrx                   ; (the view's left, less 32, and right, in level pixels)
+        asl a
+        sta cbl
+        lda #0
+        rol a
+        sta cbl+1
+        lda cbl
+        sec
+        sbc #32
+        sta cbl
+        bcs +
+        dec cbl+1
++       lda cbl
+        clc
+        adc #<(320 + 32)
+        sta cbr
+        lda cbl+1
+        adc #>(320 + 32)
+        sta cbr+1
+        ldx #0
+enl     cpx lv_scrn
+        bcs ene
+        stx hslot
+        ldy pby + NP,x
+        lda pbm + NP,x
+        and pshow,y
+        bne enn
+        lda scr_xl,x
+        cmp cbr
+        lda scr_xh,x
+        sbc cbr+1
+        bcs enn
+        lda cbl
+        cmp scr_xl,x
+        lda cbl+1
+        sbc scr_xh,x
+        bpl enn
+        lda nob
+        cmp #NOBJ
+        bcs enn
+        sta enthing,x
+        tay
+        txa
+        sta thenemy,y
+        lda #GR_SCRUB
+        sta pg
+        lda scr_xl,x
+        sta px
+        lda scr_xh,x
+        sta px+1
+        lda scr_pd,x
+        sta pd
+        jsr addobj
+enn     ldx hslot
+        inx
+        bne enl
+ene     rts
+
+; ---- levelset: level lvnum's block (its tables and numbers) to LVL, its character set to FONTA,
+; its map to the screen's (levels.inc: each packed)
+levelset ldx lvnum
+        lda lvblo,x
+        sta usrc
+        lda lvbhi,x
+        sta usrc+1
+        lda #<LVL
+        sta udp
+        lda #>LVL
+        sta udp+1
+        jsr unpack
+        ldx lvnum
+        lda lvflo,x
+        sta usrc
+        lda lvfhi,x
+        sta usrc+1
+        lda #<FONTA
+        sta udp
+        lda #>FONTA
+        sta udp+1
+        jsr unpack
+        ldx lvnum
+        lda lvmlo,x
+        sta usrc
+        lda lvmhi,x
+        sta usrc+1
+        lda #<SCREEN
+        sta udp
+        lda #>SCREEN
+        sta udp+1
+        jmp unpack
+lvnum   .byte LSTART                ; (the level played: the front end's 1, 2, 3 choose)
+
 ; ---- addobj: the thing pg at px, pd listed for this frame
 addobj  lda nob
         cmp #NOBJ
@@ -1318,7 +1393,7 @@ mxinit  cpx nob
         tax
         cpx #GR_SCRUB
         bcc +
-        lda #SCR_H
+        lda lv_scrh
         cpx #GR_KEY
         bne kh
         lda #KEY_H
@@ -1994,7 +2069,9 @@ pmkey   lda OB_PB,y                 ; a key: its yellow, double width
         jmp pstrip
 
 pmscr   ldx mk                      ; a Scrubbly: two players, or one double-width (its strips kept
-        lda scrw - 1,x              ; apart, written only if they've changed in this set: else only
+        lda thenemy,x               ; apart, written only if they've changed in this set: else only
+        tax
+        lda scrw,x
         eor #1                      ; its registers)
         sta nocopy
         lda #1
@@ -2029,7 +2106,8 @@ pmscr   ldx mk                      ; a Scrubbly: two players, or one double-wid
         sta msrc
         lda #>scr_d
         sta msrc+1
-        lda #SCR_DX / 2
+        lda lv_scrdx
+        lsr a
         sta moff
         lda #1
         sta msize
@@ -2295,16 +2373,17 @@ strnr   lda nocopy                  ; (there already: not copied)
 ; cleared and the new to be written (scrw), else left as they are. Trogg's infill's: of the
 ; lines his strips had in that set, those his new ones don't cover cleared (P0, P1, missiles).
 keepclr ldx #0
-kcs     cpx #SCR_N
+kcs     cpx lv_scrn
         bcc +
         jmp kctr
 +       stx stmp
-        txa
-        sec                         ; (its record: thing s + 1)
-        adc obi
-        tay
         lda #255
         sta mlast
+        lda enthing,x               ; (its thing this frame: none, 255)
+        bmi ++
+        clc
+        adc obi
+        tay
         lda OB_LV,y
         cmp #2
         bcs ++
@@ -2327,6 +2406,7 @@ kcs     cpx #SCR_N
         asl a
         asl a
         asl a
+        asl a
         ora stmp
         tax
         lda scrk,x
@@ -2344,11 +2424,10 @@ kcs     cpx #SCR_N
         lda sold                    ; the old strips cleared
         cmp #255
         beq kcn
-        ldx stmp                    ; (its lines: thing s + 1's)
-        inx
-        lda oT,x
+        ldx stmp                    ; (its lines on the screen: scrT-scrB)
+        lda scrT,x
         sta mk2
-        lda oB,x
+        lda scrB,x
         sta mk3
         lda sold
         lsr a
@@ -3203,10 +3282,9 @@ dlb15
         sta SIZEP0 + 3
         jmp dlend
 
-        .include "../build/" .. LEVEL .. "_scrub.inc"   ; the Scrubblies' infill and places
         .include "../build/sprites.inc"
-        .include "../build/" .. LEVEL .. "_geom.inc"    ; the platforms and ladders (geom.py)
-        .include "../build/" .. LEVEL .. "_picks.inc"   ; the gems and keys (screen.py)
+        .include "../build/common_geom.inc"   ; the collision boxes and spans (geom.py)
+        .include "../build/common_keys.inc"   ; a key's yellow (screen.py)
         .include "move.asm"         ; Trogg's movement (the C64's)
         .include "pick.asm"         ; collisions, gems and keys
         .include "hazards.asm"      ; the balloons and daggers (the C64's)
@@ -3215,11 +3293,9 @@ dlb15
       .if FRONTEND
         .include "front.asm"        ; the front end
       .endif
-lvmap   .binary "../build/" .. LEVEL .. "_map.lz"   ; the level's map, packed (screen.py)
-        .cerror * > ORIGA, "the program reaches ORIGA: ", * - ORIGA, " over"
-
-        * = FONTA
-        .binary "../build/" .. LEVEL .. "_font.bin"
+        .include "../build/levels.inc"        ; the levels: each one's block, characters and map, packed
+        .cerror * > LVL, "the program reaches the level's block: ", * - LVL, " over"
+        .cerror LVL + LVLSIZE > ORIGA, "the level's block reaches ORIGA"
 
         * = DLIST                   ; (no blank lines: the rows from scanline 8, ANTIC's first)
 dlrows  .for r = 0, r < NROWS, r += 1
