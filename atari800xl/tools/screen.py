@@ -137,11 +137,14 @@ if sc['placed']:
              'scr_pd': [p['sy'] + y0 + 16 for p in sc['placed']], 'scr_l': [v >> 8 for v in two[2]], 'scr_r': [v & 255 for v in two[2]],
              'scr_d': dbl[2], 'scrT': [max(8, p['sy'] + y0 + 16) for p in sc['placed']],
              'scrB': [min(247, p['sy'] + y1 + 16) for p in sc['placed']]}
-    scr_S = {'lv_scrn': [len(sc['placed'])], 'lv_scrh': [y1 - y0 + 1], 'lv_scrdx': [dbl[1] - two[1]]}
+    dxs = {p['sx'] - p['ax'] + two[1] for p in sc['placed']}; dys = {p['sy'] - p['ay'] + y0 - 8 for p in sc['placed']}
+    assert len(dxs) == 1 and len(dys) == 1, f'{LV}: enemies\' sprites not all the same from their corners'
+    scr_S = {'lv_scrn': [len(sc['placed'])], 'lv_scrh': [y1 - y0 + 1], 'lv_scrdx': [dbl[1] - two[1]],
+             'lv_dxs': [dxs.pop() & 255], 'lv_dys': [dys.pop() & 255]}     # (its players' left and top from its corner: scil, scit)
     print(f'{LV}: {len(sc["placed"])} enemies: infill {two[0]} pixels wrong with two players, {dbl[0]} with one double-width')
 else:
     scr_T = {k: [] for k in ('scr_xl', 'scr_xh', 'scr_pd', 'scr_l', 'scr_r', 'scr_d', 'scrT', 'scrB')}
-    scr_S = {'lv_scrn': [0], 'lv_scrh': [1], 'lv_scrdx': [0]}
+    scr_S = {'lv_scrn': [0], 'lv_scrh': [1], 'lv_scrdx': [0], 'lv_dxs': [0], 'lv_dys': [0]}
     inc += ['SCR_N = 0', 'SCR_H = 1', 'scr_xl  .byte 0', 'scr_xh  .byte 0', 'scr_pd  .byte 0', 'SCR_DX = 0',
             'scr_l   .byte 0', 'scr_r   .byte 0', 'scr_d   .byte 0']
 open(os.path.join(OUT, f'{LV}_scrub.inc'), 'w').write('\n'.join(inc) + '\n')
@@ -203,6 +206,12 @@ def kfit(bw, nb):
     return best
 ktwo, kdbl = kfit(2, 16), kfit(4, 8)
 L = lambda v: ', '.join(str(x) for x in v)
+# (a gem's and a key's boxes from its corner: the same in every level)
+KB = {}
+for p in pk:
+    b = (p['box']['x0'], p['box']['x1'], p['box']['y0'], p['box']['y1'])
+    assert KB.setdefault(p['name'], b) == b, f'{LV}: two {p["name"]} boxes'
+KB.setdefault('IMG_Gem', (0, 10, 0, 8)); KB.setdefault('IMG_Key', (0, 23, 0, 9))
 pinc = [f'NPK = {len(pk)}', f'KEYBITS = {sum(1 << i for i, p in enumerate(pk) if p["name"] == "IMG_Key")}', f'NKEYS = {sum(p["name"] == "IMG_Key" for p in pk)}', f'PMAX = {PMAX}', f'NPO = {NPO}',
         'pkll    .byte ' + L((p['left'] + p['box']['x0']) & 255 for p in pk) + '     ; boxes (level pixels)',
         'pklh    .byte ' + L((p['left'] + p['box']['x0']) >> 8 for p in pk),
@@ -219,7 +228,10 @@ pinc = [f'NPK = {len(pk)}', f'KEYBITS = {sum(1 << i for i, p in enumerate(pk) if
         'pkph    .byte ' + L(f'>pkc{i}' for i in range(NPO)),
         *[f'pkc{i:<4}.byte ' + (L(v for r, c, g, f_ in cs for v in ((0xd800 + r * STRIDE + PAD + c) & 255, (0xd800 + r * STRIDE + PAD + c) >> 8, r, c, g, f_)) or '0')
           + ('     ; (each: SCREEN\'s address, row, column, the code gone, there)' if i == 0 else '') for i, cs in enumerate(cells)],
-        f'KEY_H = {ky1 - ky0 + 1}', f'KEY_DX = {kdbl[1] - ktwo[1]}',
+        f'KEY_H = {ky1 - ky0 + 1}', f'KEY_DX = {kdbl[1] - ktwo[1]}', f'KXOFF = {ktwo[1]}', f'KPDOFF = {ky0 - 8}',
+    'pkbx0   .byte ' + L(KB[n][0] for n in ('IMG_Gem', 'IMG_Key')) + '     ; (a gem\'s and a key\'s box from its corner)',
+    'pkbx1   .byte ' + L(KB[n][1] for n in ('IMG_Gem', 'IMG_Key')), 'pkby0   .byte ' + L(KB[n][2] for n in ('IMG_Gem', 'IMG_Key')),
+    'pkby1   .byte ' + L(KB[n][3] for n in ('IMG_Gem', 'IMG_Key')),
         'key_l   .byte ' + L(v >> 8 for v in ktwo[2]),
         'key_r   .byte ' + L(v & 255 for v in ktwo[2]),
         'key_d   .byte ' + L(kdbl[2])]
@@ -240,12 +252,16 @@ LT = {'pkll': [(p['left'] + p['box']['x0']) & 255 for p in pk], 'pklh': [(p['lef
       'pkxh': [((p['left'] + ktwo[1]) >> 8) & 255 for p in pk], 'pkpd': [p['top'] - 8 + ky0 for p in pk],
       'pkn': [len(c) for c in obj], **scr_T}
 keyb = sum(1 << i for i, p in enumerate(pk) if p['name'] == 'IMG_Key')
-LS = {'lv_npk': [len(pk)], 'lv_keyb': [keyb & 255, keyb >> 8], 'lv_xmaxs': [XMAXS], 'lv_bg': [BGCOL], **scr_S}
+ncell = sum(len(c) for c in obj)
+LS = {'lv_npk': [len(pk)], 'lv_keyb': [keyb & 255, keyb >> 8], 'lv_xmaxs': [XMAXS], 'lv_bg': [BGCOL], 'lv_ncell': [ncell & 255, ncell >> 8], **scr_S}
 cellrec = [[v for r, c, g, f_ in cs for v in (r, c, g, f_)] for cs in obj]      # (each cell: row, column, the code gone, there)
 _json.dump({'T': LT, 'S': LS, 'cells': cellrec}, open(os.path.join(OUT, f'{LV}_screen.json'), 'w'))
-# (what's the same in every level: a key's yellow)
+# (what's the same in every level: a key's yellow, a gem's and a key's boxes)
 open(os.path.join(OUT, 'common_keys.inc'), 'w').write('\n'.join(['; made by tools/screen.py: a key\'s yellow (the same in every level)',
-    f'KEY_H = {ky1 - ky0 + 1}', f'KEY_DX = {kdbl[1] - ktwo[1]}', 'key_l   .byte ' + L(v >> 8 for v in ktwo[2]),
+    f'KEY_H = {ky1 - ky0 + 1}', f'KEY_DX = {kdbl[1] - ktwo[1]}', f'KXOFF = {ktwo[1]}', f'KPDOFF = {ky0 - 8}',
+    'pkbx0   .byte ' + L(KB[n][0] for n in ('IMG_Gem', 'IMG_Key')) + '     ; (a gem\'s and a key\'s box from its corner)',
+    'pkbx1   .byte ' + L(KB[n][1] for n in ('IMG_Gem', 'IMG_Key')), 'pkby0   .byte ' + L(KB[n][2] for n in ('IMG_Gem', 'IMG_Key')),
+    'pkby1   .byte ' + L(KB[n][3] for n in ('IMG_Gem', 'IMG_Key')), 'key_l   .byte ' + L(v >> 8 for v in ktwo[2]),
     'key_r   .byte ' + L(v & 255 for v in ktwo[2]), 'key_d   .byte ' + L(kdbl[2])]) + '\n')
 _json.dump({'n': len(pk), 'key': [int(p['name'] == 'IMG_Key') for p in pk], 'x': [p['left'] + ktwo[1] for p in pk],
             'pd': [p['top'] - 8 + ky0 for p in pk], 'dx': kdbl[1] - ktwo[1], 'l': [v >> 8 for v in ktwo[2]],

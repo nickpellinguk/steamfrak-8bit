@@ -13,7 +13,12 @@ game comes back to it. **Three levels**, one of each type, as the C64 port has: 
 on cyan), A_2 (Poglets, on green), A_3 (Hooters, on red). As the C64's loader does, each level's
 own tables and numbers sit at fixed places in a block, as long as the longest level's
 (`tools/levels.py`), so the code is the same for any; each level's block, character set and map
-are packed in the program and unpacked at the start (`levelset`). The Poglets' and Hooters'
+are packed in the program and unpacked at the start (`levelset`); what follows from the rest
+isn't stored but worked out then (`lvderive`: each column's platforms and ladders, the gems', keys'
+and enemies' boxes and players' places, each patch cell's code with its object there, read from
+the map just unpacked), 1.5K less packed. The code that runs only at the start (the front end, the
+level's start) is an overlay (`src/overlay.asm`, `tools/game.sh`): packed at the program's end,
+unpacked over the VBI's programs (unused till the game sets up). The Poglets' and Hooters'
 infill is their magenta (from the C64's multicolour sprite), on players as the Scrubblies' is;
 their yellow is still to come. Only the enemies near the view are listed each frame (A_2 has 9).
 Every
@@ -240,10 +245,12 @@ Arrow keys are joystick 1, Space or Ctrl fire, F2-F4 Start, Select and Option.
 | --- | --- |
 | `tools/screen.py` | A level's character set and map for the 8x4 screen, from the C64 build's picture of it (`c64/build/<level>/chars.bin`); `build/<level>_expect.png`, the picture the Atari should show; the Scrubblies' and keys' infill fitted to players; each gem's and key's cells with it gone (`_picks.inc`) |
 | `src/screen8x4.asm` | The demo: display list, row DLIs, scrolling VBI (with the OS, for now) |
-| `src/trogg8x4.asm` | (memory: the program `$0800-$abff`, its page-aligned tables first, the three levels packed at its end (174 bytes free after them; `HWOUT=1` builds carry A_1 alone, 2.7K free), the level's block below `$ac00` (`LVL`, 2.6K), what's under the spare characters drawn `$ac00` and `$ad00`, the display list `$ae00`, the character sets `$b000` and `$b400`, the VBI's programs `$b800`, `$bb00` and `$c000` (the last in the first players' graphics' unused `$300`), its patch program `$be80`; under the OS, which ANTIC sees as the CPU does: the players' graphics `$c000` and `$c800`, the screen's map `$d800-$f5ff`, the bands' registers `$f600`; the claims in three parts, `$f980`, `$c800` (the second players' graphics' unused `$300`) and `$be00`) |
+| `src/trogg8x4.asm` | (memory: the program `$0800-$abff`, its page-aligned tables first, the three levels and the overlay packed at its end (1.4K free after them; `HWOUT=1` builds carry A_1 alone, 2.7K free), the level's block below `$ac00` (`LVL`, 2.6K), what's under the spare characters drawn `$ac00` and `$ad00`, the display list `$ae00`, the character sets `$b000` and `$b400`, the VBI's programs `$b800`, `$bb00` and `$c000` (the last in the first players' graphics' unused `$300`), its patch program `$be80`; under the OS, which ANTIC sees as the CPU does: the players' graphics `$c000` and `$c800`, the screen's map `$d800-$f5ff`, the bands' registers `$f600`; the claims in three parts, `$f980`, `$c800` (the second players' graphics' unused `$300`) and `$be00`) |
 | `src/trogg8x4.asm` | The same with Trogg: the game's ticks, the camera, drawing into spare characters, the multiplexer, the VBI showing a frame |
 | `src/move.asm` | Trogg's movement: the C64 port's (`c64/src/play.asm`), on the joystick; dying, checkpoints, the level complete |
 | `src/pick.asm` | Collisions (Scrubblies, gems, keys); gems and keys going from the map (and coming back) through the VBI's programs; the keys listed for their yellow |
+| `src/overlay.asm`, `src/lvset.asm`, `tools/game.sh`, `tools/packfile.py` | The overlay (the front end, the level's start: `levelset`, `lvderive`), assembled against the program's labels and packed; `game.sh` builds the game with it |
+| `test/lvlcheck.py` | A level's block in memory, once it's started, against the tools' tables (the worked-out ones too) |
 | `tools/levels.py` | The levels' blocks: each level's tables and numbers (`<level>_geom.json`, `_screen.json`) at fixed places, packed with its character set and map: `build/levels.inc` |
 | `tools/geom.py` | A level's platforms and ladders (the C64 build's `geometry.json`), Trogg's and the Scrubblies' collision boxes: `build/<level>_geom.inc` |
 | `tools/sprites.py` | The moving graphics as 10-bit graphics (`build/sprites.inc`) and the AND and OR tables; `build/sprites.json` for the checks |

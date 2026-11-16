@@ -63,6 +63,7 @@
 ;   with its infill, a dagger's), where they're free; else (the default) outlines are always
 ;   drawn in software, at full resolution, and players only carry infills
         .weak
+OVFILE  = "../build/ovl.lz"         ; (the overlay, packed: tools/game.sh's)
 DELAY   = 1
 LEVEL   = "A_1"                     ; (only screen8x4.asm's)
 LSTART  = 0                         ; the level played first (0-2: A_1, A_2, A_3; the front end's
@@ -80,6 +81,10 @@ NROWS   = 60                        ; the screen's rows (of 4 lines)
 LVCOUNT = HWOUT ? 1 : 3             ; the levels carried (levels.inc: HWOUT's builds have room for A_1
                                     ; alone)
 PMAX    = 76                        ; the most cells a patch object changes (screen.py)
+OVL     = $b800                     ; the overlay (overlay.asm): unpacked over the VBI's programs, the
+OVLEND  = $bffe                     ; claims' last part and the patch program, unused till the game
+OVFRONT = OVL                       ; sets up; its entries: the front end, the level's start
+OVLSET  = OVL + 3
 POOL0   = 64                        ; the first spare character
 NPOOL   = 128 - POOL0
 NOBJ    = 15                        ; things: Trogg, the Scrubblies, the balloons and daggers (16th:
@@ -96,6 +101,9 @@ TRIG0   = $d010
 COLPM0  = $d012
 COLPF1  = $d017
 COLPF2  = $d018
+CONSOL  = $d01f
+KBCODE  = $d209
+SKSTAT  = $d20f
 COLBK   = $d01a
 PRIOR   = $d01b
 GRACTL  = $d01d
@@ -407,10 +415,20 @@ start   sei                         ; the OS switched out: no interrupts till ou
         sta $ffff
         lda #3
         sta SKCTL                   ; (POKEY running: RANDOM, the keyboard)
+        lda #<ovlz                  ; the overlay (overlay.asm, packed): the front end and the level's
+        sta usrc                    ; start, code run once at the start, unpacked where the game's
+        lda #>ovlz                  ; VBI programs go later
+        sta usrc+1
+        lda #<OVL
+        sta udp
+        lda #>OVL
+        sta udp+1
+        jsr unpack
       .if FRONTEND
-        jsr attract                 ; the attract screen, till a key (front.asm)
+        jsr OVFRONT                 ; the attract screen, till a key (front.asm, in the overlay)
       .endif
-        jsr levelset                ; the level chosen: its tables, characters and map (levels.inc)
+        jsr OVLSET                  ; the level chosen: its tables, characters and map (levels.inc;
+                                    ; lvset.asm, in the overlay)
         ldx #0                      ; the second set from the first, the claims clear
 -       lda FONTA,x
         sta FONTB,x
@@ -1292,38 +1310,6 @@ enn     ldx hslot
         bne enl
 ene     rts
 
-; ---- levelset: level lvnum's block (its tables and numbers) to LVL, its character set to FONTA,
-; its map to the screen's (levels.inc: each packed)
-levelset ldx lvnum
-        lda lvblo,x
-        sta usrc
-        lda lvbhi,x
-        sta usrc+1
-        lda #<LVL
-        sta udp
-        lda #>LVL
-        sta udp+1
-        jsr unpack
-        ldx lvnum
-        lda lvflo,x
-        sta usrc
-        lda lvfhi,x
-        sta usrc+1
-        lda #<FONTA
-        sta udp
-        lda #>FONTA
-        sta udp+1
-        jsr unpack
-        ldx lvnum
-        lda lvmlo,x
-        sta usrc
-        lda lvmhi,x
-        sta usrc+1
-        lda #<SCREEN
-        sta udp
-        lda #>SCREEN
-        sta udp+1
-        jmp unpack
 lvnum   .byte LSTART                ; (the level played: the front end's 1, 2, 3 choose)
 
 ; ---- addobj: the thing pg at px, pd listed for this frame
@@ -3291,9 +3277,12 @@ dlb15
         .include "yoyo.asm"         ; the yoyo (the C64's)
         .include "unpack.asm"       ; the BBC version's unpacker (the C64's)
       .if FRONTEND
-        .include "front.asm"        ; the front end
+frbmz   .binary "../build/front_bm.lz"        ; the front end's bitmap and players' graphics, packed
+frpmz   .binary "../build/front_pm.lz"        ; (front.asm, in the overlay, unpacks them)
       .endif
         .include "../build/levels.inc"        ; the levels: each one's block, characters and map, packed
+ovlz    .binary OVFILE                        ; the overlay, packed (tools/game.sh: last, so nothing
+                                    ; resident moves with its size)
         .cerror * > LVL, "the program reaches the level's block: ", * - LVL, " over"
         .cerror LVL + LVLSIZE > ORIGA, "the level's block reaches ORIGA"
 
