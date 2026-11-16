@@ -15,8 +15,9 @@
 # (A_1 needs 46 codes; more levels may need bands). Map line = the C64's map line (level line -
 # 24); display line = map line + 8; scanline (the players' memory's line) = map line + 16.
 #
-# Writes atari800xl/build/<level>_font.bin (1KB), <level>_map.bin (52 rows of 128 bytes: 4 bytes
-# of blank, the level's columns, blank after: the scroll's LMS arithmetic wants the 4 in front),
+# Writes atari800xl/build/<level>_font.bin (1KB), <level>_map.bin (60 rows of 128 bytes: 4 bytes
+# of blank, the level's columns, blank after: the scroll's LMS arithmetic wants the 4 in front)
+# and <level>_map.lz (it packed, for trogg8x4.asm),
 # <level>.inc (NCOLS, NROWS) and <level>_expect.png (the picture the Atari should show, for checks).
 import os, sys
 from PIL import Image
@@ -56,6 +57,10 @@ for g, i in bottoms.items(): font[i * 8 + 4:i * 8 + 8] = bytes(g)
 os.makedirs(OUT, exist_ok=True)
 open(os.path.join(OUT, f'{LV}_font.bin'), 'wb').write(font)
 open(os.path.join(OUT, f'{LV}_map.bin'), 'wb').write(mp)
+sys.path.insert(0, os.path.join(HERE, '..', '..', 'tools'))   # (the BBC version's packer: the map packed,
+from pack import compress, decompress                          #  unpacked into the screen's at the start)
+lz = compress(bytes(mp)); assert decompress(lz) == bytes(mp)
+open(os.path.join(OUT, f'{LV}_map.lz'), 'wb').write(lz)
 open(os.path.join(OUT, f'{LV}.inc'), 'w').write(f'NCOLS = {NC}\nNROWS = {NROWS}\nNCODES = {n}\n')
 # what the Atari should show: every row through the font, the whole level's width
 img = Image.new('L', (NC * 8, NROWS * 4), 255)

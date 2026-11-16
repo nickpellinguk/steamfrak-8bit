@@ -10,11 +10,11 @@
 ; The patch objects (screen.py: the gems and keys, then the Scrubblies; NPO, at most 24) gone
 ; (pgone: picked up, or knocked off by the yoyo; a bit each, object k's in byte pby,k, mask pbm,k)
 ; and those the map shows gone (pshow) are put together an object a frame: pkpatch, as the frame's
-; built, puts its cells' codes (screen.py's, at most PMAX) into the clean map, before anything's
-; drawn on them; pkprog, once it's built, makes the VBI's patch program (PROGP, run after the
-; frame's program) write them on the screen, all but those something's drawn in this frame (their
-; spare characters were started from the clean map's new codes, and their putting back writes
-; those). So restarting (pkreset: pgone from pgone0) needs nothing more.
+; built, notes its cells (screen.py's, at most PMAX) and flags their rows (pprow), so that plot and
+; strline, finding a cell in a flagged row (pkorig), start from its new code, not the screen's;
+; pkprog, once the frame's drawn, makes the VBI's patch program (PROGP, run after the frame's
+; program) write them on the screen, all but those something's drawn in this frame (their putting
+; back writes the new codes). So restarting (pkreset: pgone from pgone0) needs nothing more.
 ctl     = tmp                       ; (2 each: Trogg's box)
 ctr     = mdst
 ctt     = msrc
@@ -407,9 +407,14 @@ ovno    sec
         rts
 
 ; pkpatch: the first patch object whose gone-ness the map doesn't show, put right (one a frame):
-; its cells' codes into the clean map, and it noted (ppn cells from ppp, gone or not: ppg) for
-; pkprog. Run before anything's drawn.
-pkpatch ldx #0
+; noted (ppn cells from ppp, gone or not: ppg) for pkorig and pkprog, its cells' rows flagged.
+; Run before anything's drawn.
+pkpatch ldx #NROWS - 1              ; (no rows flagged)
+        lda #0
+-       sta pprow,x
+        dex
+        bpl -
+        ldx #0
 -       ldy pby,x
         lda pgone,y
         eor pshow,y
@@ -436,25 +441,55 @@ pkpatch ldx #0
         sta ppn
         beq ppx
         tax
-ppl     ldy #0                      ; each cell: its address in the clean map
+ppl     ldy #2                      ; each cell's row flagged
         lda (sp1),y
-        sta tmp
-        iny
-        lda (sp1),y
-        sec
-        sbc #(>SCREEN) - (>CLEAN)
-        sta tmp+1
-        ldy #4
-        lda ppg
-        bne +
-        iny
-+       lda (sp1),y
-        ldy #0
-        sta (tmp),y
+        tay
+        lda #1
+        sta pprow,y
         jsr ppnext
         dex
         bne ppl
 ppx     rts
+
+; pkorig: the code a (the screen's) at column y in view of row prow, or if pkpatch's object has a
+; cell there, its new code (y kept)
+pkorig  sta pko
+        sty pky
+        tya
+        clc
+        adc leftc
+        sta pkcol
+        lda ppp
+        sta sp2
+        lda ppp+1
+        sta sp2+1
+        ldx ppn
+pol     ldy #2
+        lda (sp2),y
+        cmp prow
+        bne pon
+        iny
+        lda (sp2),y
+        cmp pkcol
+        bne pon
+        ldy #4                      ; (its cell: gone, the code with it gone, else with it there)
+        lda ppg
+        bne +
+        iny
++       lda (sp2),y
+        ldy pky
+        rts
+pon     lda sp2
+        clc
+        adc #6
+        sta sp2
+        bcc +
+        inc sp2+1
++       dex
+        bne pol
+        lda pko
+        ldy pky
+        rts
 ppnext  lda sp1                     ; (the next cell's record: 6 bytes on)
         clc
         adc #6
@@ -601,6 +636,10 @@ pgone0  .fill 3                     ; (those gone at the restart: the checkpoint
 ppn     .byte 0                     ; (the object pkpatch put right this frame: its cells, how many,
 ppp     .word 0                     ;  where, gone or not)
 ppg     .byte 0
+pprow   .fill NROWS                 ; (each row: 1 if pkpatch's object has a cell in it)
+pko     .byte 0                     ; (pkorig's)
+pky     .byte 0
+pkcol   .byte 0
 cbl     .word 0                     ; (an object's box)
 hb      .word 0                     ; (hbadd's)
 tgfx    .byte 0                     ; (his graphic)
