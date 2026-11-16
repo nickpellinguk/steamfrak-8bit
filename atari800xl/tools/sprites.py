@@ -10,8 +10,9 @@
 # so each shift must have no more than 256 windows: checked here.
 #
 # Each graphic at each shift is stored a column (8 pixels across) at a time, top to bottom, with
-# 3 bytes of index 0 (all transparent) above and below each column: a character row's 4 lines
-# then come from 4 bytes in a row, wherever he starts in it, with nothing to check. Where the
+# 3 bytes of index 0 (all transparent) above and below each column (each column's below shared with
+# the next's above: a column every height + 3 bytes): a character row's 4 lines then come from 4
+# bytes in a row, wherever he starts in it, with nothing to check. Where the
 # empty space is, at the sides: for the first and last columns, for each of the 4 lines a
 # character row can start on relative to the graphic's top (its top display line & 3), a bit
 # for each character row it covers (bit 0 the first), 1 where that column's cell is all
@@ -34,6 +35,9 @@ SF = os.environ.get('STEAMFRAK') or os.path.join(HERE, '..', '..', '..', 'steamf
 meta = json.loads(re.search(r'const SPRITE_DATA = (\{.*\});', open(os.path.join(SF, 'js', 'data', 'sprites.js')).read(), re.S).group(1))
 
 def frame(k, f):
+    if '|' in k:                      # (a part of a frame: "sprite|first row:end row")
+        base, rows = k.split('|'); r0, r1 = map(int, rows.split(':'))
+        return frame(base, f)[r0:r1]
     m = meta[k]; im = Image.open(os.path.join(SF, 'assets', 'sprites', k + '.png')).convert('RGBA')
     g = []
     for y in range(m['h']):
@@ -52,10 +56,29 @@ TROGG = [('SR', 'sTrogg_sr_Beeb', 0), ('SL', 'sTrogg_sl_Beeb', 0)] + \
 # then the other moving graphics: all of them numbered, compiled and sharing the tables
 OTHERS = [('BALLOON', 'sBalloon_Beeb', 0), ('DAGGERLR', 'sDaggerLR_Beeb', 0), ('DAGGERUD', 'sDaggerUD_Beeb', 0),
           ('DAGGER', 'sDagger_Beeb', 0)] + [(f'YOYO{i}', 'sYoyo_Beeb', i) for i in range(4)] + [('FRAK', 'sFrak_Beeb', 0)]
-GRAPHICS = TROGG + OTHERS
+# then the walking frames in parts: his body (rows 0-23, the same in all four of a direction, as the
+# BBC version found) and each frame's legs (rows 24-33); the walking frames themselves are drawn as
+# the two (trogg8x4.asm's swone), so only the parts are compiled: 2,000 bytes less
+PARTS = [(f'W{d}B', f'sTrogg_w{d.lower()}_Beeb|0:24', 0) for d in 'RL'] + \
+        [(f'W{d}{i}L', f'sTrogg_w{d.lower()}_Beeb|24:34', i) for d in 'RL' for i in range(4)]
+for _, k, _ in PARTS:
+    base, rows = k.split('|'); r0, r1 = map(int, rows.split(':'))
+    meta[k] = {**meta[base], 'yo': meta[base]['yo'] - r0, 'h': r1 - r0}
+GRAPHICS = TROGG + OTHERS + PARTS
 # compiled now (the rest counted in the tables, so they'll fit when the game draws them)
-USED = ({n for n, _, _ in TROGG} - {'SR', 'SL'}) | {'BALLOON', 'DAGGERLR', 'YOYO0', 'YOYO1', 'YOYO2', 'YOYO3'}
+USED = ({n for n, _, _ in TROGG} - {'SR', 'SL'} - {f'W{d}{i}' for d in 'RL' for i in range(4)}) | \
+       {'BALLOON', 'DAGGERLR', 'YOYO0', 'YOYO1', 'YOYO2', 'YOYO3'} | {n for n, _, _ in PARTS}
 # (standing shows the first walking frame, as in the C64 and BBC versions: SR and SL are only listed)
+# (a graphic the same as one before it, pixel for pixel and origin, shares its data: the climbing
+# frames are 2 different of 5)
+SHOWN = USED | {f'W{d}{i}' for d in 'RL' for i in range(4)}   # (shown: their players' graphics needed)
+SAME = {}
+for i, (n, k, f) in enumerate(GRAPHICS):
+    for m, k2, f2 in GRAPHICS[:i]:
+        if m in SHOWN and m not in SAME and frame(k, f) == frame(k2, f2) and (meta[k]['xo'], meta[k]['yo']) == (meta[k2]['xo'], meta[k2]['yo']):
+            SAME[n] = m; break
+COMP = [n for n, _, _ in GRAPHICS if n in USED and n not in SAME]   # (the compiled: their own numbers, gcix)
+assert len(COMP) <= 32, f'{len(COMP)} compiled graphics: the masks\' tables hold 32'
 SHIFTS = (0, 2, 4, 6)
 
 def windows(g, s):
@@ -144,34 +167,33 @@ out.append('gp_ok   .byte ' + ', '.join('1' if p else '0' for p in players) + ' 
 for nm, idx in (('gp_ax', 3), ('gp_bx', 4), ('gp_max', 5), ('gp_mbx', 6)):
     out.append(f'{nm:8s}.char ' + ', '.join(str(p[idx]) if p else '0' for p in players))
 for nm, idx in (('gp_a', 0), ('gp_b', 1), ('gp_m', 2)):
-    out.append(f'{nm}_lo .byte ' + ', '.join(f'<gp_{n}_{idx}' if p and n in USED else '<gp_none' for (n, _, _), p in zip(GRAPHICS, players)))
-    out.append(f'{nm}_hi .byte ' + ', '.join(f'>gp_{n}_{idx}' if p and n in USED else '>gp_none' for (n, _, _), p in zip(GRAPHICS, players)))
+    out.append(f'{nm}_lo .byte ' + ', '.join(f'<gp_{SAME.get(n, n)}_{idx}' if p and n in SHOWN else '<gp_none' for (n, _, _), p in zip(GRAPHICS, players)))
+    out.append(f'{nm}_hi .byte ' + ', '.join(f'>gp_{SAME.get(n, n)}_{idx}' if p and n in SHOWN else '>gp_none' for (n, _, _), p in zip(GRAPHICS, players)))
 out.append('      .if HWOUT                   ; (only when outlines go on players)')
 for nm, idx in (('go_l', 0), ('go_r', 1), ('go_ah', 2), ('go_bh', 3), ('go_mh', 4)):
-    out.append(f'{nm}_lo .byte ' + ', '.join(f'<go_{n}_{idx}' if n in USED else '<gp_none' for n, _, _ in TROGG) + '     ; Trogg\'s outline on players: halves, holed infill')
-    out.append(f'{nm}_hi .byte ' + ', '.join(f'>go_{n}_{idx}' if n in USED else '>gp_none' for n, _, _ in TROGG))
+    out.append(f'{nm}_lo .byte ' + ', '.join(f'<go_{SAME.get(n, n)}_{idx}' if n in SHOWN else '<gp_none' for n, _, _ in TROGG) + '     ; Trogg\'s outline on players: halves, holed infill')
+    out.append(f'{nm}_hi .byte ' + ', '.join(f'>go_{SAME.get(n, n)}_{idx}' if n in SHOWN else '>gp_none' for n, _, _ in TROGG))
 for (n, _, _), o in zip(TROGG, outlines):
-    if n not in USED: continue
+    if n not in SHOWN or n in SAME: continue
     for idx in range(5): out.append(f'go_{n}_{idx} .byte ' + ', '.join(map(str, o[idx])))
 out.append('      .endif')
 out.append('gp_none .byte 0')
 for (n, _, _), p in zip(GRAPHICS, players):
-    if not p or n not in USED: continue
+    if not p or n not in SHOWN or n in SAME: continue
     for idx in range(3): out.append(f'gp_{n}_{idx} .byte ' + ', '.join(map(str, p[idx])))
 # the index data
 data, nbs, labels = [], [], []
 masks = {'l': [], 'r': []}
 for i, (n, k, f) in enumerate(GRAPHICS):
+    if n not in USED or n in SAME: continue
     g = frame(k, f)
     for si, s in enumerate(SHIFTS):
-        if n not in USED:
-            nbs.append(0); labels.append('gp_none - 3'); masks['l'] += [0] * 4; masks['r'] += [0] * 4; continue
         ws = windows(g, s); nbs.append(len(ws[0])); labels.append(f'tg_{n}_{si}')
-        cols = []
         H = len(ws); nb = len(ws[0])
-        for j in range(nb):
-            col = [None] * 3 + [row[j] for row in ws] + [None] * 3
-            cols += [0 if c is None else tables[si][c] for c in col]
+        assert tables[si][('T',) * 8] == 0
+        cols = [0] * 3                                  # (3 transparent bytes above each column and below
+        for j in range(nb):                             #  it: each column's below the next's above)
+            cols += [tables[si][row[j]] for row in ws] + [0] * 3
         for ph in range(4):
             for side, j in (('l', 0), ('r', nb - 1)):
                 m = 0
@@ -180,9 +202,10 @@ for i, (n, k, f) in enumerate(GRAPHICS):
                     if all(p == 'T' for p in px): m |= 1 << k
                 masks[side].append(m)
         data.append((labels[-1], cols))
-out.append('tg_nb   .byte ' + ', '.join(map(str, nbs)) + '     ; bytes across, by frame * 4 + shift')
+out.append('gcix    .byte ' + ', '.join(str(COMP.index(SAME.get(n, n))) if n in USED else '0' for n, _, _ in GRAPHICS) + '     ; each graphic\'s compiled number')
+out.append('tg_nb   .byte ' + ', '.join(map(str, nbs)) + '     ; bytes across, by compiled number * 4 + shift')
 # (the masks: 4 tables, left and right, low and high bytes, each 4 blocks of 128 by phase, then
-# graphic * 4 + shift)
+# compiled number * 4 + shift)
 tab = ['; GENERATED by tools/sprites.py: the page-aligned tables (trogg8x4.asm puts them first, at $0800,', '; so there are no gaps before them)']
 for side in 'lr':
     for half, sh in (('lo', 0), ('hi', 8)):
@@ -219,5 +242,6 @@ json.dump({'graphics': [{'name': n, 'w': len(frame(k, f)[0]), 'h': len(frame(k, 
                       'outline': None if i >= len(TROGG) else {'l': outlines[i][0], 'r': outlines[i][1], 'ah': outlines[i][2], 'bh': outlines[i][3], 'mh': outlines[i][4]}}
                      for i, ((n, k, f), p) in enumerate(zip(GRAPHICS, players))]},
           open(os.path.join(HERE, '..', 'build', 'sprites.json'), 'w'))
+print(f'sprites: the same as another: {SAME}')
 print('sprites: windows per shift ' + ', '.join(str(len(t)) for t in tables) + f' (of 256); {len(GRAPHICS)} graphics, '
       f'{sum(len(b) for _, b in data)} index bytes')

@@ -133,8 +133,13 @@ Arrow keys are joystick 1, Space or Ctrl fire, F2-F4 Start, Select and Option.
   (the outline), clear or transparent; AND has a 1 where transparent, OR a 1 where set. All the
   moving graphics (Trogg, balloons, daggers, the yoyo, the FRAK! bubble) share the tables: 250,
   233, 236 and 252 windows of 256 (the build stops if a shift has more). Each column of a graphic
-  is stored top to bottom with 3 transparent bytes above and below, so a character row's 4 lines
-  are 4 bytes in a row wherever he starts in it. The empty space is at the sides (45% of his
+  is stored top to bottom with 3 transparent bytes above and below (shared with the next column's
+  above), so a character row's 4 lines are 4 bytes in a row wherever he starts in it. The data is
+  5,326 bytes (from 9,544): his walking frames are compiled as two parts, his body (rows 0-23, the
+  same in all four of a direction, as the BBC version found) and each frame's legs (rows 24-33),
+  drawn one after the other (`swone`); a graphic the same as another (the climbing frames are 2
+  different of 5) shares its data; only the graphics the game draws are compiled, numbered apart
+  (`gcix`) so the side masks' tables hold them all. The empty space is at the sides (45% of his
   first and last columns' cells are all transparent, 3% of the middle ones'), so for the first
   and last columns, for each of the 4 lines a character row can start on relative to the
   graphic's top, a bitmask with a bit for each character row: 1 where that cell's all
@@ -245,7 +250,7 @@ Arrow keys are joystick 1, Space or Ctrl fire, F2-F4 Start, Select and Option.
 | --- | --- |
 | `tools/screen.py` | A level's character set and map for the 8x4 screen, from the C64 build's picture of it (`c64/build/<level>/chars.bin`); `build/<level>_expect.png`, the picture the Atari should show; the Scrubblies' and keys' infill fitted to players; each gem's and key's cells with it gone (`_picks.inc`) |
 | `src/screen8x4.asm` | The demo: display list, row DLIs, scrolling VBI (with the OS, for now) |
-| `src/trogg8x4.asm` | (memory: the program `$0800-$abff`, its page-aligned tables first, the three levels and the overlay packed at its end (1.4K free after them; `HWOUT=1` builds carry A_1 alone, 2.7K free), the level's block below `$ac00` (`LVL`, 2.6K), what's under the spare characters drawn `$ac00` and `$ad00`, the display list `$ae00`, the character sets `$b000` and `$b400`, the VBI's programs `$b800`, `$bb00` and `$c000` (the last in the first players' graphics' unused `$300`), its patch program `$be80`; under the OS, which ANTIC sees as the CPU does: the players' graphics `$c000` and `$c800`, the screen's map `$d800-$f5ff`, the bands' registers `$f600`; the claims in three parts, `$f980`, `$c800` (the second players' graphics' unused `$300`) and `$be00`) |
+| `src/trogg8x4.asm` | (memory: the program `$0800-$abff`, its page-aligned tables first, the three levels and the overlay packed at its end (5.6K free after them; 3.4K with `HWOUT=1`), the level's block below `$ac00` (`LVL`, 2.6K), what's under the spare characters drawn `$ac00` and `$ad00`, the display list `$ae00`, the character sets `$b000` and `$b400`, the VBI's programs `$b800`, `$bb00` and `$c000` (the last in the first players' graphics' unused `$300`), its patch program `$be80`; under the OS, which ANTIC sees as the CPU does: the players' graphics `$c000` and `$c800`, the screen's map `$d800-$f5ff`, the bands' registers `$f600`; the claims in three parts, `$f980`, `$c800` (the second players' graphics' unused `$300`) and `$be00`) |
 | `src/trogg8x4.asm` | The same with Trogg: the game's ticks, the camera, drawing into spare characters, the multiplexer, the VBI showing a frame |
 | `src/move.asm` | Trogg's movement: the C64 port's (`c64/src/play.asm`), on the joystick; dying, checkpoints, the level complete |
 | `src/pick.asm` | Collisions (Scrubblies, gems, keys); gems and keys going from the map (and coming back) through the VBI's programs; the keys listed for their yellow |
