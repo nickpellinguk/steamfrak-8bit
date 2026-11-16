@@ -55,8 +55,10 @@ for p in sorted(glob.glob(os.path.join(sys.argv[1], '*.mem'))):
     if not idle and not (pending and 0 < dead < 50): continue
     if gy >= 32768: gy -= 65536
     g = C2A[m[L['tfr']]]; me = (TS[g], tx - G[g]['xo'], gy - G[g]['yo'])
-    deadly = [f'SCRUB{k}' for k, s in enumerate(SC) if hit(*me, SCR, s['ax'], s['ay'] + 24)]
-    boxed = [k for k, s in enumerate(SC) if box(*me, SCR, s['ax'], s['ay'] + 24)]
+    gone = w('pgone') | m[L['pgone'] + 2] << 16; npk = len(PJ['picks'])
+    live = [k for k in range(len(SC)) if not gone >> (npk + k) & 1]          # (not knocked off)
+    deadly = [f'SCRUB{k}' for k in live if hit(*me, SCR, SC[k]['ax'], SC[k]['ay'] + 24)]
+    boxed = [k for k in live if box(*me, SCR, SC[k]['ax'], SC[k]['ay'] + 24)]
     for i in range(6):
         k = m[L['oact'] + i]
         if k:
@@ -64,10 +66,10 @@ for p in sorted(glob.glob(os.path.join(sys.argv[1], '*.mem'))):
             x -= 65536 if x >= 32768 else 0; y -= 65536 if y >= 32768 else 0
             if hit(*me, HZS[k - 1], x - HZ[k - 1]['xo'], y - HZ[k - 1]['yo']): deadly.append(f"{'BD'[k - 1]}{i}")
             if box(*me, HZS[k - 1], x - HZ[k - 1]['xo'], y - HZ[k - 1]['yo']): boxed.append(i)
-    gone = w('pkgone')
     touch = [i for i, q in enumerate(PJ['picks']) if not gone >> i & 1 and hit(*me, PKS[q['name']], q['left'], q['top'])]
     name = os.path.basename(p)[:-4]
-    if prev is not None and gone & ~prev[1]: picks += bin(gone & ~prev[1]).count('1')
+    pm = (1 << npk) - 1
+    if prev is not None and gone & ~prev[1] & pm: picks += bin(gone & ~prev[1] & pm).count('1')
     if idle and dead == 0 and boxed and not deadly: near += 1
     if idle and dead == 0 and m[L['won']] == 0 and (deadly or touch):
         bad += 1; print(f'{name}: alive but hit by {deadly} / touching picks {touch} (x {tx} y {gy})')

@@ -130,10 +130,12 @@ CLAIMA     = $f980                     ; the cells drawn this frame: 60 rows of 
 NCLAIMA    = 39                        ; view), the spare character's code there or 0; rows 0-38 at
 CLAIMB     = $c800                     ; CLAIMA, the next 18 at CLAIMB, the rest at CLAIMC (clrl, clrh: each
 NCLAIMB    = 18                        ; row's address)
-CLAIMC     = $be00
+CLAIMC  = $be00
+PROGP   = $be80                     ; the VBI's patch program (pkprog: PMAX x lda #, sta abs, rts)
+        .cerror PROGP + PMAX * 5 + 1 > PROGR0, "the patch program reaches PROGR0"
         .cerror CLAIMA + NCLAIMA * 42 > $fffa, "the claims reach the vectors"
         .cerror CLAIMB + NCLAIMB * 42 > PMG1 + $300, "the claims reach the missiles"
-        .cerror CLAIMC + (NROWS - NCLAIMA - NCLAIMB) * 42 > PROGR0, "the claims reach the programs"
+        .cerror CLAIMC + (NROWS - NCLAIMA - NCLAIMB) * 42 > PROGP, "the claims reach the programs"
         .cerror PROGR1 + 751 > CLAIMC, "the program reaches the claims"
 BT      = $f600                     ; the bands' registers, both frames' (interleaved: band j's at
                                     ; (j + 1) * 2 + set; the top 4 lines', set by the VBI, at set):
@@ -293,11 +295,65 @@ OB_SCR  = OBJS + $153
 OB_N    = OBJS + $156
 OB_M0   = OBJS + $159
 OB_M1   = OBJS + $15c
-OB_PKL  = OBJS + $15f               ; the gems and keys the map shows gone (pkshow), per record
-OB_PKH  = OBJS + $162
+OB_PK   = OBJS + $15f               ; the patch objects the map shows gone (pshow), per record (3
+                                    ; bytes: + 0, 3, 6)
+OB_S0   = OBJS + $168               ; the yoyo's string: its left end (+ 0 low, 3 high), right end
+OB_S1   = OBJS + $16e               ; (likewise), scanline (0: none), per record
+OB_SY   = OBJS + $174
 ; the balloons and daggers: kind (0 none, 1 balloon, 2 dagger), x (2), top line + 32, fraction
 
         * = $0800                   ; (no DOS: low memory is ours from here)
+        .include "../build/sprites_tab.inc"   ; the page-aligned tables first, so no gaps between
+                                    ; them (plot's masks, the AND and OR tables, the characters'
+                                    ; offsets, the DLIs' jump table and the DLIs, in one page)
+        .align $100                 ; (glo and glo4 in one page: only the low byte's patched)
+glo     .for c = 0, c < 128, c += 1 ; a character's offset in its set (low), and with the bottoms
+        .byte <(c * 8)              ; half (+ 4)
+        .endfor
+glo4    .for c = 0, c < 128, c += 1
+        .byte <(c * 8 + 4)
+        .endfor
+ghiA    .for c = 0, c < 128, c += 1 ; its address's high byte in each set
+        .byte >(FONTA + c * 8)
+        .endfor
+ghiB    .for c = 0, c < 128, c += 1
+        .byte >(FONTB + c * 8)
+        .endfor
+        .align $100
+dltab   .word dlb0, dlb1, dlb2, dlb3, dlb4, dlb5, dlb6, dlb7, dlb8, dlb9, dlb10, dlb11, dlb12, dlb13, dlb14, dlb15
+dlia    pha                         ; a bottoms row's last line: VSCROL 3 for the tops row's end;
+        txa                         ; the next band's players' registers, those that change
+        pha                         ; (written while this line and the ones after are drawn:
+        lda #3                      ; things ending on a player end before)
+        sta VSCROL
+        ldx bandx
+        lda BT_M,x
+        asl a
+        sta dlj+1                   ; (16 blocks by the band's mask)
+dlj     jmp (dltab)
+dlend   inx
+        inx
+        stx bandx
+        lda #<dlib
+        sta dliv
+        pla
+        tax
+        pla
+        rti
+
+dlib    pha                         ; a tops row's last line: VSCROL 4 for the next row's start
+        lda #4
+        sta WSYNC
+      .rept DELAY
+        nop
+      .endrept
+        sta VSCROL
+        lda #<dlia
+        sta dliv
+        pla
+        rti
+        .cerror (>dlia) != (>dlib), "the DLIs must share a page (only dliv's low byte changes)"
+
 start   sei                         ; the OS switched out: no interrupts till ours are set
         lda #0
         sta NMIEN
@@ -479,8 +535,13 @@ start   sei                         ; the OS switched out: no interrupts till ou
         sta idle
         sta idle+1
         lda #0
-        sta pkshow                  ; (a = 0: the map shows every gem and key)
-        sta pkshow+1
+        sta pshow                   ; (a = 0: the map shows every gem, key and Scrubbly)
+        sta pshow+1
+        sta pshow+2
+        sta ppn
+        lda #$60                    ; (the patch program: nothing)
+        sta PROGP
+        lda #0
         jsr newlevel                ; Trogg at the start
         lda nscrx
         sta scrx
@@ -564,7 +625,7 @@ tklp    jsr gametick                ; a tick: the joystick, Trogg, the balloons 
         lda ghit_hi,x
         sta cphi+2
         sta clmhi+2
-        jsr pkpatch                 ; a gem or key picked up (or back) in the map (pick.asm)
+        jsr pkpatch                 ; a gem, key or Scrubbly gone (or back) in the map (pick.asm)
         jsr addobj                  ; Trogg
         ldx #0                      ; the Scrubblies (their infill)
 -       cpx #SCR_N
@@ -578,7 +639,13 @@ tklp    jsr gametick                ; a tick: the joystick, Trogg, the balloons 
         sta px+1
         lda scr_pd,x
         sta pd
-        jsr addobj
+        ldy pby + NPK,x             ; (knocked off, as the map shows: below the screen, unseen)
+        lda pbm + NPK,x
+        and pshow,y
+        beq skn
+        lda #250
+        sta pd
+skn     jsr addobj
         ldx hslot
         inx
         bne -
@@ -586,23 +653,47 @@ tklp    jsr gametick                ; a tick: the joystick, Trogg, the balloons 
       .if !NOHAZ
         jsr hzlist                  ; the balloons and daggers listed
       .endif
+        jsr yolist                  ; the yoyo and its string
         jsr pklist                  ; the keys (their yellow)
         jsr mux                     ; hardware sprites given out
         jsr pmdraw                  ; ... their graphics and bands' registers
-        ldx #0                      ; the rest drawn in software
-swlp    cpx nob
-        bcs swend
+        ldx #1                      ; the rest drawn in software: each thing in order, then
+swlp    cpx nob                     ; Trogg on top (as the BBC version: the hazards, the string,
+        bcs swtr                    ; the yoyo, him)
         stx hslot
-        txa
+        jsr swone
+        ldx hslot
+        inx
+        bne swlp
+swtr    ldx #0
+        stx hslot
+        jsr swone
+        jmp swend
+swone   txa                         ; thing x
         clc
         adc obi
         tay
-        lda OB_LV,y
-        beq swnext                  ; (hardware outline: nothing here)
         lda OB_G,y
+        cmp #GR_YOYO0               ; (the yoyo: its string first)
+        bcc +
+        cmp #GR_YOYO3 + 1
+        bcs +
+        lda stry
+        beq +
+        tya
+        pha
+        jsr strline
+        pla
+        tay
+        ldx hslot
++       lda OB_LV,y
+        bne +
+        rts                         ; (hardware outline: nothing here)
++       lda OB_G,y
         cmp #GR_SCRUB
-        bcs swnext                  ; (a Scrubbly or a key: in the map)
-        sta pg
+        bcc +
+        rts                         ; (a Scrubbly or a key: in the map)
++       sta pg
         lda #255                    ; plot's row limit: Trogg's from where his outline's on
         cpx #0                      ; players (rows starting on or after that line not drawn)
         bne +
@@ -623,11 +714,8 @@ swlp    cpx nob
         sta px+1
         lda OB_D,y
         sta pd
-        jsr plot
-swnext  ldx hslot
-        inx
-        bne swlp
-swend
+        jmp plot
+swend   jsr pkprog                  ; the patch program (pick.asm: before the claims are cleared)
         lda #$60                    ; the programs ended (an rts over the next entry's lda: put back
         ldy #0                      ; when the program's next built)
         sta (wp),y
@@ -657,10 +745,22 @@ swend
         sta OB_SCR,x
         lda nob
         sta OB_N,x
-        lda pkshow
-        sta OB_PKL,x
-        lda pkshow+1
-        sta OB_PKH,x
+        lda pshow
+        sta OB_PK,x
+        lda pshow+1
+        sta OB_PK + 3,x
+        lda pshow+2
+        sta OB_PK + 6,x
+        lda stx0
+        sta OB_S0,x
+        lda stx0+1
+        sta OB_S0 + 3,x
+        lda stx1
+        sta OB_S1,x
+        lda stx1+1
+        sta OB_S1 + 3,x
+        lda stry
+        sta OB_SY,x
         ldx ncell                   ; the claims cleared for the next frame
         beq +
         lda #0
@@ -782,6 +882,319 @@ hzln    dex
         bpl hzl
         rts
 hzgr    .byte GR_BALLOON, GR_DAGGERLR
+
+; ---- The yoyo (yoyo.asm) listed for the frame, after the balloons and daggers (so drawn after
+; them, before Trogg), from its origin (yo_x, yo_y) as they are; and its string (the BBC version's):
+; from his hand (tx + 12, or tx - 12 facing left) to yo_x, its left end kept to the level's, on
+; level line yo_y - 1 (stx0, stx1, stry: its scanline, 0 for none), drawn just before the yoyo
+yolist  lda #0
+        sta stry
+        lda tstate
+        cmp #ST_YOYO_OUT
+        bcs +
+        rts
++       jsr yoframe
+        sta pg
+        tay
+        lda yo_x
+        sec
+        sbc gr_xo,y
+        and #$fe
+        sta px
+        lda yo_x+1
+        sbc #0
+        sta px+1
+        lda yo_y
+        sec
+        sbc gr_yo,y
+        sta tmp
+        lda yo_y+1
+        sbc #0
+        sta tmp+1
+        lda tmp
+        sec
+        sbc #8
+        sta pd
+        lda tmp+1
+        sbc #0
+        bne +                       ; (above the players' memory: not drawn)
+        jsr addobj
++       lda tface
+        bne yol
+        lda tx                      ; facing right: his hand to the yoyo
+        clc
+        adc #12
+        sta stx0
+        lda tx+1
+        adc #0
+        sta stx0+1
+        lda yo_x
+        sta stx1
+        lda yo_x+1
+        sta stx1+1
+        jmp yoy
+yol     lda yo_x                    ; facing left: the yoyo to his hand
+        sta stx0
+        lda yo_x+1
+        sta stx0+1
+        lda tx
+        sec
+        sbc #12
+        sta stx1
+        lda tx+1
+        sbc #0
+        sta stx1+1
+yoy     lda stx1+1                  ; (wholly left of the level: none)
+        bmi yon
+        lda stx0+1
+        bpl +
+        lda #0
+        sta stx0
+        sta stx0+1
++       lda yo_y                    ; its scanline: yo_y - 1 - 8, on the screen
+        sec
+        sbc #9
+        tay
+        lda yo_y+1
+        sbc #0
+        bne yon
+        cpy #TOPL
+        bcc yon
+        cpy #LASTL + 1
+        bcs yon
+        sty stry
+yon     rts
+
+; ---- strline: the string, set pixels stx0 to stx1 (level pixels) on scanline stry, ORed into the
+; cells in view (spare characters, as plot's: one claimed this frame, or one started from the
+; level's glyph)
+strline lda stry
+        sec
+        sbc #TOPL
+        pha
+        and #3
+        sta stln                    ; (the line in the row)
+        pla
+        lsr a
+        lsr a
+        pha                         ; (the row)
+        lsr a                       ; the maps: row * 128 + 4 + leftc
+        tax
+        lda #0
+        ror a
+        ora #4
+        clc
+        adc leftc
+        sta mp
+        sta tp
+        txa
+        clc
+        adc #>SCREEN
+        sta mp+1
+        adc #((CLEAN - SCREEN) >> 8) & $ff
+        sta tp+1
+        pla
+        tax
+        lda clrl,x                  ; the claims' row
+        sta cl
+        lda clrh,x
+        sta cl+1
+        txa                         ; the half: 4 on bottoms rows (row even), 0 on tops rows
+        and #1
+        eor #1
+        asl a
+        asl a
+        sta sthalf
+        lda stx0                    ; its columns (x / 8: the level's under 2048 pixels)
+        sta tmp
+        lda stx0+1
+        ldx #3
+-       lsr a
+        ror tmp
+        dex
+        bne -
+        lda tmp
+        sta stc0
+        lda stx1
+        sta tmp
+        lda stx1+1
+        ldx #3
+-       lsr a
+        ror tmp
+        dex
+        bne -
+        lda tmp
+        sta stc1
+        cmp leftc                   ; (in view at all?)
+        bcc strx
+        lda leftc
+        clc
+        adc #40
+        cmp stc0
+        bcc strx
+        lda stx0                    ; the end cells' masks: from x0's pixel, to x1's
+        and #7
+        tax
+        lda rmask,x
+        sta stm0
+        lda stx1
+        and #7
+        tax
+        lda lmask,x
+        sta stm1
+        lda stc0                    ; clipped to the view (a whole cell where it's cut)
+        cmp leftc
+        bcs +
+        lda leftc
+        sta stc0
+        lda #$ff
+        sta stm0
++       lda leftc
+        clc
+        adc #40
+        cmp stc1
+        bcs +
+        sta stc1
+        lda #$ff
+        sta stm1
++       lda stc1
+        sec
+        sbc leftc
+        sta stse
+        lda stc0
+        sec
+        sbc leftc
+        sta stsc
+        sta stfst
+stlp    lda #$ff
+        ldy stsc
+        cpy stfst
+        bne +
+        and stm0
++       cpy stse
+        bne +
+        and stm1
++       jsr stcell
+        lda stsc
+        cmp stse
+        beq strx
+        inc stsc
+        bne stlp
+strx    rts
+rmask   .byte $ff, $7f, $3f, $1f, $0f, $07, $03, $01
+lmask   .byte $80, $c0, $e0, $f0, $f8, $fc, $fe, $ff
+
+stfl    rts                         ; (no spare character left: not drawn)
+
+; mask a ORed into line stln of the cell at column y in view (its spare character's half)
+stcell  sta stmk
+        lda (cl),y
+        beq stnew
+        jsr stcp                    ; (claimed: on from what's there)
+        jmp stor
+stnew   ldx sthalf                  ; a spare character's half (none left: not drawn)
+        bne +
+        lda ntop
+        cmp #NPOOL
+        bcs stfl
+        inc ntop
+        bcc ++
++       lda nbot
+        cmp #NPOOL
+        bcs stfl
+        inc nbot
++       adc #POOL0                  ; (carry clear)
+        sta code
+        sta (cl),y                  ; claimed
+        jsr stcp
+        lda (tp),y                  ; started from the level's glyph there (FONTA's)
+        sta orig
+        sta sp
+        lda #0
+        asl sp
+        rol a
+        asl sp
+        rol a
+        asl sp
+        rol a
+        adc #>FONTA                 ; (carry clear)
+        sta sp+1
+        lda sp
+        ora sthalf
+        sta sp
+        sty stsc2
+        ldy #3
+-       lda (sp),y
+        sta (cp),y
+        dey
+        bpl -
+        ldx ncell                   ; its claim, to clear
+        lda stsc2
+        clc
+        adc cl
+        sta cl_lo,x
+        lda cl+1
+        adc #0
+        sta cl_hi,x
+        lda stsc2                   ; the programs' entries: the code / the level's code, the cell
+        clc
+        adc mp
+        ldy #3
+        sta (wp),y
+        sta (rp),y
+        iny
+        lda mp+1
+        sta (wp),y
+        sta (rp),y
+        ldy #1
+        lda code
+        sta (wp),y
+        lda orig
+        sta (rp),y
+        lda wp
+        clc
+        adc #5
+        sta wp
+        sta rp
+        bcc +
+        inc wp+1
+        inc rp+1
++       inc ncell
+stor    ldy stln
+        lda (cp),y
+        ora stmk
+        sta (cp),y
+stfull  rts
+stcp    pha                         ; cp = code a's half in the set not shown
+        lsr a
+        lsr a
+        lsr a
+        lsr a
+        lsr a
+        clc
+        adc bfhi
+        sta cp+1
+        pla
+        asl a
+        asl a
+        asl a
+        ora sthalf
+        sta cp
+        rts
+stx0    .word 0                     ; (the string)
+stx1    .word 0
+stry     .byte 0
+stln    .byte 0
+sthalf  .byte 0
+stc0    .byte 0
+stc1    .byte 0
+stm0    .byte 0
+stm1    .byte 0
+stsc    .byte 0
+stse    .byte 0
+stfst   .byte 0
+stmk    .byte 0
+stsc2   .byte 0
 
 ; ---- addobj: the thing pg at px, pd listed for this frame
 addobj  lda nob
@@ -2374,19 +2787,6 @@ clrl    .for r = 0, r < NROWS, r += 1   ; the claims' rows (CLAIMA, then CLAIMB,
 clrh    .for r = 0, r < NROWS, r += 1
         .byte >(r < NCLAIMA ? CLAIMA + r * 42 : r < NCLAIMA + NCLAIMB ? CLAIMB + (r - NCLAIMA) * 42 : CLAIMC + (r - NCLAIMA - NCLAIMB) * 42)
         .endfor
-        .align $100                 ; (glo and glo4 in one page: only the low byte's patched)
-glo     .for c = 0, c < 128, c += 1 ; a character's offset in its set (low), and with the bottoms
-        .byte <(c * 8)              ; half (+ 4)
-        .endfor
-glo4    .for c = 0, c < 128, c += 1
-        .byte <(c * 8 + 4)
-        .endfor
-ghiA    .for c = 0, c < 128, c += 1 ; its address's high byte in each set
-        .byte >(FONTA + c * 8)
-        .endfor
-ghiB    .for c = 0, c < 128, c += 1
-        .byte >(FONTB + c * 8)
-        .endfor
 glht    .byte <glo, 0, 0, 0, <glo4  ; (by the half)
 ghit_lo .byte <ghiA, <ghiB          ; (by the set not shown: 0 A, 1 B... indexed by front ^ 1)
 ghit_hi .byte >ghiA, >ghiB
@@ -2451,6 +2851,7 @@ vshow   lda rprev                   ; last frame's cells put back, this frame's 
         sta vrun+2
 vrun    jsr PROGR0
         jsr PROGW
+        jsr PROGP                   ; (and a gem's, key's or Scrubbly's cells: pick.asm)
         lda rprev                   ; this frame's putting back program runs next time
         ldx rcur
         stx rprev
@@ -2549,42 +2950,7 @@ vbiend  ldx pmshow                  ; the top band's players' registers, every f
         pla
         rti
 
-        .align $100
-dlia    pha                         ; a bottoms row's last line: VSCROL 3 for the tops row's end;
-        txa                         ; the next band's players' registers, those that change
-        pha                         ; (written while this line and the ones after are drawn:
-        lda #3                      ; things ending on a player end before)
-        sta VSCROL
-        ldx bandx
-        lda BT_M,x
-        asl a
-        sta dlj+1                   ; (16 blocks by the band's mask)
-dlj     jmp (dltab)
-dlend   inx
-        inx
-        stx bandx
-        lda #<dlib
-        sta dliv
-        pla
-        tax
-        pla
-        rti
 
-dlib    pha                         ; a tops row's last line: VSCROL 4 for the next row's start
-        lda #4
-        sta WSYNC
-      .rept DELAY
-        nop
-      .endrept
-        sta VSCROL
-        lda #<dlia
-        sta dliv
-        pla
-        rti
-        .cerror (>dlia) != (>dlib), "the DLIs must share a page (only dliv's low byte changes)"
-
-        .align $100
-dltab   .word dlb0, dlb1, dlb2, dlb3, dlb4, dlb5, dlb6, dlb7, dlb8, dlb9, dlb10, dlb11, dlb12, dlb13, dlb14, dlb15
 dlb0
         jmp dlend
 dlb1
@@ -2769,6 +3135,7 @@ dlb15
         .include "move.asm"         ; Trogg's movement (the C64's)
         .include "pick.asm"         ; collisions, gems and keys
         .include "hazards.asm"      ; the balloons and daggers (the C64's)
+        .include "yoyo.asm"         ; the yoyo (the C64's)
         .cerror * > CLEAN, "the program reaches the level's map: ", * - CLEAN, " over"
         .cerror CLEAN + NROWS * 128 > DLIST, "the level's map reaches the display list"
 

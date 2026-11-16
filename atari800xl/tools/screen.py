@@ -30,6 +30,7 @@ STRIDE, PAD, NROWS, HR0 = 128, 4, 60, -2   # (HR0: the C64's half row in the Ata
 assert PAD + NC <= STRIDE
 
 gone = open(os.path.join(os.path.dirname(SRC), 'chars_gone.bin'), 'rb').read()   # (the gems and keys gone)
+off = open(os.path.join(os.path.dirname(SRC), 'chars_off.bin'), 'rb').read()     # (the Scrubblies knocked off)
 def half(hr, c, pic=px):              # the C64's half row hr (2n tops, 2n+1 bottoms), column c: 4 bytes
     if hr < 0 or hr >= 2 * 25: return (0, 0, 0, 0)
     return tuple(sum(0x80 >> x for x in range(8) if pic[(hr * 4 + l) * W + c * 8 + x] == 3) for l in range(4))
@@ -37,7 +38,8 @@ def half(hr, c, pic=px):              # the C64's half row hr (2n tops, 2n+1 bot
 tops, bottoms = {(0, 0, 0, 0): 0}, {(0, 0, 0, 0): 0}
 mp = bytearray(STRIDE * NROWS)
 mpg = bytearray(STRIDE * NROWS)       # (the map with the gems and keys gone: their glyphs in the set too)
-for m, pic in ((mp, px), (mpg, gone)):
+mpo = bytearray(STRIDE * NROWS)       # (... with the Scrubblies knocked off)
+for m, pic in ((mp, px), (mpg, gone), (mpo, off)):
     for r in range(NROWS):
         second = r & 1
         hr = r + HR0                                             # (the C64's half row)
@@ -117,14 +119,16 @@ open(os.path.join(OUT, f'{LV}_scrub.inc'), 'w').write('\n'.join(inc) + '\n')
 _json.dump(scr_json, open(os.path.join(OUT, f'{LV}_scrub.json'), 'w'))
 
 # The gems and keys (c64/build/<level>/picks.json; chars.bin's pixels are level pixels across, and
-# level lines less 24 down): each one's box (level pixels, as the C64's collide.inc), and the cells
-# that change when it's picked up (the map with it gone, chars_gone.bin: row, column and code each
-# way, at most PKMAX). And the keys' yellow (their grid's 1s, chars.bin's colour 1) for players,
+# level lines less 24 down): each one's box (level pixels, as the C64's collide.inc). The patch
+# objects: the gems and keys, then the Scrubblies (NPO in all, at most 24: a bit each in pick.asm's
+# masks); each one's cells that change when it's picked up (the map with it gone, chars_gone.bin)
+# or knocked off by the yoyo (chars_off.bin): row, column, SCREEN's address and the code each way,
+# at most PMAX (the VBI's patch program's room). And the keys' yellow (their grid's 1s, chars.bin's colour 1) for players,
 # fitted as the Scrubblies' magenta is: two normal-width players (left and right) or one
 # double-width; the players' line of the top (scanline: level line - 8).
 PJ = json.load(open(os.path.join(os.path.dirname(SRC), 'picks.json')))
 pk = PJ['picks']
-PKMAX = 20
+PMAX = 76
 cells = []
 for p in pk:
     b = p['box']; x0, x1 = p['left'] + b['x0'], p['left'] + b['x1']
@@ -136,10 +140,23 @@ for p in pk:
         for c in range(x0 // 8 - 1, x1 // 8 + 2):
             o = r * STRIDE + PAD + c
             if 0 <= c < NC and mp[o] != mpg[o]: cs.append((r, c, mpg[o], mp[o]))
-    assert len(cs) <= PKMAX, f'{p}: {len(cs)} cells'
+    assert len(cs) <= PMAX, f'{p}: {len(cs)} cells'
     cells.append(cs)
+for e in sc['placed']:                # (the Scrubblies: their shapes' boxes)
+    x0, x1, y0, y1 = e['ax'], e['ax'] + sc.get('w', 40) - 1, e['ay'], e['ay'] + sc.get('h', 42) - 1
+    cs = []
+    for r in range(NROWS):
+        hr = r + HR0
+        if hr * 4 + 3 < y0 - 4 or hr * 4 > y1 + 4: continue
+        for c in range(x0 // 8 - 1, x1 // 8 + 2):
+            o = r * STRIDE + PAD + c
+            if 0 <= c < NC and mp[o] != mpo[o]: cs.append((r, c, mpo[o], mp[o]))
+    assert len(cs) <= PMAX, f'{e}: {len(cs)} cells'
+    cells.append(cs)
+NPO = len(cells)
+assert NPO <= 24, f'{LV}: {NPO} gems, keys and Scrubblies, over 24'
 allc = [(r, c) for cs in cells for r, c, _, _ in cs]
-assert len(allc) == len(set(allc)), 'two gems or keys share a cell'
+assert len(allc) == len(set(allc)), 'two gems, keys or Scrubblies share a cell'
 kg = PJ['grids']['IMG_Key']; KW = len(kg[0])
 krows = [y for y in range(len(kg)) if 1 in kg[y]]; ky0, ky1 = krows[0], krows[-1]
 def kfit(bw, nb):
@@ -157,7 +174,7 @@ def kfit(bw, nb):
     return best
 ktwo, kdbl = kfit(2, 16), kfit(4, 8)
 L = lambda v: ', '.join(str(x) for x in v)
-pinc = [f'NPK = {len(pk)}', f'KEYBITS = {sum(1 << i for i, p in enumerate(pk) if p["name"] == "IMG_Key")}', f'NKEYS = {sum(p["name"] == "IMG_Key" for p in pk)}', f'PKMAX = {PKMAX}',
+pinc = [f'NPK = {len(pk)}', f'KEYBITS = {sum(1 << i for i, p in enumerate(pk) if p["name"] == "IMG_Key")}', f'NKEYS = {sum(p["name"] == "IMG_Key" for p in pk)}', f'PMAX = {PMAX}', f'NPO = {NPO}',
         'pkll    .byte ' + L((p['left'] + p['box']['x0']) & 255 for p in pk) + '     ; boxes (level pixels)',
         'pklh    .byte ' + L((p['left'] + p['box']['x0']) >> 8 for p in pk),
         'pkrl    .byte ' + L((p['left'] + p['box']['x1']) & 255 for p in pk),
@@ -168,11 +185,11 @@ pinc = [f'NPK = {len(pk)}', f'KEYBITS = {sum(1 << i for i, p in enumerate(pk) if
         'pkxl    .byte ' + L((p['left'] + ktwo[1]) & 255 for p in pk) + '     ; a key\'s players\' left',
         'pkxh    .byte ' + L(((p['left'] + ktwo[1]) >> 8) & 255 for p in pk),
         'pkpd    .byte ' + L(p['top'] - 8 + ky0 for p in pk),
-        'pkci    .byte ' + L([sum(len(c) for c in cells[:i]) for i in range(len(pk) + 1)]) + '     ; its cells: from, to',
-        'pkcl    .byte ' + L(((0xd800 + r * STRIDE + PAD + c) & 255) for cs in cells for r, c, _, _ in cs) + '     ; (SCREEN\'s address)',
-        'pkch    .byte ' + L(((0xd800 + r * STRIDE + PAD + c) >> 8) for cs in cells for r, c, _, _ in cs),
-        'pkcg    .byte ' + L(g for cs in cells for _, _, g, _ in cs) + '     ; the code with it gone',
-        'pkcf    .byte ' + L(f for cs in cells for _, _, _, f in cs) + '     ; and with it there',
+        'pkn     .byte ' + L(len(cs) for cs in cells) + '     ; each patch object\'s cells: how many, where',
+        'pkpl    .byte ' + L(f'<pkc{i}' for i in range(NPO)),
+        'pkph    .byte ' + L(f'>pkc{i}' for i in range(NPO)),
+        *[f'pkc{i:<4}.byte ' + (L(v for r, c, g, f_ in cs for v in ((0xd800 + r * STRIDE + PAD + c) & 255, (0xd800 + r * STRIDE + PAD + c) >> 8, r, c, g, f_)) or '0')
+          + ('     ; (each: SCREEN\'s address, row, column, the code gone, there)' if i == 0 else '') for i, cs in enumerate(cells)],
         f'KEY_H = {ky1 - ky0 + 1}', f'KEY_DX = {kdbl[1] - ktwo[1]}',
         'key_l   .byte ' + L(v >> 8 for v in ktwo[2]),
         'key_r   .byte ' + L(v & 255 for v in ktwo[2]),
@@ -182,4 +199,4 @@ _json.dump({'n': len(pk), 'key': [int(p['name'] == 'IMG_Key') for p in pk], 'x':
             'pd': [p['top'] - 8 + ky0 for p in pk], 'dx': kdbl[1] - ktwo[1], 'l': [v >> 8 for v in ktwo[2]],
             'r': [v & 255 for v in ktwo[2]], 'd': kdbl[2], 'cells': [[[r, c, g, f] for r, c, g, f in cs] for cs in cells]},
            open(os.path.join(OUT, f'{LV}_picks.json'), 'w'))
-print(f'{LV}: {len(pk)} gems and keys, {len(allc)} cells; key infill {ktwo[0]} pixels wrong with two players, {kdbl[0]} with one double-width')
+print(f'{LV}: {len(pk)} gems and keys, {NPO - len(pk)} Scrubblies, their cells {[len(c) for c in cells]}; key infill {ktwo[0]} pixels wrong with two players, {kdbl[0]} with one double-width')

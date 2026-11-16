@@ -19,6 +19,7 @@ build t_def ""; build t_inv "-D INVINCIBLE=1"; build t_str "-D INVINCIBLE=1 -D S
 build t_key "-D STARTX=280 -D STARTY=211"
 GEM="30:0 100:1 50:8 50:4 100:1 200:8 100:0"            # up the F, the gem, up again, into a Scrubbly
 KEY="30:0 40:4 30:0 60:8 300:0"                          # a key at once, off the edge: back at the checkpoint
+YOYO="30:0 100:1 50:8 50:4 100:1 20:8 60:0:1 60:0 150:8 100:0"   # up the F, the yoyo at its Scrubbly, through where it was
 WALK="100:1 60:8 30:9 60:8 40:10 100:8 60:9 200:8 60:6 200:8 80:5 200:8 100:4 200:8"   # across the level, jumping
-tour gem t_def "$GEM" c; tour key t_key "$KEY" c; tour walk t_inv "$WALK"; tour stress t_str "$WALK"; tour hwout t_hw "$WALK"
+tour gem t_def "$GEM" c; tour key t_key "$KEY" c; tour yoyo t_def "$YOYO" c; tour walk t_inv "$WALK"; tour stress t_str "$WALK"; tour hwout t_hw "$WALK"
 exit $FAIL

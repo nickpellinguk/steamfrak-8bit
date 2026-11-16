@@ -26,9 +26,18 @@ where he is, each held still a moment first; touching one kills him. Collisions 
 two stages: boxes, then where they touch each image's spans (every row's leftmost and rightmost
 solid pixel, from the images as drawn) must meet on a row both have, as the BBC version's
 hit_test and GameMaker's precise collisions; checked against a Python reference
-(`test/collcheck.py`: no disagreement over 2,790 memory dumps of a STRESS run, 7 deaths). Still to
-come: the yoyo (fire does nothing). Checked in the WebAssembly atari800, colour for colour: 791 screens of five joystick
-tours (`test/tours.sh`), with gems and keys going and coming back.
+(`test/collcheck.py`: no disagreement over 2,790 memory dumps of a STRESS run, 7 deaths). Fire
+throws the yoyo (`src/yoyo.asm`, the C64 port's): out 1.3 pixels a tick while it's held, to 80,
+then back; it knocks a Scrubbly off (its cells changed to what's behind it, its infill and
+collisions gone, back after a restart or at an earlier checkpoint) and pops balloons and daggers.
+It's drawn as the BBC version draws it: the string a line from his hand to the yoyo, exact to the
+pixel (the C64 has to draw it a character at a time), then the yoyo, then Trogg on top (he's now
+drawn last, over the hazards too). Gems, keys and Scrubblies are one list of patch objects (24-bit
+masks: A_2 has 17); their cells reach the screen through a patch program the VBI runs after the
+frame's, built once the frame's drawn so it leaves out cells something's drawn in (a Scrubbly
+changes about 48 cells, more than a frame's program has room for). Still to come: the FRAK!
+bubble when he dies, and sound. Checked in the WebAssembly atari800, colour for colour: 893 screens of six joystick
+tours (`test/tours.sh`), with gems and keys going and coming back, and a Scrubbly knocked off.
 
 **What's still short of the original's look:** Trogg's infill is in 2-pixel blocks (at most 10 of
 his 200-250 infill pixels wrong); a Scrubbly on one double-width player has 21 of its 540
@@ -212,7 +221,7 @@ Arrow keys are joystick 1, Space or Ctrl fire, F2-F4 Start, Select and Option.
 | --- | --- |
 | `tools/screen.py` | A level's character set and map for the 8x4 screen, from the C64 build's picture of it (`c64/build/<level>/chars.bin`); `build/<level>_expect.png`, the picture the Atari should show; the Scrubblies' and keys' infill fitted to players; each gem's and key's cells with it gone (`_picks.inc`) |
 | `src/screen8x4.asm` | The demo: display list, row DLIs, scrolling VBI (with the OS, for now) |
-| `src/trogg8x4.asm` | (memory: the program `$0800-$8fff`, the level's map `$9000-$adff`, the display list `$ae00`, the character sets `$b000` and `$b400`, the VBI's programs `$b800`, `$bb00` and `$c000` (the last in the first players' graphics' unused `$300`); under the OS, which ANTIC sees as the CPU does: the players' graphics `$c000` and `$c800`, the screen's map `$d800-$f5ff`, the bands' registers `$f600`; the claims in three parts, `$f980`, `$c800` (the second players' graphics' unused `$300`) and `$be00`) |
+| `src/trogg8x4.asm` | (memory: the program `$0800-$8fff`, its page-aligned tables first, the level's map `$9000-$adff`, the display list `$ae00`, the character sets `$b000` and `$b400`, the VBI's programs `$b800`, `$bb00` and `$c000` (the last in the first players' graphics' unused `$300`), its patch program `$be80`; under the OS, which ANTIC sees as the CPU does: the players' graphics `$c000` and `$c800`, the screen's map `$d800-$f5ff`, the bands' registers `$f600`; the claims in three parts, `$f980`, `$c800` (the second players' graphics' unused `$300`) and `$be00`) |
 | `src/trogg8x4.asm` | The same with Trogg: the game's ticks, the camera, drawing into spare characters, the multiplexer, the VBI showing a frame |
 | `src/move.asm` | Trogg's movement: the C64 port's (`c64/src/play.asm`), on the joystick; dying, checkpoints, the level complete |
 | `src/pick.asm` | Collisions (Scrubblies, gems, keys); gems and keys going from the map (and coming back) through the VBI's programs; the keys listed for their yellow |
@@ -220,6 +229,7 @@ Arrow keys are joystick 1, Space or Ctrl fire, F2-F4 Start, Select and Option.
 | `tools/sprites.py` | The moving graphics as 10-bit graphics (`build/sprites.inc`) and the AND and OR tables; `build/sprites.json` for the checks |
 | `test/tour.mjs` | A program on the WebAssembly atari800 with a joystick script, saving the screen and memory every few frames |
 | `test/checktrogg.py` | Each saved screen against the level (with the gems and keys gone that the program's record says) and the things drawn on as it says, pixel by pixel |
+| `src/yoyo.asm` | The yoyo: the C64 port's, thrown, drawn (with its string, by `yolist` and `strline` in `trogg8x4.asm`), knocking Scrubblies off and popping balloons and daggers |
 | `src/hazards.asm` | The balloons and daggers: the C64 port's, spawned, moved and gone as in the game |
 | `test/state.py`, `hzstate.py`, `scr2png.py`, `tours.sh` | Trogg's state, and the balloons' and daggers', in each saved memory; a saved screen as a picture; all the checks |
 | `test/collcheck.py` | The collisions in each saved memory against a reference: nothing deadly or a gem or key not picked up touching him while he's alive, and what killed him at each death |

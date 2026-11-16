@@ -11,4 +11,4 @@ for l in open(os.path.join(B, 'trogg8x4.lbl')):
 w = lambda m, n: m[L[n]] | m[L[n] + 1] << 8
 for p in sorted(glob.glob(os.path.join(sys.argv[1], '*.mem'))):
     m = open(p, 'rb').read()
-    print(os.path.basename(p)[:-4], f"x {w(m, 'tx')} y {w(m, 'gy')}.{m[L['tyf']]:02d} st {m[L['tstate']]} tv {m[L['tv']] - (256 if m[L['tv']] > 127 else 0)} dead {m[L['dead']]} gone {w(m, 'pkgone'):03x} won {m[L['won']]} scroll {m[L['nscrx']]}")
+    print(os.path.basename(p)[:-4], f"x {w(m, 'tx')} y {w(m, 'gy')}.{m[L['tyf']]:02d} st {m[L['tstate']]} tv {m[L['tv']] - (256 if m[L['tv']] > 127 else 0)} dead {m[L['dead']]} gone {w(m, 'pgone') | m[L['pgone'] + 2] << 16:06x} yoyo {m[L['yo_len'] + 1]} won {m[L['won']]} scroll {m[L['nscrx']]}")

@@ -7,11 +7,14 @@
 ; version's hit_test, as GameMaker's precise collisions). A key picked up, not the last, makes a
 ; checkpoint due; the last completes the level.
 ;
-; The gems and keys gone (pkgone, a bit each) and those the map shows gone (pkshow) are put
-; together a gem or key a frame (pkpatch, while the frame's programs are built): its cells' codes
-; (screen.py: at most PKMAX) into the clean map, and as entries in the frame's VBI program (and its
-; putting back program, as their low bytes go together), before anything's drawn on them. So
-; restarting (pkreset: pkgone from pkgone0) needs nothing more.
+; The patch objects (screen.py: the gems and keys, then the Scrubblies; NPO, at most 24) gone
+; (pgone: picked up, or knocked off by the yoyo; a bit each, object k's in byte pby,k, mask pbm,k)
+; and those the map shows gone (pshow) are put together an object a frame: pkpatch, as the frame's
+; built, puts its cells' codes (screen.py's, at most PMAX) into the clean map, before anything's
+; drawn on them; pkprog, once it's built, makes the VBI's patch program (PROGP, run after the
+; frame's program) write them on the screen, all but those something's drawn in this frame (their
+; spare characters were started from the clean map's new codes, and their putting back writes
+; those). So restarting (pkreset: pgone from pgone0) needs nothing more.
 ctl     = tmp                       ; (2 each: Trogg's box)
 ctr     = mdst
 ctt     = msrc
@@ -54,6 +57,10 @@ collide lda dead
         #cedge tby1, gy, ctb
         ldx #NSCR - 1               ; the Scrubblies
 cslp    stx cpk
+        ldy pby + NPK,x             ; (knocked off: not looked at)
+        lda pbm + NPK,x
+        and pgone,y
+        bne csn
         lda scbll,x                 ; (off if its left > his right, its right < his left, its top
         sta cbl                     ; > his bottom or its bottom < his top)
         lda scblh,x
@@ -89,7 +96,8 @@ cslp    stx cpk
         bcc ++
         jsr trogg_dies
 +
-+       ldx cpk
++
+csn     ldx cpk
         dex
         bpl cslp
       .if !NOHAZ
@@ -161,12 +169,9 @@ chn     dex
 +
       .endif
         ldx #NPK - 1                ; the gems and keys
-cplp    lda pkbitl,x                ; (gone already: not looked at)
-        and pkgone
-        sta cbl
-        lda pkbith,x
-        and pkgone+1
-        ora cbl
+cplp    ldy pby,x                   ; (gone already: not looked at)
+        lda pbm,x
+        and pgone,y
         beq +
         jmp cpnext
 +
@@ -186,7 +191,9 @@ cplp    lda pkbitl,x                ; (gone already: not looked at)
         sta cbt+1
         sta cbb+1
         jsr overlap
-        bcs cpnext
+        bcc +
+        jmp cpnext
++
         stx cpk
         lda pkil,x                  ; (the boxes touch: the spans)
         sta oil
@@ -204,21 +211,21 @@ cplp    lda pkbitl,x                ; (gone already: not looked at)
         sta oh
         jsr spans
         ldx cpk
-        bcc cpnext
-        lda pkbitl,x                ; picked up
-        ora pkgone
-        sta pkgone
-        lda pkbith,x
-        ora pkgone+1
-        sta pkgone+1
+        bcs +
+        jmp cpnext
++
+        ldy pby,x                   ; picked up
+        lda pbm,x
+        ora pgone,y
+        sta pgone,y
         lda pkkey,x
         beq cpnext
         stx cpk                     ; a key: the last? (all the keys' bits gone)
-        lda pkgone
+        lda pgone
         and #<KEYBITS
         cmp #<KEYBITS
         bne +
-        lda pkgone+1
+        lda pgone+1
         and #>KEYBITS
         cmp #>KEYBITS
         bne +
@@ -399,82 +406,134 @@ overlap #cgt cbl, ctr               ; its left > his right: off
 ovno    sec
         rts
 
-; pkpatch: a gem or key whose gone-ness the map doesn't show yet, put right (one a frame): its cells
-; into the clean map and this frame's programs. Run while the programs are empty.
-pkpatch ldx #NPK - 1
--       lda pkbitl,x
-        and pkgone
-        sta cbl
-        lda pkbitl,x
-        and pkshow
-        cmp cbl
+; pkpatch: the first patch object whose gone-ness the map doesn't show, put right (one a frame):
+; its cells' codes into the clean map, and it noted (ppn cells from ppp, gone or not: ppg) for
+; pkprog. Run before anything's drawn.
+pkpatch ldx #0
+-       ldy pby,x
+        lda pgone,y
+        eor pshow,y
+        and pbm,x
         bne +
-        lda pkbith,x
-        and pkgone+1
-        sta cbl
-        lda pkbith,x
-        and pkshow+1
-        cmp cbl
-        bne +
-        dex
-        bpl -
+        inx
+        cpx #NPO
+        bcc -
+        lda #0                      ; (none)
+        sta ppn
         rts
-+       lda pkbitl,x                ; (the map shows it as it is now)
-        eor pkshow
-        sta pkshow
-        lda pkbith,x
-        eor pkshow+1
-        sta pkshow+1
-        lda pkbitl,x                ; gone now? (the gone codes, else the codes with it)
-        and pkgone
-        bne +
-        lda pkbith,x
-        and pkgone+1
-+       sta cbt
-        lda pkci+1,x
-        sta cbb
-        lda pkci,x
++       lda pshow,y                 ; (the map shows it as it is now)
+        eor pbm,x
+        sta pshow,y
+        and pbm,x
+        sta ppg                     ; (gone now: the gone codes, else those with it)
+        lda pkpl,x
+        sta ppp
+        sta sp1
+        lda pkph,x
+        sta ppp+1
+        sta sp1+1
+        lda pkn,x
+        sta ppn
+        beq ppx
         tax
-ppl     cpx cbb
-        bcs ppend
-        lda pkcl,x                  ; the cell's address, in the screen and the clean map
-        ldy #3
-        sta (wp),y
-        sta (rp),y
+ppl     ldy #0                      ; each cell: its address in the clean map
+        lda (sp1),y
         sta tmp
-        lda pkch,x
         iny
-        sta (wp),y
-        sta (rp),y
+        lda (sp1),y
         sec
         sbc #(>SCREEN) - (>CLEAN)
         sta tmp+1
-        lda pkcg,x
-        ldy cbt
+        ldy #4
+        lda ppg
         bne +
-        lda pkcf,x
-+       ldy #1
-        sta (wp),y
-        sta (rp),y
+        iny
++       lda (sp1),y
         ldy #0
         sta (tmp),y
-        lda wp
+        jsr ppnext
+        dex
+        bne ppl
+ppx     rts
+ppnext  lda sp1                     ; (the next cell's record: 6 bytes on)
+        clc
+        adc #6
+        sta sp1
+        bcc +
+        inc sp1+1
++       rts
+
+; pkprog: the VBI's patch program (PROGP: lda #code, sta cell, ..., rts) for the object pkpatch
+; noted: each of its cells but those claimed this frame (in view, something drawn there). Run once
+; the frame's drawn, before its claims are cleared.
+pkprog  lda #<PROGP
+        sta sp2
+        lda #>PROGP
+        sta sp2+1
+        ldx ppn
+        beq pgend
+        lda ppp
+        sta sp1
+        lda ppp+1
+        sta sp1+1
+pgl     ldy #3                      ; in view? (its column less the first in view, 0-40)
+        lda (sp1),y
+        sec
+        sbc leftc
+        cmp #41
+        bcs pgw
+        sta stmp                    ; claimed? (the claims' row: clrl, clrh)
+        dey
+        lda (sp1),y
+        tay
+        lda clrl,y
+        sta tmp
+        lda clrh,y
+        sta tmp+1
+        ldy stmp
+        lda (tmp),y
+        bne pgn
+pgw     ldy #0                      ; lda #code, sta cell
+        lda #$a9
+        sta (sp2),y
+        ldy #4
+        lda ppg
+        bne +
+        iny
++       lda (sp1),y
+        ldy #1
+        sta (sp2),y
+        iny
+        lda #$8d
+        sta (sp2),y
+        ldy #0
+        lda (sp1),y
+        ldy #3
+        sta (sp2),y
+        ldy #1
+        lda (sp1),y
+        ldy #4
+        sta (sp2),y
+        lda sp2
         clc
         adc #5
-        sta wp
-        sta rp
-        bcc +
-        inc wp+1
-        inc rp+1
-+       inx
-        bne ppl
-ppend   rts
+        sta sp2
+        bcc pgn
+        inc sp2+1
+pgn     jsr ppnext
+        dex
+        bne pgl
+pgend   lda #$60
+        ldy #0
+        sta (sp2),y
+        rts
 
-; pkreset: the gems and keys gone as pkgone0 (the restart's), the map put right a frame at a time
-pkreset lda pkgone0
-        sta pkgone
-        lda pkgone0+1
-        sta pkgone+1
+; pkreset: the patch objects gone as pgone0 (the restart's), the map put right a frame at a time
+pkreset ldx #2
+-       lda pgone0,x
+        sta pgone,x
+        dex
+        bpl -
         rts
 
 ; pklist: the keys not gone (as the map shows), in view or nearly, listed for their infill
@@ -500,11 +559,9 @@ pklist  lda nscrx                   ; (the view's left, less 32, and right, in l
         ldx #NPK - 1
 pkl     lda pkkey,x
         beq pkln
-        lda pkbitl,x
-        and pkshow
-        bne pkln
-        lda pkbith,x
-        and pkshow+1
+        ldy pby,x
+        lda pbm,x
+        and pshow,y
         bne pkln
         lda pkxl,x                  ; (left of the view's right, right of its left - 32)
         cmp cbr
@@ -531,16 +588,19 @@ pkln    dex
         bpl pkl
         rts
 
-pkbitl  .for i = 0, i < NPK, i += 1
-        .byte <(1 << i)
+pby     .for i = 0, i < NPO, i += 1 ; (patch object i's bit: its byte, its mask)
+        .byte i >> 3
         .endfor
-pkbith  .for i = 0, i < NPK, i += 1
-        .byte >(1 << i)
+pbm     .for i = 0, i < NPO, i += 1
+        .byte 1 << (i & 7)
         .endfor
-        .cerror NPK > 16, "more than 16 gems and keys"
-pkgone  .word 0                     ; (the gems and keys picked up: bit i)
-pkshow  .word 0                     ; (those the map shows gone)
-pkgone0 .word 0                     ; (those gone at the restart: the checkpoint's)
+        .cerror NPO > 24, "more than 24 gems, keys and Scrubblies"
+pgone   .fill 3                     ; (the patch objects picked up or knocked off: a bit each)
+pshow   .fill 3                     ; (those the map shows gone)
+pgone0  .fill 3                     ; (those gone at the restart: the checkpoint's)
+ppn     .byte 0                     ; (the object pkpatch put right this frame: its cells, how many,
+ppp     .word 0                     ;  where, gone or not)
+ppg     .byte 0
 cbl     .word 0                     ; (an object's box)
 hb      .word 0                     ; (hbadd's)
 tgfx    .byte 0                     ; (his graphic)
