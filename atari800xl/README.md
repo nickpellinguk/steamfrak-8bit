@@ -135,8 +135,13 @@ Arrow keys are joystick 1, Space or Ctrl fire, F2-F4 Start, Select and Option.
   top line (its scanline, the screen 8-247, so things can start above or below it), for each cell
   in the screen's 60 rows and the 41 columns in view where it isn't all transparent: a spare
   character's half in the character set not shown, started from the level's half glyph there
-  (read through the clean map, which is never drawn on) or, if something has the cell already
-  this frame (a table of the cells in view), from that; its 4 lines ANDed and ORed on
+  or, if something has the cell already this frame (a table of the cells in view), from that.
+  The level's code there comes from the screen's map: a code below 64 is the level's; a spare
+  character there was drawn the frame before, and that frame noted what it was over (a page a
+  frame, by turns); a cell a gem's, key's or Scrubbly's patch is changing this frame has its new
+  code (its rows are flagged, so only those look). So there's no second, clean copy of the map
+  (7.5K): the level's map is packed in the program (the BBC version's packer: A_1's 7,680
+  bytes in 774) and unpacked into the screen's at the start; its 4 lines ANDed and ORed on
   (`lda (dp),y` `tax` `lda (sp),y` `and andtab,x` `ora ortab,x` `sta (cp),y`, the shift's table
   page patched in once a graphic; over blank background, `lda ortab,x` `sta (cp),y` alone).
 - **The VBI's programs:** for each cell, plot writes `lda #code` `sta cell` into this frame's
@@ -221,7 +226,7 @@ Arrow keys are joystick 1, Space or Ctrl fire, F2-F4 Start, Select and Option.
 | --- | --- |
 | `tools/screen.py` | A level's character set and map for the 8x4 screen, from the C64 build's picture of it (`c64/build/<level>/chars.bin`); `build/<level>_expect.png`, the picture the Atari should show; the Scrubblies' and keys' infill fitted to players; each gem's and key's cells with it gone (`_picks.inc`) |
 | `src/screen8x4.asm` | The demo: display list, row DLIs, scrolling VBI (with the OS, for now) |
-| `src/trogg8x4.asm` | (memory: the program `$0800-$8fff`, its page-aligned tables first, the level's map `$9000-$adff`, the display list `$ae00`, the character sets `$b000` and `$b400`, the VBI's programs `$b800`, `$bb00` and `$c000` (the last in the first players' graphics' unused `$300`), its patch program `$be80`; under the OS, which ANTIC sees as the CPU does: the players' graphics `$c000` and `$c800`, the screen's map `$d800-$f5ff`, the bands' registers `$f600`; the claims in three parts, `$f980`, `$c800` (the second players' graphics' unused `$300`) and `$be00`) |
+| `src/trogg8x4.asm` | (memory: the program `$0800-$abff`, its page-aligned tables first, the level's map packed at its end (about 9K free after it; 6K with `HWOUT=1`), what's under the spare characters drawn `$ac00` and `$ad00`, the display list `$ae00`, the character sets `$b000` and `$b400`, the VBI's programs `$b800`, `$bb00` and `$c000` (the last in the first players' graphics' unused `$300`), its patch program `$be80`; under the OS, which ANTIC sees as the CPU does: the players' graphics `$c000` and `$c800`, the screen's map `$d800-$f5ff`, the bands' registers `$f600`; the claims in three parts, `$f980`, `$c800` (the second players' graphics' unused `$300`) and `$be00`) |
 | `src/trogg8x4.asm` | The same with Trogg: the game's ticks, the camera, drawing into spare characters, the multiplexer, the VBI showing a frame |
 | `src/move.asm` | Trogg's movement: the C64 port's (`c64/src/play.asm`), on the joystick; dying, checkpoints, the level complete |
 | `src/pick.asm` | Collisions (Scrubblies, gems, keys); gems and keys going from the map (and coming back) through the VBI's programs; the keys listed for their yellow |
@@ -229,6 +234,7 @@ Arrow keys are joystick 1, Space or Ctrl fire, F2-F4 Start, Select and Option.
 | `tools/sprites.py` | The moving graphics as 10-bit graphics (`build/sprites.inc`) and the AND and OR tables; `build/sprites.json` for the checks |
 | `test/tour.mjs` | A program on the WebAssembly atari800 with a joystick script, saving the screen and memory every few frames |
 | `test/checktrogg.py` | Each saved screen against the level (with the gems and keys gone that the program's record says) and the things drawn on as it says, pixel by pixel |
+| `src/unpack.asm` | The BBC version's unpacker (as the C64 port's loader has it): the level's map into the screen's at the start |
 | `src/yoyo.asm` | The yoyo: the C64 port's, thrown, drawn (with its string, by `yolist` and `strline` in `trogg8x4.asm`), knocking Scrubblies off and popping balloons and daggers |
 | `src/hazards.asm` | The balloons and daggers: the C64 port's, spawned, moved and gone as in the game |
 | `test/state.py`, `hzstate.py`, `scr2png.py`, `tours.sh` | Trogg's state, and the balloons' and daggers', in each saved memory; a saved screen as a picture; all the checks |

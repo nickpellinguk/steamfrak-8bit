@@ -31,7 +31,9 @@ blank rows above and below (the C64's level files hold no more; A_1's margins ar
 original too; A_2 and A_3 will want their original lower parts back). Then the game's balloons
 and daggers (the C64's `hazards.asm`, copied), and the C64's two-stage collisions (boxes, then
 the images' spans), checked against a reference. Then the yoyo (the C64's `yoyo.asm`, its string
-drawn as the BBC version's), knocking Scrubblies off through a patch program the VBI runs. Target: PAL, normal
+drawn as the BBC version's), knocking Scrubblies off through a patch program the VBI runs. Then
+no clean copy of the level's map (the level's codes read from the screen's map, with a table a
+frame of what's under each spare character): 6K more for the program, the map packed in it. Target: PAL, normal
 (40-column) width.
 This is the first port to start from the C64 port
 (`../c64`) rather than from the BBC version alone. The aim is a largely monochrome game in

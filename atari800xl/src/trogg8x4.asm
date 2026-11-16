@@ -43,10 +43,14 @@
 ;
 ; Each frame (the main program, while the frame before is shown), plot draws each thing in
 ; software (Trogg; balloons and daggers without a hardware outline): for
-; each cell it covers on the screen (in the 52 rows, and the 41 columns in view) where it isn't
+; each cell it covers on the screen (in the 60 rows, and the 41 columns in view) where it isn't
 ; all transparent: a spare character's half of the set not shown, started from the level's half
-; glyph there (from the clean map) or, if something drawn before this frame has the cell, from
-; that; its 4 lines ANDed and ORed on; and for the cell, an "lda #code, sta cell" in a program
+; glyph there or, if something drawn before this frame has the cell, from that. The level's code
+; comes from the screen's map (the frame shown): below POOL0 it's the level's; a spare character
+; there was drawn the frame before, and that frame's table (ORIGA or ORIGB, by turns) says what
+; it was over; and a cell a gem's, key's or Scrubbly's patch is changing this frame has its new
+; code (pick.asm: pkorig). So there's no second, clean copy of the map: the level's map is
+; packed in the program (screen.py) and unpacked into the screen's at the start; its 4 lines ANDed and ORed on; and for the cell, an "lda #code, sta cell" in a program
 ; for the VBI, and an "lda #level's code, sta cell" in a program for the VBI after (putting it
 ; back). Then the VBI, all at once: last frame's putting back program and this frame's program
 ; run (6 cycles a cell), the character sets swapped (the static glyphs are in both), the scroll
@@ -108,7 +112,8 @@ NMIST   = $d40f
 NMIRES  = $d40f
 
 ; memory (64K, the OS and BASIC switched out: ANTIC sees the RAM under it as the CPU does)
-;   $0800-$8fff the program;  $9000 the level's map;  $ae00 the display list;  $b000, $b400 the
+;   $0800-$abff the program (the level's map packed in it);  $ac00, $ad00 what's under the spare
+;   characters drawn, a frame's and the one before's;  $ae00 the display list;  $b000, $b400 the
 ;   character sets;  $b800, $bb00, $c000 the VBI's programs (the last in the first players'
 ;   graphics' unused first $300);  under the OS: $c000, $c800 the players' graphics, $d800 the
 ;   screen's map, $f600 the bands' registers;  the claims in three parts, $f980, $c800 (the
@@ -116,7 +121,9 @@ NMIRES  = $d40f
 TOPL    = 8                         ; the screen's first scanline (the players' memory's line)
 LASTL   = TOPL + NROWS * 4 - 1      ; ... and its last (247)
 BAND0   = TOPL + 6                  ; band 0's first line (above it, the VBI's registers)
-CLEAN   = $9000                     ; the level's map, never drawn on (loaded)
+ORIGA   = $ac00                     ; what's under each spare character drawn (the level's code),
+ORIGB   = $ad00                     ; a frame's and the frame before's, by turns (code | $80 on
+                                    ; bottoms rows)
 DLIST   = $ae00
 FONTA   = $b000                     ; the two character sets (the static glyphs in both)
 FONTB   = $b400
@@ -188,7 +195,6 @@ dp      = $a2                       ; ... its column at the row's first line
 cp      = $a4                       ; the spare character's half being drawn
 sp      = $a6                       ; what it starts from (the level's glyph, or itself)
 mp      = $a8                       ; the row in view in the screen's map
-tp      = $aa                       ; ... in the clean map
 cl      = $ac                       ; ... in the claims
 wp      = $ae                       ; the next entry of this frame's program
 rp      = $b0                       ; ... of its putting back program
@@ -376,23 +382,16 @@ start   sei                         ; the OS switched out: no interrupts till ou
         sta $ffff
         lda #3
         sta SKCTL                   ; (POKEY running: RANDOM)
-        ldx #0                      ; the screen's map from the clean one, the second set
-        lda #>CLEAN                 ; from the first, the claims clear
-        sta tp+1
+        lda #<lvmap                 ; the screen's map unpacked (unpack.asm: the level's, packed
+        sta usrc                    ; by screen.py), the second set from the first, the claims
+        lda #>lvmap                 ; clear
+        sta usrc+1
+        lda #<SCREEN
+        sta udp
         lda #>SCREEN
-        sta mp+1
-        stx tp
-        stx mp
-        ldy #0
--       lda (tp),y
-        sta (mp),y
-        iny
-        bne -
-        inc tp+1
-        inc mp+1
-        lda mp+1
-        cmp #>(SCREEN + NROWS * 128)
-        bne -
+        sta udp+1
+        jsr unpack
+        ldx #0
 -       lda FONTA,x
         sta FONTB,x
         lda FONTA+$100,x
@@ -625,7 +624,17 @@ tklp    jsr gametick                ; a tick: the joystick, Trogg, the balloons 
         lda ghit_hi,x
         sta cphi+2
         sta clmhi+2
-        jsr pkpatch                 ; a gem, key or Scrubbly gone (or back) in the map (pick.asm)
+        lda ofr                     ; the tables of what's under the spare characters turned
+        eor #1                      ; round: this frame's, the frame before's
+        sta ofr
+        clc
+        adc #>ORIGA
+        sta origc+2
+        sta origc2+2
+        eor #1                      ; (ORIGA's page even: ORIGB's the next)
+        sta origp+2
+        sta origp2+2
+        jsr pkpatch                 ; a gem, key or Scrubbly gone (or back) (pick.asm)
         jsr addobj                  ; Trogg
         ldx #0                      ; the Scrubblies (their infill)
 -       cpx #SCR_N
@@ -986,15 +995,15 @@ strline lda stry
         clc
         adc leftc
         sta mp
-        sta tp
         txa
         clc
         adc #>SCREEN
         sta mp+1
-        adc #((CLEAN - SCREEN) >> 8) & $ff
-        sta tp+1
         pla
         tax
+        stx prow
+        lda pprow,x
+        sta prf
         lda clrl,x                  ; the claims' row
         sta cl
         lda clrh,x
@@ -1005,6 +1014,12 @@ strline lda stry
         asl a
         asl a
         sta sthalf
+        asl a
+        asl a
+        asl a
+        asl a
+        asl a
+        sta hb80
         lda stx0                    ; its columns (x / 8: the level's under 2048 pixels)
         sta tmp
         lda stx0+1
@@ -1107,8 +1122,21 @@ stnew   ldx sthalf                  ; a spare character's half (none left: not d
         sta code
         sta (cl),y                  ; claimed
         jsr stcp
-        lda (tp),y                  ; started from the level's glyph there (FONTA's)
-        sta orig
+        lda (mp),y                  ; started from the level's glyph there (FONTA's): as plot finds
+        cmp #POOL0                  ; it
+        bcc st1
+        ora hb80
+        tax
+origp2  lda ORIGA,x
+st1     ldx prf
+        beq st2
+        jsr pkorig
+st2     sta orig
+        lda code
+        ora hb80
+        tax
+        lda orig
+origc2  sta ORIGB,x
         sta sp
         lda #0
         asl sp
@@ -1181,6 +1209,10 @@ stcp    pha                         ; cp = code a's half in the set not shown
         ora sthalf
         sta cp
         rts
+prow    .byte 0                     ; (plot's and strline's: the row, whether a patch changes cells
+prf     .byte 0                     ;  in it, $80 on bottoms rows)
+hb80    .byte 0
+ofr     .byte 0                     ; (which table of what's under spare characters is this frame's)
 stx0    .word 0                     ; (the string)
 stx1    .word 0
 stry     .byte 0
@@ -2588,15 +2620,15 @@ rowlp   lda #0                      ; this row's side cells: empty?
         clc
         adc leftc
         sta mp
-        sta tp
         txa
         clc
         adc #>SCREEN
         sta mp+1
-        adc #((CLEAN - SCREEN) >> 8) & $ff
-        sta tp+1
         pla                         ; the claims: CLAIM + row * 42
         tax
+        stx prow                    ; (and whether a patch is changing cells in the row: pick.asm)
+        lda pprow,x
+        sta prf
         lda clrl,x
         sta cl
         lda clrh,x
@@ -2609,7 +2641,13 @@ rowlp   lda #0                      ; this row's side cells: empty?
         lsr a
         lsr a
         sta half
-        tax                         ; (the characters' offsets with it: glo or glo4)
+        asl a                       ; (hb80: $80 on bottoms rows, for the tables of what's under
+        asl a                       ; each spare character)
+        asl a
+        asl a
+        asl a
+        sta hb80
+        ldx half                    ; (the characters' offsets with it: glo or glo4)
         lda glht,x
         sta cplo+1
         sta splo+1
@@ -2668,10 +2706,23 @@ cplo    lda glo,x
         sta cp
 cphi    lda ghiA,x
         sta cp+1
-        lda (tp),y                  ; sp = the level's glyph there, its half
-        sta orig
-        beq +                       ; (blank: drawn with OR alone, below)
+        lda (mp),y                  ; the level's code there: the screen's map's (the frame shown),
+        cmp #POOL0                  ; unless that's a spare character drawn the frame before (what
+        bcc pl1                     ; it was over: that frame's table), or a patch is changing it
+        ora hb80
         tax
+origp   lda ORIGA,x
+pl1     ldx prf
+        beq pl2
+        jsr pkorig
+pl2     sta orig
+        lda code                    ; (noted for the next frame)
+        ora hb80
+        tax
+        lda orig
+origc   sta ORIGB,x
+        beq +                       ; sp = the level's glyph there, its half (blank: drawn with OR
+        tax                         ; alone, below)
 splo    lda glo,x
         sta sp
         lda ghiA,x                  ; (FONTA)
@@ -2791,6 +2842,7 @@ glht    .byte <glo, 0, 0, 0, <glo4  ; (by the half)
 ghit_lo .byte <ghiA, <ghiB          ; (by the set not shown: 0 A, 1 B... indexed by front ^ 1)
 ghit_hi .byte >ghiA, >ghiB
         .cerror (>glo) != (>glo4), "glo and glo4 must share a page"
+        .cerror (>ORIGA) & 1, "ORIGA's page must be even"
         .cerror (<PROGW) | (<PROGR0) | (<PROGR1), "the programs must be page-aligned"
 
 ; prefill: the program at page x, 150 entries of lda #0, sta $0000
@@ -3136,8 +3188,9 @@ dlb15
         .include "pick.asm"         ; collisions, gems and keys
         .include "hazards.asm"      ; the balloons and daggers (the C64's)
         .include "yoyo.asm"         ; the yoyo (the C64's)
-        .cerror * > CLEAN, "the program reaches the level's map: ", * - CLEAN, " over"
-        .cerror CLEAN + NROWS * 128 > DLIST, "the level's map reaches the display list"
+        .include "unpack.asm"       ; the BBC version's unpacker (the C64's)
+lvmap   .binary "../build/" .. LEVEL .. "_map.lz"   ; the level's map, packed (screen.py)
+        .cerror * > ORIGA, "the program reaches ORIGA: ", * - ORIGA, " over"
 
         * = FONTA
         .binary "../build/" .. LEVEL .. "_font.bin"
@@ -3151,8 +3204,6 @@ dlrows  .for r = 0, r < NROWS, r += 1
         .byte $41
         .word DLIST
 
-        * = CLEAN
-        .binary "../build/" .. LEVEL .. "_map.bin"
 
         * = $02e0
         .word start
