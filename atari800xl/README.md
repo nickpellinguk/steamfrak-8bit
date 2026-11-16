@@ -4,7 +4,11 @@ The start of an Atari 800XL (PAL, 64K) version: ANTIC mode 2 with character rows
 on the C64 port's 8x4 grid, so the C64's levels carry over cell for cell. The plan:
 [`PLAN.md`](PLAN.md).
 
-**Status: the game starting to run, on a sprite multiplexer, graphics first** (`build/trogg8x4.xex`, without the OS). Every
+**Status: the game starting to run, on a sprite multiplexer, graphics first** (`build/trogg8x4.xex`, without the OS).
+It starts on a front end like the C64 port's: "The Cast", the FRAK! bubble, Trogg, a Scrubbly, a
+Hooter and a Poglet with their names, then "Collect all the keys to win!" (`src/front.asm`,
+`tools/front.py`): a hi-res bitmap, the text from the machine's ROM font, every infill on players
+and exact; fire, Start, Space, Return, P or Y plays, and Escape in the game comes back to it. Every
 outline is drawn in software at full resolution (players are 2 hires pixels a block at their
 finest, so an outline on one would be at half resolution), and the four players carry the
 infills, given out band by band in this order: Trogg's (yellow and magenta, on P0 and P1 and
@@ -37,7 +41,7 @@ masks: A_2 has 17); their cells reach the screen through a patch program the VBI
 frame's, built once the frame's drawn so it leaves out cells something's drawn in (a Scrubbly
 changes about 48 cells, more than a frame's program has room for). Still to come: the FRAK!
 bubble when he dies, and sound. Checked in the WebAssembly atari800, colour for colour: 893 screens of six joystick
-tours (`test/tours.sh`), with gems and keys going and coming back, and a Scrubbly knocked off.
+tours (`test/tours.sh`), with gems and keys going and coming back, and a Scrubbly knocked off; and the front end's screen.
 
 **What's still short of the original's look:** Trogg's infill is in 2-pixel blocks (at most 10 of
 his 200-250 infill pixels wrong); a Scrubbly on one double-width player has 21 of its 540
@@ -79,7 +83,9 @@ Trogg's sprites come from the steamfrak repository's `assets/sprites` (alongside
     python3 test/state.py /tmp/tour              # Trogg's place and state in each
     python3 test/hzstate.py /tmp/tour            # the balloons and daggers in each
     python3 test/scr2png.py /tmp/tour/0012.scr shot.png
-    test/tours.sh build/a8.js                    # all the checks: five tours on four builds
+    test/tours.sh build/a8.js                    # all the checks: tours on the builds, the front end
+
+The program starts on the front end; `-D FRONTEND=0` leaves it out (the tests: the game at once).
 
 It needs node (the C64 port's `tools/level.mjs` makes the level's picture), Python 3 with Pillow,
 and [64tass](https://sourceforge.net/projects/tass64/). Run the `.xex` on a PAL 800XL (or any XL/XE
@@ -235,6 +241,8 @@ Arrow keys are joystick 1, Space or Ctrl fire, F2-F4 Start, Select and Option.
 | `test/tour.mjs` | A program on the WebAssembly atari800 with a joystick script, saving the screen and memory every few frames |
 | `test/checktrogg.py` | Each saved screen against the level (with the gems and keys gone that the program's record says) and the things drawn on as it says, pixel by pixel |
 | `src/unpack.asm` | The BBC version's unpacker (as the C64 port's loader has it): the level's map into the screen's at the start |
+| `src/front.asm`, `tools/front.py` | The front end: its screen (a 320 x 220 hi-res bitmap, the cast's outlines packed, the text drawn from the ROM font, the infills on players re-set by a DLI between pictures), the keys to play |
+| `test/frontcheck.py` | The front end's screen, colour for colour, against `front.json` and the font the program copied |
 | `src/yoyo.asm` | The yoyo: the C64 port's, thrown, drawn (with its string, by `yolist` and `strline` in `trogg8x4.asm`), knocking Scrubblies off and popping balloons and daggers |
 | `src/hazards.asm` | The balloons and daggers: the C64 port's, spawned, moved and gone as in the game |
 | `test/state.py`, `hzstate.py`, `scr2png.py`, `tours.sh` | Trogg's state, and the balloons' and daggers', in each saved memory; a saved screen as a picture; all the checks |
