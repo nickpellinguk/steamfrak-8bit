@@ -34,7 +34,9 @@ the images' spans), checked against a reference. Then the yoyo (the C64's `yoyo.
 drawn as the BBC version's), knocking Scrubblies off through a patch program the VBI runs. Then
 no clean copy of the level's map (the level's codes read from the screen's map, with a table a
 frame of what's under each spare character): 6K more for the program, the map packed in it. Then
-the front end (milestone 9's attract screen, as the C64's): "The Cast" on a hi-res bitmap. Target: PAL, normal
+the front end (milestone 9's attract screen, as the C64's): "The Cast" on a hi-res bitmap. Then
+A_2 and A_3 (milestone 9, in part): the three levels' blocks packed, chosen from the front end;
+the Poglets' and Hooters' magenta infill (their yellow to come). Target: PAL, normal
 (40-column) width.
 This is the first port to start from the C64 port
 (`../c64`) rather than from the BBC version alone. The aim is a largely monochrome game in

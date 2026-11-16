@@ -154,14 +154,17 @@ yoyo_collide
         lda yo_y+1
         sbc #0
         sta yb_t+1
-        ldx #NSCR - 1
-_lp     ldy pby + NPK,x             ; (knocked off already: not looked at)
-        lda pbm + NPK,x
+        ldx lv_nscr
+        bne +
+        jmp _nsd
++       dex
+_lp     ldy pby + NP,x              ; (knocked off already: not looked at)
+        lda pbm + NP,x
         and pgone,y
         bne _nx
         lda scil,x                   ; yoyo left < its left + its width (the level's enemy's: ENW) ?
         clc
-        adc #ENW
+        adc lv_enw
         sta ytmp
         lda scih,x
         adc #0
@@ -178,7 +181,7 @@ _lp     ldy pby + NPK,x             ; (knocked off already: not looked at)
         bcc _nx
         lda scit,x                   ; yoyo top < its top + its height (ENH) ?
         clc
-        adc #ENH
+        adc lv_enh
         sta ytmp
         lda #0
         adc #0
@@ -200,6 +203,7 @@ _lp     ldy pby + NPK,x             ; (knocked off already: not looked at)
         ldx ysi
 _nx     dex
         bpl _lp
+_nsd
         .if !NOHAZ
         ldx #NHZ - 1                 ; the balloons and daggers: popped (their images' boxes)
 _m      lda oact,x
@@ -283,8 +287,8 @@ _mn     dex
 
 
 ; Scrubbly x knocked off: its bit in the patch objects' gone (pick.asm: NPK on)
-knock   ldy pby + NPK,x
-        lda pbm + NPK,x
+knock   ldy pby + NP,x
+        lda pbm + NP,x
         ora pgone,y
         sta pgone,y
         rts

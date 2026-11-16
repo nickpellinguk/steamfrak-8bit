@@ -22,13 +22,14 @@ for l in open(os.path.join(B, 'trogg8x4.lbl')):
         v = f[2]
         try: L[f[0]] = int(v[1:], 16) if v.startswith('$') else int(v)
         except ValueError: pass
-X0, Y0, BG, OUT = 32, 0, 0x9a, 0x90                # (the play area's place in the saved screen)
+X0, Y0 = 32, 0                                     # (the play area's place in the saved screen)
 H, TOPL = 240, L['TOPL']
 YEL, MAG, BLK = L['COL_YEL'], L['COL_MAG'], L['COL_BLK']
 bad_shots = 0; levels = Counter(); partial = 0; most = 0; shifts = set()
 SCR = json.load(open(os.path.join(B, f'{lv}_scrub.json')))
 GR_SCRUB, GR_KEY = L['GR_N'], L['GR_N'] + 1
 PK = json.load(open(os.path.join(B, f'{lv}_picks.json')))
+BG = PK['bg']; OUT = BG & 0xf0                     # (the level type's background; a set pixel's luminance 0)
 FONT = open(os.path.join(B, f'{lv}_font.bin'), 'rb').read()
 def lvpix(gone):                                   # the level's pixels with the gems and keys gone
     px = {}                                        # (bits of gone) changed: {(x, y): set}

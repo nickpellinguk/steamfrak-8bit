@@ -4,7 +4,8 @@
 # and invisible part above its visible top (ext), and for each 8-pixel column the platforms (the
 # last first) and ladders (within 6 pixels) over it. Level pixels: x across, y down from 24 above
 # the C64 screen's top (Y0: the C64 map's line 0 is y 24; the Atari's map line is the same as
-# the C64's). Also Trogg's, the Scrubblies', the balloon's and the dagger's collision boxes. Writes atari800xl/build/<level>_geom.inc.
+# the C64's). Also the collision boxes and spans. Writes build/<level>_geom.json (the level's own,
+# for levels.py) and build/common_geom.inc (what's the same in every level).
 import json, os, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 LV = sys.argv[1] if len(sys.argv) > 1 else 'A_1'
@@ -50,10 +51,11 @@ PJ = json.load(open(os.path.join(cdir, 'picks.json')))
 PK, GR = PJ['picks'], PJ['grids']
 sb = lambda n, v: f'{n:<10}.byte ' + ', '.join(str(x) for x in v)
 spanout = []
+TU = [2, 6] + list(range(2, len(SP)))       # (frames 0 and 1, standing, never shown: walking's first instead)
 for i, gr in enumerate(SP):
-    spanout.append(sb(f'tsp{i}', spans(gr['grid'], lambda c: c != 'T')))
-spanout += ['tspl      .byte ' + ', '.join(f'<tsp{i}' for i in range(len(SP))),
-            'tsph      .byte ' + ', '.join(f'>tsp{i}' for i in range(len(SP)))]
+    if i >= 2: spanout.append(sb(f'tsp{i}', spans(gr['grid'], lambda c: c != 'T')))
+spanout += ['tspl      .byte ' + ', '.join(f'<tsp{i}' for i in TU),
+            'tsph      .byte ' + ', '.join(f'>tsp{i}' for i in TU)]
 solid = lambda c: c >= 0
 spanout += [sb('scrsp', spans(GR['IMG_Scrubbly'], solid) if 'IMG_Scrubbly' in GR else [255, 255]),
             f'SCRH = {len(GR["IMG_Scrubbly"]) if "IMG_Scrubbly" in GR else 1}',
@@ -73,23 +75,31 @@ spanout += [sb('scrsp', spans(GR['IMG_Scrubbly'], solid) if 'IMG_Scrubbly' in GR
             'pksph     .byte ' + (', '.join('>keysp' if p['name'] == 'IMG_Key' else '>gemsp' for p in PK) or '0')]
 B = lambda name, v: f'{name:<10}.byte ' + ', '.join(str(x) for x in v)
 xmax, levh = g['w'] - 10, g['h']
-out = ['; made by tools/geom.py from c64/build/' + LV + '/geometry.json',
-       B('plat_xl', [lo(p['x']) for p in P]), B('plat_xh', [hi(p['x']) for p in P]),
-       B('plat_yl', [lo(p['y']) for p in P]), B('plat_yh', [hi(p['y']) for p in P]), B('plat_w', [p['w'] for p in P]),
-       B('lad_xl', [lo(l['x']) for l in L]), B('lad_xh', [hi(l['x']) for l in L]),
-       B('lad_yl', [lo(l['y']) for l in L]), B('lad_yh', [hi(l['y']) for l in L]),
-       B('lad_hl', [lo(l['h']) for l in L]), B('lad_hh', [hi(l['h']) for l in L]), B('lad_ext', [l['ext'] for l in L]),
-       B('pcol', pcol), B('plist', plist or [0]), B('lcol', lcol), B('llist', llist or [0]),
-       B('lv_pcoln', [pn]), B('lv_xmax', [lo(xmax), hi(xmax)]), B('lv_levh', [lo(levh), hi(levh)]),
-       B('lv_levh1', [lo(levh - 1), hi(levh - 1)]),
+# the level's own (build/<level>_geom.json: levels.py packs each level's into its block) ...
+w2 = lambda v: [lo(v), hi(v)]
+T = {'plat_xl': [lo(p['x']) for p in P], 'plat_xh': [hi(p['x']) for p in P], 'plat_yl': [lo(p['y']) for p in P],
+     'plat_yh': [hi(p['y']) for p in P], 'plat_w': [p['w'] for p in P],
+     'lad_xl': [lo(l['x']) for l in L], 'lad_xh': [hi(l['x']) for l in L], 'lad_yl': [lo(l['y']) for l in L],
+     'lad_yh': [hi(l['y']) for l in L], 'lad_hl': [lo(l['h']) for l in L], 'lad_hh': [hi(l['h']) for l in L], 'lad_ext': [l['ext'] for l in L],
+     'pcol': pcol, 'plist': plist, 'lcol': lcol, 'llist': llist,
+     'scbll': [lo(p['ax'] + sbx['x0']) for p in E], 'scblh': [hi(p['ax'] + sbx['x0']) for p in E],
+     'scbrl': [lo(p['ax'] + sbx['x1']) for p in E], 'scbrh': [hi(p['ax'] + sbx['x1']) for p in E],
+     'scbt': [p['ay'] + 24 + sbx['y0'] for p in E], 'scbb': [p['ay'] + 24 + sbx['y1'] for p in E],
+     'scrsp': spans(GR['IMG_Scrubbly'], solid) if 'IMG_Scrubbly' in GR else [],
+     'scil': [lo(p['ax']) for p in E], 'scih': [hi(p['ax']) for p in E], 'scit': [p['ay'] + 24 for p in E],
+     'pkil': [lo(p['left']) for p in PK], 'pkih': [hi(p['left']) for p in PK], 'pkit': [p['top'] for p in PK],
+     'pkh': [len(GR[p['name']]) for p in PK]}
+S = {'lv_pcoln': [pn], 'lv_xmax': w2(xmax), 'lv_levh': w2(levh), 'lv_levh1': w2(levh - 1), 'lv_nscr': [len(E)],
+     'lv_scrhh': [len(GR['IMG_Scrubbly']) if 'IMG_Scrubbly' in GR else 0], 'lv_enw': [SCJ['w']], 'lv_enh': [SCJ['h']],
+     'lv_tsx': w2(g['trogg'][0]), 'lv_tsy': w2(g['trogg'][1])}
+json.dump({'T': T, 'S': S}, open(os.path.join(HERE, '..', 'build', f'{LV}_geom.json'), 'w'))
+# ... and what's the same in every level (build/common_geom.inc: Trogg's boxes and spans, the
+# balloon's and dagger's, a gem's and a key's spans)
+out = ['; made by tools/geom.py: what\'s the same in every level',
        B('tbx0', [b[0] & 255 for b in tb]), B('tbx1', [b[1] & 255 for b in tb]),
        B('tby0', [b[2] & 255 for b in tb]), B('tby1', [b[3] & 255 for b in tb]),
-       f'NSCR = {len(E)}', B('scbll', [lo(p['ax'] + sbx['x0']) for p in E] or [0]), B('scblh', [hi(p['ax'] + sbx['x0']) for p in E] or [0]),
-       B('scbrl', [lo(p['ax'] + sbx['x1']) for p in E] or [0]), B('scbrh', [hi(p['ax'] + sbx['x1']) for p in E] or [0]),
-       B('scbt', [p['ay'] + 24 + sbx['y0'] for p in E] or [0]), B('scbb', [p['ay'] + 24 + sbx['y1'] for p in E] or [0]),
        B('hbx0', [h[0] & 255 for h in hb]), B('hbx1', [h[1] & 255 for h in hb]),
        B('hby0', [h[2] & 255 for h in hb]), B('hby1', [h[3] & 255 for h in hb]),
-       *spanout,
-       f'TSTARTX = {g["trogg"][0]}', f'TSTARTY = {g["trogg"][1]}']
-open(os.path.join(HERE, '..', 'build', f'{LV}_geom.inc'), 'w').write('\n'.join(out) + '\n')
+       *[l for l in spanout if l.split()[0] in ('gemsp', 'keysp', 'balsp', 'dagsp', 'kspl', 'ksph', 'khz', 'kw', 'kxo', 'kyo', 'tspl', 'tsph') or l.startswith('tsp')]]
+open(os.path.join(HERE, '..', 'build', 'common_geom.inc'), 'w').write('\n'.join(out) + '\n')
 print(f'{LV}: {len(P)} platforms, {len(L)} ladders')

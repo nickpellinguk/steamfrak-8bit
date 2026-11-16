@@ -10,8 +10,6 @@
 ; Death (landing at 1.6 pixels a tick or faster, falling off the bottom, or touching a Scrubbly,
 ; balloon or dagger: collide) restarts him after a second, at the last checkpoint (a key picked up) or the start.
 
-TX0     = STARTX ? STARTX : TSTARTX
-TY0     = STARTX ? STARTY : TSTARTY
 JUMP_SPEED = 25                     ; (twentieths of a pixel a tick; gravity is 1)
 TERMINAL_SPEED = 80
 ST_STAND = 0
@@ -82,14 +80,25 @@ newlevel
 ; (every gem and key back). His movement reset, no balloons or daggers, the camera on him.
 restart lda havecp
         bne _cp
-        lda #<TX0
+      .if STARTX                    ; (a test's start)
+        lda #<STARTX
         sta tx
-        lda #>TX0
+        lda #>STARTX
         sta tx+1
-        lda #<TY0
+        lda #<STARTY
         sta gy
-        lda #>TY0
+        lda #>STARTY
         sta gy+1
+      .else
+        lda lv_tsx                  ; (the level's)
+        sta tx
+        lda lv_tsx+1
+        sta tx+1
+        lda lv_tsy
+        sta gy
+        lda lv_tsy+1
+        sta gy+1
+      .endif
         lda #0
         sta tyf
         sta tface
@@ -134,9 +143,9 @@ _all    jsr pkreset                 ; (the map to match: pick.asm)
 +       lsr a
         tya
         ror a
-        cmp #XMAX
+        cmp lv_xmaxs
         bcc +
-        lda #XMAX
+        lda lv_xmaxs
 +       sta nscrx
         lda #0
         sta tstate

@@ -56,7 +56,7 @@ for p in sorted(glob.glob(os.path.join(sys.argv[1], '*.mem'))):
     if gy >= 32768: gy -= 65536
     g = C2A[m[L['tfr']]]; me = (TS[g], tx - G[g]['xo'], gy - G[g]['yo'])
     gone = w('pgone') | m[L['pgone'] + 2] << 16; npk = len(PJ['picks'])
-    live = [k for k in range(len(SC)) if not gone >> (npk + k) & 1]          # (not knocked off)
+    live = [k for k in range(len(SC)) if not gone >> (12 + k) & 1]           # (not knocked off: enemy k's bit 12 + k)
     deadly = [f'SCRUB{k}' for k in live if hit(*me, SCR, SC[k]['ax'], SC[k]['ay'] + 24)]
     boxed = [k for k in live if box(*me, SCR, SC[k]['ax'], SC[k]['ay'] + 24)]
     for i in range(6):
