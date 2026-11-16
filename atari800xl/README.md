@@ -22,9 +22,12 @@ key makes a checkpoint, the last completes the level (7 seconds' pause, then it 
 The balloons and daggers are the game's (`src/hazards.asm`, the C64 port's, itself the BBC
 version's): Hard's timings and speeds (`-D INSANE=1` Insane's; `-D STRESS=1`, a test, six out
 all the time), a balloon rising from the level's bottom about Trogg, a dagger aimed to arrive
-where he is, each held still a moment first; touching one kills him. Still to come: the yoyo
-(fire does nothing) and the collisions' second, finer stage (the C64 tests each image's
-spans once the boxes touch; here the boxes alone decide, a little more generously). Checked in the WebAssembly atari800, colour for colour: 791 screens of five joystick
+where he is, each held still a moment first; touching one kills him. Collisions are the C64's
+two stages: boxes, then where they touch each image's spans (every row's leftmost and rightmost
+solid pixel, from the images as drawn) must meet on a row both have, as the BBC version's
+hit_test and GameMaker's precise collisions; checked against a Python reference
+(`test/collcheck.py`: no disagreement over 2,790 memory dumps of a STRESS run, 7 deaths). Still to
+come: the yoyo (fire does nothing). Checked in the WebAssembly atari800, colour for colour: 791 screens of five joystick
 tours (`test/tours.sh`), with gems and keys going and coming back.
 
 **What's still short of the original's look:** Trogg's infill is in 2-pixel blocks (at most 10 of
@@ -219,6 +222,7 @@ Arrow keys are joystick 1, Space or Ctrl fire, F2-F4 Start, Select and Option.
 | `test/checktrogg.py` | Each saved screen against the level (with the gems and keys gone that the program's record says) and the things drawn on as it says, pixel by pixel |
 | `src/hazards.asm` | The balloons and daggers: the C64 port's, spawned, moved and gone as in the game |
 | `test/state.py`, `hzstate.py`, `scr2png.py`, `tours.sh` | Trogg's state, and the balloons' and daggers', in each saved memory; a saved screen as a picture; all the checks |
+| `test/collcheck.py` | The collisions in each saved memory against a reference: nothing deadly or a gem or key not picked up touching him while he's alive, and what killed him at each death |
 | `tools/budget.py` | Codes the static graphics need per set: 8x8 against 8x4, by bands of rows |
 | `test/rows4.asm`, `readrows.py` | The 4-line row test, and its reader |
 | `test/shot.sh` | Runs a program in atari800 (PAL 800XL) under Xvfb and captures its window |

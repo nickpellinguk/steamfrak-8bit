@@ -1,9 +1,11 @@
 ; ---- Collisions, gems and keys
-; collide: Trogg's box (his frame's solid pixels' extent, tbx0 ... from geom.py) against each
-; Scrubbly's, balloon's and dagger's (kills him) and each gem's and key's not yet picked up (picks it up), in level
-; coordinates (x pixels, y the C64's: gy), as the first stage of the C64's collide (its second,
-; the spans, is still to come). A key picked up, not the last, makes a checkpoint due; the last
-; completes the level.
+; collide: the C64's two stages. First Trogg's box (his frame's solid pixels' extent, tbx0 ...
+; from geom.py) against each Scrubbly's, balloon's and dagger's (deadly) and each gem's and key's
+; not yet picked up, in level coordinates (x pixels, y the C64's: gy). Where the boxes touch, the
+; spans (each image's rows' leftmost and rightmost solid pixels: geom.py, from the images as the
+; Atari draws them) decide: a hit if on some row they share his extent and its overlap (the BBC
+; version's hit_test, as GameMaker's precise collisions). A key picked up, not the last, makes a
+; checkpoint due; the last completes the level.
 ;
 ; The gems and keys gone (pkgone, a bit each) and those the map shows gone (pkshow) are put
 ; together a gem or key a frame (pkpatch, while the frame's programs are built): its cells' codes
@@ -15,6 +17,8 @@ ctr     = mdst
 ctt     = msrc
 ctb     = mlast                     ; (mlast, midx)
 cpk     = mk
+sp1     = $b4                       ; (2: his spans, from the row shared)
+sp2     = $b6                       ; (2: its)
 
 ; the box's edge: a signed byte from table \tab (by his graphic, x) added to word \src
 cedge   .macro tab, src, dst
@@ -43,12 +47,14 @@ collide lda dead
 +       ldx tfr                     ; (his frame: the C64's numbering to the graphic)
         lda c2a,x
         tax
+        stx tgfx
         #cedge tbx0, tx, ctl
         #cedge tbx1, tx, ctr
         #cedge tby0, gy, ctt
         #cedge tby1, gy, ctb
         ldx #NSCR - 1               ; the Scrubblies
-cslp    lda scbll,x                 ; (off if its left > his right, its right < his left, its top
+cslp    stx cpk
+        lda scbll,x                 ; (off if its left > his right, its right < his left, its top
         sta cbl                     ; > his bottom or its bottom < his top)
         lda scblh,x
         sta cbl+1
@@ -60,17 +66,38 @@ cslp    lda scbll,x                 ; (off if its left > his right, its right < 
         sta cbt
         lda scbb,x
         sta cbb
+        lda #0
+        sta cbt+1
+        sta cbb+1
         jsr overlap
         bcs +
-        stx cpk
+        lda scil,x                  ; (the boxes touch: the spans)
+        sta oil
+        lda scih,x
+        sta oil+1
+        lda scit,x
+        sta oit
+        lda #0
+        sta oit+1
+        lda #<scrsp
+        sta osp
+        lda #>scrsp
+        sta osp+1
+        lda #SCRH
+        sta oh
+        jsr spans
+        bcc ++
         jsr trogg_dies
-        ldx cpk
-+       dex
++
++       ldx cpk
+        dex
         bpl cslp
       .if !NOHAZ
         ldx #NHZ - 1                ; the balloons and daggers: each one's box from its origin
 chlp    lda oact,x                  ; (hbx0 ..., by its kind: geom.py)
-        beq chn
+        bne +
+        jmp chn
++
         stx cpk
         tay
         dey
@@ -102,18 +129,47 @@ chlp    lda oact,x                  ; (hbx0 ..., by its kind: geom.py)
         ldx cpk
         jsr overlap
         bcs chn
+        ldy oact,x                  ; (the boxes touch: the spans, its image's corner the origin
+        dey                         ; less kxo, kyo)
+        lda oxl,x
+        sec
+        sbc kxo,y
+        sta oil
+        lda oxh,x
+        sbc #0
+        sta oil+1
+        lda oy,x
+        sec
+        sbc kyo,y
+        sta oit
+        lda oyh,x
+        sbc #0
+        sta oit+1
+        lda kspl,y
+        sta osp
+        lda ksph,y
+        sta osp+1
+        lda khz,y
+        sta oh
+        jsr spans
+        bcc +
         jsr trogg_dies
-        ldx cpk
++       ldx cpk
 chn     dex
-        bpl chlp
+        bmi +
+        jmp chlp
++
       .endif
         ldx #NPK - 1                ; the gems and keys
-cplp    lda pkbitl,x
+cplp    lda pkbitl,x                ; (gone already: not looked at)
         and pkgone
-        bne cpnext
+        sta cbl
         lda pkbith,x
         and pkgone+1
-        bne cpnext
+        ora cbl
+        beq +
+        jmp cpnext
++
         lda pkll,x
         sta cbl
         lda pklh,x
@@ -126,8 +182,29 @@ cplp    lda pkbitl,x
         sta cbt
         lda pkb,x
         sta cbb
+        lda #0
+        sta cbt+1
+        sta cbb+1
         jsr overlap
         bcs cpnext
+        stx cpk
+        lda pkil,x                  ; (the boxes touch: the spans)
+        sta oil
+        lda pkih,x
+        sta oil+1
+        lda pkit,x
+        sta oit
+        lda #0
+        sta oit+1
+        lda pkspl,x
+        sta osp
+        lda pksph,x
+        sta osp+1
+        lda pkh,x
+        sta oh
+        jsr spans
+        ldx cpk
+        bcc cpnext
         lda pkbitl,x                ; picked up
         ora pkgone
         sta pkgone
@@ -152,7 +229,9 @@ cplp    lda pkbitl,x
         sta savecp
         ldx cpk
 cpnext  dex
-        bpl cplp
+        bmi +
+        jmp cplp
++
         rts
 
 ; hb + a (signed): a low, x high (y kept)
@@ -167,6 +246,143 @@ hbadd   sta hbt
 +       adc hb+1
         tax
         pla
+        rts
+
+; The second stage (the C64's spans): his frame's spans (tsp, by his graphic tgfx: his image's
+; corner tx - xo, gy - yo, gr_h rows) and the object's (osp, oh rows, its image's corner oil,
+; oit): carry set if on some row they share, his extent and its overlap. (The boxes touching, the
+; images are within 64 of each other: positions biased by 128, so the comparisons are unsigned.)
+spno    clc                         ; (no: the images too far apart, or no rows shared)
+        rts
+spans   ldx tgfx
+        lda tspl,x
+        sta sp1
+        lda tsph,x
+        sta sp1+1
+        lda oil                     ; dx = its left - his: oil - tx + xo
+        sec
+        sbc tx
+        sta sdx
+        lda oil+1
+        sbc tx+1
+        sta sdy                     ; (the high byte, for now)
+        lda sdx
+        clc
+        adc gr_xo,x
+        sta sdx
+        tay
+        lda sdy
+        adc #0
+        jsr r64
+        bne spno
+        lda oit                     ; dy = its top - his: oit - gy + yo
+        sec
+        sbc gy
+        sta sdy
+        lda oit+1
+        sbc gy+1
+        sta srs                     ; (the high byte, for now)
+        lda sdy
+        clc
+        adc gr_yo,x
+        sta sdy
+        tay
+        lda srs
+        adc #0
+        jsr r64
+        beq +
+spn2    clc
+        rts
++       lda gr_h,x                  ; the shared rows, his: max(0, dy) to min(his height, dy + oh)
+        sta shh
+        lda sdy
+        bpl +
+        lda #0
++       sta srs
+        lda sdy
+        clc
+        adc oh
+        bmi spn2
+        beq spn2
+        cmp shh
+        bcc +
+        lda shh
++       sec
+        sbc srs
+        beq spn2
+        bcc spn2
+        sta srows
+        lda srs                     ; his spans from his row srs, its from its row srs - dy
+        asl a
+        clc
+        adc sp1
+        sta sp1
+        bcc +
+        inc sp1+1
++       lda srs
+        sec
+        sbc sdy
+        asl a
+        clc
+        adc osp
+        sta sp2
+        lda osp+1
+        adc #0
+        sta sp2+1
+        lda sdx
+        eor #$80
+        sta sdxb
+        ldy #0
+sprow   lda (sp1),y
+        cmp #$ff
+        beq spskip                  ; (his row empty)
+        sta stl
+        lda (sp2),y
+        cmp #$ff
+        beq spskip                  ; (its)
+        clc
+        adc sdxb
+        sta sto                     ; (its left)
+        iny
+        lda (sp1),y
+        ora #$80
+        cmp sto
+        bcc spmiss                  ; (his right < its left)
+        lda (sp2),y
+        clc
+        adc sdxb
+        sta sto                     ; (its right)
+        lda stl
+        ora #$80
+        sta stl
+        lda sto
+        cmp stl
+        bcs sphit                   ; (its right >= his left: they meet)
+spmiss  iny
+        bne spnr
+spskip  iny
+        iny
+spnr    dec srows
+        bne sprow
+        clc
+        rts
+sphit   sec
+        rts
+
+; (a, y: a signed 16-bit number, high, low) -64 to 63? Z set if so
+r64     cmp #0
+        beq r64p
+        cmp #$ff
+        bne r64no
+        cpy #$c0
+        bcc r64no
+        lda #0
+        rts
+r64p    cpy #$40
+        bcs r64no
+        lda #0
+        rts
+r64no   lda #1
         rts
 
 ; carry clear if the box cbl-cbr, cbt-cbb overlaps his (x kept)
@@ -327,6 +543,19 @@ pkshow  .word 0                     ; (those the map shows gone)
 pkgone0 .word 0                     ; (those gone at the restart: the checkpoint's)
 cbl     .word 0                     ; (an object's box)
 hb      .word 0                     ; (hbadd's)
+tgfx    .byte 0                     ; (his graphic)
+oil     .word 0                     ; (the second stage: the object's image's corner, spans, rows)
+oit     .word 0
+osp     .word 0
+oh      .byte 0
+sdx     .byte 0                     ; (its image from his: x, y, signed)
+sdy     .byte 0
+sdxb    .byte 0
+srs     .byte 0
+srows   .byte 0
+stl     .byte 0
+sto     .byte 0
+shh     .byte 0
 hbt     .byte 0
 cbr     .word 0
 cbt     .word 0                     ; (high bytes 0)
