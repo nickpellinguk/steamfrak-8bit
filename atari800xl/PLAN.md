@@ -36,7 +36,8 @@ no clean copy of the level's map (the level's codes read from the screen's map, 
 frame of what's under each spare character): 6K more for the program, the map packed in it. Then
 the front end (milestone 9's attract screen, as the C64's): "The Cast" on a hi-res bitmap. Then
 A_2 and A_3 (milestone 9, in part): the three levels' blocks packed, chosen from the front end;
-the Poglets' and Hooters' magenta infill (their yellow to come). Target: PAL, normal
+the Poglets' and Hooters' magenta infill (their yellow to come). Then less to carry: the levels'
+derivable tables worked out at the start, and the start's code an overlay, packed (1.4K free). Target: PAL, normal
 (40-column) width.
 This is the first port to start from the C64 port
 (`../c64`) rather than from the BBC version alone. The aim is a largely monochrome game in

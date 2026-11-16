@@ -91,7 +91,8 @@ T = {'plat_xl': [lo(p['x']) for p in P], 'plat_xh': [hi(p['x']) for p in P], 'pl
      'pkh': [len(GR[p['name']]) for p in PK]}
 S = {'lv_pcoln': [pn], 'lv_xmax': w2(xmax), 'lv_levh': w2(levh), 'lv_levh1': w2(levh - 1), 'lv_nscr': [len(E)],
      'lv_scrhh': [len(GR['IMG_Scrubbly']) if 'IMG_Scrubbly' in GR else 0], 'lv_enw': [SCJ['w']], 'lv_enh': [SCJ['h']],
-     'lv_tsx': w2(g['trogg'][0]), 'lv_tsy': w2(g['trogg'][1])}
+     'lv_tsx': w2(g['trogg'][0]), 'lv_tsy': w2(g['trogg'][1]), 'lv_nplat': [len(P)], 'lv_nlad': [len(L)],
+     'lv_sx0': [sbx['x0']], 'lv_sx1': [sbx['x1']], 'lv_sy0': [sbx['y0']], 'lv_sy1': [sbx['y1']]}   # (the enemy's box from its corner)
 json.dump({'T': T, 'S': S}, open(os.path.join(HERE, '..', 'build', f'{LV}_geom.json'), 'w'))
 # ... and what's the same in every level (build/common_geom.inc: Trogg's boxes and spans, the
 # balloon's and dagger's, a gem's and a key's spans)

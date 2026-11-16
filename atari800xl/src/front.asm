@@ -7,9 +7,6 @@
 ; in: as the C64 uses its own font); the infills on players (every one exact), set again for each
 ; picture by a DLI after the one before (frdli: 10 registers from the bands' tables). Escape in
 ; the game comes back here (move.asm).
-KBCODE  = $d209
-SKSTAT  = $d20f
-CONSOL  = $d01f
 frp     = tmp                       ; (2: the text's and the players' graphics' records)
 frg     = $b4                       ; (2: a glyph)
 frd     = $b6                       ; (2: where it goes)
@@ -312,5 +309,3 @@ frn     .byte 0
 frk     .byte 0
 frdi    .byte 0                     ; (the next band whose registers the next DLI sets)
         .include "../build/front.inc"
-frbmz   .binary "../build/front_bm.lz"
-frpmz   .binary "../build/front_pm.lz"

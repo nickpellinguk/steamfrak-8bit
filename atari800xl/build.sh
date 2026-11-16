@@ -20,6 +20,6 @@ python3 tools/screen.py $LEVEL >/dev/null        # (screen8x4.asm's level's, lef
 [ build/front.inc -nt tools/front.py ] || python3 tools/front.py
 OPT=""; [ -n "$STILLX" ] && OPT="-D STILLX=$STILLX"
 (cd src && 64tass --atari-xex -q -D LEVEL=\"$LEVEL\" $OPT screen8x4.asm -o ../build/screen8x4.xex)
-(cd src && 64tass --atari-xex -q -D LEVEL=\"$LEVEL\" trogg8x4.asm -o ../build/trogg8x4.xex --labels=../build/trogg8x4.lbl)
+sh tools/game.sh trogg8x4 >/dev/null     # (the game: its overlay assembled and packed too)
 (cd test && 64tass --atari-xex -q -D MODE=1 -D DELAY=1 -D HSC=1 -D PMDMA=1 rows4.asm -o ../build/rows4.xex)
 echo "Built build/screen8x4.xex ($LEVEL), build/trogg8x4.xex (A_1, A_2, A_3) and build/rows4.xex"
