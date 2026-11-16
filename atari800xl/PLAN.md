@@ -20,7 +20,16 @@ priority: every outline in software at full resolution by default, players only 
 band with room; about 17 frames a second, to be won back by optimisation before any compromise. Then the
 game at 50 ticks a second whatever the frame rate (a tick for each field since the last frame, as
 the C64 version), the Scrubblies' strips kept while unchanged and only Trogg's uncovered old lines
-cleared: 25 frames a second with Trogg alone, about 17 with hazards out. Target: PAL, normal (40-column) width.
+cleared: 25 frames a second with Trogg alone, about 17 with hazards out. Then **the game starting
+to run** (milestones 5 and 7 in part): the C64's movement code on the C64's platforms and ladders
+(copied, `src/move.asm`), box collisions with the Scrubblies, gems and keys, gems and keys going
+from the map through the VBI's programs, checkpoints, dying and the level complete; and the keys'
+yellow on players, last in the multiplexer's order. Colour-exact on five tours. Still to come:
+the yoyo, the real hazards, the collisions' second stage, sound. Then **240 lines** (ANTIC's most,
+scanlines 8-247): 60 rows showing the original's level lines 16-255, the C64's 200 lines with
+blank rows above and below (the C64's level files hold no more; A_1's margins are empty in the
+original too; A_2 and A_3 will want their original lower parts back). Target: PAL, normal
+(40-column) width.
 This is the first port to start from the C64 port
 (`../c64`) rather than from the BBC version alone. The aim is a largely monochrome game in
 ANTIC mode 2, with colour infills from players and missiles, and without the C64 port's

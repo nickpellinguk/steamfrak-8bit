@@ -5,8 +5,9 @@
 ; (up, down), fire shows his yoyo pose; the screen follows him. Balloons rise from below the
 ; screen and daggers fly in from above it, about him (stand-ins for the game's, for now).
 ;
-; The display is screen8x4.asm's: 52 rows of 4 lines, a bottoms row (glyph lines 4-7) then a
-; tops row (0-3), so each character holds two 4-line glyphs. Spare characters: codes POOL0 on,
+; The display is screen8x4.asm's: 60 rows of 4 lines (240 lines, ANTIC's most: scanlines 8-247,
+; the level's lines 16-255), a bottoms row (glyph lines 4-7) then a tops row (0-3), so each
+; character holds two 4-line glyphs. Spare characters: codes POOL0 on,
 ; given out a cell at a time, their bottoms halves and tops halves separately (so a code serves
 ; a cell of a bottoms row and one of a tops row), 64 of each.
 ;
@@ -30,8 +31,8 @@
 ; registers that change for the next band of 8 lines. The DLI fires on the bottoms row's last
 ; line (display line 8k + 3) and, with ANTIC fetching the character codes on the next line, its
 ; writes are only done during the line after that: so band k's registers hold from display line
-; 8k + 6, and a thing on a player must end by line 8k + 2 for another to start there in band k
-; (4 lines before the band starts). A thing's registers can be written in any band from the one
+; 8k + 6 (scanline BAND0 + 8k), and a thing on a player must end by line 8k + 2 for another to
+; start there in band k (4 lines before the band starts). A thing's registers can be written in any band from the one
 ; after the thing above it on its player has ended (by line 8k + 2) down to its top's, or by the
 ; VBI if nothing's above it: the latest with room is chosen. The DLI must be done before the tops row's DLI 4 lines on
 ; (an NMI would interrupt it, and it would leave the rows' order the wrong way round): with
@@ -50,7 +51,8 @@
 ; back). Then the VBI, all at once: last frame's putting back program and this frame's program
 ; run (6 cycles a cell), the character sets swapped (the static glyphs are in both), the scroll
 ; set.
-;   64tass --atari-xex -D STARTX=x -D STARTY=y: where Trogg starts (his origin, level pixels)
+;   -D INVINCIBLE=1: nothing kills Trogg; -D STARTX=x -D STARTY=y: a test's start instead of the
+;   level's (his origin: level pixels, y the C64's, 24 below the map's line)
 ;   -D NOHAZ=1: no balloons or daggers; -D STRESS=1: one every 40 frames (6 out all the time)
 ;   -D HWOUT=1: outlines on players too (2-pixel resolution: Trogg's from a band down, a balloon's
 ;   with its infill, a dagger's), where they're free; else (the default) outlines are always
@@ -58,8 +60,9 @@
         .weak
 DELAY   = 1
 LEVEL   = "A_1"
-STARTX  = 65
-STARTY  = 187
+INVINCIBLE = 0
+STARTX  = 0                         ; (0: the level's start)
+STARTY  = 0
 NOHAZ   = 0
 STRESS  = 0
 HWOUT   = 0
@@ -75,6 +78,7 @@ NHAZ    = 6                         ; balloons and daggers at once
 NOBJ    = 15                        ; things: Trogg, the Scrubblies, the balloons and daggers (16th:
                                     ; the multiplexer's, for Trogg's outline's bands)
 GR_SCRUB = GR_N                     ; (a Scrubbly: no graphic, only its infill)
+GR_KEY  = GR_N + 1                  ; (a key: likewise, its yellow)
 
 ; the hardware (the OS is switched out: no shadow registers, our own NMI handler)
 HPOSP0  = $d000
@@ -105,22 +109,34 @@ NMIST   = $d40f
 NMIRES  = $d40f
 
 ; memory (64K, the OS and BASIC switched out: ANTIC sees the RAM under it as the CPU does)
-;   $0800-$8fff the program;  $9000 the level's map;  $ac00, $b000 the character sets;  $b400 the
-;   display list;  $b500, $b800, $bb00 the VBI's programs;  under the OS: $c000, $c800 the players'
-;   graphics, $d800 the screen's map, $f200 the bands' registers, $f580 the claims
+;   $0800-$8fff the program;  $9000 the level's map;  $ae00 the display list;  $b000, $b400 the
+;   character sets;  $b800, $bb00, $c000 the VBI's programs (the last in the first players'
+;   graphics' unused first $300);  under the OS: $c000, $c800 the players' graphics, $d800 the
+;   screen's map, $f600 the bands' registers;  the claims in three parts, $f980, $c800 (the
+;   second players' graphics' unused $300) and $be00
+TOPL    = 8                         ; the screen's first scanline (the players' memory's line)
+LASTL   = TOPL + NROWS * 4 - 1      ; ... and its last (247)
+BAND0   = TOPL + 6                  ; band 0's first line (above it, the VBI's registers)
 CLEAN   = $9000                     ; the level's map, never drawn on (loaded)
-FONTA   = $ac00                     ; the two character sets (the static glyphs in both)
-FONTB   = $b000
-DLIST   = $b400
-PROGW   = $b500                     ; the VBI's programs: this frame's codes in, and putting each
-PROGR1  = $b800                     ; frame's cells back (two: built a frame, run the next)
-PROGR0  = $bb00                     ; (each 128 x "lda #, sta abs" and an rts: $281 bytes)
+DLIST   = $ae00
+FONTA   = $b000                     ; the two character sets (the static glyphs in both)
+FONTB   = $b400
+PROGW   = $b800                     ; the VBI's programs: this frame's codes in, and putting each
+PROGR1  = $bb00                     ; frame's cells back (two: built a frame, run the next)
+PROGR0  = $c000                     ; (each 150 x "lda #, sta abs" and an rts: $2ef bytes)
 PMG0    = $c000                     ; the players' and missiles' graphics, two (2K each, 1-line
 PMG1    = $c800                     ; resolution: missiles at + $300, player n at + $400 + n * $100)
-SCREEN  = $d800                     ; the map shown: 52 rows of 128 bytes (to $f1ff)
-CLAIM   = $f580                     ; the cells drawn this frame: 52 rows of 42 (the 41 columns in
-                                    ; view), the spare character's code there or 0 (to $fde7)
-BT      = $f200                     ; the bands' registers, both frames' (interleaved: band j's at
+SCREEN  = $d800                     ; the map shown: 60 rows of 128 bytes (to $f5ff)
+CLAIMA     = $f980                     ; the cells drawn this frame: 60 rows of 42 (the 41 columns in
+NCLAIMA    = 39                        ; view), the spare character's code there or 0; rows 0-38 at
+CLAIMB     = $c800                     ; CLAIMA, the next 18 at CLAIMB, the rest at CLAIMC (clrl, clrh: each
+NCLAIMB    = 18                        ; row's address)
+CLAIMC     = $be00
+        .cerror CLAIMA + NCLAIMA * 42 > $fffa, "the claims reach the vectors"
+        .cerror CLAIMB + NCLAIMB * 42 > PMG1 + $300, "the claims reach the missiles"
+        .cerror CLAIMC + (NROWS - NCLAIMA - NCLAIMB) * 42 > PROGR0, "the claims reach the programs"
+        .cerror PROGR1 + 751 > CLAIMC, "the program reaches the claims"
+BT      = $f600                     ; the bands' registers, both frames' (interleaved: band j's at
                                     ; (j + 1) * 2 + set; the top 4 lines', set by the VBI, at set):
 BT_HP   = BT                        ; HPOSP0-3 (4 x 64)
 BT_C    = BT + $100                 ; COLPM0-3 (4 x 64: P0's and P3's used)
@@ -128,6 +144,8 @@ BT_S    = BT + $200                 ; SIZEP0-3 (4 x 64: P1's and P3's used)
 BT_M    = BT + $300                 ; which change in the band: bit n player n (only those are
                                     ; written: registers hold down the screen)
 BT_W    = BT + $340                 ; the register writes in the band, so far (5 at most)
+        .cerror BT + $380 > CLAIMA, "the bands' registers reach the claims"
+        .cerror (NROWS / 2 + 1) * 2 > 64, "too many bands for the registers' tables"
 WMAX    = 5
 COL_BLK = $00                       ; outlines
 COL_MAG = $58                       ; balloons', Trogg's magenta
@@ -146,7 +164,7 @@ tick    = $89                       ; frames made (for the animations)
 front   = $8a                       ; the character set shown: 0 A, 1 B
 ready   = $8b                       ; a frame is made, for the VBI to show
 pg      = $8c                       ; plot's: the graphic, its top left x (2 bytes, even, signed),
-px      = $8d                       ; its top line's display line + 32
+px      = $8d                       ; its top line's scanline
 pd      = $8f
 rq      = $90                       ; the row being drawn + 8, and the last
 rqlast  = $91
@@ -193,7 +211,7 @@ stick   = $d2                       ; the joystick this frame
 pmshow  = $d3                       ; the players' graphics and bands' set shown (0, 1)
 bandx   = $d4                       ; the next band's registers (the DLIs')
 ; the multiplexer's, per thing this frame (16 each): its top and bottom line on the screen
-; (display line + 32: the players' memory's line, clipped to the screen's 32-239), the line
+; (scanline: the players' memory's line, clipped to the screen's TOPL-LASTL), the line
 ; its band starts (the band of its top: a player's position can change there), its position
 ; for a player, whether it's wholly on the screen across, and the things in order down
 oT      = $00
@@ -278,6 +296,8 @@ OB_SCR  = OBJS + $153
 OB_N    = OBJS + $156
 OB_M0   = OBJS + $159
 OB_M1   = OBJS + $15c
+OB_PKL  = OBJS + $15f               ; the gems and keys the map shows gone (pkshow), per record
+OB_PKH  = OBJS + $162
 ; the balloons and daggers: kind (0 none, 1 balloon, 2 dagger), x (2), top line + 32, fraction
 hk      = $0680
 hxl     = $0688
@@ -335,18 +355,26 @@ start   sei                         ; the OS switched out: no interrupts till ou
         sta FONTB+$300,x
         inx
         bne -
-        lda #<BT                    ; the bands' registers and the claims clear
-        sta mp
+        lda #<BT                    ; the bands' registers and the claims clear (CLAIMB's with the
+        sta mp                      ; players' graphics, below)
         lda #>BT
         sta mp+1
         lda #0
-        ldx #(CLAIM + NROWS * 42 - BT + 255) >> 8
-        .cerror BT + (CLAIM + NROWS * 42 - BT + 255) & $ff00 > $ff00, "the clear reaches the vectors"
+        tay
+        ldx #>($ff00 - BT)
 -       sta (mp),y
         iny
         bne -
         inc mp+1
         dex
+        bne -
+-       sta $ff00,y                 ; (up to the vectors)
+        iny
+        cpy #$fa
+        bne -
+        ldy #(NROWS - NCLAIMA - NCLAIMB) * 42
+-       dey
+        sta CLAIMC,y
         bne -
         ldx #NHAZ - 1
 -       sta hk,x
@@ -436,11 +464,11 @@ start   sei                         ; the OS switched out: no interrupts till ou
         sta GRACTL
         lda #>PMG0
         sta PMBASE
-        lda #<PMG0                  ; both graphics and the bands clear
+        lda #<(PMG0 + $300)         ; both graphics clear (not PROGR0, in PMG0's first $300)
         sta mdst
-        lda #>PMG0
+        lda #>(PMG0 + $300)
         sta mdst+1
-        ldx #(PMG1 + $800 - PMG0) >> 8
+        ldx #(PMG1 + $800 - PMG0 - $300) >> 8
         lda #0
         tay
 -       sta (mdst),y
@@ -466,12 +494,11 @@ start   sei                         ; the OS switched out: no interrupts till ou
         sta spawnt
         lda #1
         sta spawnk
-        lda #<STARTX
-        sta tx
-        lda #>STARTX
-        sta tx+1
-        lda #STARTY
-        sta ty
+        sta pkshow                  ; (a = 0: the map shows every gem and key)
+        sta pkshow+1
+        jsr newlevel                ; Trogg at the start
+        lda nscrx
+        sta scrx
 -       lda VCOUNT                  ; the display on from a vertical blank
         cmp #124
         bcc -
@@ -499,11 +526,15 @@ main    lda ready                   ; wait for the VBI to show the last frame ma
         bcc +
         lda #4
 +       sta nticks
-tklp    jsr input                   ; a tick: the joystick, Trogg, the camera, the hazards
-        jsr troggpos                ; (his graphic and top left: pg, px, pd)
+tklp    jsr gametick                ; a tick: the joystick and Trogg (move.asm), the camera, the
+        jsr troggpos                ; hazards (his graphic and top left: pg, px, pd)
         jsr camera
       .if !NOHAZ
+        lda dead                    ; (everything still while he's dead or the level's complete)
+        ora won
+        bne +
         jsr hzmove
++
       .endif
         inc tick
         dec nticks
@@ -554,6 +585,7 @@ tklp    jsr input                   ; a tick: the joystick, Trogg, the camera, t
         lda ghit_hi,x
         sta cphi+2
         sta clmhi+2
+        jsr pkpatch                 ; a gem or key picked up (or back) in the map (pick.asm)
         jsr addobj                  ; Trogg
         ldx #0                      ; the Scrubblies (their infill)
 -       cpx #SCR_N
@@ -575,6 +607,7 @@ tklp    jsr input                   ; a tick: the joystick, Trogg, the camera, t
       .if !NOHAZ
         jsr hzlist                  ; the balloons and daggers listed
       .endif
+        jsr pklist                  ; the keys (their yellow)
         jsr mux                     ; hardware sprites given out
         jsr pmdraw                  ; ... their graphics and bands' registers
         ldx #0                      ; the rest drawn in software
@@ -589,7 +622,7 @@ swlp    cpx nob
         beq swnext                  ; (hardware outline: nothing here)
         lda OB_G,y
         cmp #GR_SCRUB
-        beq swnext                  ; (a Scrubbly: in the map)
+        bcs swnext                  ; (a Scrubbly or a key: in the map)
         sta pg
         lda #255                    ; plot's row limit: Trogg's from where his outline's on
         cpx #0                      ; players (rows starting on or after that line not drawn)
@@ -645,6 +678,10 @@ swend
         sta OB_SCR,x
         lda nob
         sta OB_N,x
+        lda pkshow
+        sta OB_PKL,x
+        lda pkshow+1
+        sta OB_PKH,x
         ldx ncell                   ; the claims cleared for the next frame
         beq +
         lda #0
@@ -664,91 +701,6 @@ swend
         jmp main
 fonthi  .byte >FONTA, >FONTB
 
-; ---- The joystick: walking, climbing, the yoyo pose
-XLO     = 16                        ; his origin's range
-XHI     = NCOLS * 8 - 16
-YLO     = 34
-YHI     = 199
-input   lda PORTA                   ; (the joystick's bits as the OS's STICK0: 0 when pushed)
-        and #15
-        sta stick
-        lda stick
-        and #8                      ; right (0 when pushed)
-        bne +
-        lda #0
-        sta tdir
-        lda tx
-        cmp #<XHI
-        lda tx+1
-        sbc #>XHI
-        bcs walk
-        inc tx
-        bne walk
-        inc tx+1
-        jmp walk
-+       lda stick
-        and #4                      ; left
-        bne still
-        lda #1
-        sta tdir
-        lda tx
-        cmp #<(XLO + 1)
-        lda tx+1
-        sbc #>(XLO + 1)
-        bcc walk
-        lda tx
-        bne +
-        dec tx+1
-+       dec tx
-walk    lda tick                    ; walking frames, 4 frames each
-        lsr a
-        lsr a
-        and #3
-        ldx tdir
-        clc
-        adc wframe,x
-        sta tf
-        jmp updown
-still   ldx tdir
-        lda sframe,x
-        sta tf
-updown  lda stick
-        and #1                      ; up
-        bne +
-        lda ty
-        cmp #YLO + 1
-        bcc climb
-        dec ty
-        bcs climb                   ; (always)
-+       lda stick
-        and #2                      ; down
-        bne fire
-        lda ty
-        cmp #YHI
-        bcs climb
-        inc ty
-climb   lda stick
-        and #1
-        tax                         ; 0 going up, 1 down
-        lda tick
-        lsr a
-        lsr a
-        lsr a
-        and #1
-        clc
-        adc cframe,x
-        sta tf
-fire    lda TRIG0                   ; (0 when pressed)
-        bne +
-        ldx tdir
-        lda yframe,x
-        sta tf
-+       rts
-wframe  .byte TF_WR0, TF_WL0
-sframe  .byte TF_SR, TF_SL
-cframe  .byte TF_CU0, TF_CD0
-yframe  .byte TF_YR, TF_YL
-
 ; ---- Trogg's graphic and top left (x even): pg, px, pd
 troggpos ldx tf
         stx pg
@@ -760,11 +712,25 @@ troggpos ldx tf
         lda tx+1
         sbc #0
         sta px+1
-        lda ty                      ; pd = ty - yo + 4 + 32
-        sec
+        lda gy                      ; pd = the scanline: the map's line (gy - 24) + 16 - yo, so
+        sec                         ; gy - yo - 8, kept to 0-255
         sbc gr_yo,x
-        clc
-        adc #36
+        tay
+        lda gy+1
+        sbc #0
+        tax
+        tya
+        sec
+        sbc #8
+        tay
+        txa
+        sbc #0
+        bmi tpneg                   ; (above the screen's top by 8 or more: 0)
+        beq +
+        ldy #255
++       sty pd
+        rts
+tpneg   lda #0
         sta pd
         rts
 
@@ -809,8 +775,8 @@ hzlp    lda hk,x
         bne hzdag
         dec hy,x                    ; a balloon: up a line
         lda hy,x
-        cmp #32 - 10 + 1            ; gone when its bottom's above the screen's top
-        bcs hzdraw
+        cmp #1                      ; gone at the players' memory's top (its bottom 2 lines into
+        bcs hzdraw                  ; the screen: as close as a byte goes)
         bcc hzgone
 hzdag   lda hxl,x                   ; a dagger: left a pixel
         bne +
@@ -825,7 +791,7 @@ hzdag   lda hxl,x                   ; a dagger: left a pixel
         bcc +
         inc hy,x
 +       lda hy,x
-        cmp #32 + 208               ; gone when its top's below the screen's bottom
+        cmp #LASTL + 1              ; gone when its top's below the screen's bottom
         bcs hzgone
         lda hxh,x                   ; or it's off the level's left (x < -12)
         bpl hzdraw
@@ -903,7 +869,7 @@ hzlist  ldx #NHAZ - 1                ; the frame's: each listed to be drawn
         bpl -
         rts
 hzgr    .byte GR_BALLOON, GR_DAGGERLR
-hzy0    .byte 32 + 208, 32 - 10     ; where they start: below the screen, above it
+hzy0    .byte LASTL + 1, 0          ; where they start: below the screen, above it (2 lines in)
 
 ; ---- addobj: the thing pg at px, pd listed for this frame
 addobj  lda nob
@@ -951,7 +917,7 @@ mux     lda #0
         sta BT_W,x
         inx
         inx
-        cpx #54
+        cpx #(NROWS / 2 + 1) * 2
         bcc -
         lda nscrx                   ; 2 * the scroll: the screen's left in level pixels
         asl a
@@ -971,28 +937,31 @@ mxinit  cpx nob
         lda OB_G,y                  ; its height and width (a Scrubbly's infill's)
         tax
         cpx #GR_SCRUB
-        bne +
+        bcc +
         lda #SCR_H
-        sta stmp
+        cpx #GR_KEY
+        bne kh
+        lda #KEY_H
+kh      sta stmp
         lda #32
         bne ++
 +       lda gr_h,x
         sta stmp
         lda gr_w,x
 +       sta mcnt
-        lda OB_D,y                  ; its top, clipped to the screen's (32)
-        cmp #32
+        lda OB_D,y                  ; its top, clipped to the screen's (TOPL)
+        cmp #TOPL
         bcs +
-        lda #32
+        lda #TOPL
 +       sta mp2
-        lda OB_D,y                  ; its bottom, clipped to the screen's (239)
+        lda OB_D,y                  ; its bottom, clipped to the screen's (LASTL)
         clc
         adc stmp
         bcs mxbig
         sbc #0                      ; (carry clear: - 1)
-        cmp #240
+        cmp #LASTL + 1
         bcc +
-mxbig   lda #239
+mxbig   lda #LASTL
 +       ldx mk
         sta oB,x
         lda mp2
@@ -1037,15 +1006,15 @@ mxbig   lda #239
 mxnext  inx
         jmp mxinit
 
-bstart  cmp #38                     ; the band holding at line a: its start (32 above line 38,
-        bcs +                       ; else 38 + 8k)
-        lda #32
+bstart  cmp #BAND0                  ; the band holding at line a: its start (TOPL above BAND0,
+        bcs +                       ; else BAND0 + 8k)
+        lda #TOPL
         rts
 +       sec
-        sbc #38
+        sbc #BAND0
         and #$f8
         clc
-        adc #38
+        adc #BAND0
         rts
 
 mxsort  ldx #0                      ; in order down: an insertion sort by top
@@ -1234,7 +1203,7 @@ mxtrog
 
 mxhaz   ldx #0                      ; 4. the balloons and daggers, in order down
 mxh     cpx nob
-        bcs mxend
+        bcs mxkey
         stx midx
         lda order,x
         beq mxhn                    ; (Trogg: done)
@@ -1249,7 +1218,7 @@ mxh     cpx nob
         tay
         ldx OB_G,y
         cpx #GR_SCRUB
-        beq mxhn
+        bcs mxhn
         lda gp_ok,x
         beq mxhn
         cpx #GR_BALLOON
@@ -1295,6 +1264,36 @@ mxdag
 mxhn    ldx midx
         inx
         bne mxh
+mxkey   ldx #0                      ; 5. the keys, in order down: a double-width player each, P3
+mxk     cpx nob                     ; else P0 (yellow; two normal-width players, P0 and P3, would
+        bcs mxend                   ; be 6 writes in a band, over its 5)
+        stx midx
+        lda order,x
+        sta mk
+        tay
+        lda oIn,y
+        beq mxkn
+        tya
+        clc
+        adc obi
+        sta mcnt
+        tay
+        lda OB_G,y
+        cmp #GR_KEY
+        bne mxkn
+        lda #3
+        jsr one
+        bcc +
+        lda #0
+        jsr one
+        bcs mxkn
++       ldy mcnt
+        sta OB_PB,y
+        lda #1
+        sta OB_LV,y
+mxkn    ldx midx
+        inx
+        bne mxk
 mxend   lda hwl                     ; (Trogg's record: his outline's line)
         pha
         lda obi
@@ -1355,10 +1354,10 @@ tband   lda oT,x                    ; y: the band holding at thing x's top (this
 
 ; chooseb: the band for thing mk's registers on player mp2 (and msize, unless $ff): the latest from
 ; its top's band up, after the things above it on those players (4 lines after their bottoms),
-; with room for the writes (the VBI's, line 32, always has room). Carry clear if one: oWB and
+; with room for the writes (the VBI's, line TOPL, always has room). Carry clear if one: oWB and
 ; oBS the band's line, its writes counted
 chooseb ldx mk
-        lda #32                     ; mlast: the earliest line it can be
+        lda #TOPL                   ; mlast: the earliest line it can be
         sta mlast
         lda mp2
         jsr above
@@ -1380,7 +1379,7 @@ cblp    cmp mlast
         cmp oBS,x
         bne cbno
 +
-        cmp #38
+        cmp #BAND0
         bcc cbyes                   ; (the VBI's: always room)
         pha
         jsr bidx
@@ -1396,9 +1395,9 @@ cblp    cmp mlast
 +       pla
         sec                         ; the band before
         sbc #8
-        cmp #38
+        cmp #BAND0
         bcs cblp
-        lda #32
+        lda #TOPL
         bcc cblp
 cbyes   sta oWB,x
         sta oBS,x
@@ -1548,7 +1547,11 @@ pmlp    ldx midx
         cmp #2
         bcs pmnext
         lda OB_G,y
-        cmp #GR_SCRUB
+        cmp #GR_KEY
+        bne +
+        jsr pmkey
+        jmp pmnext
++       cmp #GR_SCRUB
         bne +
         jsr pmscr
         lda #0
@@ -1595,6 +1598,20 @@ pmlp    ldx midx
 pmnext  inc midx
         jmp pmlp
 pmhi    .byte >PMG0, >PMG1
+
+pmkey   lda OB_PB,y                 ; a key: its yellow, double width
+        sta mp2
+        lda #<key_d
+        sta msrc
+        lda #>key_d
+        sta msrc+1
+        lda #KEY_DX / 2
+        sta moff
+        lda #1
+        sta msize
+        lda #COL_YEL
+        sta mcol
+        jmp pstrip
 
 pmscr   ldx mk                      ; a Scrubbly: two players, or one double-width (its strips kept
         lda scrw - 1,x              ; apart, written only if they've changed in this set: else only
@@ -2068,12 +2085,12 @@ zbase   lda mk2                     ; mdst: line mk2 of player mp2's memory ($ff
         sta mdst+1
         rts
 
-bidx    cmp #38                     ; the band holding at line a: its index in this set's tables
+bidx    cmp #BAND0                  ; the band holding at line a: its index in this set's tables
         bcs +
         lda mset
         rts
 +       sec
-        sbc #38
+        sbc #BAND0
         lsr a
         lsr a
         and #$fe
@@ -2084,7 +2101,7 @@ bidx    cmp #38                     ; the band holding at line a: its index in t
 
 
 
-; ---- plot: graphic pg at top left (px: level pixels, even, signed; pd: display line + 32),
+; ---- plot: graphic pg at top left (px: level pixels, even, signed; pd: its scanline),
 ; drawn into the spare characters of the set not shown (bfhi), clipped to the screen's rows
 ; and the columns in view (leftc on)
 plot    ldx pg
@@ -2186,7 +2203,7 @@ tmsk4   lda ter_hi & $ff00,y
         sta orb1+2
         sta orb2+2
         sta orb3+2
-        lda pd                      ; its rows, + 8: pd / 4 to (pd + ht - 1) / 4
+        lda pd                      ; its rows, + TOPL / 4: pd / 4 to (pd + ht - 1) / 4
         lsr a
         lsr a
         sta rq
@@ -2210,10 +2227,10 @@ rowlp   lda #0                      ; this row's side cells: empty?
         rol a
         sta eb                      ; (bit 0 the left, bit 1 the right)
         lda rq                      ; rows above the screen skipped, below it the end
-        cmp #8
+        cmp #TOPL / 4
         bcs +
         jmp rownext
-+       cmp #8 + NROWS
++       cmp #TOPL / 4 + NROWS
         bcc +
         rts
 +       cmp rqmax                   ; (and from the row limit on)
@@ -2233,9 +2250,9 @@ rowlp   lda #0                      ; this row's side cells: empty?
         txa
         adc dptr+1
         sta dp+1
-        lda rq                      ; the row: rq - 8
+        lda rq                      ; the row: rq - TOPL / 4
         sec
-        sbc #8
+        sbc #TOPL / 4
         pha
         lsr a                       ; the maps: row * 128 + 4 + leftc
         tax
@@ -2439,11 +2456,11 @@ rownext lda rq
         jmp rowlp
 +       rts
 
-clrl    .for r = 0, r < NROWS, r += 1   ; the claims' rows
-        .byte <(CLAIM + r * 42)
+clrl    .for r = 0, r < NROWS, r += 1   ; the claims' rows (CLAIMA, then CLAIMB, then CLAIMC)
+        .byte <(r < NCLAIMA ? CLAIMA + r * 42 : r < NCLAIMA + NCLAIMB ? CLAIMB + (r - NCLAIMA) * 42 : CLAIMC + (r - NCLAIMA - NCLAIMB) * 42)
         .endfor
 clrh    .for r = 0, r < NROWS, r += 1
-        .byte >(CLAIM + r * 42)
+        .byte >(r < NCLAIMA ? CLAIMA + r * 42 : r < NCLAIMA + NCLAIMB ? CLAIMB + (r - NCLAIMA) * 42 : CLAIMC + (r - NCLAIMA - NCLAIMB) * 42)
         .endfor
         .align $100                 ; (glo and glo4 in one page: only the low byte's patched)
 glo     .for c = 0, c < 128, c += 1 ; a character's offset in its set (low), and with the bottoms
@@ -2464,11 +2481,11 @@ ghit_hi .byte >ghiA, >ghiB
         .cerror (>glo) != (>glo4), "glo and glo4 must share a page"
         .cerror (<PROGW) | (<PROGR0) | (<PROGR1), "the programs must be page-aligned"
 
-; prefill: the program at page x, 129 entries of lda #0, sta $0000
+; prefill: the program at page x, 150 entries of lda #0, sta $0000
 prefill stx tmp+1
         lda #0
         sta tmp
-        ldx #129
+        ldx #150
 -       ldy #0
         lda #$a9
         sta (tmp),y
@@ -2506,6 +2523,10 @@ vbi     pha
         pha
         tya
         pha
+        lda #<DLIST                 ; the display list from its start (with 240 lines, ANTIC
+        sta DLISTL                  ; reaches line 248, the vertical blank, before fetching its
+        lda #>DLIST                 ; JVB: left alone, it would fetch it at the next frame's top
+        sta DLISTL+1                ; and wait out that whole frame, blank)
         inc vbcnt                   ; (fields, for the game's ticks)
         lda ready
         sta fresh
@@ -2831,15 +2852,20 @@ dlb15
 
         .include "../build/" .. LEVEL .. "_scrub.inc"   ; the Scrubblies' infill and places
         .include "../build/sprites.inc"
+        .include "../build/" .. LEVEL .. "_geom.inc"    ; the platforms and ladders (geom.py)
+        .include "../build/" .. LEVEL .. "_picks.inc"   ; the gems and keys (screen.py)
+        .include "move.asm"         ; Trogg's movement (the C64's)
+        .include "pick.asm"         ; collisions, gems and keys
         .cerror * > CLEAN, "the program reaches the level's map: ", * - CLEAN, " over"
+        .cerror CLEAN + NROWS * 128 > DLIST, "the level's map reaches the display list"
 
         * = FONTA
         .binary "../build/" .. LEVEL .. "_font.bin"
 
-        * = DLIST
-        .byte $70, $70, $70
+        * = DLIST                   ; (no blank lines: the rows from scanline 8, ANTIC's first)
 dlrows  .for r = 0, r < NROWS, r += 1
-        .byte (r & 1) ? $d2 : $f2   ; DLI, LMS, HSCROL, (VSCROL on the bottoms rows), mode 2
+        .byte (r & 1) ? (r == NROWS - 1 ? $52 : $d2) : $f2   ; DLI (not the last row: the VBI
+                                    ; follows), LMS, HSCROL, (VSCROL on the bottoms rows), mode 2
         .word SCREEN + r * 128
         .endfor
         .byte $41

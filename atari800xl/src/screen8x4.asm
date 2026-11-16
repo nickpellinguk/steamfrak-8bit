@@ -1,4 +1,5 @@
-; The 8x4 screen demo: a level (A_1) on 52 rows of 4 lines, scrolling back and forth.
+; The 8x4 screen demo: a level (A_1) on 60 rows of 4 lines (240: scanlines 8-247, the level's
+; lines 16-255), scrolling back and forth.
 ; Pairs of mode 2 rows, the first with vertical scrolling on (glyph lines 4-7: bottoms), the
 ; second off (glyph lines 0-3: tops); each row's DLI sets VSCROL for what comes next: the first
 ; row's 3 (for the second's end), the second's 4 (for the next pair's start), the latter after
@@ -134,9 +135,10 @@ dlib    pha                         ; a tops row's last line: VSCROL 4 for the n
         rti
 
         .align $400
-dl      .byte $70, $70, $70
+dl                                  ; (no blank lines: the rows from scanline 8, ANTIC's first)
 dlrows  .for r = 0, r < NROWS, r += 1
-        .byte (r & 1) ? $d2 : $f2   ; DLI, LMS, HSCROL, (VSCROL on the bottoms rows), mode 2
+        .byte (r & 1) ? (r == NROWS - 1 ? $52 : $d2) : $f2   ; DLI (not the last: the VBI's after),
+                                    ; LMS, HSCROL, (VSCROL on the bottoms rows), mode 2
         .word map + r * 128
         .endfor
         .byte $41

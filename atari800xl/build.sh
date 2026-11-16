@@ -11,6 +11,7 @@ LEVEL=${LEVEL:-A_1}
 [ -f ../c64/build/$LEVEL/chars.bin ] || (cd ../c64 && node tools/level.mjs $LEVEL --out $LEVEL)
 python3 tools/screen.py $LEVEL
 python3 tools/sprites.py
+python3 tools/geom.py $LEVEL
 OPT=""; [ -n "$STILLX" ] && OPT="-D STILLX=$STILLX"
 (cd src && 64tass --atari-xex -q -D LEVEL=\"$LEVEL\" $OPT screen8x4.asm -o ../build/screen8x4.xex)
 (cd src && 64tass --atari-xex -q -D LEVEL=\"$LEVEL\" trogg8x4.asm -o ../build/trogg8x4.xex --labels=../build/trogg8x4.lbl)

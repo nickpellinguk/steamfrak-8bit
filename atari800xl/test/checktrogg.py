@@ -6,7 +6,7 @@
 # in front of the playfield, P0/M0 first; a set character pixel shows its colour's luminance 0
 # (COLPF1) in the hue of whatever is under it (PF2, or a player). The record: a frame's VBI comes
 # after its picture, so the picture shows the frame before's (pvi) when that VBI showed a new
-# frame ("fresh"), else still the one shown (shi). Every pixel of the 320 x 208 play area.
+# frame ("fresh"), else still the one shown (shi). Every pixel of the 320 x 240 play area.
 import sys, os, json, glob
 from collections import Counter
 from PIL import Image
@@ -21,24 +21,38 @@ for l in open(os.path.join(B, 'trogg8x4.lbl')):
         v = f[2]
         try: L[f[0]] = int(v[1:], 16) if v.startswith('$') else int(v)
         except ValueError: pass
-X0, Y0, BG, OUT = 32, 24, 0x9a, 0x90
+X0, Y0, BG, OUT = 32, 0, 0x9a, 0x90                # (the play area's place in the saved screen)
+H, TOPL = 240, L['TOPL']
 YEL, MAG, BLK = L['COL_YEL'], L['COL_MAG'], L['COL_BLK']
 bad_shots = 0; levels = Counter(); partial = 0; most = 0; shifts = set()
 SCR = json.load(open(os.path.join(B, f'{lv}_scrub.json')))
-GR_SCRUB = L['GR_N']
+GR_SCRUB, GR_KEY = L['GR_N'], L['GR_N'] + 1
+PK = json.load(open(os.path.join(B, f'{lv}_picks.json')))
+FONT = open(os.path.join(B, f'{lv}_font.bin'), 'rb').read()
+def lvpix(gone):                                   # the level's pixels with the gems and keys gone
+    px = {}                                        # (bits of gone) changed: {(x, y): set}
+    for i, cs in enumerate(PK['cells']):
+        if gone >> i & 1:
+            for r, c, g, f in cs:
+                for l in range(4):
+                    b = FONT[g * 8 + (l if r % 2 else 4 + l)]
+                    for x in range(8): px[(c * 8 + x, r * 4 + l)] = bool(b & 0x80 >> x)
+    return px
 for scr in sorted(glob.glob(os.path.join(d, '*.scr'))):
     s = open(scr, 'rb').read(); m = open(scr[:-4] + '.mem', 'rb').read()
     ri = m[L['pvi' if m[L['fresh']] else 'shi']]; rr = ri // 16       # the record the picture shows
     F = lambda name, i: m[L['OB_' + name] + ri + i]
     n, sx, hw = m[L['OB_N'] + rr], m[L['OB_SCR'] + rr], m[L['OB_HW'] + rr]
     most = max(most, n)
-    chars = [[exp[2 * sx + x, y] < 128 for x in range(320)] for y in range(208)]
-    pl = [[None] * 320 for _ in range(208)]       # (priority, colour) of the player in front
+    gone = m[L['OB_PKL'] + rr] | m[L['OB_PKH'] + rr] << 8
+    gp = lvpix(gone)
+    chars = [[gp.get((2 * sx + x, y), exp[2 * sx + x, y] < 128) for x in range(320)] for y in range(H)]
+    pl = [[None] * 320 for _ in range(H)]       # (priority, colour) of the player in front
     desc = []
     def put(prio, colour, data, x0, top, bits, shift, bw=2, lines=None):
         for gy, v in enumerate(data):
             y = top + gy
-            if not 0 <= y < 208 or (lines and not lines(y)): continue
+            if not 0 <= y < H or (lines and not lines(y)): continue
             for b in range(bits):
                 if v >> (shift + bits - 1 - b) & 1:
                     for k in range(bw):
@@ -47,7 +61,7 @@ for scr in sorted(glob.glob(os.path.join(d, '*.scr'))):
     for i in range(n):
         g = F('G', i)
         x = (F('XL', i) | F('XH', i) << 8) - (65536 if F('XH', i) & 0x80 else 0)
-        top = F('D', i) - 32; lvl, pa, pb = F('LV', i), F('PA', i), F('PB', i)
+        top = F('D', i) - TOPL; lvl, pa, pb = F('LV', i), F('PA', i), F('PB', i)
         sxp = x - 2 * sx
         if g == GR_SCRUB:                          # a Scrubbly's infill (counted when on the screen)
             if sxp + 32 > 0 and sxp < 320: levels[('SCRUBBLY' if sxp >= 0 and sxp + 32 <= 320 else 'SCRUBBLY partly off', lvl)] += 1
@@ -57,22 +71,27 @@ for scr in sorted(glob.glob(os.path.join(d, '*.scr'))):
             elif lvl == 1:
                 put(pb, MAG, SCR['d'], sxp + SCR['dx'], top, 8, 0, bw=4)
             continue
+        if g == GR_KEY:                            # a key's yellow (double width, or none)
+            levels[('KEY', lvl)] += 1
+            desc.append(f'KEY@{x},{top} L{lvl}')
+            if lvl == 1: put(pb, YEL, PK['d'], sxp + PK['dx'], top, 8, 0, bw=4)
+            continue
         fr = graphics[g]; shifts.add(x % 8)
         kind = fr['name']; levels[(kind if i else 'TROGG', lvl)] += 1
-        desc.append(f'{kind}@{x},{top} L{lvl} P{pa if pa < 4 else "-"}{pb if pb < 4 else "-"}' + (f' hw{hw - 32}' if i == 0 and hw != 255 else ''))
-        if sxp < 0 or sxp + fr['w'] > 320 or top < 0 or top + fr['h'] > 208: partial += 1
+        desc.append(f'{kind}@{x},{top} L{lvl} P{pa if pa < 4 else "-"}{pb if pb < 4 else "-"}' + (f' hw{hw - TOPL}' if i == 0 and hw != 255 else ''))
+        if sxp < 0 or sxp + fr['w'] > 320 or top < 0 or top + fr['h'] > H: partial += 1
         if i == 0: levels[('TROGG outline on players', 'from a band' if hw != 255 else 'no')] += 1
         if lvl >= 1:                               # its outline in the characters (Trogg's: rows
             for gy, row in enumerate(fr['grid']):  # starting above his outline's line)
                 y = top + gy
-                if 0 <= y < 208 and (i or 4 * ((y + 32) >> 2) < hw):
+                if 0 <= y < H and (i or 4 * ((y + TOPL) >> 2) < hw):
                     for gx, c in enumerate(row):
                         xx = sxp + gx
                         if 0 <= xx < 320 and c != 'T': chars[y][xx] = c == 'S'
         p = fr['players']
         if i == 0 and lvl == 1:                    # Trogg: infill (holed from his outline's line),
             o = fr['outline']                      # missiles, outline on P2 and P3
-            above, below = (lambda y: y + 32 < hw), (lambda y: y + 32 >= hw)
+            above, below = (lambda y: y + TOPL < hw), (lambda y: y + TOPL >= hw)
             put(0, YEL, p['a'], sxp + 2 * p['ax'], top, 8, 0, lines=above); put(0, YEL, o['ah'], sxp + 2 * p['ax'], top, 8, 0, lines=below)
             put(1, MAG, p['b'], sxp + 2 * p['bx'], top, 8, 0, lines=above); put(1, MAG, o['bh'], sxp + 2 * p['bx'], top, 8, 0, lines=below)
             put(0, YEL, p['m'], sxp + 2 * p['max'], top, 2, 0, lines=above); put(0, YEL, o['mh'], sxp + 2 * p['max'], top, 2, 0, lines=below)
@@ -83,7 +102,7 @@ for scr in sorted(glob.glob(os.path.join(d, '*.scr'))):
         if pa < 4: put(pa, BLK, p['a'], sxp, top, 8, 0)
         if pb < 4: put(pb, MAG, p['b'], sxp, top, 8, 0)
     bad = 0
-    for y in range(208):
+    for y in range(H):
         for x in range(320):
             q = pl[y][x]
             want = ((q[1] & 0xf0) if q else OUT) if chars[y][x] else (q[1] if q else BG)
@@ -95,5 +114,5 @@ n = len(glob.glob(os.path.join(d, '*.scr')))
 drops = m[L['drops']] | m[L['drops'] + 1] << 8
 print(f'{n} screens, {n - bad_shots} exact; frames not made in time: {drops}; most things on a screen {most}, '
       f'partly off the screen {partial} times; shifts {sorted(shifts)}')
-print('drawn (thing, 0 hardware / 1 software outline + hardware infill / 2 software; Scrubblies 0 two players / 1 one double-width / 2 none): ' + ', '.join(f'{k}/{l} {v}' for (k, l), v in sorted(levels.items())))
+print('drawn (thing, 0 hardware / 1 software outline + hardware infill / 2 software; Scrubblies 0 two players / 1 one double-width / 2 none; keys 1 double-width / 2 none): ' + ', '.join(f'{k}/{l} {v}' for (k, l), v in sorted(levels.items())))
 sys.exit(1 if bad_shots else 0)

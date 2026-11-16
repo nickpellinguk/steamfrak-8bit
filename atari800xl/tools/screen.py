@@ -2,12 +2,18 @@
 # (c64/build/<level>/chars.bin: "node c64/tools/level.mjs A_1 --out A_1" first), black pixels only.
 #
 # The display is pairs of 4-line rows: the first of a pair shows glyph lines 4-7 of its
-# characters (a "bottoms" row), the second lines 0-3 (a "tops" row). So a character holds two
-# glyphs: its tops glyph in bytes 0-3, its bottoms glyph in bytes 4-7, numbered independently.
-# The C64's character row n is tops(n) then bottoms(n); the Atari's rows, top to bottom, are
-#   bottoms(-1) tops(0) | bottoms(0) tops(1) | ... | bottoms(24) tops(25)
-# (bottoms(-1) and tops(25) blank), 52 rows, 26 pairs. One character set for the whole level
-# (A_1 needs 46 codes; more levels may need bands).
+# characters (a "bottoms" row, by the display's mechanics), the second lines 0-3 (a "tops" row).
+# So a character holds two glyphs, bytes 0-3 for the tops rows and 4-7 for the bottoms rows,
+# numbered independently. The screen is 240 lines (ANTIC's most: scanlines 8-247), 60 rows,
+# showing the original's level lines 16-255; the C64 shows lines 24-223, its 25 character rows
+# (chars.bin), each its half rows 2n (lines 0-3) and 2n + 1 (4-7). So the Atari's row r shows
+# the C64's half row r - 2, its rows top to bottom
+#   [-2 -1] [0 1] ... [48 49] [50 51] ... [56 57]
+# (the C64's half rows outside 0-49 blank: the C64's level files hold its 200 lines' worth; the
+# rows above and below are the original's empty margins on A_1). An even half row (the C64's
+# tops) goes in a pair's first row, its glyph in bytes 4-7. One character set for the whole level
+# (A_1 needs 46 codes; more levels may need bands). Map line = the C64's map line (level line -
+# 24); display line = map line + 8; scanline (the players' memory's line) = map line + 16.
 #
 # Writes atari800xl/build/<level>_font.bin (1KB), <level>_map.bin (52 rows of 128 bytes: 4 bytes
 # of blank, the level's columns, blank after: the scroll's LMS arithmetic wants the 4 in front),
@@ -20,23 +26,26 @@ SRC = os.path.join(HERE, '..', '..', 'c64', 'build', LV, 'chars.bin')
 OUT = os.path.join(HERE, '..', 'build')
 H = 200
 px = open(SRC, 'rb').read(); W = len(px) // H; NC = W // 8
-STRIDE, PAD, NROWS = 128, 4, 52
+STRIDE, PAD, NROWS, HR0 = 128, 4, 60, -2   # (HR0: the C64's half row in the Atari's row 0)
 assert PAD + NC <= STRIDE
 
-def half(hr, c):                      # the C64's half row hr (2n tops, 2n+1 bottoms), column c: 4 bytes
+gone = open(os.path.join(os.path.dirname(SRC), 'chars_gone.bin'), 'rb').read()   # (the gems and keys gone)
+def half(hr, c, pic=px):              # the C64's half row hr (2n tops, 2n+1 bottoms), column c: 4 bytes
     if hr < 0 or hr >= 2 * 25: return (0, 0, 0, 0)
-    return tuple(sum(0x80 >> x for x in range(8) if px[(hr * 4 + l) * W + c * 8 + x] == 3) for l in range(4))
+    return tuple(sum(0x80 >> x for x in range(8) if pic[(hr * 4 + l) * W + c * 8 + x] == 3) for l in range(4))
 
 tops, bottoms = {(0, 0, 0, 0): 0}, {(0, 0, 0, 0): 0}
 mp = bytearray(STRIDE * NROWS)
-for r in range(NROWS):
-    pair, second = divmod(r, 2)
-    hr = 2 * pair if second else 2 * (pair - 1) + 1          # tops(pair), or bottoms(pair - 1)
-    table = tops if second else bottoms
-    for c in range(NC):
-        g = half(hr, c)
-        if g not in table: table[g] = len(table)
-        mp[r * STRIDE + PAD + c] = table[g]
+mpg = bytearray(STRIDE * NROWS)       # (the map with the gems and keys gone: their glyphs in the set too)
+for m, pic in ((mp, px), (mpg, gone)):
+    for r in range(NROWS):
+        second = r & 1
+        hr = r + HR0                                             # (the C64's half row)
+        table = tops if second else bottoms
+        for c in range(NC):
+            g = half(hr, c, pic)
+            if g not in table: table[g] = len(table)
+            m[r * STRIDE + PAD + c] = table[g]
 n = max(len(tops), len(bottoms))
 assert n <= 128, f'{LV}: {len(tops)} tops and {len(bottoms)} bottoms glyphs: over 128 codes'
 font = bytearray(1024)
@@ -63,8 +72,9 @@ print(f'{LV}: {NC} columns, {len(tops)} tops glyphs, {len(bottoms)} bottoms glyp
 # normal-width players side by side (8 two-pixel blocks each: exact for the C64's) and to one
 # double-width player (8 four-pixel blocks), a block on where more of its visible (not black)
 # pixels are magenta than aren't. Positions: level pixels, and the players' memory's line of the
-# top (display line + 32: map line + 36). Poglets and Hooters (two colours) are for later.
+# top (scanline: map line + 16). Poglets and Hooters (two colours) are for later.
 import json as _json
+json = _json
 SJ = os.path.join(HERE, '..', '..', 'c64', 'build', LV, 'scrub.json')
 sc = _json.load(open(SJ)) if os.path.exists(SJ) else {'placed': [], 'mc': True}
 spr = open(os.path.join(os.path.dirname(SRC), 'charsspr.bin'), 'rb').read()
@@ -92,12 +102,12 @@ if sc['placed'] and not sc['mc']:
     inc += [f'SCR_N = {len(sc["placed"])}', f'SCR_H = {y1 - y0 + 1}',
             'scr_xl  .byte ' + ', '.join(str((p['sx'] + two[1]) & 255) for p in sc['placed']) + '     ; the two players\' left',
             'scr_xh  .byte ' + ', '.join(str((p['sx'] + two[1]) >> 8) for p in sc['placed']),
-            'scr_pd  .byte ' + ', '.join(str(p['sy'] + y0 + 36) for p in sc['placed']),
+            'scr_pd  .byte ' + ', '.join(str(p['sy'] + y0 + 16) for p in sc['placed']),
             f'SCR_DX = {dbl[1] - two[1]}                  ; the double-width player\'s left, from theirs',
             'scr_l   .byte ' + ', '.join(str(v >> 8) for v in two[2]) + '     ; two players: left',
             'scr_r   .byte ' + ', '.join(str(v & 255) for v in two[2]) + '     ; right',
             'scr_d   .byte ' + ', '.join(map(str, dbl[2])) + '     ; one double-width']
-    scr_json = {'n': len(sc['placed']), 'x': [p['sx'] + two[1] for p in sc['placed']], 'pd': [p['sy'] + y0 + 36 for p in sc['placed']],
+    scr_json = {'n': len(sc['placed']), 'x': [p['sx'] + two[1] for p in sc['placed']], 'pd': [p['sy'] + y0 + 16 for p in sc['placed']],
                 'dx': dbl[1] - two[1], 'l': [v >> 8 for v in two[2]], 'r': [v & 255 for v in two[2]], 'd': dbl[2]}
     print(f'{LV}: {len(sc["placed"])} Scrubblies: infill {two[0]} pixels wrong with two players, {dbl[0]} with one double-width')
 else:
@@ -105,3 +115,71 @@ else:
             'scr_l   .byte 0', 'scr_r   .byte 0', 'scr_d   .byte 0']
 open(os.path.join(OUT, f'{LV}_scrub.inc'), 'w').write('\n'.join(inc) + '\n')
 _json.dump(scr_json, open(os.path.join(OUT, f'{LV}_scrub.json'), 'w'))
+
+# The gems and keys (c64/build/<level>/picks.json; chars.bin's pixels are level pixels across, and
+# level lines less 24 down): each one's box (level pixels, as the C64's collide.inc), and the cells
+# that change when it's picked up (the map with it gone, chars_gone.bin: row, column and code each
+# way, at most PKMAX). And the keys' yellow (their grid's 1s, chars.bin's colour 1) for players,
+# fitted as the Scrubblies' magenta is: two normal-width players (left and right) or one
+# double-width; the players' line of the top (scanline: level line - 8).
+PJ = json.load(open(os.path.join(os.path.dirname(SRC), 'picks.json')))
+pk = PJ['picks']
+PKMAX = 20
+cells = []
+for p in pk:
+    b = p['box']; x0, x1 = p['left'] + b['x0'], p['left'] + b['x1']
+    y0, y1 = p['top'] - 24 + b['y0'], p['top'] - 24 + b['y1']          # (chars.bin lines)
+    cs = []
+    for r in range(NROWS):
+        hr = r + HR0
+        if hr * 4 + 3 < y0 - 4 or hr * 4 > y1 + 4: continue
+        for c in range(x0 // 8 - 1, x1 // 8 + 2):
+            o = r * STRIDE + PAD + c
+            if 0 <= c < NC and mp[o] != mpg[o]: cs.append((r, c, mpg[o], mp[o]))
+    assert len(cs) <= PKMAX, f'{p}: {len(cs)} cells'
+    cells.append(cs)
+allc = [(r, c) for cs in cells for r, c, _, _ in cs]
+assert len(allc) == len(set(allc)), 'two gems or keys share a cell'
+kg = PJ['grids']['IMG_Key']; KW = len(kg[0])
+krows = [y for y in range(len(kg)) if 1 in kg[y]]; ky0, ky1 = krows[0], krows[-1]
+def kfit(bw, nb):
+    best = None
+    for o in range(-8, 8, 2):
+        data, bad = [], 0
+        for y in range(ky0, ky1 + 1):
+            v = 0; on = set()
+            for b_ in range(nb):
+                xs = [x for x in range(o + b_ * bw, o + b_ * bw + bw) if 0 <= x < KW]
+                if sum(kg[y][x] == 1 for x in xs) > sum(kg[y][x] == -1 for x in xs): v |= 1 << (nb - 1 - b_); on.update(xs)
+            bad += sum((kg[y][x] == 1) != (x in on) for x in range(KW) if kg[y][x] != 3)
+            data.append(v)
+        if best is None or bad < best[0]: best = (bad, o, data)
+    return best
+ktwo, kdbl = kfit(2, 16), kfit(4, 8)
+L = lambda v: ', '.join(str(x) for x in v)
+pinc = [f'NPK = {len(pk)}', f'KEYBITS = {sum(1 << i for i, p in enumerate(pk) if p["name"] == "IMG_Key")}', f'NKEYS = {sum(p["name"] == "IMG_Key" for p in pk)}', f'PKMAX = {PKMAX}',
+        'pkll    .byte ' + L((p['left'] + p['box']['x0']) & 255 for p in pk) + '     ; boxes (level pixels)',
+        'pklh    .byte ' + L((p['left'] + p['box']['x0']) >> 8 for p in pk),
+        'pkrl    .byte ' + L((p['left'] + p['box']['x1']) & 255 for p in pk),
+        'pkrh    .byte ' + L((p['left'] + p['box']['x1']) >> 8 for p in pk),
+        'pkt     .byte ' + L(p['top'] + p['box']['y0'] for p in pk),
+        'pkb     .byte ' + L(p['top'] + p['box']['y1'] for p in pk),
+        'pkkey   .byte ' + L(int(p['name'] == 'IMG_Key') for p in pk) + '     ; 1 a key',
+        'pkxl    .byte ' + L((p['left'] + ktwo[1]) & 255 for p in pk) + '     ; a key\'s players\' left',
+        'pkxh    .byte ' + L(((p['left'] + ktwo[1]) >> 8) & 255 for p in pk),
+        'pkpd    .byte ' + L(p['top'] - 8 + ky0 for p in pk),
+        'pkci    .byte ' + L([sum(len(c) for c in cells[:i]) for i in range(len(pk) + 1)]) + '     ; its cells: from, to',
+        'pkcl    .byte ' + L(((0xd800 + r * STRIDE + PAD + c) & 255) for cs in cells for r, c, _, _ in cs) + '     ; (SCREEN\'s address)',
+        'pkch    .byte ' + L(((0xd800 + r * STRIDE + PAD + c) >> 8) for cs in cells for r, c, _, _ in cs),
+        'pkcg    .byte ' + L(g for cs in cells for _, _, g, _ in cs) + '     ; the code with it gone',
+        'pkcf    .byte ' + L(f for cs in cells for _, _, _, f in cs) + '     ; and with it there',
+        f'KEY_H = {ky1 - ky0 + 1}', f'KEY_DX = {kdbl[1] - ktwo[1]}',
+        'key_l   .byte ' + L(v >> 8 for v in ktwo[2]),
+        'key_r   .byte ' + L(v & 255 for v in ktwo[2]),
+        'key_d   .byte ' + L(kdbl[2])]
+open(os.path.join(OUT, f'{LV}_picks.inc'), 'w').write('\n'.join(pinc) + '\n')
+_json.dump({'n': len(pk), 'key': [int(p['name'] == 'IMG_Key') for p in pk], 'x': [p['left'] + ktwo[1] for p in pk],
+            'pd': [p['top'] - 8 + ky0 for p in pk], 'dx': kdbl[1] - ktwo[1], 'l': [v >> 8 for v in ktwo[2]],
+            'r': [v & 255 for v in ktwo[2]], 'd': kdbl[2], 'cells': [[[r, c, g, f] for r, c, g, f in cs] for cs in cells]},
+           open(os.path.join(OUT, f'{LV}_picks.json'), 'w'))
+print(f'{LV}: {len(pk)} gems and keys, {len(allc)} cells; key infill {ktwo[0]} pixels wrong with two players, {kdbl[0]} with one double-width')
