@@ -33,7 +33,8 @@ and daggers (the C64's `hazards.asm`, copied), and the C64's two-stage collision
 the images' spans), checked against a reference. Then the yoyo (the C64's `yoyo.asm`, its string
 drawn as the BBC version's), knocking Scrubblies off through a patch program the VBI runs. Then
 no clean copy of the level's map (the level's codes read from the screen's map, with a table a
-frame of what's under each spare character): 6K more for the program, the map packed in it. Target: PAL, normal
+frame of what's under each spare character): 6K more for the program, the map packed in it. Then
+the front end (milestone 9's attract screen, as the C64's): "The Cast" on a hi-res bitmap. Target: PAL, normal
 (40-column) width.
 This is the first port to start from the C64 port
 (`../c64`) rather than from the BBC version alone. The aim is a largely monochrome game in

@@ -55,7 +55,7 @@
 ; back). Then the VBI, all at once: last frame's putting back program and this frame's program
 ; run (6 cycles a cell), the character sets swapped (the static glyphs are in both), the scroll
 ; set.
-;   -D INVINCIBLE=1: nothing kills Trogg; -D STARTX=x -D STARTY=y: a test's start instead of the
+;   -D FRONTEND=0: no front end (the game at once); -D INVINCIBLE=1: nothing kills Trogg; -D STARTX=x -D STARTY=y: a test's start instead of the
 ;   level's (his origin: level pixels, y the C64's, 24 below the map's line)
 ;   -D NOHAZ=1: no balloons or daggers; -D STRESS=1: one every 20 ticks or so (6 out all the time);
 ;   -D INSANE=1: Insane's numbers (Hard's by default)
@@ -66,6 +66,7 @@
 DELAY   = 1
 LEVEL   = "A_1"
 INVINCIBLE = 0
+FRONTEND = 1                        ; (0: no front end, the game at once: the tests)
 STARTX  = 0                         ; (0: the level's start)
 STARTY  = 0
 NOHAZ   = 0
@@ -361,9 +362,28 @@ dlib    pha                         ; a tops row's last line: VSCROL 4 for the n
         .cerror (>dlia) != (>dlib), "the DLIs must share a page (only dliv's low byte changes)"
 
 start   sei                         ; the OS switched out: no interrupts till ours are set
+        cld
+        ldx #$ff
+        txs
         lda #0
         sta NMIEN
         sta DMACTL
+      .if FRONTEND
+        lda PORTB                   ; (the front end's font: the OS ROM's, copied while it's in,
+        ora #1                      ;  to FONTB, free till the game sets up)
+        sta PORTB
+        ldx #0
+-       lda $e000,x
+        sta FONTB,x
+        lda $e100,x
+        sta FONTB+$100,x
+        lda $e200,x
+        sta FONTB+$200,x
+        lda $e300,x
+        sta FONTB+$300,x
+        inx
+        bne -
+      .endif
         lda PORTB
         and #$fe                    ; OS ROM off
         ora #$82                    ; BASIC off, self-test off
@@ -381,7 +401,10 @@ start   sei                         ; the OS switched out: no interrupts till ou
         lda #>irq
         sta $ffff
         lda #3
-        sta SKCTL                   ; (POKEY running: RANDOM)
+        sta SKCTL                   ; (POKEY running: RANDOM, the keyboard)
+      .if FRONTEND
+        jsr attract                 ; the attract screen, till a key (front.asm)
+      .endif
         lda #<lvmap                 ; the screen's map unpacked (unpack.asm: the level's, packed
         sta usrc                    ; by screen.py), the second set from the first, the claims
         lda #>lvmap                 ; clear
@@ -3189,6 +3212,9 @@ dlb15
         .include "hazards.asm"      ; the balloons and daggers (the C64's)
         .include "yoyo.asm"         ; the yoyo (the C64's)
         .include "unpack.asm"       ; the BBC version's unpacker (the C64's)
+      .if FRONTEND
+        .include "front.asm"        ; the front end
+      .endif
 lvmap   .binary "../build/" .. LEVEL .. "_map.lz"   ; the level's map, packed (screen.py)
         .cerror * > ORIGA, "the program reaches ORIGA: ", * - ORIGA, " over"
 

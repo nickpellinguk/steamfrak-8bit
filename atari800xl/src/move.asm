@@ -41,7 +41,20 @@ _wd     dec wint
         bne _still
         jsr newlevel
         jmp _still
-_play   jsr read_keys
+_play
+      .if FRONTEND
+        lda SKSTAT                  ; Escape: back to the front end (the program from its start)
+        and #4
+        bne +
+        lda KBCODE
+        and #$3f
+        cmp #$1c
+        bne +
+        sei
+        jmp start
++
+      .endif
+        jsr read_keys
         jsr trogg_update
       .if !NOHAZ
         jsr hazards                 ; (the balloons and daggers: hazards.asm)
