@@ -15,6 +15,7 @@ for L in A_1 A_2 A_3; do            # (the game carries the three: levels.py pac
     python3 tools/geom.py $L
 done
 python3 tools/levels.py
+python3 tools/music_a8.py          # (the music: the BBC version's tunes, for sound.asm)
 python3 tools/screen.py $LEVEL >/dev/null        # (screen8x4.asm's level's, left built)
 # (the front end: the same for every level, and slow to pack: only when front.py's changed)
 [ build/front.inc -nt tools/front.py ] || python3 tools/front.py

@@ -76,10 +76,9 @@ NOHAZ   = 0
 STRESS  = 0
 INSANE  = 0
 HWOUT   = 0
-        .endweak
+LVCOUNT = 3                         ; the levels carried (levels.inc; 1: A_1 alone, for room: HWOUT
+        .endweak                    ; needs it)
 NROWS   = 60                        ; the screen's rows (of 4 lines)
-LVCOUNT = HWOUT ? 1 : 3             ; the levels carried (levels.inc: HWOUT's builds have room for A_1
-                                    ; alone)
 PMAX    = 76                        ; the most cells a patch object changes (screen.py)
 OVL     = $b800                     ; the overlay (overlay.asm): unpacked over the VBI's programs, the
 OVLEND  = $bffe                     ; claims' last part and the patch program, unused till the game
@@ -415,6 +414,11 @@ start   sei                         ; the OS switched out: no interrupts till ou
         sta $ffff
         lda #3
         sta SKCTL                   ; (POKEY running: RANDOM, the keyboard)
+        jsr snd_init                ; (the POKEY's sound as the player has it: sound.asm)
+        lda #<vbi
+        sta vbiv
+        lda #>vbi
+        sta vbiv+1
         lda #<ovlz                  ; the overlay (overlay.asm, packed): the front end and the level's
         sta usrc                    ; start, code run once at the start, unpacked where the game's
         lda #>ovlz                  ; VBI programs go later
@@ -739,7 +743,30 @@ swone   txa                         ; thing x
         sta px+1
         lda OB_D,y
         sta pd
-        jmp plot
+        lda pg                      ; a walking frame: drawn as its two parts (sprites.py), his
+        cmp #TF_WR0                 ; body (the direction's, rows 0-23) then its legs (24-33)
+        bcc swp
+        cmp #TF_WL3 + 1
+        bcs swp
+        sbc #TF_WR0 - 1             ; (carry clear: the frame, 0-7)
+        pha
+        cmp #4
+        lda #GR_WRB
+        bcc +
+        lda #GR_WLB
++       sta pg
+        jsr plot
+        pla
+        clc
+        adc #GR_WR0L
+        sta pg
+        lda pd                      ; (the legs 24 lines down: past 255, below the screen)
+        clc
+        adc #24
+        bcs swx
+        sta pd
+swp     jmp plot
+swx     rts
 swend   jsr pkprog                  ; the patch program (pick.asm: before the claims are cleared)
         lda #$60                    ; the programs ended (an rts over the next entry's lda: put back
         ldy #0                      ; when the program's next built)
@@ -2553,7 +2580,7 @@ plot    ldx pg
         lda gr_h,x
         sta ht
         clc
-        adc #6
+        adc #3                      ; (a column every height + 3 bytes: sprites.py)
         sta cstep
         lda px                      ; the shift: (px / 2) & 3
         lsr a
@@ -2586,7 +2613,7 @@ plotx   rts
 +       lda scol0
         cmp #41
         bcs plotx
-+       txa                         ; the graphic at this shift: graphic * 4 + shift
++       lda gcix,x                  ; the graphic at this shift: its compiled number * 4 + shift
         asl a
         asl a
         ora si
@@ -2965,8 +2992,9 @@ prefill stx tmp+1
 ; ---- NMIs: the row DLIs, and the VBI
 nmi     bit NMIST
         sta NMIRES
-        bpl vbi
+        bpl +
         jmp (dliv)
++       jmp (vbiv)                  ; (the game's VBI, or the front end's)
 irq     rti
 
 ; ---- The VBI: the frame made shown, all at once
@@ -3083,7 +3111,8 @@ vbiend  ldx pmshow                  ; the top band's players' registers, every f
         sta dliv
         lda #>dlia
         sta dliv+1
-        pla
+        jsr snd_tick                ; the music and sound effects (sound.asm: last, the DLIs free
+        pla                         ; to interrupt it)
         tay
         pla
         tax
@@ -3276,6 +3305,8 @@ dlb15
         .include "hazards.asm"      ; the balloons and daggers (the C64's)
         .include "yoyo.asm"         ; the yoyo (the C64's)
         .include "unpack.asm"       ; the BBC version's unpacker (the C64's)
+        .include "sound.asm"        ; the music and sound effects (the BBC version's player, the CPC's
+                                    ; channel sharing, on the POKEY)
       .if FRONTEND
 frbmz   .binary "../build/front_bm.lz"        ; the front end's bitmap and players' graphics, packed
 frpmz   .binary "../build/front_pm.lz"        ; (front.asm, in the overlay, unpacks them)

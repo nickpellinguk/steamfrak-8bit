@@ -135,7 +135,13 @@ frtd    lda #<frpmz                 ; the players' graphics (front.py's, packed:
         bcc -
         lda #$3e                    ; normal width, playfield, players and missiles (1-line)
         sta DMACTL
-        lda #$80                    ; (the DLIs alone: not the game's VBI)
+        lda #<frvbi                 ; (the DLIs, and a VBI of its own: the music)
+        sta vbiv
+        lda #>frvbi
+        sta vbiv+1
+        lda #TUNE_INTRO             ; (as the BBC version: unless it's playing)
+        jsr play_music_new
+        lda #$c0
         sta NMIEN
 -       jsr frkey                   ; a key let go, then one pressed
         bne -
@@ -143,6 +149,10 @@ frtd    lda #<frpmz                 ; the players' graphics (front.py's, packed:
         beq -
         lda #0                      ; off again for the game's setting up
         sta NMIEN
+        lda #<vbi
+        sta vbiv
+        lda #>vbi
+        sta vbiv+1
         sta DMACTL
         sta GRACTL
         ldx #7
@@ -298,6 +308,20 @@ frdli   pha
         bcc +
         ldx #0
 +       stx frdi
+        pla
+        tax
+        pla
+        rti
+
+; the front end's VBI: the music (sound.asm)
+frvbi   pha
+        txa
+        pha
+        tya
+        pha
+        jsr snd_tick
+        pla
+        tay
         pla
         tax
         pla

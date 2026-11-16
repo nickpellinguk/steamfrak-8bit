@@ -25,7 +25,8 @@ to run** (milestones 5 and 7 in part): the C64's movement code on the C64's plat
 (copied, `src/move.asm`), box collisions with the Scrubblies, gems and keys, gems and keys going
 from the map through the VBI's programs, checkpoints, dying and the level complete; and the keys'
 yellow on players, last in the multiplexer's order. Colour-exact on five tours. Still to come:
-the yoyo, the real hazards, the collisions' second stage, sound. Then **240 lines** (ANTIC's most,
+the yoyo, the real hazards, the collisions' second stage, sound (since done: the BBC version's
+player with the CPC version's three-channel sharing, on the POKEY). Then **240 lines** (ANTIC's most,
 scanlines 8-247): 60 rows showing the original's level lines 16-255, the C64's 200 lines with
 blank rows above and below (the C64's level files hold no more; A_1's margins are empty in the
 original too; A_2 and A_3 will want their original lower parts back). Then the game's balloons
@@ -37,7 +38,9 @@ frame of what's under each spare character): 6K more for the program, the map pa
 the front end (milestone 9's attract screen, as the C64's): "The Cast" on a hi-res bitmap. Then
 A_2 and A_3 (milestone 9, in part): the three levels' blocks packed, chosen from the front end;
 the Poglets' and Hooters' magenta infill (their yellow to come). Then less to carry: the levels'
-derivable tables worked out at the start, and the start's code an overlay, packed (1.4K free). Target: PAL, normal
+derivable tables worked out at the start, and the start's code an overlay, packed; then the
+sprite data from 9.5K to 5.3K (the walking frames as a shared body and their legs, identical
+frames sharing, the padding shared): 5.6K free, and HWOUT builds carry the three levels too. Target: PAL, normal
 (40-column) width.
 This is the first port to start from the C64 port
 (`../c64`) rather than from the BBC version alone. The aim is a largely monochrome game in
@@ -315,9 +318,10 @@ Each is checked before the next, and this file is updated as they're done.
    infill. Check: `hazardtest.py` and `poptest.py`; the frame's cycles on Insane.
 7. **Death, the level's end, checkpoints, the timer:** as the C64's milestones 11-13. Check:
    `cptest.py`.
-8. **Sound:** the BBC player's design on POKEY (4 channels at 8 bits, or 2 joined at 16 bits for
-   the bass), the tunes from `../tools/music.py`. Check: a `music8.mjs`-style comparison with
-   the Steam version.
+8. **Sound** (done): the BBC player on POKEY with the CPC version's sharing of three channels
+   (2 joined at 16 bits for the bass at its own pitch, 2 at 8 bits; the noise borrowing one),
+   the tunes from `../tools/music.py`. Check: `test/sndstate.py` (every divider as its voice's
+   pitch), and the emulator's sound recorded (`test/record.mjs`).
 9. **The front end** (the attract screen, the level selection) and **A_2, A_3:** the Poglet's and
    Hooter's multicolour infills on P2/P3. Check: as for A_1.
 10. **The other levels**, as the C64 gets them, and vertical scrolling. NTSC.
