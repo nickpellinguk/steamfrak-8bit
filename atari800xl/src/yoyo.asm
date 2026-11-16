@@ -272,7 +272,13 @@ _m      lda oact,x
         bmi +
         jmp _mn
 +
-        lda #0                      ; popped
+        lda #SFX_DAGGER             ; popped (its sound: a balloon's pop, a dagger's)
+        ldy oact,x
+        dey
+        bne +
+        lda #SFX_POP
++       jsr play_sfx
+        lda #0
         sta oact,x
         lda #1
         sta yo_hit
@@ -287,7 +293,9 @@ _mn     dex
 
 
 ; Scrubbly x knocked off: its bit in the patch objects' gone (pick.asm: NPK on)
-knock   ldy pby + NP,x
+knock   lda #SFX_SQUEAL
+        jsr play_sfx
+        ldy pby + NP,x
         lda pbm + NP,x
         ora pgone,y
         sta pgone,y

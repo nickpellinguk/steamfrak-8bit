@@ -2,7 +2,8 @@
 # tours.sh A8JS: the checks: builds (default, STRESS, HWOUT; INVINCIBLE ones for the long walks)
 # and joystick tours on each, every screen checked colour for colour (checktrogg.py), Trogg's state
 # listed (state.py), the collisions checked against a reference where he can die (collcheck.py);
-# and the front end's screen (frontcheck.py).
+# and the front end's screen (frontcheck.py); the music playing, the POKEY's dividers as its voices'
+# pitches (sndstate.py).
 # Run from atari800xl/ after build.sh; screens in $OUT (default /tmp/tours).
 set -e
 A8=$1; OUT=${OUT:-/tmp/tours}; LV=${LEVEL:-A_1}
@@ -17,7 +18,7 @@ tour() {   # name build script [c: the collisions checked too (not for the INVIN
     cp build/trogg8x4.lbl.keep build/trogg8x4.lbl; rm build/trogg8x4.lbl.tmp build/trogg8x4.lbl.keep
 }
 FAIL=0
-build t_def ""; build t_inv "-D INVINCIBLE=1"; build t_str "-D INVINCIBLE=1 -D STRESS=1"; build t_hw "-D INVINCIBLE=1 -D HWOUT=1"
+build t_def ""; build t_inv "-D INVINCIBLE=1"; build t_str "-D INVINCIBLE=1 -D STRESS=1"; build t_hw "-D INVINCIBLE=1 -D HWOUT=1 -D LVCOUNT=1"
 build t_key "-D STARTX=280 -D STARTY=211"
 GEM="30:0 100:1 50:8 50:4 100:1 200:8 100:0"            # up the F, the gem, up again, into a Scrubbly
 KEY="30:0 40:4 30:0 60:8 300:0"                          # a key at once, off the edge: back at the checkpoint
@@ -31,10 +32,12 @@ python3 test/lvlcheck.py $OUT/l3 build/t_l3.lbl A_3 | sed "s/^/l3: /" || FAIL=1 
 tour gem t_def "$GEM" c; tour key t_key "$KEY" c
 python3 test/lvlcheck.py $OUT/gem build/t_def.lbl A_1 | sed "s/^/gem: /" || FAIL=1
  tour yoyo t_def "$YOYO" c; tour walk t_inv "$WALK"; tour stress t_str "$WALK"; tour hwout t_hw "$WALK"
+python3 test/sndstate.py $OUT/walk build/t_inv.lbl | sed "s/^/walk: sound: /" | tail -1 || FAIL=1   # (the music and
 # the front end (a FRONTEND build): its screen, colour for colour, while it's up
 FR=1 build t_fe ""
 rm -rf $OUT/front; node test/tour.mjs $A8 build/t_fe.xex $OUT/front "100:0" >/dev/null
 cp build/trogg8x4.lbl build/trogg8x4.lbl.keep; cp build/t_fe.lbl build/trogg8x4.lbl
 python3 test/frontcheck.py $OUT/front | sed "s/^/front: /" || FAIL=1
+python3 test/sndstate.py $OUT/front build/t_fe.lbl | sed "s/^/front: sound: /" | tail -1 || FAIL=1   #  effects)
 cp build/trogg8x4.lbl.keep build/trogg8x4.lbl; rm build/trogg8x4.lbl.keep
 exit $FAIL

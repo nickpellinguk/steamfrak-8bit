@@ -25,7 +25,8 @@ to run** (milestones 5 and 7 in part): the C64's movement code on the C64's plat
 (copied, `src/move.asm`), box collisions with the Scrubblies, gems and keys, gems and keys going
 from the map through the VBI's programs, checkpoints, dying and the level complete; and the keys'
 yellow on players, last in the multiplexer's order. Colour-exact on five tours. Still to come:
-the yoyo, the real hazards, the collisions' second stage, sound. Then **240 lines** (ANTIC's most,
+the yoyo, the real hazards, the collisions' second stage, sound (since done: the BBC version's
+player with the CPC version's three-channel sharing, on the POKEY). Then **240 lines** (ANTIC's most,
 scanlines 8-247): 60 rows showing the original's level lines 16-255, the C64's 200 lines with
 blank rows above and below (the C64's level files hold no more; A_1's margins are empty in the
 original too; A_2 and A_3 will want their original lower parts back). Then the game's balloons
@@ -317,9 +318,10 @@ Each is checked before the next, and this file is updated as they're done.
    infill. Check: `hazardtest.py` and `poptest.py`; the frame's cycles on Insane.
 7. **Death, the level's end, checkpoints, the timer:** as the C64's milestones 11-13. Check:
    `cptest.py`.
-8. **Sound:** the BBC player's design on POKEY (4 channels at 8 bits, or 2 joined at 16 bits for
-   the bass), the tunes from `../tools/music.py`. Check: a `music8.mjs`-style comparison with
-   the Steam version.
+8. **Sound** (done): the BBC player on POKEY with the CPC version's sharing of three channels
+   (2 joined at 16 bits for the bass at its own pitch, 2 at 8 bits; the noise borrowing one),
+   the tunes from `../tools/music.py`. Check: `test/sndstate.py` (every divider as its voice's
+   pitch), and the emulator's sound recorded (`test/record.mjs`).
 9. **The front end** (the attract screen, the level selection) and **A_2, A_3:** the Poglet's and
    Hooter's multicolour infills on P2/P3. Check: as for A_1.
 10. **The other levels**, as the C64 gets them, and vertical scrolling. NTSC.

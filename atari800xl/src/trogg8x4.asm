@@ -76,9 +76,9 @@ NOHAZ   = 0
 STRESS  = 0
 INSANE  = 0
 HWOUT   = 0
-        .endweak
+LVCOUNT = 3                         ; the levels carried (levels.inc; 1: A_1 alone, for room: HWOUT
+        .endweak                    ; needs it)
 NROWS   = 60                        ; the screen's rows (of 4 lines)
-LVCOUNT = 3                         ; the levels carried (levels.inc; 1: A_1 alone, for room)
 PMAX    = 76                        ; the most cells a patch object changes (screen.py)
 OVL     = $b800                     ; the overlay (overlay.asm): unpacked over the VBI's programs, the
 OVLEND  = $bffe                     ; claims' last part and the patch program, unused till the game
@@ -414,6 +414,11 @@ start   sei                         ; the OS switched out: no interrupts till ou
         sta $ffff
         lda #3
         sta SKCTL                   ; (POKEY running: RANDOM, the keyboard)
+        jsr snd_init                ; (the POKEY's sound as the player has it: sound.asm)
+        lda #<vbi
+        sta vbiv
+        lda #>vbi
+        sta vbiv+1
         lda #<ovlz                  ; the overlay (overlay.asm, packed): the front end and the level's
         sta usrc                    ; start, code run once at the start, unpacked where the game's
         lda #>ovlz                  ; VBI programs go later
@@ -2987,8 +2992,9 @@ prefill stx tmp+1
 ; ---- NMIs: the row DLIs, and the VBI
 nmi     bit NMIST
         sta NMIRES
-        bpl vbi
+        bpl +
         jmp (dliv)
++       jmp (vbiv)                  ; (the game's VBI, or the front end's)
 irq     rti
 
 ; ---- The VBI: the frame made shown, all at once
@@ -3105,7 +3111,8 @@ vbiend  ldx pmshow                  ; the top band's players' registers, every f
         sta dliv
         lda #>dlia
         sta dliv+1
-        pla
+        jsr snd_tick                ; the music and sound effects (sound.asm: last, the DLIs free
+        pla                         ; to interrupt it)
         tay
         pla
         tax
@@ -3298,6 +3305,8 @@ dlb15
         .include "hazards.asm"      ; the balloons and daggers (the C64's)
         .include "yoyo.asm"         ; the yoyo (the C64's)
         .include "unpack.asm"       ; the BBC version's unpacker (the C64's)
+        .include "sound.asm"        ; the music and sound effects (the BBC version's player, the CPC's
+                                    ; channel sharing, on the POKEY)
       .if FRONTEND
 frbmz   .binary "../build/front_bm.lz"        ; the front end's bitmap and players' graphics, packed
 frpmz   .binary "../build/front_pm.lz"        ; (front.asm, in the overlay, unpacks them)

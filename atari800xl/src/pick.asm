@@ -222,7 +222,9 @@ cplp    ldy pby,x                   ; (gone already: not looked at)
         bcs +
         jmp cpnext
 +
-        ldy pby,x                   ; picked up
+        lda #SFX_CHING              ; picked up
+        jsr play_sfx
+        ldy pby,x
         lda pbm,x
         ora pgone,y
         sta pgone,y

@@ -52,8 +52,10 @@ _play
         jmp start
 +
       .endif
+        inc ftick
         jsr read_keys
         jsr trogg_update
+        jsr footsteps
       .if !NOHAZ
         jsr hazards                 ; (the balloons and daggers: hazards.asm)
       .endif
@@ -169,7 +171,33 @@ _all    jsr pkreset                 ; (the map to match: pick.asm)
 -       sta oact,x
         dex
         bpl -
+        ldx lvnum                   ; the level's tune, from its start (as the BBC version: Poglets,
+        lda lvtune,x                ; "A Little Bag of Weed"; Hooters, "Man"; else "Frak")
+        jmp play_music
+lvtune  .byte TUNE_FRAK, TUNE_WEED, TUNE_MAN
+
+; Trogg's footsteps (as the BBC version, the Steam version's: not while all the music's tracks
+; play): walking, every 8 ticks; climbing, every 16
+footsteps
+        lda snd_music_opt
+        beq _x
+        lda ftick
+        ldx tstate
+        cpx #ST_WALK
+        bne _nw
+        and #7
+        beq _th
         rts
+_nw     cpx #ST_CLIMB
+        bne _x
+        ldx tclimb
+        beq _x
+        and #15
+        bne _x
+_th     lda #SFX_THUD
+        jmp play_sfx
+_x      rts
+ftick   .byte 0
 
 ; A checkpoint (the BBC version's): once one's due (a key picked up, not the last), when he's
 ; standing or walking and not dying: his place and what's gone
@@ -1219,6 +1247,8 @@ _climb  lda tclimb
 ; The level complete (the last key): a pause of 7 seconds (less one for each restart from a
 ; checkpoint, to 4), then the level from the start
 level_complete
+        lda #TUNE_VICTORY
+        jsr play_music
         lda #1
         sta won
         lda #0

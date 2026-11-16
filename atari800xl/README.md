@@ -8,8 +8,8 @@ on the C64 port's 8x4 grid, so the C64's levels carry over cell for cell. The pl
 It starts on a front end like the C64 port's: "The Cast", the FRAK! bubble, Trogg, a Scrubbly, a
 Hooter and a Poglet with their names, then "Collect all the keys to win!" (`src/front.asm`,
 `tools/front.py`): a hi-res bitmap, the text from the machine's ROM font, every infill on players
-and exact; fire, Start, Space, Return, P or Y plays, 1, 2 or 3 chooses the level, and Escape in the
-game comes back to it. **Three levels**, one of each type, as the C64 port has: A_1 (Scrubblies,
+and exact, with its tune; fire, Start, Space, Return, P or Y plays, 1, 2 or 3 chooses the level,
+and Escape in the game comes back to it; M and S change the music and sound effects. **Three levels**, one of each type, as the C64 port has: A_1 (Scrubblies,
 on cyan), A_2 (Poglets, on green), A_3 (Hooters, on red). As the C64's loader does, each level's
 own tables and numbers sit at fixed places in a block, as long as the longest level's
 (`tools/levels.py`), so the code is the same for any; each level's block, character set and map
@@ -53,7 +53,29 @@ drawn last, over the hazards too). Gems, keys and Scrubblies are one list of pat
 masks: A_2 has 17); their cells reach the screen through a patch program the VBI runs after the
 frame's, built once the frame's drawn so it leaves out cells something's drawn in (a Scrubbly
 changes about 48 cells, more than a frame's program has room for). Still to come: the FRAK!
-bubble when he dies, and sound. Checked in the WebAssembly atari800, colour for colour: 893 screens of six joystick
+bubble when he dies.
+
+**Sound** (`src/sound.asm`): the BBC version's player, routine for routine in plain 6502, with
+the CPC version's changes for a chip of three channels: the bass played at its own pitch (the
+BBC version plays it an octave up, its chip's lowest note being 122Hz), and the drums' noise
+borrowing a channel while it sounds. The tunes, instruments and envelopes are the BBC version's
+(`tools/music_a8.py` translates `../tools/music.py`'s), so all three play the same notes: "Frak"
+on Scrubbly levels, "A Little Bag of Weed" on Poglet levels, "Man" on Hooter levels (from the
+start, and again after a death, as the BBC version), the victory tune at the level's end, the
+intro on the front end; the ching of a gem or key, the squeal of a Scrubbly knocked off, a
+balloon's pop and a dagger's, and footsteps (not while all the tracks play). M changes the music
+(all the tracks, the tune alone, off), S turns the sound effects off and on. The POKEY as three
+channels: its first two joined, 16 bits on the 1.79MHz clock (exact at any pitch, so the bass
+goes there first), its last two 8 bits on the 64kHz clock (within a quarter of a semitone over
+the tunes' range; anything too low for them an octave up); the noise the 17-bit polynomial at
+the BBC chip's rates; the BBC chip's 2dB steps as the nearest POKEY volume. The player runs at
+the end of the VBI (the front end has a VBI of its own for it), after the registers that have to
+be set in time, so the row DLIs interrupt it as they need to: it costs about 4% more frames not
+made in time. Its variables are in low memory free while the game runs (`$04c0`, `$0730`).
+`test/sndstate.py` checks a tour's memory: the tune playing, and every divider the POKEY was
+given matching its voice's pitch; `test/record.mjs` records the emulator's sound as a WAV.
+
+Checked in the WebAssembly atari800, colour for colour: 893 screens of six joystick
 tours (`test/tours.sh`), with gems and keys going and coming back, and a Scrubbly knocked off; and the front end's screen.
 
 **What's still short of the original's look:** Trogg's infill is in 2-pixel blocks (at most 10 of
@@ -250,7 +272,7 @@ Arrow keys are joystick 1, Space or Ctrl fire, F2-F4 Start, Select and Option.
 | --- | --- |
 | `tools/screen.py` | A level's character set and map for the 8x4 screen, from the C64 build's picture of it (`c64/build/<level>/chars.bin`); `build/<level>_expect.png`, the picture the Atari should show; the Scrubblies' and keys' infill fitted to players; each gem's and key's cells with it gone (`_picks.inc`) |
 | `src/screen8x4.asm` | The demo: display list, row DLIs, scrolling VBI (with the OS, for now) |
-| `src/trogg8x4.asm` | (memory: the program `$0800-$abff`, its page-aligned tables first, the three levels and the overlay packed at its end (5.6K free after them; 3.4K with `HWOUT=1`), the level's block below `$ac00` (`LVL`, 2.6K), what's under the spare characters drawn `$ac00` and `$ad00`, the display list `$ae00`, the character sets `$b000` and `$b400`, the VBI's programs `$b800`, `$bb00` and `$c000` (the last in the first players' graphics' unused `$300`), its patch program `$be80`; under the OS, which ANTIC sees as the CPU does: the players' graphics `$c000` and `$c800`, the screen's map `$d800-$f5ff`, the bands' registers `$f600`; the claims in three parts, `$f980`, `$c800` (the second players' graphics' unused `$300`) and `$be00`) |
+| `src/trogg8x4.asm` | (memory: the program `$0800-$abff`, its page-aligned tables first, the three levels and the overlay packed at its end (261 bytes free after them, with the music; `HWOUT=1` needs `LVCOUNT=1`: A_1 alone, 2.1K free), the level's block below `$ac00` (`LVL`, 2.6K), what's under the spare characters drawn `$ac00` and `$ad00`, the display list `$ae00`, the character sets `$b000` and `$b400`, the VBI's programs `$b800`, `$bb00` and `$c000` (the last in the first players' graphics' unused `$300`), its patch program `$be80`; under the OS, which ANTIC sees as the CPU does: the players' graphics `$c000` and `$c800`, the screen's map `$d800-$f5ff`, the bands' registers `$f600`; the claims in three parts, `$f980`, `$c800` (the second players' graphics' unused `$300`) and `$be00`) |
 | `src/trogg8x4.asm` | The same with Trogg: the game's ticks, the camera, drawing into spare characters, the multiplexer, the VBI showing a frame |
 | `src/move.asm` | Trogg's movement: the C64 port's (`c64/src/play.asm`), on the joystick; dying, checkpoints, the level complete |
 | `src/pick.asm` | Collisions (Scrubblies, gems, keys); gems and keys going from the map (and coming back) through the VBI's programs; the keys listed for their yellow |
@@ -265,6 +287,8 @@ Arrow keys are joystick 1, Space or Ctrl fire, F2-F4 Start, Select and Option.
 | `src/front.asm`, `tools/front.py` | The front end: its screen (a 320 x 220 hi-res bitmap, the cast's outlines packed, the text drawn from the ROM font, the infills on players re-set by a DLI between pictures), the keys to play |
 | `test/frontcheck.py` | The front end's screen, colour for colour, against `front.json` and the font the program copied |
 | `src/yoyo.asm` | The yoyo: the C64 port's, thrown, drawn (with its string, by `yolist` and `strline` in `trogg8x4.asm`), knocking Scrubblies off and popping balloons and daggers |
+| `src/sound.asm`, `tools/music_a8.py` | The music and sound effects: the BBC version's player with the CPC version's channel sharing, on the POKEY; the BBC version's tunes translated, and the POKEY's pitch, noise and volume tables (`build/music.inc`) |
+| `test/sndstate.py`, `test/record.mjs` | The player's state in a tour's memory (the tune, each channel's voice, its divider against the voice's pitch); the emulator's sound recorded as a WAV |
 | `src/hazards.asm` | The balloons and daggers: the C64 port's, spawned, moved and gone as in the game |
 | `test/state.py`, `hzstate.py`, `scr2png.py`, `tours.sh` | Trogg's state, and the balloons' and daggers', in each saved memory; a saved screen as a picture; all the checks |
 | `test/collcheck.py` | The collisions in each saved memory against a reference: nothing deadly or a gem or key not picked up touching him while he's alive, and what killed him at each death |
