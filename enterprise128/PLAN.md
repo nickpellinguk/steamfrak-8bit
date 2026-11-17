@@ -1,6 +1,10 @@
 # Plan: Frak! for the Enterprise 128
 
-Status: **phase 3 done:** the plotter, the draw log and the compiled meanie, for the ring
+Status: **phase 4 done:** the level loader and the background (`src/level.asm`, `src/loader.asm`,
+`src/bg.asm`) pass the CPC version's `levels.mjs` on all 55 levels: their tables, their
+background caches, and the window repainted from the cache, byte for byte. Next: phase 5.
+
+Phase 3 done: the plotter, the draw log and the compiled meanie, for the ring
 buffers (`src/plot.asm`), pass the CPC version's `plot.mjs`, byte for byte, with cases across
 the ring's end added. Next: phase 4.
 
@@ -270,13 +274,32 @@ back, 150 yoyo strings and their restores, 240 compiled meanies (the compiled co
 of the 77 places it can be), 40 frames of the draw log, and nothing written over the code. A
 plotter stepping 81 bytes a line fails 652 of them.
 
-### Phase 4: levels and background (`src/level.asm`, `src/bg.asm`)
+### Phase 4: levels and background (`src/level.asm`, `src/bg.asm`) — done
 
 The level loader and unroller as they are (the cache's format doesn't depend on the screen's
 layout). `repaint_column` steps 80 bytes a line and `repaint_row` paints 8 lines of 80 bytes,
 both wrapping at the end of the ring. Both level kinds now use the one window, 320x256.
 **Test:** `levels.mjs`: all 55 levels' tables, background caches and repainted windows match
 the converter.
+
+**Done**, as planned:
+- `level.asm` and `loader.asm` are the CPC version's, with the paging renamed and the window
+  the BBC version's for both kinds of level (80 byte columns and 32 character rows: `row_max`
+  and `scroll_max` follow). The loader (3,965 bytes) is assembled to run at `&E1A0`, in segment
+  `&FE` at page 3, where it's kept (`build/LOADER.BIN`), so it isn't copied; `load_level` pages
+  `&FE` in there and `&FC` at page 2, where the unroller's workings are, as on the CPC. The
+  compiled meanie goes after it, at `&7180` in the window (`build/frak.asm` ASSERTs they don't
+  meet). The levels are the CPC version's, as they are (`build/LEVELS.BIN`, for `&FF` at `&4000`).
+- `bg.asm`'s unroller is the CPC version's; its painter is new. Down a sideways level's byte
+  column, each of 32 cells is 8 lines of 80 bytes on, wrapping at the ring's end (which only the
+  last cell of a column past 80 can reach); along an up-and-down level's character row, each of
+  80 cells is a byte on, its 8 lines 80 apart, never wrapping (the ring is 256 lines, a row 8).
+- Every sideways level is at least 580 pixels wide and every up-and-down one exactly 320, so the
+  window is always within the level.
+
+`levels.mjs` passes on all 55 levels (ephl, MAME, and other power-up seeds). A painter stepping
+81 bytes a line fails all 55; one putting each row a line low fails the 19 that scroll up and
+down.
 
 ### Phase 5: game logic (`src/logic.asm`, `src/trogg.asm`, `src/commands.asm`)
 

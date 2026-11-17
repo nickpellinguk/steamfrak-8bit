@@ -42,6 +42,7 @@ FRONT_PACKED_ORG = 0x7000           # in #FF, in the window, after the levels
 LPT_WIN = 0x7F00                    # the line parameter tables, at the top of #FF
 FRONT_ORG = 0x4000                  # the front end, unpacked into #FB when the menus are up
 JIT_MAX = 0xB80                     # the compiled meanie's room (the CPC version's ASSERT)
+JIT_ORG = 0x7180                    # where it goes in #FE (in the window), after the loader
 RECORDS = 55 * 7                    # the records, moved out of the front end into the low RAM
 
 
@@ -112,7 +113,7 @@ def main():
             f.write(f'{k} = {v}\n')
 
     # the map, segment by segment: (what, from, size) in the Z80's view of the segment
-    jit_org = 0x4000 + FE_SPARE + len(loader)
+    jit_org = JIT_ORG
     segs = [
         ('#F8 (page 0)', 0x0000, [('restart vectors, EXOS header', 0x0000, 0x100),
                                   ('the CPC low RAM\'s code and tables (moved up from #0040)', 0x100, low),

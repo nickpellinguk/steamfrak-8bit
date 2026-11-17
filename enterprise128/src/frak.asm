@@ -1,9 +1,10 @@
 ; Steam Frak for the Enterprise 128 - assembled with RASM (see ../build.sh)
 ;
-; Phase 3 (see ../PLAN.md): the machine layer (src/machine.asm: paging,
+; Phase 4 (see ../PLAN.md): the machine layer (src/machine.asm: paging,
 ; interrupts, the keyboard), the screen (src/screen.asm: Nick's line parameter
-; tables, the two ring buffers and their mirrors), the unpacker (src/unpack.asm)
-; and the plotter (src/plot.asm). The program loads (as an EXOS type 5 file, at
+; tables, the two ring buffers and their mirrors), the unpacker (src/unpack.asm),
+; the plotter (src/plot.asm), and the level loader and background (src/level.asm,
+; src/loader.asm, src/bg.asm). The program loads (as an EXOS type 5 file, at
 ; #0100), asks EXOS for every RAM segment it will give out, takes the machine
 ; over, and then does what the test harness (tools/emu) asks: it shows each
 ; buffer from the scroll position and palette the harness pokes (t_apply), and
@@ -45,6 +46,7 @@ start
         call machine_init
         call bank_test
         call make_lines
+        call make_popcount
         xor a : out (NICK_BORDER),a
         call lpt_init
         xor a : ld (front),a : call show_lpt
@@ -91,6 +93,9 @@ main_loop
         INCLUDE "unpack.asm"
         INCLUDE "plot.asm"
         INCLUDE "../../cpc6128/src/gen/images.asm"
+        INCLUDE "../../cpc6128/src/gen/levels.asm"
+        INCLUDE "level.asm"
+        INCLUDE "bg.asm"
 
 ; A command from the test harness (the CPC version's numbers; it has no mode 9)
 command
@@ -104,6 +109,17 @@ command
         dec a : jp z,log_line                   ; 7
         dec a : jp z,restore_log                ; 8
         dec a : dec a : jp z,log_sprite7        ; 10
+        dec a : jr nz,.not11
+        ld a,(t_arg) : jp load_level            ; 11
+.not11  dec a : ret nz                          ; 12: repaint the window from the cache
+        ld a,(is_vert) : or a : jr nz,.rows
+        xor a
+.cols   push af : call repaint_column : pop af
+        inc a : cp LINE_BYTES : jr nz,.cols
+        ret
+.rows   xor a
+.row    push af : call repaint_row : pop af
+        inc a : cp 32 : jr nz,.row
         ret
 
 ; line_lo/line_hi[row] = row * 80: where ring row `row` starts in a ring
@@ -115,12 +131,6 @@ make_lines
         inc e : jr nz,.row
         ret
 
-; Carry set if HL < DE, as signed numbers (HL, DE lost) (as the CPC version's, in level.asm)
-signed_less
-        ld a,h : xor #80 : ld h,a
-        ld a,d : xor #80 : ld d,a
-        or a : sbc hl,de
-        ret
 
 ; For the test harness: set both buffers' playfield LPBs (from scroll0/1 and
 ; pal0/1) without ever writing the table on show: Nick reads an LPB's line count
@@ -191,17 +201,20 @@ t_unpack_seg db 0
 t_unpack_end dw 0                   ; ... and where it ended
 flip_rate    db 0                   ; flip the buffers every flip_rate frames (0: never)
 flip_count   db 1
-; the plotter's (as the CPC version's)
 t_cmd       db 0                    ; a command from the test harness
 t_arg       db 0
+ll_level    db 0                    ; load_level's level
+p_r         db 0                    ; (plot.asm: a column's first line's byte in its ring row ...)
+p_k         db 0                    ; (... and the lines from there to the ring's end, 0 = 256)
+; the plotter's parameters
 p_img       db 0
 p_x         dw 0
 p_y         dw 0
 q_x         dw 0                    ; (hline's other end)
 p_mode      db 0
-p_sbank     db 0                    ; PM_SAVEONLY: the segment the save area is in
+p_sbank     db 0                    ; PM_SAVEONLY: the bank the save area is in
 clip_l      db 0                    ; the window, in level coordinates
-clip_r      db 80
+clip_r      db 64
 clip_t      dw 0
 clip_h      db 0
 sbase       dw 0                    ; the save record
@@ -209,8 +222,9 @@ sptr        dw 0
 hl_yel      db 0                    ; hline: #F0 for yellow, 0 for black
 sfree       dw 0                    ; the back buffer's save area: free from sfree to send
 send        dw 0
-sfree7      dw 0                    ; ... and its slow save area (in segment p_sbank)
+sfree7      dw 0                    ; ... and its slow save area (in bank p_sbank)
 send7       dw 0
+; ... and its workings
 p_left      dw 0
 p_top       dw 0
 p_shift     db 0
@@ -224,9 +238,7 @@ p_cidx      db 0
 p_cend      db 0
 p_dcol      dw 0
 p_y0        db 0
-p_row       db 0                    ; a column's first line: its ring row ...
-p_r         db 0                    ; ... and byte in it
-p_k         db 0                    ; ... and the lines from there to the ring's end (0 = 256)
+p_row       db 0
 p_tab       db 0
 p_oldbank   db 0
 p_oldbank0  db 0
@@ -235,9 +247,16 @@ hl_p0       db 0
 hl_p1       db 0
 hl_c0       db 0
 hl_c1       db 0
+hl_line     db 0
+hl_row      db 0
 hl_col      db 0
+; the draw log, for each buffer (MAX_LOG entries each)
 log_n       db 0, 0
-log_recs    DEFS 2 * 40 * 16        ; (MAX_LOG records of LG_SIZE bytes each)
+log_recs    DEFS 2 * 40 * 16            ; (MAX_LOG records of LG_SIZE bytes each)
+rc_safe     db 0                    ; restore_chase: the window's lines scanned for the last time
+rc_ns       db 0                    ; ... how many entries are passed over
+rc_skip     DEFS 2 * 40             ; ... and which
+; the compiled meanie
 jit_img     db 255                  ; the image compiled (255: none)
 jit_new     db 0
 jit_h       db 0
@@ -246,19 +265,163 @@ jit_w       db 0
 jit_s       db 0
 jit_r       db 0
 jit_emit    dw 0
-jit_vecs    dw 0, 0                 ; its code at shifts 0 and 2 (in SEG_JIT)
+jit_vecs    dw 0, 0                 ; its code at shifts 0 and 2 (in JIT_BANK)
 jit_count   dw 0                    ; times plot_slow used it (for the tests)
-hud_image   DEFS 64                 ; the timer, as a raw image: 8 byte columns of 8 rows (see plot)
+; the level (see level.asm)
+cur_level   db 0
+level_rows  db 0                    ; its height, in character rows
+level_h     dw 0                    ; ... and pixels
+is_vert     db 0                    ; it scrolls up and down
+row_max     db 0                    ; level_rows - the window's
+level_cols  db 0                    ; its width, in byte columns
+scroll_max  dw 0                    ; its width - the window's
+x_max       dw 0                    ; its width - 10
+level_bg    db 0                    ; its background colour
+trogg_x0    dw 0                    ; where Trogg starts
+trogg_y0    dw 0
+num_plats   db 0
+num_ladders db 0
+num_draw    db 0
+num_slow    db 0
+num_keys    db 0
+num_gems    db 0
+; ... and the loader's workings
+q_y1        dw 0                    ; platform_find's question (and q_x)
+q_y2        dw 0
+res_found   db 0                    ; ... and answer
+res_y       dw 0
+res_i       db 0
+rx          dw 0                    ; a record
+ry          dw 0
+rimg        db 0
+rec         dw 0                    ; the next record
+ld_i        db 0
+ld_j        db 0
+ld_p        db 0
+ld_f        db 0
+pf_i        db 0
+pf_left     db 0                    ; platform_find: the platforms left (for res_i)
+pf_bottom   dw 0
+px          dw 0                    ; a moving platform's edges
+py          dw 0
+pw          db 0
+ph          db 0
+pr          dw 0
+pl          dw 0
+pb          dw 0
+found       db 0
+best        dw 0
+; Trogg (see trogg.asm)
+tx          dw 0                    ; where he is: x, y in pixels and twentieths
+ty          dw 0
+tyf         db 0
+tstate      db 0                    ; ST_
+tv          db 0                    ; y velocity (up), twentieths of a pixel a tick
+tv_prev     db 0                    ; ... before this tick's gravity
+xvel        db 0                    ; x velocity, pixels a tick
+xmove       db 0                    ; the keys: -1, 0 or 1 (left, right)
+ymove       db 0                    ; ... (down, up)
+doyoyo      db 0
+tface       db 0                    ; 0 facing right, 1 left
+tclimb      db 0                    ; 0 still on a ladder, 1 going up, 2 down
+anim        db 0
+cur_plat    db 255                  ; the platform he's on (255: none)
+plat_hit    db 0
+dead        db 0                    ; ticks until he restarts (0: alive)
+won         db 0
+ud_db       db 0                    ; up/down and left/right debounces
+lr_db       db 0
+; ... and the platform and ladder questions' workings
+q_y1f       db 0
+q_y2f       db 0
+q_onplat    db 0
+q_jump      db 0
+res_x       dw 0
+res_yf      db 0
+lf_up       db 0
+lf_i        db 0
+lad_top     dw 0
+lad_len     dw 0
+lf_bot      dw 0
+fy2         dw 0
+fy2f        db 0
+; the background (see bg.asm)
+num_bg      db 0
+mb          db 0                    ; bytes in each of a line's masks (4 or 10)
+pages1      db 0                    ; dictionary pages - 1
+po          dw 0
+u_cnt       dw 0                    ; cells in the dictionary
+u_line      db 0
+u_bl        dw 0
+u_bh        dw 0
+u_i         db 0
+u_j         db 0
+u_tb        dw 0
+u_src       dw 0
+u_cells     db 0
+u_s         db 0
+u_s4        db 0
+u_h         db 0
+u_cur       db 0
+u_prev      db 0
+u_dp        dw 0
+u_sp        dw 0
+u_r0        db 0
+u_r1        db 0
+u_pt        dw 0
+u_y         db 0
+u_start     dw 0
+u_np        dw 0
+u_x         db 0
+u_nl        db 0                    ; a cell's number (u_nh follows u_nl)
+u_nh        db 0
+u_h8        db 0
+u_cellp     dw 0
+cmask       DEFS 30                 ; a line's masks
+pl_masks    dw 0                    ; seek_line: the line's masks
+pl_line     db 0                    ; painting: the line, its cells [pl_i0, pl_i1]
+pl_i0       db 0
+pl_i1       db 0
+pl_src      dw 0
+pl_x        db 0
+curbit      db 0
+cellk       db 0
+pl_ptr      dw 0
 end_code
 
         ALIGN 256
 line_lo     DEFS 256                ; row * 80 (make_lines)
 line_hi     DEFS 256
-savebuf0    DEFS 1024               ; save areas for the draw log, one per buffer
+popcount    DEFS 256                ; the bits set in each byte (make_popcount)
+savebuf0                            ; save areas for the draw log, one per buffer
+STAGE       DEFS 1024               ; (the first is also where a level is unpacked from)
 savebuf1    DEFS 1024
+plats       DEFS MAX_PLATS * PLT_SIZE     ; the level tables (see level.asm)
+ladders     DEFS MAX_LADDERS * L_SIZE
+draws       DEFS MAX_DRAW * D_SIZE
+slows       DEFS MAX_SLOW * S_SIZE
+hud_image   DEFS 64                 ; the timer, as a raw image: 8 byte columns of 8 rows (see plot)
 end_ram
 
         ASSERT end_ram <= #3F00     ; (the stack is from #3F00 to #3FFF)
 
         SAVE 'build/FRAK.COM',exos_header,end_code-exos_header
         PRINT "Code from ",{hex}start," to ",{hex}end_code,", workspace to ",{hex}end_ram
+
+; The levels, packed (the CPC version's, as they are), for segment #FF at #4000
+        BANK
+        ORG LEVELS_ORG
+        INCBIN "../../cpc6128/build/PACK"
+levels_end
+        ASSERT PACK_ORG == LEVELS_ORG && levels_end - LEVELS_ORG == PACK_SIZE
+        SAVE 'build/LEVELS.BIN',LEVELS_ORG,PACK_SIZE
+
+; The level loader, for segment #FE after buffer 1's ring, where it runs (at page 3)
+        BANK
+        ORG LOADER_RUN
+loader_start
+        INCLUDE "loader.asm"
+loader_end
+        ASSERT loader_end - #8000 <= JIT_ORG                ; (in the window, where the JIT is)
+        SAVE 'build/LOADER.BIN',loader_start,loader_end-loader_start
+        PRINT "Loader: ",loader_end - loader_start," bytes, at ",{hex}LOADER_RUN

@@ -34,10 +34,9 @@ FRONT_ORG = #4000
 ; in the window with #FE paged in there
 FE_SPARE   = RING1_NICK + RING_SIZE + LINE_BYTES * 2 - #8000   ; (its offset in #FE)
 LOADER_RUN = #C000 + FE_SPARE
-JIT_ORG    = #4000 + FE_SPARE + LOADER_SIZE
+JIT_ORG    = #7180                  ; (after the loader: frak.asm ASSERTs it is)
 jit_tmp    = #8000                  ; (where jit_build decodes the image: buffer 0's ring, or,
 JIT_TMP_SIZE = 2560                 ; while a level loads, the screen being blank, #FC)
-BG_TOP     = #6A00                  ; (the slow save areas, in SEG_CACHE, from here)
         ASSERT FE_SPARE == #21A0
         ASSERT JIT_ORG + JIT_MAX <= #8000
 

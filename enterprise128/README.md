@@ -4,8 +4,9 @@ A port of the CPC 6128 version ([`../cpc6128`](../cpc6128/README.md)), which is 
 of the BBC Master version, to the Enterprise 128. The plan, phase by phase, is in
 [`PLAN.md`](PLAN.md).
 
-**Status: phase 3 done** (the plotter; see [`PLAN.md`](PLAN.md)). Phase 2: the memory map,
-measured, fits. Phase 1: the machine layer and the screen. Phase 0
+**Status: phase 4 done** (the levels and the background; see [`PLAN.md`](PLAN.md)). Phase 3:
+the plotter. Phase 2: the memory map, measured, fits. Phase 1: the machine layer and the
+screen. Phase 0
 (the toolchain and the test harness): The program loads, asks EXOS
 which RAM segments it will give out, takes the machine over and tells the test harness it's
 ready, on EXOS 2.1 and EXDOS 1.3, in a headless build of ep128emu and in MAME. On an
@@ -27,7 +28,8 @@ memory map from the CPC version's own build, so the BBC version must be built fi
 (`../build.sh`), as for the CPC version. It writes `src/gen/sizes.asm`, the front end and level
 loader packed (`build/*.lz`), and the map (`build/memmap.txt`).
 
-That makes `build/FRAK.COM`, an EXOS type 5 program (a 16-byte header, then the code, which
+That makes `build/LEVELS.BIN` (the levels, packed, for segment `&FF`), `build/LOADER.BIN` (the
+level loader, for `&FE`), and `build/FRAK.COM`, an EXOS type 5 program (a 16-byte header, then the code, which
 EXOS loads to `&0100`), and `build/frak.img`, a 720K EXDOS disk (FAT12) holding it, made by
 `tools/mkdisk.py`. `build/frak.sym` has the program's symbols, for the tests.
 
@@ -89,6 +91,7 @@ EP_ROMS=/path/to/roms node tools/emu/screens.mjs       # phase 1: every pixel, s
 EP_ROMS=/path/to/roms node tools/emu/machine.mjs       # phase 1: ticks, segments, keys
 EP_ROMS=/path/to/roms node tools/emu/unpack.mjs        # phase 2: the Z80 unpacker
 EP_ROMS=/path/to/roms node tools/emu/plot.mjs [seed]   # phase 3: the plotter, byte for byte
+EP_ROMS=/path/to/roms node tools/emu/levels.mjs        # phase 4: all 55 levels' tables, caches and windows
 ```
 
 `boot.mjs` is phase 0's test: the program must take the machine over, set `ready` and idle in
