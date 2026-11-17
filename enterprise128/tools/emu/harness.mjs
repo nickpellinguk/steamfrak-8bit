@@ -1,11 +1,19 @@
-// The Enterprise 128 test harness: runs the program on MAME (its ep128 driver, with an EXDOS
-// card, headless and unthrottled), working through a list of steps (see steps.lua), and returns
-// what they printed and the screenshots they took. As the CPC version's mame.mjs.
+// The Enterprise 128 test harness: runs the program on an emulated Enterprise 128, working
+// through a list of steps, and returns what they printed and the screenshots they took. As the
+// CPC version's mame.mjs, on either of two emulators:
 //
-//   import { symbols, run, boot, readPng } from './mame.mjs';
+//   - ephl (the default): ep128emu's emulation, headless (../ephl, built by
+//     ../ephl/build.sh into build/ephl). It emulates the video RAM's wait states and Nick's
+//     whole frame, so its timings are the real machine's.
+//   - MAME's ep128 driver, with an EXDOS card (EP_EMU=mame), running steps.lua. It doesn't
+//     emulate the wait states, and its screen is 280 lines.
 //
-// MAME needs the Enterprise's ROMs, from a directory named by EP_ROMS (MAME checks them against
-// its own checksums):
+// Both take the same steps (listed in steps.lua and ephl.cpp).
+//
+//   import { symbols, run, boot, readPng } from './harness.mjs';
+//
+// Both need the Enterprise's ROMs, from a directory named by EP_ROMS (as MAME names them; MAME
+// checks them against its own checksums):
 //   ep128/9256ds-0019_enter08-45-a.u2   EXOS 2.1 and the word processor (32K)
 //   ep64_exdos/exdos13.rom              EXDOS 1.3 (32K)
 // MAME itself is found as MAME, else /usr/games/mame.
@@ -13,7 +21,7 @@
 // Until the disk image starts the program by itself (phase 8), `boot` puts FRAK.COM where EXOS
 // would load it, at #0100 in the segment at page 0, once EXOS has started, and jumps to it.
 import { spawnSync } from 'child_process';
-import { readFileSync, writeFileSync, mkdtempSync, readdirSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, readdirSync, renameSync, existsSync } from 'fs';
 import { inflateSync } from 'zlib';
 import { tmpdir } from 'os';
 import { join, resolve, dirname } from 'path';
@@ -49,22 +57,38 @@ export function boot() {
     return [`wait ${EXOS_FRAMES}`, `load 256 ${program()}`, 'jump 256', `waitfor ${symbols().ready} ${READY} 500`];
 }
 
-// Run the steps (strings, as steps.lua takes them; a final "quit" is added). Returns
+// Run the steps (strings, as steps.lua and ephl take them; a final "quit" is added). Returns
 // { peeks: {label: [bytes]}, snaps: {label: png file}, times, keys, dump(label), log, dir }.
+export const EMULATOR = process.env.EP_EMU || 'ephl';
 export function run(steps, { seconds = 120, disk = true } = {}) {
     const dir = mkdtempSync(join(tmpdir(), 'ep-'));
     const stepsFile = join(dir, 'steps.txt');
     writeFileSync(stepsFile, [...steps, 'quit'].join('\n') + '\n');
     const roms = process.env.EP_ROMS;
-    if (!roms) throw new Error('EP_ROMS must name the directory holding the Enterprise ROMs (see mame.mjs)');
-    const args = ['ep128', '-rompath', roms, '-exp', 'exdos',
-        ...(disk ? ['-flop1', join(ROOT, 'build/frak.img')] : []),
-        '-video', 'none', '-sound', 'none', '-nothrottle', '-skip_gameinfo', '-nomouse',
-        '-snapshot_directory', join(dir, 'snap'), '-snapname', 'shot%i',
-        '-cfg_directory', join(dir, 'cfg'), '-nvram_directory', join(dir, 'nvram'),
-        '-seconds_to_run', String(seconds), '-autoboot_script', join(HERE, 'steps.lua')];
-    const r = spawnSync(process.env.MAME || '/usr/games/mame', args,
-        { env: { ...process.env, EP_STEPS: stepsFile }, encoding: 'utf8', maxBuffer: 1 << 26 });
+    if (!roms) throw new Error('EP_ROMS must name the directory holding the Enterprise ROMs (see harness.mjs)');
+    const snapDir = join(dir, 'snap');
+    let r;
+    if (EMULATOR === 'mame') {
+        const args = ['ep128', '-rompath', roms, '-exp', 'exdos',
+            ...(disk ? ['-flop1', join(ROOT, 'build/frak.img')] : []),
+            '-video', 'none', '-sound', 'none', '-nothrottle', '-skip_gameinfo', '-nomouse',
+            '-snapshot_directory', snapDir, '-snapname', 'shot%i',
+            '-cfg_directory', join(dir, 'cfg'), '-nvram_directory', join(dir, 'nvram'),
+            '-seconds_to_run', String(seconds), '-autoboot_script', join(HERE, 'steps.lua')];
+        r = spawnSync(process.env.MAME || '/usr/games/mame', args,
+            { env: { ...process.env, EP_STEPS: stepsFile }, encoding: 'utf8', maxBuffer: 1 << 26 });
+    } else {
+        const ephl = join(ROOT, 'build/ephl');
+        if (!existsSync(ephl)) throw new Error('build/ephl is missing: run tools/ephl/build.sh');
+        mkdirSync(snapDir);
+        const args = ['--exos', join(roms, 'ep128/9256ds-0019_enter08-45-a.u2'),
+            '--exdos', join(roms, 'ep64_exdos/exdos13.rom'),
+            ...(disk ? ['--disk', join(ROOT, 'build/frak.img')] : []),
+            '--steps', stepsFile, '--out', snapDir, '--seconds', String(seconds)];
+        r = spawnSync(ephl, args, { encoding: 'utf8', maxBuffer: 1 << 26 });
+        // (dump steps write beside the steps file, as steps.lua's do)
+        for (const f of readdirSync(snapDir).filter(f => f.endsWith('.bin'))) renameSync(join(snapDir, f), join(dir, f));
+    }
     const log = (r.stdout || '') + (r.stderr || '');
     const timeout = log.match(/^OUT timeout (\d+) (\d+)/m);
     if (timeout) {
@@ -74,7 +98,7 @@ export function run(steps, { seconds = 120, disk = true } = {}) {
             (name && name[0] === 'ready' ? ' (the program never got going)' : '') +
             `, at step ${at} (${(log.match(/^OUT stuck (.*)$/m) || [])[1]}); the steps before it:\n  ` + steps.slice(Math.max(0, at - 12), at + 1).join('\n  '));
     }
-    if (!/^OUT done/m.test(log)) throw new Error('MAME stopped before the steps finished:\n' + log);
+    if (!/^OUT done/m.test(log)) throw new Error(`${EMULATOR} stopped before the steps finished:\n` + log);
     const peeks = {}, snaps = {}, times = {}, keys = [];
     const shots = (existsSync(join(dir, 'snap')) ? readdirSync(join(dir, 'snap'), { recursive: true }) : []).filter(f => f.endsWith('.png'))
         .sort((a, b) => parseInt(a.match(/(\d+)\.png$/)[1]) - parseInt(b.match(/(\d+)\.png$/)[1]));
@@ -84,7 +108,7 @@ export function run(steps, { seconds = 120, disk = true } = {}) {
         if ((m = line.match(/^OUT peek (\S+) ?(.*)$/))) peeks[m[1]] = m[2].split(' ').filter(x => x).map(Number);
         else if ((m = line.match(/^OUT time (\S+) (\S+)/))) times[m[1]] = Number(m[2]);
         else if ((m = line.match(/^OUT key (\d+) (\d+) (.*)$/))) keys.push({ row: +m[1], mask: +m[2], name: m[3] });
-        else if ((m = line.match(/^OUT snap (\S+)/))) snaps[m[1]] = join(dir, 'snap', shots[n++]);
+        else if ((m = line.match(/^OUT snap (\S+)/))) snaps[m[1]] = join(snapDir, shots[n++]);
     }
     // a dump step's bytes, as a Buffer
     const dump = label => readFileSync(join(dir, label + '.bin'));

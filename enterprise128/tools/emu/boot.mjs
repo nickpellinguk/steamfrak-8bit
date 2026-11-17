@@ -2,7 +2,7 @@
 // machine over and sets `ready`. Prints the segments, for planning the memory map.
 //
 //   EP_ROMS=/path/to/roms node tools/emu/boot.mjs
-import { symbols, run, boot } from './mame.mjs';
+import { symbols, run, boot } from './harness.mjs';
 
 const sym = symbols();
 const hex = n => '&' + n.toString(16).toUpperCase().padStart(2, '0');

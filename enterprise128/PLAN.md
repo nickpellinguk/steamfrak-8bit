@@ -1,8 +1,9 @@
 # Plan: Frak! for the Enterprise 128
 
 Status: **phase 0 under way.** The build (RASM, an EXOS type 5 program on an EXDOS disk image)
-and the MAME harness work, and `boot.mjs` passes against a stand-in ROM that only pretends to
-be EXOS. Running it on the real EXOS and EXDOS ROMs is to come.
+and the harness work, on a headless build of ep128emu (`tools/ephl`) and on MAME, and
+`boot.mjs` passes on both against a stand-in ROM that only pretends to be EXOS. Running it on
+the real EXOS and EXDOS ROMs is to come.
 
 The CPC 6128 version (`../cpc6128`) is a Z80 port of the BBC Master version, and it has already
 solved most of the problems this port will meet: the BBC's 6502 code turned into Z80 routine by
@@ -117,8 +118,10 @@ matters to the frame rate, and moving it can wait for the optimisation pass.
 
 ## Phases
 
-Each phase has a test that must pass before the next starts, as in the CPC version. The tests
-are the CPC version's, adapted, on MAME's Enterprise 128 driver.
+Each phase has a test that must pass before the next starts, as in the CPC version. The tests are the CPC version's, adapted, on a headless build of ep128emu (`tools/ephl`),
+which emulates the video RAM's wait states and Nick's whole frame, so the frame rates it
+measures are the real machine's. MAME's Enterprise 128 driver can run them too, as a second
+opinion.
 
 | Phase | | Test that must pass |
 | --- | --- | --- |
@@ -140,10 +143,10 @@ are the CPC version's, adapted, on MAME's Enterprise 128 driver.
   the low RAM, and later data files for the segments, on an EXDOS disk image (`tools/mkdisk.py`:
   720K, FAT12; MAME's `ep128` driver reads it as a `.img`). *(Check: how EXDOS starts a program
   from a disk at power-on.)*
-- **Harness:** `tools/emu` from the CPC version, with `mame.mjs` running MAME's `ep128` driver
-  and `steps.lua` peeking and poking by segment rather than bank. MAME needs the Enterprise's
-  ROMs (EXOS, and EXDOS for the disk), from a directory in `EP_ROMS` as `CPC_ROMS` is for the
-  CPC. Until the disk loads, the harness can load the files straight into their segments, as
+- **Harness:** `tools/emu` from the CPC version. `harness.mjs` runs `ephl` (ep128emu's
+  emulation, headless: `tools/ephl`) or MAME's `ep128` driver (`steps.lua`), with steps that
+  peek and poke by segment rather than bank. Both need the Enterprise's ROMs (EXOS, and EXDOS
+  for the disk), from a directory in `EP_ROMS` as `CPC_ROMS` is for the CPC. Until the disk loads, the harness can load the files straight into their segments, as
   the CPC harness's `load` step does, so phases 1-7 don't wait on EXDOS.
 - **Test:** the program loads, takes the machine from EXOS (interrupts off, its own handler at
   `&0038`, its own stack), and sets `ready`.
