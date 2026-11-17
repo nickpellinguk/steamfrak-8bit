@@ -4,7 +4,8 @@ A port of the CPC 6128 version ([`../cpc6128`](../cpc6128/README.md)), which is 
 of the BBC Master version, to the Enterprise 128. The plan, phase by phase, is in
 [`PLAN.md`](PLAN.md).
 
-**Status: phase 0 done** (the toolchain and the test harness). The program loads, asks EXOS
+**Status: phase 1 done** (the machine layer and the screen: see [`PLAN.md`](PLAN.md)). Phase 0
+(the toolchain and the test harness): The program loads, asks EXOS
 which RAM segments it will give out, takes the machine over and tells the test harness it's
 ready, on EXOS 2.1 and EXDOS 1.3, in a headless build of ep128emu and in MAME. On an
 Enterprise 128 with EXDOS, EXOS gives out every segment but page 0's (`&F8`) and its own
@@ -65,6 +66,11 @@ EP_EMU=mame EP_ROMS=/path/to/roms node tools/emu/boot.mjs      # (apt install ma
 Until the disk starts the program by itself (phase 8), the harness waits for EXOS to start up
 (`EP_EXOS_FRAMES`, 400 frames by default), puts `FRAK.COM` at `&0100` in the segment at page 0,
 where EXOS would load it, and jumps to it.
+
+```sh
+EP_ROMS=/path/to/roms node tools/emu/screens.mjs       # phase 1: every pixel, scrolled and flipped (ephl only)
+EP_ROMS=/path/to/roms node tools/emu/machine.mjs       # phase 1: ticks, segments, keys
+```
 
 `boot.mjs` is phase 0's test: the program must take the machine over, set `ready` and idle in
 its own code. It prints the segments EXOS ran it with and the ones it gave out, which decides

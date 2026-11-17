@@ -1,9 +1,14 @@
 # Plan: Frak! for the Enterprise 128
 
-Status: **phase 0 done.** The build (RASM, an EXOS type 5 program on an EXDOS disk image) and
-the harness work, on a headless build of ep128emu (`tools/ephl`) and on MAME, and `boot.mjs`
-passes on both with EXOS 2.1 and EXDOS 1.3. EXOS gives out segments `&F9-&FE`: every one but
-page 0's and its own, so EXDOS leaves the whole memory map free. Next: phase 1.
+Status: **phase 1 done.** The machine layer (paging, VINT interrupts, the keyboard) and the
+screen (two 320x256 ring buffers, each shown through its own line parameter table, split
+where the ring wraps, with a mirror line; flipped at VINT) work: `screens.mjs` checks every
+pixel of 24 frames at six scroll positions, either side of the wrap, and `machine.mjs` the
+ticks, every segment and every key. Next: phase 2.
+
+Phase 0: the build (RASM, an EXOS type 5 program on an EXDOS disk image) and the harness,
+on a headless build of ep128emu (`tools/ephl`) and on MAME. EXOS gives out segments
+`&F9-&FE`: every one but page 0's and its own, so EXDOS leaves the whole memory map free.
 
 The CPC 6128 version (`../cpc6128`) is a Z80 port of the BBC Master version, and it has already
 solved most of the problems this port will meet: the BBC's 6502 code turned into Z80 routine by
@@ -157,14 +162,18 @@ opinion.
 - **Paging:** `bank_select` pages a segment into the window (port `&B1`), keeping a
   copy as `ga_ram` does; `screen_select` pages a buffer's two segments into pages 2 and 3.
   `bank_test` checks every segment at start-up.
-- **Interrupts and ticks:** 50 a second from Nick's VINT through Dave (port `&B4`: bit 4 enables it, bit 5 resets its
-  latch *(MAME)*), with the vertical sync's LPB marked for it. The main loop runs a
-  game tick for each vertical sync since it last looked, as now.
+- **Interrupts and ticks:** 50 a second from Nick's VINT through Dave (port `&B4`: bit 4
+  enables it, bit 5 resets its latch), from a 12-line border LPB with VINT straight after the
+  playfield. ep128emu's Dave latches the interrupt as VINT ends (MAME's as it starts), so it
+  comes 44 lines before the table starts again: time to point Nick at the other buffer's
+  table. The main loop runs a game tick for each vertical sync since it last looked, as now.
+  **Done.**
 - **Where the raster is:** `restore_chase` needs to know where the raster is, which the CPC
   works out from the gate array's six interrupts a frame, 52 lines apart. Here, the playfield's
   LPBs are split into bands about 52 lines apart, alternately with and without VINT, so the
-  handler can count them. MAME's Dave latches the interrupt as an LPB with VINT starts *(check
-  on a real machine: it may be as one ends)*. Every LPB loads its own LD1 at its first line
+  handler can count them (not done yet: it's for phase 6's `restore_chase`). ep128emu's Dave
+  latches the interrupt as an LPB with VINT ends, MAME's as one starts *(check on a real
+  machine)*. Every LPB loads its own LD1 at its first line
   *(MAME)*, so each band's address is worked out from the scroll position. Bit 0 of the mode
   byte marks the table's last LPB, after which Nick starts the table again.
 - **Keyboard:** 10 rows of 8 keys, a row selected and read through port `&B5` (a key down reads 0)
@@ -173,9 +182,13 @@ opinion.
   matrix positions; the keys are the same (Z X O K, cursor keys, Space, Return, Escape, P, Y, M,
   S, and L R U D J and the digits for typed commands). Joystick: the internal one is in the keyboard matrix; the external one's J, K and L
   lines are bits 0-2 of port `&B6` *(MAME)*.
-- **The screen:** the line parameter table (two of them, one for each buffer), built from the
-  view's scroll position: the border and sync LPBs as EXOS makes them, then the playfield's
-  bands with the wrap split, all 312 lines. (MAME's screen is 280 lines, and it starts a
+- **The screen:** the line parameter table (two of them, one for each buffer, at Nick's
+  `&C000` and `&C080`), built from the view's scroll position: the playfield's two LPBs (split
+  where the ring wraps), a 12-line bottom border with VINT, the vertical sync's four LPBs as
+  EXOS makes them (12 lines), and a 32-line top border that ends the table: 312 lines. The
+  picture is 40 slots, margins 11 and 51, as EXOS's. Writing port `&83` with bits 6 and 7 set,
+  as EXOS leaves them, only changes the table's address, and Nick takes it when it next starts
+  the table, so a flip is always a whole frame *(ep128emu)*. **Done** (`src/screen.asm`). (MAME's screen is 280 lines, and it starts a
   frame as an LPB with VINT ends, so the playfield must come within 280 lines of that for the
   tests' screenshots to show it.)
 - **Pixels:** Nick packs 4 pixels into a byte as the CPC's Mode 1 and the BBC's MODE 1 do
@@ -184,9 +197,12 @@ opinion.
 - **Colours:** a palette byte has 3 bits of red (bits 0, 3 and 6, strongest first), 3 of green
   (1, 4, 7) and 2 of blue (2, 5) *(MAME)*: black `&00`, red `&49`, green `&92`, yellow `&DB`,
   magenta `&6D`, cyan `&B6`.
-- **Tests:** `screens.mjs`: a test pattern shown in both buffers, scrolled both ways across the
-  wrap point, flipped at the vertical sync, and every line of the screenshot is what it should
-  be. `machine.mjs`: 50 ticks a second, every key, every segment.
+- **Tests:** `screens.mjs`: random bytes in both buffers, shown from six scroll positions (the
+  ring's start, either side of its end, lines running into the mirror), flipping every frame:
+  every pixel of every frame is right, and the buffers alternate — **passes** (on ephl: MAME's
+  Nick moves on an LPB when port `&83` is written, so it can't flip cleanly).
+  `machine.mjs`: 50 ticks a second, every segment, every key, the `KEY_` constants —
+  **passes** (ephl and MAME). Still to do here: the external joystick (port `&B6`).
 
 ### Phase 2: memory map
 

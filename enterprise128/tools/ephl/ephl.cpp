@@ -91,13 +91,16 @@ class HeadlessDisplay : public Ep128Emu::VideoDisplay {
       out += 16;
     }
   }
-  // (the frame's lines counted from a vertical sync, as ep128emu's own display does)
+  // (the frame's lines counted from a vertical sync, as ep128emu's own display does: a frame
+  // ends on the first line with vertical sync on once it's long enough, or once it's too long,
+  // so it finds the sync again after an odd frame)
   virtual void drawLine(const uint8_t *buf, size_t nBytes) {
     (void) nBytes;
     int y = line - EP128EMU_VSYNC_OFFSET;
     if (y >= 0 && y < HEIGHT) decode(&cur[y * WIDTH], buf);
     line++;
-    if (vsyncCnt++ >= EP128EMU_VSYNC_MAX_LINES) endFrame();
+    if (++vsyncCnt >= EP128EMU_VSYNC_MIN_LINES && (vsyncState || vsyncCnt >= EP128EMU_VSYNC_MAX_LINES))
+      endFrame();
   }
   virtual void vsyncStateChange(bool newState, unsigned int currentSlot) {
     (void) currentSlot;
