@@ -29,5 +29,10 @@ assert pack.decompress(lz) == data
 open('build/FRONT.lz', 'wb').write(lz)
 print('Front end packed:', len(data), '->', len(lz), 'bytes')"
 "$RASM" src/frak.asm -DPASS=2 -s -sa -os build/frak.sym -eo
-python3 tools/mkdisk.py build/frak.img build/FRAK.COM
+# The disk: the program as START (LOAD with no name loads it), and the files it loads
+mkdir -p build/disk
+cp build/FRAK.COM build/disk/START
+cp build/cpc/GFX.BIN build/LOGIC.BIN build/LOADER.BIN build/TOP.BIN build/disk/
+python3 tools/mkdisk.py build/frak.img build/disk/START build/disk/GFX.BIN build/disk/LOGIC.BIN \
+    build/disk/LOADER.BIN build/disk/TOP.BIN
 echo "Built build/frak.img"

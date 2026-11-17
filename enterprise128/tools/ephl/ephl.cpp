@@ -7,7 +7,8 @@
 //   wait N                 run N frames (20ms each)
 //   waitfor ADDR VALUE MAX run until the byte at ADDR (the Z80's 64K) is VALUE, at most MAX
 //                          frames (then stop: "OUT timeout ADDR STEP")
-//   type TEXT              type TEXT on the keyboard ("\n" for Enter): letters, digits, space
+//   type TEXT              type TEXT on the keyboard ("\n" for Enter): letters, digits, space and
+//                          punctuation (with Shift where the UK keyboard needs it)
 //   poke ADDR VALUE        write a byte into the Z80's 64K, as it's paged
 //   peek LABEL ADDR LEN    print LEN bytes: "OUT peek LABEL b1 b2 ..."
 //   speek LABEL SEG OFF LEN
@@ -31,7 +32,10 @@
 //                          "OUT snap LABEL"
 //   quit                   stop: "OUT done"
 //
-//   ephl --exos FILE [--exdos FILE] [--disk IMAGE] --steps FILE --out DIR [--seconds N] [--seed N]
+//   ephl --exos FILE [--exdos FILE] [--rom SEG:FILE ...] [--disk IMAGE] --steps FILE --out DIR
+//        [--seconds N] [--seed N]
+//
+// --rom puts another ROM in segment SEG and on (16K a segment: a 16K cartridge, say BASIC, at 4).
 //
 // ep128emu starts Nick's registers and the Z80's in a random state at a reset, as a real machine
 // might be, seeded from the clock (Timer::getRandomSeedFromTime). ephl seeds it with --seed (1 by
@@ -191,8 +195,11 @@ static void writeFile(const std::string& label, const std::string& data) {
   std::ofstream(outDir + "/" + label + ".bin", std::ios::binary) << data;
 }
 
-// The keyboard matrix position (row * 8 + bit, as Dave counts them) of a character to type
+// The keyboard matrix position (row * 8 + bit, as Dave counts them) of a character to type, plus
+// 256 if it's typed with Shift
 static int keyFor(char c) {
+  static const char *shifted = "!\"#$%&'()";             // (Shift and 1-9, on the UK keyboard)
+  for (int k = 0; shifted[k]; k++) if (c == shifted[k]) return 256 + keyFor(char('1' + k));
   static const char *rows[10] = { "N\\BCVXZ~", "H~GDFSA~", "UQYRTEW~", "7164532~", "~~~~~~~~",
       "8~9-0^~~", "J~K;L:]~", "~~~~~~~~", "M~,/.~ ~", "I~O@P[~~" };   // (~: not typed)
   if (c == '\n') return 0x3E;
@@ -205,12 +212,18 @@ static int keyFor(char c) {
 
 int main(int argc, char **argv) {
   std::string exos, exdos, disk, stepsFile;
+  std::vector<std::pair<int, std::string> > roms;
   double seconds = 120;
   for (int k = 1; k + 1 < argc; k += 2) {
     std::string a = argv[k], v = argv[k + 1];
     if (a == "--exos") exos = v;
     else if (a == "--exdos") exdos = v;
     else if (a == "--disk") disk = v;
+    else if (a == "--rom") {
+      size_t colon = v.find(':');
+      if (colon == std::string::npos) { std::cerr << "ephl: --rom SEG:FILE\n"; return 2; }
+      roms.push_back(std::make_pair(int(std::strtol(v.substr(0, colon).c_str(), 0, 0)), v.substr(colon + 1)));
+    }
     else if (a == "--steps") stepsFile = v;
     else if (a == "--out") outDir = v;
     else if (a == "--seconds") seconds = std::atof(v.c_str());
@@ -238,6 +251,11 @@ int main(int argc, char **argv) {
   if (!exdos.empty()) {
     vm->loadROMSegment(0x20, exdos.c_str(), 0);
     vm->loadROMSegment(0x21, exdos.c_str(), 16384);
+  }
+  for (size_t k = 0; k < roms.size(); k++) {
+    std::string data = readFile(roms[k].second);
+    for (size_t off = 0; off < data.size(); off += 16384)
+      vm->loadROMSegment(uint8_t(roms[k].first + off / 16384), roms[k].second.c_str(), off);
   }
   if (!disk.empty()) vm->setDiskImageFile(0, disk);
   vm->reset(true);
@@ -345,17 +363,21 @@ int main(int argc, char **argv) {
       else { std::cerr << "ephl: unknown step: " << steps[i - 1] << "\n"; return 2; }
     }
     if (i >= steps.size() && !waiting && !waitingFor) { std::cout << "OUT done\n"; return 0; }
-    // a frame, typing a key at a time (each held for 3 frames, then 3 frames up)
+    // a frame, typing a key at a time (each held for 4 frames, then 4 frames up; Shift with it
+    // if it needs it)
     if (typeHeld < 0 && !typing.empty() && typeFrames == 0) {
       typeHeld = keyFor(typing[0]);
       typing.erase(0, 1);
-      if (typeHeld >= 0) vm->setKeyboardState(typeHeld, 1);
-      typeFrames = 3;
+      if (typeHeld >= 256) vm->setKeyboardState(0x07, 1);
+      if (typeHeld >= 0) vm->setKeyboardState(typeHeld & 255, 1);
+      typeFrames = 4;
     }
     vm->run(FRAME_US);
     now += FRAME_US / 1e6;
     if (typeFrames > 0 && --typeFrames == 0 && typeHeld >= 0) {
-      vm->setKeyboardState(typeHeld, 0); typeHeld = -1; typeFrames = -3;
+      vm->setKeyboardState(typeHeld & 255, 0);
+      if (typeHeld >= 256) vm->setKeyboardState(0x07, 0);
+      typeHeld = -1; typeFrames = -4;
     }
     else if (typeFrames < 0) typeFrames++;
     if (waiting) waiting--;

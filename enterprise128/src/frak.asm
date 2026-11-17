@@ -20,10 +20,12 @@
 ; what follows it to #0100, in the segment at page 0, and jumps there
 exos_header
         db 0, 5
-        dw end_code - start
+        dw end_file - start
         defs 12, 0
 
 start
+        ld sp,#4000                             ; (its own stack, at the top of page 0: page 0
+                                                ; is the program's, and EXOS's calls use it)
         ; EXOS loaded this and called it, with EXOS still running. First, while
         ; EXOS can still say, which segments are paged in, and which it will give
         ; out (they're where the program's data will go, from phase 2)
@@ -31,6 +33,10 @@ start
         ld b,4
 .page   in a,(c) : ld (hl),a : inc hl : inc c
         djnz .page
+        ; Load the program's files into their segments (but the test harness puts them
+        ; there itself: t_noload), before taking the segments: EXOS needs a little
+        ; RAM to open a channel, and has none once the program has all of it
+        ld a,(t_noload) : or a : call z,load_files
         ld hl,segs : ld b,0
 .alloc  push hl : push bc
         rst #30 : db EXOS_ALLOC_SEGMENT
@@ -48,7 +54,8 @@ start
         call make_lines
         call make_popcount
         xor a : out (NICK_BORDER),a
-        call copy_font                          ; (before anything's loaded over it)
+        call copy_font                          ; (before anything's put over it)
+        ld a,(t_noload) : or a : call z,copy_top        ; (then segment #FF's file into it)
         call lpt_init
         xor a : ld (front),a
         ld a,1 : call screen_select             ; (drawing into the other)
@@ -490,16 +497,77 @@ rec_rate0  DEFS NUM_LEVELS          ; ... and at Zero (no balloons or daggers: f
 fe_font    DEFS 96 * 8              ; EXOS's font, characters 32-127, 8 rows each (copy_font)
 fe_unpacked db 0                    ; the front end is unpacked in SEG_CACHE (front_call)
 t_harness   db 0                    ; the test harness says it's here (else the game starts by itself)
+t_noload    db 0                    ; the test harness puts the files in their segments itself
+load_err    db 0                    ; load_files: EXOS's status, if a file wasn't loaded ...
+load_at     dw 0                    ; ... and its entry in load_list
 auto_wait   db 50                   ; ... after this many vertical syncs
 end_code
 
+savebuf0                            ; save areas for the draw log, one per buffer
+STAGE                               ; (the first is also where a level is unpacked from)
+; ------------------------------------------------------------------------------
+; Loading. EXOS loads this program (START, on the disk: LOAD with no name loads
+; it) into page 0's segment at #0100, and runs it. It then loads the rest
+; through EXOS (opening each file on a channel, and reading it as a block),
+; into the segments EXOS gave it: each file at its place, but segment #FF's
+; (TOP.BIN: the levels and the front end, packed), which is EXOS's own while it
+; runs, into #FC for now; copy_top copies it there once the machine is the
+; program's (after copy_font has taken EXOS's font from it).
+;
+; This runs once, at the start, so it's in the first save area (savebuf0, also
+; STAGE), which nothing uses until a level loads: it's in the file EXOS loads,
+; and the space is the save area's after.
+; ------------------------------------------------------------------------------
+EXOS_OPEN = 1 : EXOS_CLOSE = 3 : EXOS_READ_BLOCK = 6
+LOAD_CHANNEL = 1
+
+load_files
+        ld ix,load_list
+.file   ld a,(ix+0) : or a : ret z
+        out (PAGE1),a                           ; (its segment in the window)
+        ld e,(ix+3) : ld d,(ix+4)               ; (its name)
+        ld a,LOAD_CHANNEL : rst #30 : db EXOS_OPEN
+        or a : jr nz,load_failed
+        ld e,(ix+1) : ld d,(ix+2)               ; (where it goes, in the window)
+        ld c,(ix+5) : ld b,(ix+6)               ; (its size)
+        ld a,LOAD_CHANNEL : rst #30 : db EXOS_READ_BLOCK
+        or a : jr nz,load_failed
+        ld a,LOAD_CHANNEL : rst #30 : db EXOS_CLOSE
+        ld de,7 : add ix,de
+        jr .file
+; (a file missing, or not read: a red border, and stop)
+load_failed
+        ld (load_err),a : ld (load_at),ix       ; (EXOS's status, and which file)
+        di
+        ld a,#49 : out (NICK_BORDER),a
+.stop   jr .stop
+; each file: its segment, its address in the window, its name, its size
+load_list
+        db SEG_GFX : dw #4000, name_gfx, GFX_SIZE
+        db SEG_LOGIC : dw #4000, name_logic, end_logic_bank - #4000
+        db SEG_JIT : dw #4000 + FE_SPARE, name_loader, loader_end - loader_start
+        db SEG_VIDEO : dw #4000, name_top, front_packed_end - LEVELS_ORG
+        db 0
+name_gfx    db 7, "GFX.BIN"
+name_logic  db 9, "LOGIC.BIN"
+name_loader db 10, "LOADER.BIN"
+name_top    db 7, "TOP.BIN"
+
+; Copy segment #FF's file, loaded into #FC, to #FF (the machine is the program's)
+copy_top
+        ld a,SEG_VIDEO : out (PAGE1),a
+        ld a,SEG_TOP : out (PAGE3),a
+        ld hl,#4000 : ld de,#C000 : ld bc,front_packed_end - LEVELS_ORG : ldir
+        ld a,(win_seg) : out (PAGE1),a
+        ld a,(back) : jp screen_select
+
+end_file                            ; (FRAK.COM ends here)
+        DEFS savebuf0 + 1024 - $
+savebuf1    DEFS 1024
         ALIGN 256
 line_lo     DEFS 256                ; row * 80 (make_lines)
 line_hi     DEFS 256
 popcount    DEFS 256                ; the bits set in each byte (make_popcount)
-savebuf0                            ; save areas for the draw log, one per buffer
-STAGE       DEFS 1024               ; (the first is also where a level is unpacked from)
-savebuf1    DEFS 1024
 plats       DEFS MAX_PLATS * PLT_SIZE     ; the level tables (see level.asm)
 ladders     DEFS MAX_LADDERS * L_SIZE
 draws       DEFS MAX_DRAW * D_SIZE
@@ -511,7 +579,8 @@ end_ram
 
         ASSERT end_ram <= #3F00     ; (the stack is from #3F00 to #3FFF)
 
-        SAVE 'build/FRAK.COM',exos_header,end_code-exos_header
+        ASSERT end_file <= savebuf0 + 1024
+        SAVE 'build/FRAK.COM',exos_header,end_file-exos_header
         PRINT "Code from ",{hex}start," to ",{hex}end_code,", workspace to ",{hex}end_ram
 
 ; The front end, for SEG_CACHE at FRONT_ORG (build/FRONT.BIN), where front_call
@@ -542,6 +611,7 @@ levels_end
         ENDIF
 front_packed_end
         ASSERT front_packed_end <= LPT_WIN
+        ASSERT front_packed_end - LEVELS_ORG <= #4000     ; (loaded into #FC first: load_files)
         SAVE 'build/TOP.BIN',LEVELS_ORG,front_packed_end-LEVELS_ORG
         PRINT "Segment #FF: the levels, and the front end packed, to ",{hex}front_packed_end
 

@@ -4,15 +4,24 @@ A port of the CPC 6128 version ([`../cpc6128`](../cpc6128/README.md)), which is 
 of the BBC Master version, to the Enterprise 128. The plan, phase by phase, is in
 [`PLAN.md`](PLAN.md).
 
-**Status: phase 7 done:** the whole game runs, the attract screen, menus, levels,
-level-complete screen and records, with no music yet (see [`PLAN.md`](PLAN.md)). Phase 6: the
-game plays, every level, at 9.3 frames a second on average. Phase 5: the game logic. Phase 4: the levels and the background. Phase 3: the plotter. Phase 2: the memory map, measured, fits. Phase 1: the machine layer and the
-screen. Phase 0
-(the toolchain and the test harness): The program loads, asks EXOS
-which RAM segments it will give out, takes the machine over and tells the test harness it's
-ready, on EXOS 2.1 and EXDOS 1.3, in a headless build of ep128emu and in MAME. On an
-Enterprise 128 with EXDOS, EXOS gives out every segment but page 0's (`&F8`) and its own
-(`&FF`): `&F9-&FE`.
+**Status: the first milestone, but for playing it on a real machine.** The whole game runs
+from its disk image: the attract screen, the menus, all 55 levels, the level-complete screen and
+the records, with no music yet. The plan, phase by phase, and what was found on the way, is in
+[`PLAN.md`](PLAN.md).
+
+## Playing it
+
+You need an Enterprise 128 (or 64: not tried) with EXDOS and a disk drive, and the BASIC
+cartridge. Write `build/frak.img` (a 720K, 3.5-inch, double-sided MS-DOS disk: `dd` it to a
+floppy, or copy its five files, `START`, `GFX.BIN`, `LOGIC.BIN`, `LOADER.BIN` and `TOP.BIN`, onto
+one) and put it in drive A. Switch on, press a key at the Enterprise logo, and at BASIC's prompt
+type
+
+    LOAD
+
+and press ENTER: `START` loads, loads the rest, and the game starts. Keys: Z X O K or the
+joystick (the cursor keys) to move, Space or P for the yoyo, Escape for the menus; M and S switch
+the music and sound effects (there's no sound yet).
 
 ## Building
 
@@ -33,8 +42,8 @@ Assembling takes two passes: the first makes `build/FRONT.BIN`, the front end, w
 packs (`build/FRONT.lz`) for the second to put in segment `&FF`'s file. That makes
 `build/TOP.BIN` (the levels and the front end, packed, for segment `&FF`), `build/LOADER.BIN` (the
 level loader, for `&FE`), and `build/FRAK.COM`, an EXOS type 5 program (a 16-byte header, then the code, which
-EXOS loads to `&0100`), and `build/frak.img`, a 720K EXDOS disk (FAT12) holding it, made by
-`tools/mkdisk.py`. `build/frak.sym` has the program's symbols, for the tests.
+EXOS loads to `&0100`), and `build/frak.img`, a 720K EXDOS disk (FAT12) holding the program, as `START`, and the four files
+it loads (`GFX.BIN`, `LOGIC.BIN`, `LOADER.BIN`, `TOP.BIN`), made by `tools/mkdisk.py`. `build/frak.sym` has the program's symbols, for the tests.
 
 ## Testing headlessly
 
@@ -91,9 +100,10 @@ and 6502 interpreters from `../cpc6128/tools/emu`.
 `ephl`'s `lines` step says how many lines Nick drew between each of the last 16 vertical syncs
 (312 for a whole frame).
 
-Until the disk starts the program by itself (phase 8), the harness waits for EXOS to start up
-(`EP_EXOS_FRAMES`, 400 frames by default), puts `FRAK.COM` at `&0100` in the segment at page 0,
-where EXOS would load it, and jumps to it.
+For most tests the harness waits for EXOS to start up (`EP_EXOS_FRAMES`, 400 frames by default),
+puts `FRAK.COM` at `&0100` in the segment at page 0, where EXOS would load it, and jumps to it,
+saying it will put the program's files in their segments itself (`t_noload`): that's quicker
+than the disk. `disk.mjs` runs the disk as a real machine would.
 
 ```sh
 EP_ROMS=/path/to/roms node tools/emu/screens.mjs       # phase 1: every pixel, scrolled and flipped (ephl only)
@@ -106,6 +116,7 @@ EP_ROMS=/path/to/roms node tools/emu/logic.mjs         # phase 5: the logic, tic
 EP_ROMS=/path/to/roms node tools/emu/frames.mjs        # phase 6: every frame drawn, byte for byte
 EP_ROMS=/path/to/roms node tools/emu/fps.mjs           # phase 6: the frame rate on every level
 EP_ROMS=/path/to/roms node tools/emu/front.mjs         # phase 7: the attract screen, menus, a level won, the records
+EP_ROMS=/path/to/roms node tools/emu/disk.mjs          # phase 8: the disk, LOADed from BASIC (EP_COLD=1: from garbage)
 ```
 
 `boot.mjs` is phase 0's test: the program must take the machine over, set `ready` and idle in

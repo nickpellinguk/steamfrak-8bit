@@ -1,6 +1,10 @@
 # Plan: Frak! for the Enterprise 128
 
-Status: **phase 7 done:** the whole game runs, from the attract screen through the menus, the
+Status: **phase 8 done, but for a real machine:** the disk image runs the whole game on an
+emulated Enterprise 128 with EXDOS and BASIC (`LOAD` at BASIC's prompt), from memory full of
+garbage too (`disk.mjs`). What's left of the first milestone is playing it on a real one.
+
+Phase 7 done: the whole game runs, from the attract screen through the menus, the
 levels and the level-complete screen to the records (`front.mjs`), with no music yet. Only
 phase 8 is left of the first milestone: the disk image starting by itself, and a real machine.
 
@@ -477,7 +481,7 @@ are read once a drawn frame), and the next level is given longer to load and be 
 it's pressed (drawing both buffers afresh is slow: `paint_line` calls a routine for each line,
 one for the optimisation pass).
 
-### Phase 8: release
+### Phase 8: release — done, but for a real machine
 
 The disk image boots by itself on an Enterprise 128 with EXDOS; the program loads its segments
 through EXOS before it takes the machine over. It can't load the levels straight into `&FF`
@@ -485,6 +489,31 @@ while EXOS is using that segment, so it loads them into a screen buffer first an
 across afterwards.
 **Tests:** `front.mjs` and `frames.mjs` with `EP_COLD=1` (memory filled with garbage first), and
 playing on a real Enterprise 128.
+
+**Done**, but for the real machine, with these details settled:
+- **Starting it.** EXDOS (1.3 and 1.4) takes `START` as the file name when none is given, so the
+  program is `START` on the disk, and `LOAD` (with no name) at BASIC's prompt loads and runs it.
+  Nothing found runs it at power-on by itself: EXOS's logo waits for a key, which starts BASIC
+  (or, with no BASIC cartridge, the word processor). The disk (`build/frak.img`) holds `START`,
+  `GFX.BIN`, `LOGIC.BIN`, `LOADER.BIN` and `TOP.BIN`.
+- **EXOS starts a type 5 program** at `&0100` with its own stack (`&B217`, in page 2), so the
+  program first sets its own, at the top of page 0.
+- **Loading.** While EXOS still runs, the program reads the pages EXOS ran it with, loads its
+  four files (opening each on a channel and reading it as one block) into their segments, and
+  only then takes every segment EXOS will give out: EXOS needs a little RAM to open a channel
+  (status `&F7` otherwise). Segment `&FF` is EXOS's own until the takeover, so `TOP.BIN` goes into
+  `&FC` first; once the machine is the program's, `copy_font` takes EXOS's font from `&FF`, and
+  then `copy_top` copies `TOP.BIN` there. A file that can't be loaded turns the border red.
+- The loading code runs once, so it's in the first save area (also `STAGE`), which nothing uses
+  until a level loads: the low RAM has no room otherwise.
+- The test harness, which puts the files in their segments itself, says so (`t_noload`).
+
+`disk.mjs` passes on ep128emu's own Enterprise 128 with EXDOS (EXOS 2.1, BASIC 2.1, EXDOS 1.4),
+with nothing put in memory for it: `LOAD`, the four files in their segments byte for byte, the
+game starting by itself at the attract screen, and the menus choosing Read&Weep, which plays;
+with `EP_COLD=1` (the program's segments full of garbage first) too, on several power-up seeds.
+About 14 seconds from power-on in the emulator, most of it the disk. On MAME it isn't run (its
+ROM set has no BASIC cartridge).
 
 ## Sound
 

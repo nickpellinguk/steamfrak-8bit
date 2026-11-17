@@ -17,6 +17,10 @@ mkdir -p build/roms "$DIR/ep128" "$DIR/ep64_exdos"
 build/unpackroms build/roms/ep128emu_roms-2.0.11.bin build/roms > /dev/null
 cp build/roms/exos21.rom "$DIR/ep128/9256ds-0019_enter08-45-a.u2"
 cp build/roms/exdos13.rom "$DIR/ep64_exdos/exdos13.rom"
+# ... and for the disk's test (disk.mjs: ep128emu's own Enterprise 128 with EXDOS): EXOS 2.1, the
+# BASIC 2.1 cartridge, and EXDOS 1.4
+mkdir -p "$DIR/ep128emu"
+cp build/roms/exos21.rom build/roms/basic21.rom build/roms/exdos14isdos10uk.rom "$DIR/ep128emu/"
 python3 -c "import sys, zlib
 for f, crc in (('ep128/9256ds-0019_enter08-45-a.u2', 0x34284877), ('ep64_exdos/exdos13.rom', 0xe0135929)):
     if zlib.crc32(open(sys.argv[1] + '/' + f, 'rb').read()) != crc: sys.exit(f + ': not the ROM expected')" "$DIR"

@@ -60,7 +60,9 @@ export function boot() {
 // ... without saying so: the game starts by itself, at the attract screen (the program's files
 // must be put in their segments straight away: loadFiles)
 export function bootGame() {
-    return [`wait ${EXOS_FRAMES}`, `load 256 ${program()}`, 'jump 256', `waitfor ${symbols().ready} ${READY} 500`];
+    // (the harness puts the files in their segments: t_noload says so)
+    return [`wait ${EXOS_FRAMES}`, `load 256 ${program()}`, `poke ${symbols().t_noload} 1`, 'jump 256',
+            `waitfor ${symbols().ready} ${READY} 500`];
 }
 
 // Steps that put the program's files in their segments, as it will load them itself (phase 8):
@@ -74,7 +76,9 @@ export function loadFiles(sym) {
 // Run the steps (strings, as steps.lua and ephl take them; a final "quit" is added). Returns
 // { peeks: {label: [bytes]}, snaps: {label: png file}, times, keys, dump(label), log, dir }.
 export const EMULATOR = process.env.EP_EMU || 'ephl';
-export function run(steps, { seconds = 120, disk = true } = {}) {
+// (basic: ephl's machine is ep128emu's own Enterprise 128 with EXDOS: EXOS 2.1, the BASIC 2.1
+// cartridge and EXDOS 1.4, from EP_ROMS/ep128emu: tools/ephl/getroms.sh puts them there)
+export function run(steps, { seconds = 120, disk = true, basic = false } = {}) {
     const dir = mkdtempSync(join(tmpdir(), 'ep-'));
     const stepsFile = join(dir, 'steps.txt');
     writeFileSync(stepsFile, [...steps, 'quit'].join('\n') + '\n');
@@ -95,11 +99,12 @@ export function run(steps, { seconds = 120, disk = true } = {}) {
         const ephl = join(ROOT, 'build/ephl');
         if (!existsSync(ephl)) throw new Error('build/ephl is missing: run tools/ephl/build.sh');
         mkdirSync(snapDir);
-        const args = ['--exos', join(roms, 'ep128/9256ds-0019_enter08-45-a.u2'),
-            '--exdos', join(roms, 'ep64_exdos/exdos13.rom'),
-            ...(disk ? ['--disk', join(ROOT, 'build/frak.img')] : []),
+        const args = basic ? ['--exos', join(roms, 'ep128emu/exos21.rom'), '--exdos', join(roms, 'ep128emu/exdos14isdos10uk.rom'),
+                              '--rom', '4:' + join(roms, 'ep128emu/basic21.rom')] :
+            ['--exos', join(roms, 'ep128/9256ds-0019_enter08-45-a.u2'), '--exdos', join(roms, 'ep64_exdos/exdos13.rom')];
+        args.push(...(disk ? ['--disk', join(ROOT, 'build/frak.img')] : []),
             '--steps', stepsFile, '--out', snapDir, '--seconds', String(seconds),
-            '--seed', process.env.EP_SEED || '1'];      // (the machine's state at power-on: EP_SEED)
+            '--seed', process.env.EP_SEED || '1');      // (the machine's state at power-on: EP_SEED)
         r = spawnSync(ephl, args, { encoding: 'utf8', maxBuffer: 1 << 26 });
         // (dump steps write beside the steps file, as steps.lua's do)
         for (const f of readdirSync(snapDir).filter(f => f.endsWith('.bin'))) renameSync(join(snapDir, f), join(dir, f));

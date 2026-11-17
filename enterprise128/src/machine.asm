@@ -49,9 +49,6 @@ KEY_RETURN = KEY_ENTER              ; (the CPC's Return and Enter are both the E
 ; handler at #0038, interrupt mode 1, the program's own segments paged in, and
 ; Nick's VINT the only interrupt. Call with interrupts off; leaves them off.
 machine_init
-        pop hl                                  ; (the stack moves)
-        ld sp,#4000
-        push hl
         xor a : out (DAVE_INT),a
         ld a,#C3 : ld (#0038),a
         ld hl,irq : ld (#0039),hl
