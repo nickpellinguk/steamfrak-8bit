@@ -38,7 +38,10 @@ JIT_ORG    = #7180                  ; (after the loader: frak.asm ASSERTs it is)
 jit_tmp    = #8000                  ; (where jit_build decodes the image: buffer 0's ring, or,
 JIT_TMP_SIZE = 2560                 ; while a level loads, the screen being blank, #FC)
         ASSERT FE_SPARE == #21A0
-        ASSERT JIT_ORG + JIT_MAX <= #8000
+FONT_STORE = JIT_ORG + JIT_MAX         ; (EXOS's font, 96 characters of 8 bytes: copy_font)
+        ASSERT FONT_STORE + 96 * 8 <= #8000
+fe_font    = #6A00 - 96 * 8          ; (... and beside the front end, in SEG_CACHE, below the slow
+                                    ; save areas, BG_TOP: front_call)
 
 ; The low RAM: the CPC version's code and tables, moved up from #0040 to #0100,
 ; and the records, below the stack (#3F00)

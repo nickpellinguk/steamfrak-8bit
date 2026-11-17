@@ -108,16 +108,17 @@ lpt_set
         jr z,.got
         ld hl,(scroll1) : ld de,RING1_NICK : ld ix,pal1
 .got    ld (ls_scroll),hl : ld (ls_base),de
-        ; k = the lines that start before the ring's end: ceil((RING_SIZE - scroll) / 80)
-        ; (0: all 256 of them)
-        ld b,h : ld c,l
-        ld hl,RING_SIZE : or a : sbc hl,bc      ; HL = RING_SIZE - scroll (> 0)
-        ld de,LINE_BYTES : ld c,0               ; C = k
-.count  inc c
-        or a : sbc hl,de
-        jr z,.counted : jr nc,.count
-.counted
-        ld a,c : ld (ls_k),a
+        ; k = the lines that start before the ring's end: ceil((RING_SIZE - scroll) / 80),
+        ; which is 256 - the ring row the scroll position is in (0: all 256 of them).
+        ; The row is scroll / 80 (at most 255): 8 bits of shift and subtract
+        ld de,LINE_BYTES << 7 : ld bc,#0800     ; (B: the bits; C: the row)
+.div    or a : sbc hl,de : jr nc,.one
+        add hl,de : or a : jr .bit
+.one    scf
+.bit    rl c
+        srl d : rr e
+        djnz .div
+        xor a : sub c : ld (ls_k),a
         ; the blocks, with #FF paged in
         ld a,(win_seg) : push af
         ld a,SEG_TOP : call bank_select
@@ -232,13 +233,16 @@ sync_bands
 
 ; Copy EXOS's font from video RAM (where it puts it when it starts, at Nick's
 ; FONT_NICK in segment #FF, row by row: row r of character c at FONT_NICK +
-; r * 128 + c; 9 rows) to fe_font in the low RAM: characters 32-127, 8 rows each,
-; top first (for the front end; the timer's digits are among them: font_digits).
-; Before anything is loaded into #FF over it. (The CPC version copies its own
-; from its lower ROM.)
+; r * 128 + c; 9 rows): characters 32-127, 8 rows each, top first, to FONT_STORE
+; in segment #FE (in the window; the front end's: front_call copies it beside it),
+; and the digits and colon to font_digits in the low RAM (the timer's). Before
+; anything is put into #FF over it. (The CPC version copies its own from its
+; lower ROM.)
 copy_font
         ld a,SEG_TOP : out (PAGE3),a
-        ld de,fe_font : ld c,32
+        ld a,(win_seg) : push af
+        ld a,SEG_JIT : call bank_select
+        ld de,FONT_STORE : ld c,32
 .char   ld b,0
 .row    push de
         ld l,b : ld h,0
@@ -249,4 +253,6 @@ copy_font
         ld a,(hl) : ld (de),a : inc de
         inc b : ld a,b : cp 8 : jr nz,.row
         inc c : bit 7,c : jr z,.char
+        ld hl,FONT_STORE + ('0' - 32) * 8 : ld de,font_digits : ld bc,11 * 8 : ldir
+        pop af : call bank_select
         ld a,(back) : jp screen_select

@@ -12,7 +12,7 @@
 // behind, erased wrongly, painted in the wrong place or not repainted when it should have been
 // shows up.
 //
-// The level-complete screen's text is the front end's, in EXOS's font (copy_font: fe_font).
+// The level-complete screen's text is the front end's, in EXOS's font (copy_font: FONT_STORE).
 //
 //   ./build.sh && EP_ROMS=... node tools/emu/frames.mjs [room_A_1 ...] [--frames=N] [--seed=N]
 import { symbols, run, boot, loadFiles, EMULATOR } from './harness.mjs';
@@ -66,7 +66,7 @@ for (const { room, immortal } of runs) {
     const steps = [...boot(), ...loadFiles(sym), `poke ${sym.t_lock} 1`, `poke ${sym.t_arg} ${li}`];
     // (the second run of each level: Trogg can't die, so he gets about, and the view scrolls)
     if (immortal) steps.push(`spoke ${LOGIC} ${lg(sym.trogg_dies)} ${0xC9}`);
-    steps.push(`poke ${sym.t_cmd} 13`);
+    steps.push(`sdump font ${sym.seg_jit} ${sym.font_store - 0x4000} 768`, `poke ${sym.t_cmd} 13`);
     let held = [], plan = 0;
     for (let f = 0; f < FRAMES; f++) {
         steps.push(`waitfor ${sym.t_frame} 1 1000`, `dump L${f} 0 16384`, `sdump B${f} ${LOGIC} 0 16384`,
@@ -92,13 +92,13 @@ for (const { room, immortal } of runs) {
         steps.push(`poke ${sym.t_frame} 0`);
     }
     const r = run(steps, { seconds: 1200 });
+    const font = r.dump('font');                // (EXOS's, as copy_font keeps it in #FE: FONT_STORE)
 
     // ---- check each frame
     const bgs = {};
     let bad = null, last = [null, null], alive0 = null, wasDead = 0;
     for (let f = 0; f < FRAMES && !bad; f++) {
         const L = r.dump(`L${f}`), B = r.dump(`B${f}`);
-        const font = L.subarray(sym.fe_font, sym.fe_font + 768);      // (EXOS's: copy_font)
         const lo = a => L[a], b2 = a => B[a - 0x4000];
         const w = (rd, a) => { const v = rd(a) | rd(a + 1) << 8; return v > 32767 ? v - 65536 : v; };   // (signed)
         const level = NAMES[lo(sym.cur_level)];

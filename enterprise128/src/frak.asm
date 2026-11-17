@@ -137,6 +137,8 @@ fe_unpack
         ld a,SEG_TOP : out (PAGE3),a
         ld hl,FRONT_PACKED_ORG - #4000 + #C000 : ld de,FRONT_ORG
         call unpack
+        ld a,SEG_JIT : out (PAGE3),a            ; (and the font beside it)
+        ld hl,FONT_STORE - #4000 + #C000 : ld de,fe_font : ld bc,96 * 8 : ldir
         ld a,(back) : call screen_select
         ld a,1 : ld (fe_unpacked),a
         ret
@@ -494,7 +496,7 @@ rec_best_hi DEFS NUM_LEVELS
 rec_gem    DEFS NUM_LEVELS          ; ... 1 if it's been completed with all the gems
 rec_rate   DEFS NUM_LEVELS * 4      ; ... fewest restarts, at each difficulty (Easy, Hard, Harder, Insane), #FF if none
 rec_rate0  DEFS NUM_LEVELS          ; ... and at Zero (no balloons or daggers: for speed runs)
-fe_font    DEFS 96 * 8              ; EXOS's font, characters 32-127, 8 rows each (copy_font)
+font_digits DEFS 11 * 8            ; EXOS's font's 0-9 and colon, for the timer (copy_font)
 fe_unpacked db 0                    ; the front end is unpacked in SEG_CACHE (front_call)
 t_harness   db 0                    ; the test harness says it's here (else the game starts by itself)
 t_noload    db 0                    ; the test harness puts the files in their segments itself
@@ -573,8 +575,9 @@ ladders     DEFS MAX_LADDERS * L_SIZE
 draws       DEFS MAX_DRAW * D_SIZE
 slows       DEFS MAX_SLOW * S_SIZE
 hud_image   DEFS 64                 ; the timer, as a raw image: 8 byte columns of 8 rows (see plot)
-font_digits = fe_font + ('0' - 32) * 8 ; (the timer's digits and colon: the CPC version keeps
-                                    ; a copy in its logic bank)
+; (EXOS's whole font, characters 32-127, is kept in segment #FE, after the
+; compiled meanie's room, FONT_STORE; front_call copies it to fe_font, beside
+; the front end in SEG_CACHE, when it unpacks it)
 end_ram
 
         ASSERT end_ram <= #3F00     ; (the stack is from #3F00 to #3FFF)
@@ -591,7 +594,7 @@ end_ram
 front_start
         INCLUDE "front.asm"
 front_end_
-        ASSERT front_end_ <= BG_TOP
+        ASSERT front_end_ <= fe_font && fe_font + 96 * 8 == BG_TOP
         SAVE 'build/FRONT.BIN',front_start,front_end_-front_start
         PRINT "Front end: ",front_end_ - front_start," bytes"
 

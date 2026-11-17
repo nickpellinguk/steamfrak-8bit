@@ -28,6 +28,9 @@
 //                          of the keyboard matrix: "OUT key ROW MASK"
 //   lines LABEL            how many lines Nick drew between each of the last 16 vertical syncs,
 //                          oldest first: "OUT peek LABEL n1 n2 ..." (312 for a whole frame)
+//   profile LABEL N        run N frames, noting where the Z80 is every 32us (with the video RAM's
+//                          wait states, as the real machine's): "OUT profile LABEL pc,seg,n ..."
+//                          (seg: the segment at the PC's page, and n the samples there)
 //   snap LABEL             write the last whole frame to shotN.png (in the output directory):
 //                          "OUT snap LABEL"
 //   quit                   stop: "OUT done"
@@ -58,6 +61,7 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -346,6 +350,20 @@ int main(int argc, char **argv) {
         while (bit < 8 && !(mask & (1 << bit))) bit++;
         vm->setKeyboardState(row * 8 + bit, v);
         std::cout << "OUT key " << row << " " << mask << "\n";
+      }
+      else if (op == "profile") {
+        std::string label; int n; s >> label >> n;
+        std::map<uint32_t, long> hist;
+        for (long t = 0; t < long(n) * long(FRAME_US); t += 32) {
+          vm->run(32);
+          uint16_t pc = vm->getProgramCounter();
+          hist[uint32_t(pc) << 8 | vm->getMemoryPage(pc >> 14)]++;
+        }
+        now += n * FRAME_US / 1e6;
+        std::cout << "OUT profile " << label;
+        for (std::map<uint32_t, long>::iterator it = hist.begin(); it != hist.end(); ++it)
+          std::cout << " " << (it->first >> 8) << "," << (it->first & 255) << "," << it->second;
+        std::cout << "\n";
       }
       else if (op == "lines") {
         std::string label; s >> label;

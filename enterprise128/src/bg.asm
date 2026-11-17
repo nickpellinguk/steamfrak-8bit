@@ -98,6 +98,7 @@ paint_line
         ld a,SEG_CACHE : call bank_select
         call seek_line
         ld a,(back_ring + 1) : add a,RING_SIZE >> 8 : ld (pl_end + 1),a
+        sub 3 : ld (.safe + 1),a                ; (below this page, 8 lines can't reach the end)
         ; the main registers: B = cells to do, C = the current mask bit, DE = the next
         ; cell number, HL = the masks' byte; the others: HL = the screen
         ld a,(pl_i0) : ld b,a : ld a,(pl_i1) : sub b : inc a : ld b,a
@@ -124,14 +125,32 @@ paint_line
         exx
         ld e,a : ex af,af' : ld d,a             ; DE = its line 0 in the dictionary
         push hl
-        ld b,8
+        ld a,h
+.safe   cp 0 : jr nc,.slow                      ; (cp the page 3 below the ring's end)
+        ; well before the ring's end: 8 lines unrolled, 80 bytes apart
+        ld bc,LINE_BYTES
+        ld a,(de) : ld (hl),a : inc d : add hl,bc
+        ld a,(de) : ld (hl),a : inc d : add hl,bc
+        ld a,(de) : ld (hl),a : inc d : add hl,bc
+        ld a,(de) : ld (hl),a : inc d : add hl,bc
+        ld a,(de) : ld (hl),a : inc d : add hl,bc
+        ld a,(de) : ld (hl),a : inc d : add hl,bc
+        ld a,(de) : ld (hl),a : inc d : add hl,bc
+        ld a,(de) : ld (hl),a : add hl,bc
+        jr .next
+.slow   ld b,8                                  ; (near it: a line at a time, wrapping)
 .line   ld a,(de) : ld (hl),a : inc d
         call pl_step
         djnz .line
         jr .next
 .empty  exx
         push hl
-        ld b,8
+        ld a,h : ld bc,(.safe + 1) : cp c : jr nc,.eslow
+        ld bc,LINE_BYTES : xor a
+        ld (hl),a : add hl,bc : ld (hl),a : add hl,bc : ld (hl),a : add hl,bc : ld (hl),a : add hl,bc
+        ld (hl),a : add hl,bc : ld (hl),a : add hl,bc : ld (hl),a : add hl,bc : ld (hl),a : add hl,bc
+        jr .next
+.eslow  ld b,8
 .eline  ld (hl),0
         call pl_step
         djnz .eline
