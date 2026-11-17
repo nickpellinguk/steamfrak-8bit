@@ -31,4 +31,5 @@ for f in src/bplist src/compress src/comprlib src/dave src/debuglib src/decompm2
     OBJS="$OBJS $o"
 done
 g++ $CXXFLAGS -o build/ephl tools/ephl/ephl.cpp $OBJS -lsndfile -lportaudio -lz -lpthread
-echo "Built build/ephl"
+g++ $CXXFLAGS -o build/unpackroms tools/ephl/unpackroms.cpp $OBJS -lsndfile -lportaudio -lz -lpthread
+echo "Built build/ephl and build/unpackroms"

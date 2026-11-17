@@ -4,10 +4,11 @@ A port of the CPC 6128 version ([`../cpc6128`](../cpc6128/README.md)), which is 
 of the BBC Master version, to the Enterprise 128. The plan, phase by phase, is in
 [`PLAN.md`](PLAN.md).
 
-**Status: phase 0** (the toolchain and the test harness). The program loads, asks EXOS which
-RAM segments it will give out, takes the machine over and tells the test harness it's ready.
-The harness runs it on a headless build of ep128emu (or MAME); running it on the real EXOS and
-EXDOS ROMs is still to come.
+**Status: phase 0 done** (the toolchain and the test harness). The program loads, asks EXOS
+which RAM segments it will give out, takes the machine over and tells the test harness it's
+ready, on EXOS 2.1 and EXDOS 1.3, in a headless build of ep128emu and in MAME. On an
+Enterprise 128 with EXDOS, EXOS gives out every segment but page 0's (`&F8`) and its own
+(`&FF`): `&F9-&FE`.
 
 ## Building
 
@@ -43,7 +44,10 @@ which take the same steps:
   It doesn't emulate the wait states, and its screen is only 280 lines, starting where an LPB
   with VINT ends; it's kept as a second opinion.
 
-Both need the Enterprise's ROMs, from a directory named by `EP_ROMS`, as MAME names them:
+Both need the Enterprise's ROMs, from a directory named by `EP_ROMS`, as MAME names them.
+`tools/ephl/getroms.sh DIRECTORY` fetches ep128emu's ROM package (from `ep128.hu`, as
+ep128emu's installer does), unpacks it with `build/unpackroms` and puts the two there. They
+aren't the dumps MAME lists, so MAME warns that their checksums are wrong, and runs them anyway.
 
 | File | |
 |---|---|
@@ -53,6 +57,7 @@ Both need the Enterprise's ROMs, from a directory named by `EP_ROMS`, as MAME na
 ```sh
 apt install g++ libsndfile1-dev portaudio19-dev zlib1g-dev
 tools/ephl/build.sh
+tools/ephl/getroms.sh /path/to/roms
 EP_ROMS=/path/to/roms node tools/emu/boot.mjs
 EP_EMU=mame EP_ROMS=/path/to/roms node tools/emu/boot.mjs      # (apt install mame)
 ```

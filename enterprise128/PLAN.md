@@ -1,9 +1,9 @@
 # Plan: Frak! for the Enterprise 128
 
-Status: **phase 0 under way.** The build (RASM, an EXOS type 5 program on an EXDOS disk image)
-and the harness work, on a headless build of ep128emu (`tools/ephl`) and on MAME, and
-`boot.mjs` passes on both against a stand-in ROM that only pretends to be EXOS. Running it on
-the real EXOS and EXDOS ROMs is to come.
+Status: **phase 0 done.** The build (RASM, an EXOS type 5 program on an EXDOS disk image) and
+the harness work, on a headless build of ep128emu (`tools/ephl`) and on MAME, and `boot.mjs`
+passes on both with EXOS 2.1 and EXDOS 1.3. EXOS gives out segments `&F9-&FE`: every one but
+page 0's and its own, so EXDOS leaves the whole memory map free. Next: phase 1.
 
 The CPC 6128 version (`../cpc6128`) is a Z80 port of the BBC Master version, and it has already
 solved most of the problems this port will meet: the BBC's 6502 code turned into Z80 routine by
@@ -149,7 +149,8 @@ opinion.
   for the disk), from a directory in `EP_ROMS` as `CPC_ROMS` is for the CPC. Until the disk loads, the harness can load the files straight into their segments, as
   the CPC harness's `load` step does, so phases 1-7 don't wait on EXDOS.
 - **Test:** the program loads, takes the machine from EXOS (interrupts off, its own handler at
-  `&0038`, its own stack), and sets `ready`.
+  `&0038`, its own stack), and sets `ready` — **passes** (`boot.mjs`). It also asks EXOS for every
+  segment it will give out: `&F9-&FE`, on a 128 with EXDOS.
 
 ### Phase 1: machine layer and screen (`src/machine.asm`)
 
@@ -268,9 +269,8 @@ from re-optimising the memory map.
 ## Risks
 
 - **Segment `&FF` is nearly full** (above). The fallbacks are known, and phase 2 settles it.
-- **EXDOS and EXOS may keep RAM** that the loader needs while it reads the files. Load into
-  segments EXOS gives out (EXOS's segment allocation), and check that a 128K machine with EXDOS
-  gives out enough.
+- ~~**EXDOS and EXOS may keep RAM** that the loader needs.~~ They don't: EXOS gives out `&F9-&FE`
+  on a 128 with EXDOS (phase 0), keeping only page 0's segment and its own `&FF`.
 - **The ROMs:** MAME's `ep128` driver needs the Enterprise's ROMs, which this repository can't
   include.
 - **Waiting for Nick:** the plotter writes only to video RAM, and the CPC's measurements of
