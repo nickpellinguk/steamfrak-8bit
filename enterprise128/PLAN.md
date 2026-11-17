@@ -1,6 +1,11 @@
 # Plan: Frak! for the Enterprise 128
 
-Status: **phase 5 done:** the game logic (`src/logic.asm`, with the CPC version's `trogg.asm`
+Status: **phase 6 done:** the game plays, on every level: the frame loop, scrolling and drawing
+(`src/play.asm`) pass the CPC version's `frames.mjs`, every one of 6,600 frames byte for byte,
+and `fps.mjs` measures 9.3 frames a second on average on ephl (the CPC version 10.3, the BBC
+version 14.4). Next: phase 7, the front end.
+
+Phase 5 done: the game logic (`src/logic.asm`, with the CPC version's `trogg.asm`
 and `commands.asm` as they are) moves Trogg as GameMaker does on all 55 levels
 (`connections.mjs`, but for D_9's half-pixel ladder, as for the BBC and CPC versions), and does
 what the BBC version's does, tick for tick (`logic.mjs`: 440,000 ticks). Next: phase 6.
@@ -331,7 +336,7 @@ footsteps depend on them.
   platforms carried, checkpoints, balloons and daggers among them; and again with other keys
   on six of them.
 
-### Phase 6: main loop and scrolling (`src/play.asm`)
+### Phase 6: main loop and scrolling (`src/play.asm`) — done
 
 The CPC's frame loop. Scrolling sets the playfield's LPBs (and the mirror line) rather than
 CRTC R12/R13, and the flip happens at the vertical interrupt, at most every two vertical syncs.
@@ -339,6 +344,102 @@ Scrolling is one mode, the BBC version's, with the CPC's 8-pixel steps sideways.
 **Tests:** `frames.mjs`: every frame drawn is what the game's state says it should be, with
 `render.mjs`'s window made 320x256 for both kinds of level. `fps.mjs`: the frame rates, to
 compare with the CPC version's and the BBC version's (not a pass or fail yet).
+
+**Done.** `src/play.asm` is the CPC version's, in the logic segment, with:
+- the BBC version's window and bands for both kinds of level: 320x256, the view still between
+  120 and 200 pixels across and 96 and 176 lines down, centred on (x - 160, y - 128); sideways
+  the view moves 8 pixels (a Nick slot) a step, as the CPC version's;
+- `flag_flip` setting the back buffer's table from its scroll position (it isn't on show), and
+  the interrupt pointing Nick at it, no sooner than 2 vertical syncs since the last
+  (`flip_min`, 0 for the phase 1 test);
+- a blank table on show while a level loads and both buffers are drawn afresh (as the CPC
+  version blacks its palette), with the same VINTs, so no table on show is ever rewritten;
+- the level's palette in each table's LPBs: the background, magenta, yellow, black (Nick, as
+  the CPC, takes a pixel's bits the other way round from the BBC);
+- `restore_chase` (in `plot.asm`) knowing how far down the raster is from the interrupts at
+  the playfield's lines 64, 128 and 192 (1-line VINT blocks in every table; `sync_bands`
+  starts the count in step), as the CPC version's knows from the gate array's six;
+- the timer's digits copied from EXOS's own font, which EXOS leaves in video RAM (Nick's
+  `&F480`, 9 rows a character, row by row), when the program starts; kept in the low RAM;
+- the front end's calls stubbed until phase 7 (and so the level-complete screen without its
+  text).
+
+`frames.mjs` passes on its 11 levels, both kinds, mortal and immortal, 300 frames each: 6,600
+frames right, with the view scrolled, the yoyo out, moving platforms and meanies, balloons,
+daggers and meanies flying off, things collected, deaths and level-complete screens among them.
+
+`fps.mjs`, on ephl (with the video RAM's wait states: the real machine's timing), Trogg unable
+to die, standing for 10 seconds then walking right for 10:
+
+<details><summary>Frame rates on every level</summary>
+
+| Level | Scrolls | Frames a second, standing | Walking right |
+| --- | --- | --- | --- |
+| 0 | sideways | 16.1 | 14.5 |
+| A_1 | sideways | 14.6 | 14.8 |
+| A_2 | sideways | 14.5 | 13.8 |
+| A_3 | sideways | 14.7 | 15.3 |
+| A_4 | sideways | 14.5 | 13.7 |
+| A_5 | sideways | 14.2 | 13.1 |
+| A_6 | sideways | 14.5 | 16.0 |
+| A_7 | sideways | 13.7 | 15.0 |
+| A_8 | sideways | 15.5 | 16.0 |
+| A_9 | sideways | 14.2 | 10.4 |
+| B_1 | sideways | 6.2 | 5.3 |
+| B_2 | sideways | 6.4 | 6.3 |
+| B_3 | sideways | 5.9 | 5.6 |
+| B_4 | sideways | 8.9 | 6.5 |
+| B_5 | sideways | 7.4 | 5.9 |
+| B_6 | sideways | 6.6 | 6.4 |
+| B_7 | sideways | 8.6 | 7.3 |
+| B_8 | sideways | 4.9 | 4.5 |
+| B_9 | sideways | 5.4 | 5.2 |
+| C_1 | up and down | 5.3 | 6.0 |
+| C_2 | up and down | 6.6 | 4.6 |
+| C_3 | up and down | 5.9 | 5.1 |
+| C_4 | up and down | 5.9 | 10.6 |
+| C_5 | up and down | 5.2 | 4.7 |
+| C_6 | up and down | 5.3 | 4.6 |
+| C_7 | up and down | 7.8 | 7.1 |
+| C_8 | up and down | 8.1 | 7.7 |
+| C_9 | up and down | 7.4 | 5.6 |
+| D_1 | sideways | 10.1 | 10.1 |
+| D_2 | up and down | 6.1 | 4.8 |
+| D_3 | sideways | 5.3 | 5.3 |
+| D_4 | sideways | 8.2 | 8.5 |
+| D_5 | up and down | 5.0 | 5.2 |
+| D_6 | sideways | 8.8 | 8.8 |
+| D_7 | up and down | 7.5 | 5.9 |
+| D_8 | up and down | 5.7 | 5.3 |
+| D_9 | up and down | 5.0 | 5.1 |
+| E_1 | sideways | 12.8 | 9.9 |
+| E_2 | sideways | 10.4 | 10.5 |
+| E_3 | sideways | 7.6 | 7.8 |
+| E_4 | sideways | 12.7 | 13.7 |
+| E_5 | up and down | 9.6 | 6.5 |
+| E_6 | up and down | 8.2 | 7.8 |
+| E_7 | up and down | 13.3 | 12.7 |
+| E_8 | sideways | 8.5 | 8.0 |
+| E_9 | sideways | 9.4 | 9.7 |
+| F_1 | sideways | 8.7 | 8.5 |
+| F_2 | sideways | 11.3 | 10.2 |
+| F_3 | sideways | 9.5 | 9.9 |
+| F_4 | sideways | 8.1 | 9.8 |
+| F_5 | up and down | 9.3 | 7.3 |
+| F_6 | up and down | 8.5 | 8.1 |
+| F_7 | sideways | 10.4 | 9.9 |
+| F_8 | sideways | 14.1 | 10.3 |
+| F_9 | sideways | 10.9 | 11.3 |
+| average | | 9.3 | 8.8 |
+| average | sideways | 10.4 | 9.9 |
+| average | up and down | 7.1 | 6.6 |
+
+</details>
+
+That's 90% of the CPC version's 10.3 on average (and 65% of the BBC version's 14.4), with a
+bigger window (the CPC's is 256x256 or 320x200) and every screen byte waiting for Nick. Below
+12.5 frames a second the game slows (at most 4 ticks a frame, as the BBC version), so on most
+levels it does for now: the optimisation pass after the first milestone starts from here.
 
 ### Phase 7: front end (`src/front.asm`)
 

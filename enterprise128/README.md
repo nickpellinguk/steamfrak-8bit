@@ -4,8 +4,8 @@ A port of the CPC 6128 version ([`../cpc6128`](../cpc6128/README.md)), which is 
 of the BBC Master version, to the Enterprise 128. The plan, phase by phase, is in
 [`PLAN.md`](PLAN.md).
 
-**Status: phase 5 done** (the game logic; see [`PLAN.md`](PLAN.md)). Phase 4: the levels and
-the background. Phase 3: the plotter. Phase 2: the memory map, measured, fits. Phase 1: the machine layer and the
+**Status: phase 6 done** (the game plays, every level, at 9.3 frames a second on average; see
+[`PLAN.md`](PLAN.md)). Phase 5: the game logic. Phase 4: the levels and the background. Phase 3: the plotter. Phase 2: the memory map, measured, fits. Phase 1: the machine layer and the
 screen. Phase 0
 (the toolchain and the test harness): The program loads, asks EXOS
 which RAM segments it will give out, takes the machine over and tells the test harness it's
@@ -100,6 +100,8 @@ EP_ROMS=/path/to/roms node tools/emu/plot.mjs [seed]   # phase 3: the plotter, b
 EP_ROMS=/path/to/roms node tools/emu/levels.mjs        # phase 4: all 55 levels' tables, caches and windows
 EP_ROMS=/path/to/roms node tools/emu/connections.mjs   # phase 5: Trogg moves as in GameMaker
 EP_ROMS=/path/to/roms node tools/emu/logic.mjs         # phase 5: the logic, tick for tick, against the BBC version's
+EP_ROMS=/path/to/roms node tools/emu/frames.mjs        # phase 6: every frame drawn, byte for byte
+EP_ROMS=/path/to/roms node tools/emu/fps.mjs           # phase 6: the frame rate on every level
 ```
 
 `boot.mjs` is phase 0's test: the program must take the machine over, set `ready` and idle in

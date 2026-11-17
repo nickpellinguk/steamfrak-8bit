@@ -61,24 +61,34 @@ machine_init
         ret
 
 ; ------------------------------------------------------------------------------
-; Interrupts: only Nick's VINT, which Dave sees as INT1 and latches as VINT ends,
-; once a frame, 12 lines after the playfield (see screen.asm). The handler counts
-; the vertical sync, shows the buffer the game has finished drawing (if it asked:
-; flip_pending), reads the keyboard and runs the sound (sound.asm).
+; Interrupts: only Nick's VINT, which Dave sees as INT1 and latches as VINT ends:
+; four times a frame, at the playfield's lines 64, 128 and 192, and then 12
+; lines after it, the vertical sync's (see screen.asm). irq_band counts the
+; first three, so the game knows how far down the screen the raster is (as the
+; CPC version's gate array interrupts tell it). At the vertical sync's, the
+; handler counts it, shows the buffer the game has finished drawing (if it asked:
+; flip_pending; no sooner than flip_min vertical syncs since the last), reads the
+; keyboard and runs the sound (sound.asm).
 ; ------------------------------------------------------------------------------
 irq
         push af : push bc : push hl
         ld a,INT_VINT : out (DAVE_INT),a        ; (reset the latch)
+        ld a,(irq_single) : or a : jr nz,.vsync ; (sync_bands: every one's the vertical sync's)
+        ld hl,irq_band : inc (hl) : ld a,(hl) : cp 4 : jr c,.done
+.vsync  xor a : ld (irq_band),a
         ld hl,vsyncs : inc (hl)
         ld a,(flip_pending) : or a : call nz,.flip
         call scan_keys
         call snd_tick                           ; (the music and sound effects: stubs for now)
-        pop hl : pop bc : pop af
+.done   pop hl : pop bc : pop af
         ei
         ret
 ; Show the buffer drawn: Nick starts its table at the start of the next frame,
 ; which the raster hasn't reached yet (44 lines on)
-.flip   ld a,(flip_buf) : ld (front),a
+.flip   ld a,(last_flip) : ld b,a : ld a,(vsyncs) : sub b
+        ld hl,flip_min : cp (hl) : ret c
+        ld a,(vsyncs) : ld (last_flip),a
+        ld a,(flip_buf) : ld (front),a
         call show_lpt
         xor a : ld (flip_pending),a
         ret

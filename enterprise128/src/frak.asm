@@ -48,12 +48,14 @@ start
         call make_lines
         call make_popcount
         xor a : out (NICK_BORDER),a
+        call copy_font                          ; (before anything's loaded over it)
         call lpt_init
-        xor a : ld (front),a : call show_lpt
+        xor a : ld (front),a
         ld a,1 : call screen_select             ; (drawing into the other)
         ld a,(vsyncs) : ld (last_vsync),a
-        ld a,#A5 : ld (ready),a                 ; (for the test harness)
         ei
+        call sync_bands                         ; (shows buffer 0)
+        ld a,#A5 : ld (ready),a                 ; (for the test harness)
 
 main_loop
         ; a command from the test harness?
@@ -99,6 +101,19 @@ main_loop
         INCLUDE "../../cpc6128/src/gen/sounds.asm"
         INCLUDE "sound.asm"
 
+; The front end comes in phase 7: until then, calling it does nothing (and the
+; menus choose the level after the last again)
+front_call
+        ld a,(fe_last)
+        ret
+fe_main = 0 : fe_record = 0 : fe_win = 0
+
+; Fill the back buffer's ring with 0 (the background colour)
+fill_back
+        ld hl,(back_ring) : ld d,h : ld e,l : inc de
+        ld (hl),0 : ld bc,RING_SIZE - 1 : ldir
+        ret
+
 ; A command from the test harness (the CPC version's numbers; it has no mode 9)
 command
         dec a : jp z,plot                       ; 1
@@ -113,7 +128,11 @@ command
         dec a : dec a : jp z,log_sprite7        ; 10
         dec a : jr nz,.not11
         ld a,(t_arg) : jp load_level            ; 11
-.not11  dec a : ret nz                          ; 12: repaint the window from the cache
+.not11  dec a : jr z,.repaint                  ; 12: repaint the window from the cache
+        dec a : ret nz                          ; 13: play, from level t_arg (never returns)
+        ld a,SEG_LOGIC : call bank_select
+        ld a,(t_arg) : jp play
+.repaint
         ld a,(is_vert) : or a : jr nz,.rows
         xor a
 .cols   push af : call repaint_column : pop af
@@ -183,6 +202,10 @@ back         db 1                   ; the buffer paged in at pages 2 and 3
 back_ring    dw RING1_Z80           ; ... and where its ring is
 flip_pending db 0                   ; show flip_buf at the next vertical sync
 flip_buf     db 0
+flip_min     db 0                   ; vertical syncs between flips, at least (FRAMES_PER_DRAW playing)
+last_flip    db 0                   ; vsyncs when a buffer was last shown
+irq_band     db 0                   ; interrupts since the vertical sync's (0-3)
+irq_single   db 0                   ; (sync_bands: every interrupt the vertical sync's)
 scroll0      dw 0                   ; each buffer's scroll position (even, 0 to 20478)
 scroll1      dw 0
 pal0         db #49, #92, #DB, #FF, 0, 0, 0, 0      ; each buffer's palette
@@ -190,8 +213,10 @@ pal1         db #24, #6D, #B6, #12, 0, 0, 0, 0
 ls_buf       db 0                   ; lpt_set's workings
 ls_k         db 0
 ls_base      dw 0
-ls_ld1a      dw 0
-ls_ld1b      dw 0
+ls_scroll    dw 0
+ls_ptr       dw 0
+ls_cur       db 0
+ls_end       db 0
 up_bits      db 0                   ; unpack's workings
 up_dist      dw 0
 ; for the test harness
@@ -203,6 +228,16 @@ t_unpack_seg db 0
 t_unpack_end dw 0                   ; ... and where it ended
 flip_rate    db 0                   ; flip the buffers every flip_rate frames (0: never)
 flip_count   db 1
+t_lock      db 0                    ; playing: hold each frame for the test harness (see play.asm)
+t_frame     db 0                    ; ... 1 while it's held
+tick_vs     db 0                    ; vsyncs the game logic has been run for
+fe_args                             ; for the front end (see front_call), from the logic segment:
+fe_diff     db 1                    ; ... the difficulty (and back)
+fe_last     db 1                    ; ... the last level played
+fe_done_level db 0                  ; ... the level just finished: which, its time (game ticks),
+fe_done_ticks dw 0                  ; ... the restarts, and whether all the gems were collected
+fe_done_restarts db 0
+fe_done_gems db 0
 snd_music_req db #FF                ; sound (see sound.asm): a tune to start (#FF: none)
 snd_sfx_req db #FF                  ; ... sound effects to start (#FF: none)
 snd_sfx_req2 db #FF
@@ -411,6 +446,8 @@ ladders     DEFS MAX_LADDERS * L_SIZE
 draws       DEFS MAX_DRAW * D_SIZE
 slows       DEFS MAX_SLOW * S_SIZE
 hud_image   DEFS 64                 ; the timer, as a raw image: 8 byte columns of 8 rows (see plot)
+font_digits DEFS 11 * 8             ; EXOS's font's 0-9 and colon (copy_font; the CPC version keeps
+                                    ; them in its logic bank, but the Enterprise's is loaded after)
 end_ram
 
         ASSERT end_ram <= #3F00     ; (the stack is from #3F00 to #3FFF)

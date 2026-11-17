@@ -191,12 +191,7 @@ trogg_move
 
         INCLUDE "../../cpc6128/src/trogg.asm"      ; (the CPC version's, as they are)
         INCLUDE "../../cpc6128/src/commands.asm"
-        ; (play.asm, the frame loop, comes in phase 6; until then, the constants of
-        ; it that the logic's variables use)
-MAX_DMG = 40
-DR_ON = 0 : DR_XL = 1 : DR_XH = 2 : DR_YL = 3 : DR_YH = 4
-DR_C0 = 5 : DR_C1 = 6 : DR_Y0 = 7 : DR_Y1 = 8                ; its byte columns, and 4-line rows
-DR_SIZE = 9
+        INCLUDE "play.asm"
 
 ; ------------------------------------------------------------------------------
 ; The yoyo (port of the Yoyoing states of oTrogg and YoyoCollide)
@@ -1429,7 +1424,6 @@ hud_secs    dw #FFFF                ; the time the timer image shows
 time_text   DEFS 4                  ; ... as "m:ss"
 spr_i       db 0
 frames_drawn dw 0                   ; (for the frame rate)
-font_digits DEFS 11 * 8             ; the font's 0-9 and colon (copy_font)
 win_ticks   dw 0
 have_cp     db 0
 save_cp     db 0

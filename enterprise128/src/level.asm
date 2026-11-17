@@ -128,10 +128,13 @@ platform_find
 ; segment #FE after buffer 1's ring (layout.asm) and runs there, with #FE paged
 ; in at page 3 (LOADER_RUN); #FC goes in at page 2, so the unroller's workings
 ; (bg.asm, from #8000) are in buffer 0's ring, which is drawn afresh after a level
-; loads anyway, as on the CPC. Then the buffer being drawn is paged back in.
+; loads anyway, as on the CPC. Then the buffer being drawn is paged back in, and
+; the segment that was in the window.
 load_level
         ld (ll_level),a
+        ld a,(win_seg) : push af                ; (the segment in the window: the logic, playing)
         ld a,SEG_VIDEO : out (PAGE2),a
         ld a,SEG_JIT : out (PAGE3),a
         ld a,(ll_level) : call ovl_load_level
-        ld a,(back) : jp screen_select
+        ld a,(back) : call screen_select
+        pop af : jp bank_select
