@@ -263,7 +263,7 @@ t_unpack_seg db 0
 t_unpack_end dw 0                   ; ... and where it ended
 flip_rate    db 0                   ; flip the buffers every flip_rate frames (0: never)
 flip_count   db 1
-t_lock      db 0                    ; playing: hold each frame for the test harness (see play.asm)
+t_lock      db 0                    ; playing: hold each frame for the test harness (see play.asm), at its value in ticks a frame (1: 2)
 t_frame     db 0                    ; ... 1 while it's held
 tick_vs     db 0                    ; vsyncs the game logic has been run for
 fe_args                             ; for the front end (see front_call), from the logic segment:

@@ -14,7 +14,10 @@
 //
 // The level-complete screen's text is the front end's, in EXOS's font (copy_font: FONT_STORE).
 //
-//   ./build.sh && EP_ROMS=... node tools/emu/frames.mjs [room_A_1 ...] [--frames=N] [--seed=N]
+// --ticks=N runs N ticks a frame (2 by default, as at 25 frames a second; up to 12, as when the
+// drawing is slow: the view scrolling further a frame).
+//
+//   ./build.sh && EP_ROMS=... node tools/emu/frames.mjs [room_A_1 ...] [--frames=N] [--seed=N] [--ticks=N]
 import { symbols, run, boot, loadFiles, EMULATOR } from './harness.mjs';
 import { refPlot, refLine, background, paintBackground, at, images, RING } from './render.mjs';
 import { readFileSync } from 'fs';
@@ -25,6 +28,7 @@ const sym = symbols();
 const args = process.argv.slice(2);
 const opt = k => { const a = args.find(s => s.startsWith('--' + k)); return a ? (a.split('=')[1] ?? true) : undefined; };
 const FRAMES = +(opt('frames') || 150);
+const TICKS = +(opt('ticks') || 1);
 let seed = +(opt('seed') || 1);
 const NAMES = ['room_0', ...'ABCDEF'.split('').flatMap(c => [1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `room_${c}_${n}`))];
 const only = args.filter(a => a.startsWith('room'));
@@ -63,7 +67,7 @@ for (const { room, immortal } of runs) {
     const li = NAMES.indexOf(room);
     // ---- play it, holding each frame
     const LOGIC = sym.seg_logic, lg = a => a - 0x4000;      // (the logic segment, and an address in it)
-    const steps = [...boot(), ...loadFiles(sym), `poke ${sym.t_lock} 1`, `poke ${sym.t_arg} ${li}`];
+    const steps = [...boot(), ...loadFiles(sym), `poke ${sym.t_lock} ${TICKS}`, `poke ${sym.t_arg} ${li}`];
     // (the second run of each level: Trogg can't die, so he gets about, and the view scrolls)
     if (immortal) steps.push(`spoke ${LOGIC} ${lg(sym.trogg_dies)} ${0xC9}`);
     steps.push(`sdump font ${sym.seg_jit} ${sym.font_store - 0x4000} 768`, `poke ${sym.t_cmd} 13`);

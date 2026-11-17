@@ -1385,6 +1385,7 @@ newcol      db 0
 newrow      db 0
 scroll_dir  db 0
 bs_n        db 0
+bs_acc      db 0                    ; (ticks towards the next sideways step: band_scroll)
 frame_ticks db 2
 ticks_left  db 0
 bscroll     db 0, 0                 ; each buffer's scroll position

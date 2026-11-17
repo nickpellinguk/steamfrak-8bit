@@ -613,6 +613,100 @@ repainting its character cells from the background cache. Much more would need t
 saving the background under each as it's drawn, and putting it back, as the draw log does for
 the things that move every frame.
 
+### Keeping the game's speed
+
+Those frame rates flattered it: as in the BBC and CPC versions, each frame ran a tick of logic
+for every vertical sync since the last, but at most 4 (`MAX_TICKS_PER_FRAME`), so below 12.5
+frames a second the game slowed down. Measured (`fps.mjs`'s last column: the ticks run walking,
+against 50 a second), it ran at 72% of its speed on average, 58% on the levels that scroll up and
+down, and 39% on the slowest (C_6). The Atari version keeps its speed whatever the drawing takes
+(its VBI counts fields; each frame made runs a tick for each since the last), and now so does
+this one:
+
+- `MAX_TICKS_PER_FRAME` is 12: the game slows only below 4.2 frames a second, which no level
+  comes to (C_2, walking, is the slowest, at 3.4, for a moment). `redraw` starts the count again
+  after a full redraw, so its pause doesn't make the game jump ahead.
+- Sideways, the view scrolled a step (8 pixels) a frame, however many ticks the frame took (the
+  CPC version's `frame_ticks / 4`, at least 1), so it fell behind Trogg when the frames were
+  slow. Now it takes a step for every 4 ticks, the ticks over carried to the next frame
+  (`bs_acc`), and still a step a frame when there are fewer: at 25 frames a second it's as
+  before. Walking right on B_8 and B_5, Trogg stays between 72 and 207 pixels across the window.
+- Up and down, the view scrolls a row a tick, at most 6 a frame (`MAX_ROWS_PER_FRAME`; 4 before):
+  Trogg falls at most 4 lines a tick, 48 in 12.
+- For the test harness, `t_lock` is the ticks each held frame runs (1 for 2, as before), and
+  `frames.mjs --ticks=N` checks every frame at N ticks a frame: right at 5, 7 and 12.
+
+The game now runs at 98% of its speed on average (100% on the levels that scroll sideways, 94% up
+and down; the lowest, C_2, 79%, where a frame took more than 12 ticks). The frame rates are lower,
+9.0 a second on average (6.3 up and down): the logic now runs 50 times a second, not 25 to 40,
+and on the slow levels it's costly (on C_6, `check_collisions` 10% of the time, `move_hooter`
+8%, the multiplies and `update_slow` another 10%). Making a tick cheaper is the next speed-up.
+
+<details><summary>Frame rates and the game's speed on every level, keeping its speed</summary>
+
+| Level | Scrolls | Frames a second, standing | Walking right | Game speed walking (%) |
+| --- | --- | --- | --- | --- |
+| 0 | sideways | 16.9 | 15.5 | 100 |
+| A_1 | sideways | 15.5 | 15.8 | 100 |
+| A_2 | sideways | 15.3 | 15.1 | 100 |
+| A_3 | sideways | 15.6 | 16.3 | 100 |
+| A_4 | sideways | 15.4 | 14.9 | 100 |
+| A_5 | sideways | 15.0 | 14.6 | 100 |
+| A_6 | sideways | 15.3 | 16.7 | 100 |
+| A_7 | sideways | 14.5 | 16.0 | 100 |
+| A_8 | sideways | 16.3 | 16.3 | 100 |
+| A_9 | sideways | 15.0 | 11.2 | 100 |
+| B_1 | sideways | 4.7 | 4.6 | 96 |
+| B_2 | sideways | 5.9 | 6.1 | 100 |
+| B_3 | sideways | 5.0 | 5.4 | 100 |
+| B_4 | sideways | 8.1 | 6.2 | 100 |
+| B_5 | sideways | 6.7 | 4.7 | 97 |
+| B_6 | sideways | 5.7 | 5.7 | 100 |
+| B_7 | sideways | 8.3 | 6.9 | 100 |
+| B_8 | sideways | 4.2 | 4.1 | 97 |
+| B_9 | sideways | 4.7 | 4.8 | 98 |
+| C_1 | up and down | 4.0 | 7.6 | 98 |
+| C_2 | up and down | 5.1 | 3.4 | 79 |
+| C_3 | up and down | 4.8 | 5.3 | 97 |
+| C_4 | up and down | 5.5 | 11.4 | 101 |
+| C_5 | up and down | 4.1 | 4.2 | 92 |
+| C_6 | up and down | 4.0 | 3.9 | 85 |
+| C_7 | up and down | 7.5 | 8.4 | 96 |
+| C_8 | up and down | 7.7 | 6.5 | 99 |
+| C_9 | up and down | 7.6 | 5.2 | 93 |
+| D_1 | sideways | 10.4 | 10.6 | 100 |
+| D_2 | up and down | 5.1 | 3.8 | 83 |
+| D_3 | sideways | 4.2 | 4.2 | 98 |
+| D_4 | sideways | 8.2 | 8.9 | 100 |
+| D_5 | up and down | 4.0 | 4.0 | 97 |
+| D_6 | sideways | 8.5 | 8.5 | 101 |
+| D_7 | up and down | 6.3 | 4.9 | 88 |
+| D_8 | up and down | 4.3 | 5.8 | 91 |
+| D_9 | up and down | 3.8 | 3.8 | 91 |
+| E_1 | sideways | 13.4 | 10.6 | 99 |
+| E_2 | sideways | 10.6 | 10.6 | 100 |
+| E_3 | sideways | 7.2 | 7.6 | 100 |
+| E_4 | sideways | 13.4 | 14.3 | 100 |
+| E_5 | up and down | 8.9 | 7.6 | 94 |
+| E_6 | up and down | 7.3 | 6.7 | 100 |
+| E_7 | up and down | 13.7 | 13.4 | 100 |
+| E_8 | sideways | 8.6 | 7.7 | 100 |
+| E_9 | sideways | 9.6 | 9.6 | 100 |
+| F_1 | sideways | 8.6 | 10.6 | 101 |
+| F_2 | sideways | 12.1 | 11.4 | 100 |
+| F_3 | sideways | 9.3 | 9.7 | 100 |
+| F_4 | sideways | 8.1 | 11.0 | 101 |
+| F_5 | up and down | 9.6 | 8.7 | 98 |
+| F_6 | up and down | 7.3 | 6.8 | 100 |
+| F_7 | sideways | 10.1 | 10.3 | 101 |
+| F_8 | sideways | 14.9 | 11.2 | 100 |
+| F_9 | sideways | 11.2 | 11.5 | 100 |
+| average | | 9.0 | 8.9 | 98 |
+| average | sideways | 10.5 | 10.3 | 100 |
+| average | up and down | 6.3 | 6.4 | 94 |
+
+</details>
+
 ## Sound
 
 `src/sound.asm` is replaced by stubs with the same interface: `snd_tick` (called from the

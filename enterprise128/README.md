@@ -23,6 +23,11 @@ and press ENTER: `START` loads, loads the rest, and the game starts. Keys: Z X O
 joystick (the cursor keys) to move, Space or P for the yoyo, Escape for the menus; M and S switch
 the music and sound effects (there's no sound yet).
 
+The game runs at 50 ticks a second whatever the drawing takes, as the Atari version does: each
+frame drawn runs a tick of logic for every vertical sync since the last (up to 12), and the view
+keeps up with Trogg however few frames there are (see [`PLAN.md`](PLAN.md), "Keeping the game's
+speed").
+
 ## Building
 
 You need [RASM](https://github.com/EdouardBERGE/rasm), built from its source (v3.3.1, as for
@@ -113,8 +118,8 @@ EP_ROMS=/path/to/roms node tools/emu/plot.mjs [seed]   # phase 3: the plotter, b
 EP_ROMS=/path/to/roms node tools/emu/levels.mjs        # phase 4: all 55 levels' tables, caches and windows
 EP_ROMS=/path/to/roms node tools/emu/connections.mjs   # phase 5: Trogg moves as in GameMaker
 EP_ROMS=/path/to/roms node tools/emu/logic.mjs         # phase 5: the logic, tick for tick, against the BBC version's
-EP_ROMS=/path/to/roms node tools/emu/frames.mjs        # phase 6: every frame drawn, byte for byte
-EP_ROMS=/path/to/roms node tools/emu/fps.mjs           # phase 6: the frame rate on every level
+EP_ROMS=/path/to/roms node tools/emu/frames.mjs        # phase 6: every frame drawn, byte for byte (--ticks=N: N ticks a frame)
+EP_ROMS=/path/to/roms node tools/emu/fps.mjs           # phase 6: the frame rate, and the game's speed, on every level
 EP_ROMS=/path/to/roms node tools/emu/front.mjs         # phase 7: the attract screen, menus, a level won, the records
 EP_ROMS=/path/to/roms node tools/emu/disk.mjs          # phase 8: the disk, LOADed from BASIC (EP_COLD=1: from garbage)
 EP_ROMS=/path/to/roms node tools/emu/profile.mjs       # where the time goes, playing (ephl's profile step)

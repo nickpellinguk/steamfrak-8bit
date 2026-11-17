@@ -24,7 +24,11 @@
 ; BBC version's moves 4.
 
 FRAMES_PER_DRAW = 2                 ; vertical syncs per drawn frame
-MAX_TICKS_PER_FRAME = 4             ; (as the BBC version: below 12.5 frames a second the game slows)
+MAX_TICKS_PER_FRAME = 12            ; (the game slows only below 4.2 frames a second: the Atari
+                                    ; version's speed keeping, where the BBC's and CPC's 4 slowed
+                                    ; it below 12.5)
+MAX_ROWS_PER_FRAME = 6              ; (rows the view catches up a frame on an up-and-down level:
+                                    ; Trogg falls at most 4 lines a tick, 48 in 12)
 VIEW_L = 120 : VIEW_R = 200         ; the band Trogg moves in without the view scrolling,
 VIEW_T = 96 : VIEW_B = 176          ; across the 320-pixel window, down the 256-line one (the BBC's)
 STEP_X = 8                          ; (pixels a sideways scroll step moves)
@@ -121,22 +125,25 @@ frame_loop
 
 .show   ld hl,(frames_drawn) : inc hl : ld (frames_drawn),hl
         ; (the test harness can hold each frame to look at it, and then the game
-        ; runs two ticks a frame)
+        ; runs two ticks a frame, or as many as t_lock says)
         ld a,(t_lock) : or a : jr z,.flag
         ld a,1 : ld (t_frame),a
 .hold   ld a,(t_frame) : or a : jr nz,.hold
 .flag   ; it's drawn: shown at the next vertical sync (irq does it)
         call flag_flip
-        ; meanwhile, a tick of game logic for each vertical sync since the last ticks
-        ; (at most MAX_TICKS_PER_FRAME, so a long pause such as a full redraw doesn't
-        ; jump ahead)...
+        ; meanwhile, a tick of game logic for each vertical sync since the last ticks,
+        ; however long the frame took to draw, so the game keeps its speed of 50 ticks
+        ; a second (as the Atari version does), the frames coming less often (at most
+        ; MAX_TICKS_PER_FRAME, a guard: redraw starts the count again after its long
+        ; pause)...
         ld a,(tick_vs) : ld b,a
         ld a,(vsyncs) : ld (tick_vs),a
         sub b : cp MAX_TICKS_PER_FRAME + 1 : jr c,.owed
         ld a,MAX_TICKS_PER_FRAME
 .owed   ld c,a
         ld a,(t_lock) : or a : ld a,c : jr z,.ticks
-        ld a,FRAMES_PER_DRAW
+        ld a,(t_lock) : cp 2 : jr nc,.ticks     ; (held, t_lock's ticks a frame: 1 for
+        ld a,FRAMES_PER_DRAW                    ; FRAMES_PER_DRAW)
 .ticks  ld (ticks_left),a : ld (frame_ticks),a
         or a : jr z,.tidy
 .tick   call game_tick
@@ -344,7 +351,7 @@ level_init_blank
 
 ; The view centred on Trogg (at a level's start, or a restart)
 centre_scroll
-        xor a : ld (scroll_dir),a
+        xor a : ld (scroll_dir),a : ld (bs_acc),a
         ld hl,(scroll_max) : srl h : rr l : srl h : rr l
         ld a,l : and #FE : ld (col_max),a       ; (a word at a time)
         ; view_col = clamp(tx - 160, 0, scroll_max) / 4
@@ -379,8 +386,9 @@ calc_scroll
 
 ; Banded scrolling, once per drawn frame: the view stays put while Trogg is
 ; between VIEW_L and VIEW_R across the window; once he's past one end, it scrolls
-; a step (8 pixels) a frame (two if the frame took 4 ticks) until he's at the
-; other (or the level's edge is).
+; until he's at the other (or the level's edge is): a step (8 pixels) a frame, or
+; when frames take more than 4 ticks, a step for every 4 ticks (the ticks over
+; kept for the next frame), so it keeps up with him however few frames there are.
 band_scroll
         ; (not once he's dead: the two buffers are each drawn once more, with the
         ; FRAK! bubble, then shown in turn, so they must be at the same place)
@@ -389,8 +397,10 @@ band_scroll
         ; HL = his x in the window (signed): tx - view_col * 4
         ld a,(view_col) : ld l,a : ld h,0 : add hl,hl : add hl,hl : ex de,hl
         ld hl,(tx) : or a : sbc hl,de
-        ld a,(frame_ticks) : srl a : srl a : jr nz,.n_ok
-        inc a
+        ld a,(bs_acc) : ld b,a : ld a,(frame_ticks) : add a,b : ld b,a
+        and 3 : ld (bs_acc),a
+        ld a,b : srl a : srl a : jr nz,.n_ok
+        ld (bs_acc),a : inc a                   ; (fewer than 4: a step all the same)
 .n_ok   ld (bs_n),a
         ld a,(scroll_dir) : or a : jp m,.left : jr nz,.right
         ; not scrolling: past either end of the band?
@@ -398,6 +408,7 @@ band_scroll
         ld a,h : or a : jr nz,.start_right
         ld a,l : cp VIEW_R + 1 : jr nc,.start_right
         cp VIEW_L : jr c,.start_left
+        xor a : ld (bs_acc),a
         ret
 .start_right
         ld a,1 : ld (scroll_dir),a
@@ -423,12 +434,12 @@ band_scroll
         ld de,STEP_X : add hl,de
         ld a,(bs_n) : dec a : ld (bs_n),a : jr nz,.left
         ret
-.stop   xor a : ld (scroll_dir),a
+.stop   xor a : ld (scroll_dir),a : ld (bs_acc),a
         ret
 
 ; ... and up and down, a character row (8 lines) at a time: the view stays put
 ; while his feet are between VIEW_T and VIEW_B down the window; once he's past one
-; end, it scrolls a row a tick (at most 4 a frame) until he's at the other end,
+; end, it scrolls a row a tick (at most MAX_ROWS_PER_FRAME a frame) until he's at the other end,
 ; or the level's.
 band_scroll_v
         ; HL = his y in the window (signed): ty - view_row * 8
@@ -436,8 +447,8 @@ band_scroll_v
         ld hl,(ty) : or a : sbc hl,de
         ld a,(frame_ticks) : or a : jr nz,.n_some
         inc a
-.n_some cp 5 : jr c,.n_ok
-        ld a,4
+.n_some cp MAX_ROWS_PER_FRAME + 1 : jr c,.n_ok
+        ld a,MAX_ROWS_PER_FRAME
 .n_ok   ld (bs_n),a
         ld a,(scroll_dir) : or a : jp m,.up : jr nz,.down
         bit 7,h : jr nz,.start_up
