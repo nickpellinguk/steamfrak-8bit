@@ -81,13 +81,19 @@ main_loop
         ld (last_vsync),a
         sub b : ld e,a : ld d,0
         ld hl,(ticks) : add hl,de : ld (ticks),hl
+        ; (no word from the test harness a second after the start: the game itself)
+        ld a,(t_harness) : or a : jr nz,.harness
+        ld hl,auto_wait : dec (hl) : jr nz,.harness
+        ld a,SEG_LOGIC : call bank_select
+        jp game
+.harness
         ; show the other buffer every flip_rate frames (0: never)
         ld a,(flip_rate) : or a : jr z,main_loop
         ld hl,flip_count : dec (hl) : jr nz,main_loop
         ld (hl),a
         ld a,(front) : xor 1 : ld (flip_buf),a
         ld a,1 : ld (flip_pending),a
-        jr main_loop
+        jp main_loop
 
         INCLUDE "machine.asm"
         INCLUDE "screen.asm"
@@ -101,12 +107,32 @@ main_loop
         INCLUDE "../../cpc6128/src/gen/sounds.asm"
         INCLUDE "sound.asm"
 
-; The front end comes in phase 7: until then, calling it does nothing (and the
-; menus choose the level after the last again)
+; Call routine HL in the front end, A in and out; then whatever was paged in, in
+; again. The front end is kept packed in segment #FF (FRONT_PACKED_ORG) and runs
+; in SEG_CACHE (FRONT_ORG), where the level's background cache is: it's unpacked
+; there unless it's still there since it last was (load_level builds the cache
+; there again, and says it isn't: fe_unpacked).
 front_call
-        ld a,(fe_last)
+        ld (.go + 1),hl
+        ld (.a + 1),a
+        ld a,(win_seg) : ld (.back + 1),a
+        ld a,(fe_unpacked) : or a : call z,fe_unpack
+        ld a,SEG_CACHE : call bank_select
+.a      ld a,0
+.go     call 0
+        push af
+.back   ld a,0 : call bank_select
+        pop af
         ret
-fe_main = 0 : fe_record = 0 : fe_win = 0
+; ... unpacking it (from #FF, at page 3 meanwhile)
+fe_unpack
+        ld a,SEG_CACHE : call bank_select
+        ld a,SEG_TOP : out (PAGE3),a
+        ld hl,FRONT_PACKED_ORG - #4000 + #C000 : ld de,FRONT_ORG
+        call unpack
+        ld a,(back) : call screen_select
+        ld a,1 : ld (fe_unpacked),a
+        ret
 
 ; Fill the back buffer's ring with 0 (the background colour)
 fill_back
@@ -432,6 +458,39 @@ pl_x        db 0
 curbit      db 0
 cellk       db 0
 pl_ptr      dw 0
+; The front end's variables (in the low RAM, so they last: the front end is
+; unpacked afresh), the records, and the font
+fe_sel     db 0                     ; the selected button
+fe_top_sel db 0                     ; ... on the top menu
+fe_group   db 0
+fe_kind    db 0                     ; 0 the top menu, 1 a level group
+fe_bx      db 0                     ; the button being drawn: its byte column and top row
+fe_y0      db 0
+fe_flash   db 0
+fe_i       db 0
+fe_i2      db 0
+fe_n       db 0
+fe_pat     db 0
+fe_lev     db 0
+fe_iw      db 0
+fe_ih      db 0
+fe_r       db 0
+fe_wy      db 0                     ; (fe_win)
+fe_wdy     db 0
+fe_text    DEFS 9
+txt_col    db 0                     ; print_char: where, and in what colour
+txt_y      dw 0
+txt_colour db 3
+txt_src    dw 0
+rec_best_lo DEFS NUM_LEVELS         ; the records: each level's best time (game ticks), #FFFF if none
+rec_best_hi DEFS NUM_LEVELS
+rec_gem    DEFS NUM_LEVELS          ; ... 1 if it's been completed with all the gems
+rec_rate   DEFS NUM_LEVELS * 4      ; ... fewest restarts, at each difficulty (Easy, Hard, Harder, Insane), #FF if none
+rec_rate0  DEFS NUM_LEVELS          ; ... and at Zero (no balloons or daggers: for speed runs)
+fe_font    DEFS 96 * 8              ; EXOS's font, characters 32-127, 8 rows each (copy_font)
+fe_unpacked db 0                    ; the front end is unpacked in SEG_CACHE (front_call)
+t_harness   db 0                    ; the test harness says it's here (else the game starts by itself)
+auto_wait   db 50                   ; ... after this many vertical syncs
 end_code
 
         ALIGN 256
@@ -446,8 +505,8 @@ ladders     DEFS MAX_LADDERS * L_SIZE
 draws       DEFS MAX_DRAW * D_SIZE
 slows       DEFS MAX_SLOW * S_SIZE
 hud_image   DEFS 64                 ; the timer, as a raw image: 8 byte columns of 8 rows (see plot)
-font_digits DEFS 11 * 8             ; EXOS's font's 0-9 and colon (copy_font; the CPC version keeps
-                                    ; them in its logic bank, but the Enterprise's is loaded after)
+font_digits = fe_font + ('0' - 32) * 8 ; (the timer's digits and colon: the CPC version keeps
+                                    ; a copy in its logic bank)
 end_ram
 
         ASSERT end_ram <= #3F00     ; (the stack is from #3F00 to #3FFF)
@@ -455,13 +514,36 @@ end_ram
         SAVE 'build/FRAK.COM',exos_header,end_code-exos_header
         PRINT "Code from ",{hex}start," to ",{hex}end_code,", workspace to ",{hex}end_ram
 
-; The levels, packed (the CPC version's, as they are), for segment #FF at #4000
+; The front end, for SEG_CACHE at FRONT_ORG (build/FRONT.BIN), where front_call
+; unpacks it to, below the slow save areas; it's packed (build.sh: build/FRONT.lz)
+; for segment #FF
+        BANK
+        ORG FRONT_ORG
+front_start
+        INCLUDE "front.asm"
+front_end_
+        ASSERT front_end_ <= BG_TOP
+        SAVE 'build/FRONT.BIN',front_start,front_end_-front_start
+        PRINT "Front end: ",front_end_ - front_start," bytes"
+
+; Segment #FF (build/TOP.BIN): the levels, packed (the CPC version's, as they
+; are), at #4000, and the front end, packed (by build.sh, after a first pass
+; without it), at FRONT_PACKED_ORG. (The line parameter tables are made at
+; LPT_WIN when the program starts.)
         BANK
         ORG LEVELS_ORG
         INCBIN "../../cpc6128/build/PACK"
 levels_end
         ASSERT PACK_ORG == LEVELS_ORG && levels_end - LEVELS_ORG == PACK_SIZE
-        SAVE 'build/LEVELS.BIN',LEVELS_ORG,PACK_SIZE
+        ASSERT levels_end <= FRONT_PACKED_ORG
+        ORG FRONT_PACKED_ORG
+        IF PASS == 2
+        INCBIN "../build/FRONT.lz"
+        ENDIF
+front_packed_end
+        ASSERT front_packed_end <= LPT_WIN
+        SAVE 'build/TOP.BIN',LEVELS_ORG,front_packed_end-LEVELS_ORG
+        PRINT "Segment #FF: the levels, and the front end packed, to ",{hex}front_packed_end
 
 ; The game's logic, for segment #FA at #4000 (as the CPC version's extra bank 2)
         BANK

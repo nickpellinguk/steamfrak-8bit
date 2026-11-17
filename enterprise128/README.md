@@ -4,8 +4,9 @@ A port of the CPC 6128 version ([`../cpc6128`](../cpc6128/README.md)), which is 
 of the BBC Master version, to the Enterprise 128. The plan, phase by phase, is in
 [`PLAN.md`](PLAN.md).
 
-**Status: phase 6 done** (the game plays, every level, at 9.3 frames a second on average; see
-[`PLAN.md`](PLAN.md)). Phase 5: the game logic. Phase 4: the levels and the background. Phase 3: the plotter. Phase 2: the memory map, measured, fits. Phase 1: the machine layer and the
+**Status: phase 7 done:** the whole game runs, the attract screen, menus, levels,
+level-complete screen and records, with no music yet (see [`PLAN.md`](PLAN.md)). Phase 6: the
+game plays, every level, at 9.3 frames a second on average. Phase 5: the game logic. Phase 4: the levels and the background. Phase 3: the plotter. Phase 2: the memory map, measured, fits. Phase 1: the machine layer and the
 screen. Phase 0
 (the toolchain and the test harness): The program loads, asks EXOS
 which RAM segments it will give out, takes the machine over and tells the test harness it's
@@ -28,7 +29,9 @@ memory map from the CPC version's own build, so the BBC version must be built fi
 (`../build.sh`), as for the CPC version. It writes `src/gen/sizes.asm`, the front end and level
 loader packed (`build/*.lz`), and the map (`build/memmap.txt`).
 
-That makes `build/LEVELS.BIN` (the levels, packed, for segment `&FF`), `build/LOADER.BIN` (the
+Assembling takes two passes: the first makes `build/FRONT.BIN`, the front end, which `build.sh`
+packs (`build/FRONT.lz`) for the second to put in segment `&FF`'s file. That makes
+`build/TOP.BIN` (the levels and the front end, packed, for segment `&FF`), `build/LOADER.BIN` (the
 level loader, for `&FE`), and `build/FRAK.COM`, an EXOS type 5 program (a 16-byte header, then the code, which
 EXOS loads to `&0100`), and `build/frak.img`, a 720K EXDOS disk (FAT12) holding it, made by
 `tools/mkdisk.py`. `build/frak.sym` has the program's symbols, for the tests.
@@ -102,6 +105,7 @@ EP_ROMS=/path/to/roms node tools/emu/connections.mjs   # phase 5: Trogg moves as
 EP_ROMS=/path/to/roms node tools/emu/logic.mjs         # phase 5: the logic, tick for tick, against the BBC version's
 EP_ROMS=/path/to/roms node tools/emu/frames.mjs        # phase 6: every frame drawn, byte for byte
 EP_ROMS=/path/to/roms node tools/emu/fps.mjs           # phase 6: the frame rate on every level
+EP_ROMS=/path/to/roms node tools/emu/front.mjs         # phase 7: the attract screen, menus, a level won, the records
 ```
 
 `boot.mjs` is phase 0's test: the program must take the machine over, set `ready` and idle in

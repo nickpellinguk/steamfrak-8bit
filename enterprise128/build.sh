@@ -18,6 +18,16 @@ mkdir -p build
 if [ ! -f src/gen/sizes.asm ] || [ -n "$(find ../cpc6128/src ../tools/pack.py tools/memmap.py -newer src/gen/sizes.asm)" ]; then
     RASM="$RASM" python3 tools/memmap.py > build/memmap.txt || { cat build/memmap.txt; exit 1; }
 fi
-"$RASM" src/frak.asm -s -sa -os build/frak.sym -eo
+# Two passes: the first assembles the front end (build/FRONT.BIN) for the BBC version's packer
+# to pack (build/FRONT.lz), the second puts it, packed, in segment #FF's file (build/TOP.BIN)
+"$RASM" src/frak.asm -DPASS=1 -eo > build/pass1.txt || { cat build/pass1.txt; exit 1; }
+python3 -c "
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location('pack', '../tools/pack.py'); pack = importlib.util.module_from_spec(spec); spec.loader.exec_module(pack)
+data = open('build/FRONT.BIN', 'rb').read(); lz = pack.compress(data)
+assert pack.decompress(lz) == data
+open('build/FRONT.lz', 'wb').write(lz)
+print('Front end packed:', len(data), '->', len(lz), 'bytes')"
+"$RASM" src/frak.asm -DPASS=2 -s -sa -os build/frak.sym -eo
 python3 tools/mkdisk.py build/frak.img build/FRAK.COM
 echo "Built build/frak.img"

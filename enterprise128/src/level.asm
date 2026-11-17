@@ -133,6 +133,7 @@ platform_find
 load_level
         ld (ll_level),a
         ld a,(win_seg) : push af                ; (the segment in the window: the logic, playing)
+        xor a : ld (fe_unpacked),a              ; (the cache is built where the front end runs)
         ld a,SEG_VIDEO : out (PAGE2),a
         ld a,SEG_JIT : out (PAGE3),a
         ld a,(ll_level) : call ovl_load_level

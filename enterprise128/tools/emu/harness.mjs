@@ -53,15 +53,22 @@ function program() {
 // until it has taken the machine over (it sets `ready` to READY)
 export const READY = 0xA5;
 export const EXOS_FRAMES = Number(process.env.EP_EXOS_FRAMES || 400);
+// (and say it's there: else the game starts by itself, a second after)
 export function boot() {
+    return [...bootGame(), `poke ${symbols().t_harness} 1`];
+}
+// ... without saying so: the game starts by itself, at the attract screen (the program's files
+// must be put in their segments straight away: loadFiles)
+export function bootGame() {
     return [`wait ${EXOS_FRAMES}`, `load 256 ${program()}`, 'jump 256', `waitfor ${symbols().ready} ${READY} 500`];
 }
 
 // Steps that put the program's files in their segments, as it will load them itself (phase 8):
-// the graphics (#F9), the logic (#FA), the levels (#FF) and the level loader (#FE)
+// the graphics (#F9), the logic (#FA), the levels and the front end, packed (#FF) and the level
+// loader (#FE)
 export function loadFiles(sym) {
     return [`sload ${sym.seg_gfx} 0 ${join(ROOT, 'build/cpc/GFX.BIN')}`, `sload ${sym.seg_logic} 0 ${join(ROOT, 'build/LOGIC.BIN')}`,
-            `sload ${sym.seg_top} 0 ${join(ROOT, 'build/LEVELS.BIN')}`, `sload ${sym.seg_jit} ${sym.fe_spare} ${join(ROOT, 'build/LOADER.BIN')}`];
+            `sload ${sym.seg_top} 0 ${join(ROOT, 'build/TOP.BIN')}`, `sload ${sym.seg_jit} ${sym.fe_spare} ${join(ROOT, 'build/LOADER.BIN')}`];
 }
 
 // Run the steps (strings, as steps.lua and ephl take them; a final "quit" is added). Returns

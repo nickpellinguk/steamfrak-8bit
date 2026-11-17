@@ -1,6 +1,10 @@
 # Plan: Frak! for the Enterprise 128
 
-Status: **phase 6 done:** the game plays, on every level: the frame loop, scrolling and drawing
+Status: **phase 7 done:** the whole game runs, from the attract screen through the menus, the
+levels and the level-complete screen to the records (`front.mjs`), with no music yet. Only
+phase 8 is left of the first milestone: the disk image starting by itself, and a real machine.
+
+Phase 6 done: the game plays, on every level: the frame loop, scrolling and drawing
 (`src/play.asm`) pass the CPC version's `frames.mjs`, every one of 6,600 frames byte for byte,
 and `fps.mjs` measures 9.3 frames a second on average on ephl (the CPC version 10.3, the BBC
 version 14.4). Next: phase 7, the front end.
@@ -441,7 +445,7 @@ bigger window (the CPC's is 256x256 or 320x200) and every screen byte waiting fo
 12.5 frames a second the game slows (at most 4 ticks a frame, as the BBC version), so on most
 levels it does for now: the optimisation pass after the first milestone starts from here.
 
-### Phase 7: front end (`src/front.asm`)
+### Phase 7: front end (`src/front.asm`) — done
 
 The CPC's front end, packed, unpacked into segment `&FB` when the menus come up (the level's
 background is rebuilt when a level starts anyway), with its records kept in low RAM. It's drawn
@@ -450,6 +454,28 @@ the Enterprise's own, copied from the EXOS ROM at start-up, as the CPC version c
 from its lower ROM *(check: where it is)*.
 **Test:** `front.mjs`: from the attract screen through the menus into a level, won, then the next
 level, and back to the menus with its record.
+
+**Done**, as planned, with these details:
+- `src/front.asm` is the CPC version's, assembled at `&4000` (`build/FRONT.BIN`, 3,524 bytes:
+  its variables moved out), packed by `build.sh` between two passes of the assembler (2,591
+  bytes) into segment `&FF`'s file (`build/TOP.BIN`, the levels and it), and unpacked by
+  `front_call` into `&FB` when it's called, unless it's still there since it last was (the
+  loader clears `fe_unpacked`, as it builds the background cache there).
+- Its variables, the records (440 bytes) and the font (EXOS's, characters 32-127, 768 bytes,
+  copied from video RAM at the start, as the timer's digits were) are in the low RAM, so they
+  last. That leaves the low RAM 148 bytes before the stack (`&3E6C`).
+- It draws the BBC version's 256-pixel-wide layout in byte columns 0-63 of buffer 0's ring,
+  shown from 8 bytes before the ring's start (`FE_SCROLL`), so it's 32 pixels in, as on the
+  BBC's 320-pixel screen; while it sets a screen up, the blank table is on show.
+- The game starts by itself a second after the program does, unless the test harness says it's
+  there (`t_harness`), as the CPC version's.
+
+`front.mjs` (the CPC version's) passes, on several power-up seeds; and `frames.mjs` checks the
+level-complete screen's text again, in EXOS's font. Two waits in `front.mjs` are longer than the
+CPC version's, as the Enterprise is slower: Escape is held for half a second (playing, the keys
+are read once a drawn frame), and the next level is given longer to load and be drawn before
+it's pressed (drawing both buffers afresh is slow: `paint_line` calls a routine for each line,
+one for the optimisation pass).
 
 ### Phase 8: release
 

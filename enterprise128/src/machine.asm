@@ -43,6 +43,7 @@ KEY_I = 72 : KEY_O = 74 : KEY_AT = 75 : KEY_P = 76 : KEY_LBRACKET = 77
 ; #B6, are for later.)
 KEY_JOY_UP = KEY_UP : KEY_JOY_DOWN = KEY_DOWN : KEY_JOY_LEFT = KEY_LEFT : KEY_JOY_RIGHT = KEY_RIGHT
 KEY_FIRE1 = KEY_SPACE : KEY_FIRE2 = KEY_SPACE
+KEY_RETURN = KEY_ENTER              ; (the CPC's Return and Enter are both the Enterprise's ENTER)
 
 ; Take the machine over from EXOS: the stack at the top of page 0, our interrupt
 ; handler at #0038, interrupt mode 1, the program's own segments paged in, and

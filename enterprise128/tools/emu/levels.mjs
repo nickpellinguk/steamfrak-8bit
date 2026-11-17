@@ -26,7 +26,7 @@ const tablesFrom = sym.plats, tablesTo = sym.end_ram, varsFrom = sym.cur_level, 
 
 const CACHE = sym.seg_cache, RING_SEG = 0xFD, RING_OFF = 0x1100, RING = 20480;   // (buffer 1's ring)
 const steps = [...boot(), `poke ${sym.flip_rate} 0`, `sload ${0xF9} 0 ${join(ROOT, 'build/cpc/GFX.BIN')}`,
-    `sload ${0xFF} 0 ${join(ROOT, 'build/LEVELS.BIN')}`, `sload ${0xFE} ${sym.fe_spare} ${join(ROOT, 'build/LOADER.BIN')}`];
+    `sload ${0xFF} 0 ${join(ROOT, 'build/TOP.BIN')}`, `sload ${0xFE} ${sym.fe_spare} ${join(ROOT, 'build/LOADER.BIN')}`];
 const command = (cmd, arg) => steps.push(`poke ${sym.t_arg} ${arg}`, `poke ${sym.t_cmd} ${cmd}`, `waitfor ${sym.t_cmd} 0 3000`);
 names.forEach((name, li) => {
     if (only.length && !only.includes(name)) return;

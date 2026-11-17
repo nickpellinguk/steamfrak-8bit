@@ -7,8 +7,8 @@ files, packs its front end and level loader with the BBC version's packer (../..
 checks each unpacks to what was packed, and writes:
 
     build/cpc/*.BIN            the CPC version's files, raw
-    build/FRONT.bin, .lz       the front end, and packed
-    build/LOADER.bin, .lz      the level loader, and packed
+    build/cpc/FRONT.bin, .lz   the CPC version's front end, and packed
+    build/cpc/LOADER.bin, .lz  its level loader, and packed
     src/gen/sizes.asm          their sizes, for src/layout.asm's ASSERTs
 
 then prints the memory map, segment by segment, with what's free.
@@ -84,8 +84,8 @@ def packed(name, data):
     lz = pack.compress(data)
     if pack.decompress(lz) != data:
         sys.exit(f'{name}: the packer did not give back what it packed')
-    open(os.path.join(BUILD, name + '.bin'), 'wb').write(data)
-    open(os.path.join(BUILD, name + '.lz'), 'wb').write(lz)
+    open(os.path.join(BUILD, 'cpc', name + '.bin'), 'wb').write(data)
+    open(os.path.join(BUILD, 'cpc', name + '.lz'), 'wb').write(lz)
     return lz
 
 

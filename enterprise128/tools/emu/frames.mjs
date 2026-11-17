@@ -12,8 +12,7 @@
 // behind, erased wrongly, painted in the wrong place or not repainted when it should have been
 // shows up.
 //
-// The level-complete screen's text comes from the front end (phase 7): until then, that screen is
-// checked without it.
+// The level-complete screen's text is the front end's, in EXOS's font (copy_font: fe_font).
 //
 //   ./build.sh && EP_ROMS=... node tools/emu/frames.mjs [room_A_1 ...] [--frames=N] [--seed=N]
 import { symbols, run, boot, loadFiles, EMULATOR } from './harness.mjs';
@@ -99,6 +98,7 @@ for (const { room, immortal } of runs) {
     let bad = null, last = [null, null], alive0 = null, wasDead = 0;
     for (let f = 0; f < FRAMES && !bad; f++) {
         const L = r.dump(`L${f}`), B = r.dump(`B${f}`);
+        const font = L.subarray(sym.fe_font, sym.fe_font + 768);      // (EXOS's: copy_font)
         const lo = a => L[a], b2 = a => B[a - 0x4000];
         const w = (rd, a) => { const v = rd(a) | rd(a + 1) << 8; return v > 32767 ? v - 65536 : v; };   // (signed)
         const level = NAMES[lo(sym.cur_level)];
@@ -119,7 +119,29 @@ for (const { room, immortal } of runs) {
             if (partB[t] !== 255) refPlot(want, mode, clip, partB[t], tx, ty);
             const r = b2(sym.done_restarts);
             if (r < 3) { refPlot(want, mode, clip, IMG.Rating_1 + r, tx + 21, ty - 23); refPlot(want, mode, clip, IMG.TrophyStand, tx + 21, ty - 23); }
-            // (... and its text, which the front end draws: phase 7)
+            // ... and its text, in black, centred, from 40 rows above the window's middle (60 with a
+            // medal): "We've done it!", the time (m:ss.mmm), the gems, the medal
+            const text = (dy, str) => {
+                const y0 = clip.t + 128 - 40 - (r < 3 ? 20 : 0) + dy;
+                let c = scol + cols / 2 - str.length;
+                for (const ch of str) {
+                    for (let row = 0; row < 8; row++) {
+                        const g = font[(ch.charCodeAt(0) - 32) * 8 + row];
+                        for (const [k, n] of [[0, g >> 4], [1, g & 15]]) {
+                            const i = at(mode, c + k, y0 + row), m = (n << 4 | n);
+                            want[i] = want[i] & ~m | m;
+                        }
+                    }
+                    c += 2;
+                }
+            };
+            const ticks = b2(sym.done_ticks) | b2(sym.done_ticks + 1) << 8;
+            const secs = Math.min(599, Math.floor(ticks / 50)), ms = (ticks % 50) * 20;
+            text(0, "We've done it!");
+            text(16, `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}.${String(ms).padStart(3, '0')}`);
+            let dy = 32;
+            if (b2(sym.done_gems)) { text(32, 'You collected all the gems!'); dy = 48; }
+            if (r < 3) text(dy + 32, ['!!! Gold Medal !!!', '!!! Silver Medal !!!', '!!! Bronze Medal !!!'][r]);
             log.push('(the level-complete screen)');
             seen.won++;
         } else {

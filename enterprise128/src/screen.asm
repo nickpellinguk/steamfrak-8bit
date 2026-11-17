@@ -232,12 +232,13 @@ sync_bands
 
 ; Copy EXOS's font from video RAM (where it puts it when it starts, at Nick's
 ; FONT_NICK in segment #FF, row by row: row r of character c at FONT_NICK +
-; r * 128 + c; 9 rows) to font_digits in the low RAM: the digits and the
-; colon, 8 rows each, top first (for the timer). Before anything is loaded into
-; #FF over it. (The CPC version copies its own from its lower ROM.)
+; r * 128 + c; 9 rows) to fe_font in the low RAM: characters 32-127, 8 rows each,
+; top first (for the front end; the timer's digits are among them: font_digits).
+; Before anything is loaded into #FF over it. (The CPC version copies its own
+; from its lower ROM.)
 copy_font
         ld a,SEG_TOP : out (PAGE3),a
-        ld de,font_digits : ld c,'0'
+        ld de,fe_font : ld c,32
 .char   ld b,0
 .row    push de
         ld l,b : ld h,0
@@ -247,5 +248,5 @@ copy_font
         pop de
         ld a,(hl) : ld (de),a : inc de
         inc b : ld a,b : cp 8 : jr nz,.row
-        inc c : ld a,c : cp ':' + 1 : jr nz,.char
+        inc c : bit 7,c : jr z,.char
         ld a,(back) : jp screen_select

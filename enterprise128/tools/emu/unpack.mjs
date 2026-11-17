@@ -1,5 +1,5 @@
-// Phase 2's test: the Z80 unpacker (src/unpack.asm). The front end and the level loader, packed
-// by tools/memmap.py with the BBC version's packer, are put where the front end will be kept,
+// Phase 2's test: the Z80 unpacker (src/unpack.asm). The CPC version's front end and level
+// loader, packed by tools/memmap.py with the BBC version's packer, are put where the front end will be kept,
 // in segment #FF at #7000 (in the window), and the program unpacks each from there (with #FF at
 // page 3) into segment #FB at #4000, where the front end will run. What it unpacks must be what
 // was packed, byte for byte, and end where it should; the line parameter tables at the top of
@@ -15,8 +15,8 @@ const names = ['FRONT', 'LOADER'];
 const word = (addr, v) => [`poke ${addr} ${v & 255}`, `poke ${addr + 1} ${v >> 8}`];
 const steps = [...boot(), 'sdump lpt_before 255 16128 256'];
 for (const name of names) {
-    const raw = readFileSync(join(ROOT, `build/${name}.bin`));
-    steps.push(`sload 255 ${0x3000} ${join(ROOT, `build/${name}.lz`)}`, ...word(sym.t_unpack_src, 0xF000),
+    const raw = readFileSync(join(ROOT, `build/cpc/${name}.bin`));
+    steps.push(`sload 255 ${0x3000} ${join(ROOT, `build/cpc/${name}.lz`)}`, ...word(sym.t_unpack_src, 0xF000),
         `poke ${sym.t_unpack_seg} ${0xFB}`, `peek ${name}_done0 ${sym.t_done} 2`, 'time t0_' + name,
         `poke ${sym.t_unpack} 1`, `waitfor ${sym.t_unpack} 0 100`, 'time t1_' + name,
         `peek ${name}_end ${sym.t_unpack_end} 2`, `sdump ${name} 251 0 ${raw.length}`);
@@ -27,7 +27,7 @@ const r = run(steps);
 let failed = 0;
 const fail = msg => { console.log('  FAIL ' + msg); failed++; };
 for (const name of names) {
-    const raw = readFileSync(join(ROOT, `build/${name}.bin`)), lz = readFileSync(join(ROOT, `build/${name}.lz`));
+    const raw = readFileSync(join(ROOT, `build/cpc/${name}.bin`)), lz = readFileSync(join(ROOT, `build/cpc/${name}.lz`));
     const got = r.dump(name), end = r.peeks[`${name}_end`][0] | r.peeks[`${name}_end`][1] << 8;
     const wrong = raw.findIndex((b, i) => got[i] !== b);
     const ms = (r.times[`t1_${name}`] - r.times[`t0_${name}`]) * 1000;
