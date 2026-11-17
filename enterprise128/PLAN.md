@@ -1,6 +1,8 @@
 # Plan: Frak! for the Enterprise 128
 
-Status: **planning.** Nothing is built yet.
+Status: **phase 0 under way.** The build (RASM, an EXOS type 5 program on an EXDOS disk image)
+and the MAME harness work, and `boot.mjs` passes against a stand-in ROM that only pretends to
+be EXOS. Running it on the real EXOS and EXDOS ROMs is to come.
 
 The CPC 6128 version (`../cpc6128`) is a Z80 port of the BBC Master version, and it has already
 solved most of the problems this port will meet: the BBC's 6502 code turned into Z80 routine by
@@ -19,8 +21,11 @@ checked by the CPC version's tests (adapted). The music and sound effects player
 stubs, and the front end is packed if it's needed to make room. Retuning (Dave's sound) and
 re-optimising come after that milestone.
 
-Facts about Nick and Dave marked *(check)* are from memory. Each is settled by the phase that
-first relies on it, with a test, before anything is built on it.
+Facts about Nick and Dave marked *(check)* are still to be confirmed. Each is settled by the
+phase that first relies on it, with a test, before anything is built on it. Those marked
+*(MAME)* are as MAME's Enterprise driver has them (`src/mame/enterprise/nick.cpp` and
+`ep64.cpp`, `src/devices/sound/dave.cpp`), which is as far as the tests can check them until a
+real machine does.
 
 ## The idea
 
@@ -50,7 +55,8 @@ bands, clipping and HUD positions come from the BBC version, with the code from 
 - **Each ring ends on a page boundary**, so the plotter's wrap test is a compare of the address's
   high byte.
 - **Flipping buffers** is done in the vertical interrupt (Nick's VINT through Dave), by pointing
-  Nick at the other buffer's table (ports `&82`/`&83` *(check)*) or by rewriting the LPBs.
+  Nick at the other buffer's table (ports `&82`/`&83` *(MAME: the table is 16-byte aligned, with
+  its address's bits 4-11 in `&82` and bits 12-15 in `&83`'s low bits)*) or by rewriting the LPBs.
 - **The four colours are each LPB's palette entries**: the level's background colour, black,
   magenta and yellow, as on the BBC and CPC.
 
@@ -73,7 +79,7 @@ Where the screens go, as Nick sees it:
 | `&C000-&FFFF` | 16,384 | segment `&FF` |
 
 How the Z80 sees memory while a level plays. Dave pages any segment into any of the four
-pages *(check: ports `&B0-&B3`)*, so this keeps the CPC's arrangement:
+pages *(MAME: ports `&B0-&B3`, which read back too)*, so this keeps the CPC's arrangement:
 
 | Z80 page | CPC | Enterprise |
 |---|---|---|
@@ -131,8 +137,9 @@ are the CPC version's, adapted, on MAME's Enterprise 128 driver.
 - **Assembler:** RASM 3.3.1, as the CPC version, with the same `build.sh` shape. It needs the
   BBC version built first, for its graphics and levels.
 - **Output:** an EXOS type 5 program (a 16-byte header, then code that loads at `&0100`) for
-  the low RAM, and data files for the segments, on an EXDOS (FAT, 720K) disk image. *(Check: how
-  EXDOS starts a program from a disk at power-on.)*
+  the low RAM, and later data files for the segments, on an EXDOS disk image (`tools/mkdisk.py`:
+  720K, FAT12; MAME's `ep128` driver reads it as a `.img`). *(Check: how EXDOS starts a program
+  from a disk at power-on.)*
 - **Harness:** `tools/emu` from the CPC version, with `mame.mjs` running MAME's `ep128` driver
   and `steps.lua` peeking and poking by segment rather than bank. MAME needs the Enterprise's
   ROMs (EXOS, and EXDOS for the disk), from a directory in `EP_ROMS` as `CPC_ROMS` is for the
@@ -143,29 +150,36 @@ are the CPC version's, adapted, on MAME's Enterprise 128 driver.
 
 ### Phase 1: machine layer and screen (`src/machine.asm`)
 
-- **Paging:** `bank_select` pages a segment into the window (port `&B1` *(check)*), keeping a
+- **Paging:** `bank_select` pages a segment into the window (port `&B1`), keeping a
   copy as `ga_ram` does; `screen_select` pages a buffer's two segments into pages 2 and 3.
   `bank_test` checks every segment at start-up.
-- **Interrupts and ticks:** 50 a second from Nick's VINT through Dave (port `&B4`: enable and
-  reset the latch *(check)*), with the vertical sync's LPB marked for it. The main loop runs a
+- **Interrupts and ticks:** 50 a second from Nick's VINT through Dave (port `&B4`: bit 4 enables it, bit 5 resets its
+  latch *(MAME)*), with the vertical sync's LPB marked for it. The main loop runs a
   game tick for each vertical sync since it last looked, as now.
 - **Where the raster is:** `restore_chase` needs to know where the raster is, which the CPC
   works out from the gate array's six interrupts a frame, 52 lines apart. Here, the playfield's
   LPBs are split into bands about 52 lines apart, alternately with and without VINT, so the
-  handler can count them *(check: which edge of VINT Dave interrupts on)*. LPBs after the first
-  can carry on from the last one's address, without reloading it *(check: Nick's RELOAD bit)*.
-- **Keyboard:** 10 rows of 8 keys, a row selected and read through port `&B5` *(check)*, read in
+  handler can count them. MAME's Dave latches the interrupt as an LPB with VINT starts *(check
+  on a real machine: it may be as one ends)*. Every LPB loads its own LD1 at its first line
+  *(MAME)*, so each band's address is worked out from the scroll position. Bit 0 of the mode
+  byte marks the table's last LPB, after which Nick starts the table again.
+- **Keyboard:** 10 rows of 8 keys, a row selected and read through port `&B5` (a key down reads 0)
+  *(MAME)*, read in
   the interrupt handler into `keys[]` as now. The `KEY_` constants become the Enterprise's
   matrix positions; the keys are the same (Z X O K, cursor keys, Space, Return, Escape, P, Y, M,
-  S, and L R U D J and the digits for typed commands). Joystick: the internal one and the
-  external port *(check)*.
+  S, and L R U D J and the digits for typed commands). Joystick: the internal one is in the keyboard matrix; the external one's J, K and L
+  lines are bits 0-2 of port `&B6` *(MAME)*.
 - **The screen:** the line parameter table (two of them, one for each buffer), built from the
   view's scroll position: the border and sync LPBs as EXOS makes them, then the playfield's
-  bands with the wrap split, all 312 lines.
-- **Pixels:** settle how Nick packs 4 pixels into a byte. The CPC's Mode 1 and the BBC's MODE 1
-  pack them the same way, so the graphics bank's code tables are the screen's bytes as they
-  are. If Nick packs them differently, `gfx.py` converts the 1K of code tables and the HUD's
-  nibble tables; the sprites, as 5-pixel codes, stay as they are.
+  bands with the wrap split, all 312 lines. (MAME's screen is 280 lines, and it starts a
+  frame as an LPB with VINT ends, so the playfield must come within 280 lines of that for the
+  tests' screenshots to show it.)
+- **Pixels:** Nick packs 4 pixels into a byte as the CPC's Mode 1 and the BBC's MODE 1 do
+  (pixel 0 in bits 7 and 3, bit 3 the high bit of its colour) *(MAME)*, so the graphics bank's
+  code tables are the screen's bytes as they are. `screens.mjs` confirms it.
+- **Colours:** a palette byte has 3 bits of red (bits 0, 3 and 6, strongest first), 3 of green
+  (1, 4, 7) and 2 of blue (2, 5) *(MAME)*: black `&00`, red `&49`, green `&92`, yellow `&DB`,
+  magenta `&6D`, cyan `&B6`.
 - **Tests:** `screens.mjs`: a test pattern shown in both buffers, scrolled both ways across the
   wrap point, flipped at the vertical sync, and every line of the screenshot is what it should
   be. `machine.mjs`: 50 ticks a second, every key, every segment.
