@@ -28,6 +28,41 @@ frame drawn runs a tick of logic for every vertical sync since the last (up to 1
 keeps up with Trogg however few frames there are (see [`PLAN.md`](PLAN.md), "Keeping the game's
 speed").
 
+## In a browser
+
+`build/frak-ep128.html` is an Enterprise 128 in one web page: [ep128emu](https://github.com/istvan-v/ep128emu)'s
+emulation (GPL-2.0), as `ephl` runs it, compiled to WebAssembly, with the game built in. Open it in
+a browser, locally or from any web host. It needs none of the Enterprise's ROMs: the page starts
+the machine as EXOS and EXDOS would leave it once they'd loaded the game from its disk, as the
+test harness's quick start does, and the program takes the machine over from there as it always
+does. The page puts the program (`START`) at `&0100` in segment `&F8` and its four files where its
+`load_files` would put them, a stand-in for EXOS's calls at `RST &30` (the program makes only four:
+open, read a block and close a file, which it answers "done", the files being there already, and
+allocate a segment, which gives out `&F9`-`&FE` as EXOS does), and a font in video RAM where EXOS
+keeps its own, for the front end's text: Daniel Hepper's public-domain
+[font8x8](https://github.com/dhepper/font8x8), not EXOS's. There's no sound (the game has none
+yet). As for the Atari version's page, not inside a host whose security policy forbids compiling
+WebAssembly (claude.ai's artifact viewer, for one): there the page says so instead.
+
+    web/build_emulator.sh            # build/ep.js (needs emscripten: 3.1.6, Ubuntu's, was used)
+    python3 web/build_page.py        # build/frak-ep128.html (after ./build.sh)
+    node tools/emu/web.mjs           # the page in headless Chromium (Playwright): through the menus into a level
+
+| File | |
+| --- | --- |
+| `web/web.cpp` | The emulator's side: switch on with no ROMs, load the files, run a frame, keys, and hand over the screen (768 x 288 palette indices, as `ephl`'s) and palette |
+| `web/page.html` | The page: the canvas (shown at 4:3) at 50 frames a second, the keys (each held at least 3 frames, so a quick tap isn't missed), Reset and Pause |
+| `web/build_emulator.sh` | ep128emu's emulation (at `ephl`'s commit) and `web.cpp` through emscripten into one `ep.js` with the WebAssembly inside |
+| `web/build_page.py` | `page.html` with `ep.js`, the game's files (from `build/disk`, each with its segment and offset, from `build/frak.sym`) and the font put in |
+| `web/font.py` | The font, as EXOS keeps its own in video RAM |
+| `web/audio.cpp`, `web/stubs/` | Stand-ins for ep128emu's sound output, and libsndfile's and PortAudio's headers, which its emulation includes (the page plays no sound and reads no sound files) |
+| `tools/ephl/headless.hpp` | The display both `ephl` and the page use: Nick's lines decoded into palette indices |
+
+Building it found one thing ep128emu assumes: its Z80 lays its register pairs out low byte
+first only on x86 and ARM, and high byte first on anything else, WebAssembly included (which is
+little-endian), so `build_emulator.sh` defines `CPC_LSB_FIRST`. Without it, `IN A,(C)` reads the
+port in B, and the game never gets past waiting for its first vertical sync.
+
 ## Building
 
 You need [RASM](https://github.com/EdouardBERGE/rasm), built from its source (v3.3.1, as for
@@ -123,6 +158,7 @@ EP_ROMS=/path/to/roms node tools/emu/fps.mjs           # phase 6: the frame rate
 EP_ROMS=/path/to/roms node tools/emu/front.mjs         # phase 7: the attract screen, menus, a level won, the records
 EP_ROMS=/path/to/roms node tools/emu/disk.mjs          # phase 8: the disk, LOADed from BASIC (EP_COLD=1: from garbage)
 EP_ROMS=/path/to/roms node tools/emu/profile.mjs       # where the time goes, playing (ephl's profile step)
+node tools/emu/web.mjs                                 # the web page, in headless Chromium (see "In a browser")
 ```
 
 `boot.mjs` is phase 0's test: the program must take the machine over, set `ready` and idle in

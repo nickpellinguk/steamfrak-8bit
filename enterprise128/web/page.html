@@ -1,0 +1,197 @@
+<title>Frak! on the Enterprise 128</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&display=swap">
+<style>
+/* Layout: one column, the screen first, a strip of controls under it, notes below. A bench
+   look: the Enterprise's black case, the screen's own black, an accent of its function keys. */
+:root {
+  --case: #18191b;        /* the page: the Enterprise's black case */
+  --panel: #232528;       /* control strip */
+  --line: #36393e;
+  --ink: #e8e8e6;         /* text */
+  --dim: #9da0a6;
+  --accent: #5cb8e6;      /* the function keys' blue */
+  --screen: #000;
+  --sans: "IBM Plex Sans", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  color-scheme: dark;
+}
+html, body { background: var(--case); color: var(--ink); }
+body { font-family: var(--sans); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 24px 40px; }
+main { max-width: 960px; margin: 0 auto; display: grid; gap: 18px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; }
+h1 { font-family: var(--mono); font-weight: 600; font-size: 1.35rem; margin: 0; letter-spacing: .02em; text-wrap: balance; }
+h1 span { color: var(--accent); }
+.sub { color: var(--dim); font-family: var(--mono); font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; }
+.screen { background: var(--screen); border: 1px solid var(--line); border-radius: 6px; padding: 10px; position: relative; }
+canvas { display: block; width: 100%; max-width: 100%; aspect-ratio: 4 / 3; image-rendering: pixelated; image-rendering: crisp-edges; outline: none; }
+canvas:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+.note { position: absolute; inset: 10px; display: grid; place-items: center; padding: 24px; text-align: center; line-height: 1.6; background: rgba(0,0,0,.8); color: var(--accent); font-family: var(--mono); border: 2px dashed var(--accent); border-radius: 4px; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
+button { font: inherit; font-family: var(--mono); font-size: .85rem; color: var(--ink); background: var(--case); border: 1px solid var(--line); border-radius: 4px; padding: 6px 10px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button[aria-pressed="true"] { background: var(--accent); color: var(--case); border-color: var(--accent); }
+.spacer { flex: 1; }
+.status { font-family: var(--mono); font-size: .8rem; color: var(--dim); font-variant-numeric: tabular-nums; }
+.notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; }
+.notes section { min-width: 0; }
+h2 { font-family: var(--mono); font-size: .8rem; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: .08em; margin: 0 0 6px; }
+p { margin: 0 0 8px; max-width: 65ch; color: var(--ink); }
+kbd { font-family: var(--mono); font-size: .8rem; background: var(--panel); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 3px; padding: 0 5px; }
+dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; }
+dt { white-space: nowrap; } dd { margin: 0; color: var(--dim); }
+footer { color: var(--dim); font-size: .8rem; border-top: 1px solid var(--line); padding-top: 12px; }
+a { color: var(--accent); }
+</style>
+
+<main>
+  <header>
+    <h1>Frak! <span>Enterprise 128</span></h1>
+    <div class="sub">PAL Enterprise 128 · ep128emu</div>
+  </header>
+
+  <div class="screen" id="screen">
+    <canvas id="tv" width="768" height="288" tabindex="0" aria-label="Enterprise screen. Click, then use the keys: Z X O K or the arrow keys to move, Space to fire."></canvas>
+  </div>
+
+  <div class="controls">
+    <button id="reset" type="button">Reset</button>
+    <button id="pause" type="button" aria-pressed="false">Pause</button>
+    <span class="spacer"></span>
+    <span class="status" id="status">Starting…</span>
+  </div>
+
+  <div class="notes">
+    <section>
+      <h2>What this is</h2>
+      <p>Frak! on an Enterprise 128: the CPC 6128 version's Z80 code, on a 320 x 256 four-colour screen, double-buffered and scrolled through Nick's line parameter tables. It starts on the attract screen: press <kbd>Space</kbd> for the menus, move with <kbd>O</kbd> and <kbd>K</kbd> (or the arrow keys), choose with <kbd>Space</kbd>, and play.</p>
+      <p>Collect all the keys. The yoyo knocks meanies off and pops balloons and daggers; touching any of them kills Trogg. The game runs at 50 ticks a second however long the drawing takes.</p>
+      <p>There's no sound yet. The machine starts without the Enterprise's ROMs: the page puts the game's files in memory as EXOS would have loaded them, with a public-domain font in place of EXOS's for the menus' text.</p>
+    </section>
+    <section>
+      <h2>Keys</h2>
+      <dl>
+        <dt><kbd>Z</kbd> <kbd>X</kbd> <kbd>O</kbd> <kbd>K</kbd></dt><dd>Left, right, up, down</dd>
+        <dt><kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd></dt><dd>The same (the Enterprise's joystick)</dd>
+        <dt><kbd>Space</kbd> <kbd>P</kbd></dt><dd>Throw the yoyo; in the menus, choose</dd>
+        <dt><kbd>Esc</kbd></dt><dd>Back to the menus</dd>
+        <dt><kbd>M</kbd> <kbd>S</kbd></dt><dd>Music and sound effects on and off (when there's sound)</dd>
+        <dt>Other keys</dt><dd>The Enterprise's own (the UK layout)</dd>
+      </dl>
+      <p style="margin-top:8px">Click the screen first so it gets the keys.</p>
+    </section>
+  </div>
+
+  <footer>
+    The emulator is <a href="https://github.com/istvan-v/ep128emu" target="_blank" rel="noopener">ep128emu</a> by István Varga (GPL-2.0), its emulation compiled to WebAssembly, with the video RAM's wait states, so it runs at the real machine's speed. The font is Daniel Hepper's public-domain <a href="https://github.com/dhepper/font8x8" target="_blank" rel="noopener">font8x8</a>. The game: <code>enterprise128/</code> in the steamfrak-8bit repository.
+  </footer>
+</main>
+
+<script>/*EPJS*/</script>
+<script>
+const FILES = /*FILES*/;
+(async () => {
+  const $ = id => document.getElementById(id);
+  const status = $('status'), tv = $('tv'), ctx = tv.getContext('2d');
+  const W = 768, H = 288;
+  const img = ctx.createImageData(W, H), px = new Uint32Array(img.data.buffer);
+  let E, paused = false, started = false;
+
+  function note(text) {
+    const n = document.createElement('div');
+    n.className = 'note'; n.textContent = text;
+    $('screen').appendChild(n);
+  }
+  try { E = await Enterprise({ print: () => {}, printErr: () => {} }); }
+  catch (e) {
+    const blocked = /Content Security Policy|unsafe-eval|CompileError/.test(String(e && e.message));
+    status.textContent = blocked ? 'WebAssembly is blocked here' : 'The emulator failed to load';
+    note(blocked
+      ? 'This page\'s host blocks WebAssembly (its security policy forbids compiling it), so the emulator can\'t start here. Open the same file, enterprise128/build/frak-ep128.html in the steamfrak-8bit repository, from your own computer or any ordinary web host (GitHub Pages, itch.io) and it runs.'
+      : 'The emulator failed to load: ' + e.message);
+    return;
+  }
+  window.enterprise = E;          // (for tests: tools/emu/web.mjs)
+
+  // the palette: 0xRRGGBB to the canvas's little-endian ABGR
+  const pal = new Uint32Array(256);
+  { const p0 = E._web_palette() >> 2;
+    for (let i = 0; i < 256; i++) { const c = E.HEAP32[p0 + i]; pal[i] = 0xff000000 | (c & 0xff) << 16 | (c & 0xff00) | (c >> 16 & 0xff); } }
+
+  // switch on: the files in their segments, the program started
+  const fromB64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+  const files = FILES.map(f => ({ ...f, bytes: fromB64(f.data) }));
+  function start() {
+    E._web_start();
+    for (const f of files) {
+      const b = E._web_buffer(f.bytes.length);
+      E.HEAPU8.set(f.bytes, b);
+      E._web_load(f.seg, f.off, f.bytes.length);
+    }
+    E._web_go(0x0100);
+    started = true;
+    status.textContent = 'Running';
+    tv.focus({ preventScroll: true });
+  }
+  $('reset').addEventListener('click', start);
+  $('pause').addEventListener('click', e => { paused = !paused; e.currentTarget.setAttribute('aria-pressed', paused); status.textContent = paused ? 'Paused' : 'Running'; });
+
+  // the keyboard: the browser's keys (by where they are) to the Enterprise's matrix (row * 8 + bit)
+  const KEYS = {
+    KeyN: 0, Backslash: 1, KeyB: 2, KeyC: 3, KeyV: 4, KeyX: 5, KeyZ: 6, ShiftLeft: 7,
+    KeyH: 8, CapsLock: 9, KeyG: 10, KeyD: 11, KeyF: 12, KeyS: 13, KeyA: 14, ControlLeft: 15, ControlRight: 15,
+    KeyU: 16, KeyQ: 17, KeyY: 18, KeyR: 19, KeyT: 20, KeyE: 21, KeyW: 22, Tab: 23,
+    Digit7: 24, Digit1: 25, Digit6: 26, Digit4: 27, Digit5: 28, Digit3: 29, Digit2: 30, Escape: 31,
+    F4: 32, F8: 33, F3: 34, F6: 35, F5: 36, F7: 37, F2: 38, F1: 39,
+    Digit8: 40, Digit9: 42, Minus: 43, Digit0: 44, Equal: 45, Backspace: 46,
+    KeyJ: 48, KeyK: 50, Semicolon: 51, KeyL: 52, Quote: 53, BracketRight: 54,
+    End: 56, ArrowDown: 57, ArrowRight: 58, ArrowUp: 59, Pause: 60, ArrowLeft: 61, Enter: 62, NumpadEnter: 62, AltLeft: 63,
+    KeyM: 64, Delete: 65, Comma: 66, Slash: 67, Period: 68, ShiftRight: 69, Space: 70, Insert: 71,
+    KeyI: 72, KeyO: 74, Backquote: 75, KeyP: 76, BracketLeft: 77,
+  };
+  // (a key is held for at least 3 frames, however short the press: the game reads the keyboard at
+  // a vertical sync, and while playing acts on it once a drawn frame)
+  const held = new Map(), letGo = new Set();       // (key: the frame it went down; keys let go early)
+  let frameNo = 0;
+  function key(e, down) {
+    const k = KEYS[e.code];
+    if (k === undefined || e.metaKey) return;
+    e.preventDefault();
+    if (down) {
+      if (!held.has(k)) { held.set(k, frameNo); E._web_key(k, 1); }
+      letGo.delete(k);
+    } else if (held.has(k)) {
+      if (frameNo - held.get(k) >= 3) { held.delete(k); E._web_key(k, 0); }
+      else letGo.add(k);
+    }
+  }
+  function releaseKeys() {
+    for (const k of letGo) if (frameNo - held.get(k) >= 3) { held.delete(k); letGo.delete(k); E._web_key(k, 0); }
+  }
+  tv.addEventListener('keydown', e => key(e, true));
+  tv.addEventListener('keyup', e => key(e, false));
+  tv.addEventListener('blur', () => { for (const k of held.keys()) E._web_key(k, 0); held.clear(); letGo.clear(); });
+  tv.addEventListener('pointerdown', () => tv.focus());
+
+  // 50 frames a second (PAL), drawn on the display's own refresh
+  function draw() {
+    const s = E._web_screen(), h = E.HEAPU8;
+    for (let i = 0; i < W * H; i++) px[i] = pal[h[s + i]];
+    ctx.putImageData(img, 0, 0);
+  }
+  let last = performance.now(), acc = 0;
+  function tick(now) {
+    acc += Math.min(now - last, 100); last = now;
+    if (!paused && started) {
+      let n = 0;
+      while (acc >= 20 && n < 3) { E._web_frame(); frameNo++; releaseKeys(); acc -= 20; n++; }
+      if (n) draw();
+    } else acc = 0;
+    requestAnimationFrame(tick);
+  }
+  start();
+  requestAnimationFrame(tick);
+})();
+</script>
