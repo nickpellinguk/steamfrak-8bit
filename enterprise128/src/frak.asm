@@ -58,6 +58,11 @@ main_loop
         xor a : ld (t_apply),a
         ld hl,(t_done) : inc hl : ld (t_done),hl
 .no_apply
+        ld a,(t_unpack) : or a : jr z,.no_unpack
+        call t_unpack_cmd
+        xor a : ld (t_unpack),a
+        ld hl,(t_done) : inc hl : ld (t_done),hl
+.no_unpack
         ; count a game tick for each vertical sync since the last time round
         ld a,(last_vsync) : ld b,a
         ld a,(vsyncs) : cp b : jr z,main_loop
@@ -74,6 +79,19 @@ main_loop
 
         INCLUDE "machine.asm"
         INCLUDE "screen.asm"
+        INCLUDE "layout.asm"
+        INCLUDE "unpack.asm"
+
+; For the test harness: unpack the data packed at t_unpack_src (an address at page
+; 3, with segment #FF paged in there) into segment t_unpack_seg, from #4000
+t_unpack_cmd
+        ld a,SEG_TOP : out (PAGE3),a
+        ld a,(t_unpack_seg) : call bank_select
+        ld hl,(t_unpack_src) : ld de,#4000
+        call unpack
+        ld (t_unpack_end),de
+        ld a,SEG_TOP : call bank_select
+        ld a,(back) : jp screen_select
 
 ; ------------------------------------------------------------------------------
 ; Variables
@@ -106,9 +124,15 @@ ls_k         db 0
 ls_base      dw 0
 ls_ld1a      dw 0
 ls_ld1b      dw 0
+up_bits      db 0                   ; unpack's workings
+up_dist      dw 0
 ; for the test harness
 t_apply      db 0                   ; 1: set both buffers' LPBs from scroll0/1 and pal0/1
 t_done       dw 0                   ; ... counted when done
+t_unpack     db 0                   ; 1: unpack (see t_unpack_cmd) ...
+t_unpack_src dw 0
+t_unpack_seg db 0
+t_unpack_end dw 0                   ; ... and where it ended
 flip_rate    db 0                   ; flip the buffers every flip_rate frames (0: never)
 flip_count   db 1
 end_code

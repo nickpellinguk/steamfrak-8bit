@@ -9,7 +9,7 @@
 ; it, into the mirror: the ring's first 80 bytes, copied there by copy_mirror),
 ; then the rest, from the ring's start.
 ;
-; A table, 8 LPBs, 312 lines (16 bytes each; Nick reads them in segment #FF):
+; A table, 8 LPBs, 312 lines (16 bytes each; Nick reads them at the top of segment #FF):
 ;   0, 1  the playfield: 256 lines, 4 colours, 40 slots (margins 11 and 51)
 ;   2     the bottom border, 12 lines, with VINT: Dave interrupts as it ends
 ;   3-6   vertical sync, 12 lines, as EXOS makes it
@@ -33,8 +33,8 @@ RING1_NICK = #5100
 RING0_Z80  = #8000
 RING1_Z80  = #9100
 
-LPT_NICK   = #C000                  ; the tables, at the start of segment #FF (Nick's #C000) ...
-LPT_WIN    = #4000                  ; ... and in the window, with #FF paged in
+LPT_NICK   = #FF00                  ; the tables, at the top of segment #FF (Nick's #FF00) ...
+LPT_WIN    = #7F00                  ; ... and in the window, with #FF paged in
 LPT_BYTES  = 8 * 16
 LPB_BYTES  = 16
 

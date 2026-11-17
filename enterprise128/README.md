@@ -4,7 +4,8 @@ A port of the CPC 6128 version ([`../cpc6128`](../cpc6128/README.md)), which is 
 of the BBC Master version, to the Enterprise 128. The plan, phase by phase, is in
 [`PLAN.md`](PLAN.md).
 
-**Status: phase 1 done** (the machine layer and the screen: see [`PLAN.md`](PLAN.md)). Phase 0
+**Status: phase 2 done** (the memory map, measured, fits; see [`PLAN.md`](PLAN.md)). Phase 1:
+the machine layer and the screen. Phase 0
 (the toolchain and the test harness): The program loads, asks EXOS
 which RAM segments it will give out, takes the machine over and tells the test harness it's
 ready, on EXOS 2.1 and EXDOS 1.3, in a headless build of ep128emu and in MAME. On an
@@ -20,6 +21,11 @@ the CPC version), and Python 3.
 gcc -O2 -DNO_3RD_PARTIES -o rasm rasm.c -lm
 RASM=/path/to/rasm ./build.sh
 ```
+
+`build.sh` first runs `tools/memmap.py` (when the CPC version has changed), which measures the
+memory map from the CPC version's own build, so the BBC version must be built first
+(`../build.sh`), as for the CPC version. It writes `src/gen/sizes.asm`, the front end and level
+loader packed (`build/*.lz`), and the map (`build/memmap.txt`).
 
 That makes `build/FRAK.COM`, an EXOS type 5 program (a 16-byte header, then the code, which
 EXOS loads to `&0100`), and `build/frak.img`, a 720K EXDOS disk (FAT12) holding it, made by
@@ -70,6 +76,7 @@ where EXOS would load it, and jumps to it.
 ```sh
 EP_ROMS=/path/to/roms node tools/emu/screens.mjs       # phase 1: every pixel, scrolled and flipped (ephl only)
 EP_ROMS=/path/to/roms node tools/emu/machine.mjs       # phase 1: ticks, segments, keys
+EP_ROMS=/path/to/roms node tools/emu/unpack.mjs        # phase 2: the Z80 unpacker
 ```
 
 `boot.mjs` is phase 0's test: the program must take the machine over, set `ready` and idle in

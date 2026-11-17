@@ -1,6 +1,9 @@
 # Plan: Frak! for the Enterprise 128
 
-Status: **phase 1 done.** The machine layer (paging, VINT interrupts, the keyboard) and the
+Status: **phase 2 done:** the memory map, measured, fits (see "Memory"), and the Z80 unpacker
+works (`unpack.mjs`). Next: phase 3.
+
+Phase 1 done: The machine layer (paging, VINT interrupts, the keyboard) and the
 screen (two 320x256 ring buffers, each shown through its own line parameter table, split
 where the ring wraps, with a mirror line; flipped at VINT) work: `screens.mjs` checks every
 pixel of 24 frames at six scroll positions, either side of the wrap, and `machine.mjs` the
@@ -96,26 +99,31 @@ pages *(MAME: ports `&B0-&B3`, which read back too)*, so this keeps the CPC's ar
 Only the buffer being drawn needs to be visible, so pages 2 and 3 are paged with it. The same
 segment (`&FD`, or `&FE` for the window) can be paged in twice.
 
-The CPC's banks, and where they go:
+The CPC's banks, and where they go, as phase 2 measured them (`tools/memmap.py`, from the CPC
+version's own build; `src/layout.asm` ASSERTs it all):
 
-| CPC | Size | Enterprise |
-|---|---|---|
-| low RAM `&0040-&3FFF` | 14.6K used, 1.4K free | segment `&F8`: the same. The program loads at `&0100` (EXOS's type 5 files) rather than `&0040` |
-| bank 0: graphics | 16,384 | segment `&F9`: the same (the code tables are converted if Nick packs its pixels differently) |
-| bank 2: logic | 15,549 | segment `&FA`: the same |
-| bank 3: background cache, slow save areas | 16,384 | segment `&FB`: the same |
-| base RAM: the levels, packed | 12,285 | segment `&FF` (after the program takes the machine from EXOS, which keeps its own variables there) |
-| base RAM: the level loader | 3,974 | segment `&FE`'s spare, at Nick `&A1A0`. It runs where it is, with `&FE` paged in at `&C000`, so it isn't copied; while a level loads, `&FC` is paged in at `&8000`, so the unroller's workspace (`&8A00` up) is where it is on the CPC |
-| bank 1: the music player and tunes | 5,956 | **stubs for now** (see "Sound") |
-| bank 1: the compiled meanie | up to 3,260 | segment `&FE`'s spare, after the loader (542 bytes to spare) |
-| bank 1: the front end and records | 4,800 | **packed** in segment `&FF`, above the levels and the LPTs. It's unpacked into the background cache's segment `&FB` when the menus come up, as the BBC version unpacks its front end into bank 7; the records (440 bytes) move out to low RAM, which must keep them |
-| the screens | 32,768 | 41,280 (above) |
+| Segment | Z80 address | Size | Contents |
+|---|---|---|---|
+| `&F8` (page 0) | `&0000-&00FF` | 256 | restart vectors (EXOS's type 5 files load at `&0100`) |
+| | `&0100-&3A2B` | 14,636 | the CPC version's low RAM, code and tables, moved up from `&0040` |
+| | `&3A2C-&3BAC` | 385 | the records (moved out of the front end, which is unpacked afresh) |
+| | `&3BAD-&3EFF` | 851 | *free*; the stack is at `&3F00-&3FFF` |
+| `&F9` | `&4000-&7FFF` | 16,384 | the graphics (the CPC version's bank 0, as it is) |
+| `&FA` | `&4000-&7CBC` | 15,549 | the game logic and its variables (its bank 2); 835 *free* |
+| `&FB` | `&4000-&69FF` | 10,752 | the background cache (its bank 3), or, while the menus or the level-complete screen are up, the front end (4,800 bytes), unpacked to `&4000`, as the BBC version unpacks its front end into its bank 7 |
+| | `&6A00-&7FFF` | 5,632 | the two slow save areas |
+| `&FC-&FE` | (screens) | 41,280 | the two buffers, their rings and mirrors (above) |
+| `&FE`, in the window | `&61A0-&7125` | 3,974 | the level loader, run where it is, with `&FE` at page 3 (`&E1A0`); while a level loads, `&FC` is at page 2, so the unroller's workspace (`&8A00` up) is where it is on the CPC |
+| | `&7126-&7CA5` | 2,944 | the compiled meanie (the biggest, the Scrubbly's, is 2,927); 858 *free* |
+| `&FF`, in the window | `&4000-&6FFC` | 12,285 | the levels, packed (the CPC version's base RAM, at the same address) |
+| | `&7000-&7A4A` | 2,635 | the front end, packed (from 4,800, with the BBC version's packer) |
+| | `&7A4B-&7EFF` | 1,205 | *free* |
+| | `&7F00-&7FFF` | 256 | the two line parameter tables (Nick's `&FF00`) |
 
-Segment `&FF` would hold 12,285 (levels) + about 512 (two LPTs) + the packed front end. The BBC
-version's front end packs to 72% of its size, and if the CPC's does too, it's about 3.5K, which
-leaves about 100 bytes. That's too close to plan on, so phase 2 measures it, and the fallbacks
-are, in order: pack the level loader too (as the BBC version does: about 1.2K saved), move the
-packed front end to low RAM's spare 1.4K plus `&FE`, or move the slow save areas.
+So segment `&FF` has 1.2K to spare, not the 100 bytes feared: the CPC's front end packs to 55%.
+The level loader packs from 3,974 to 2,544, if more room is needed. The music player and its
+tunes (5,956 bytes, 3,676 packed) have no room yet: they come back after the first milestone,
+and will want the free pieces gathered together (2.9K in all), or something else packed.
 
 Waiting for Nick costs time in `&FC-&FF`: the screens (unavoidable), the loader and levels (only
 while a level loads), and the compiled meanie (each frame). The meanie is the only one that
@@ -204,12 +212,16 @@ opinion.
   `machine.mjs`: 50 ticks a second, every segment, every key, the `KEY_` constants —
   **passes** (ephl and MAME). Still to do here: the external joystick (port `&B6`).
 
-### Phase 2: memory map
+### Phase 2: memory map — done
 
 Lay the segments out as above and measure everything that has to fit, with the front end packed.
 Pack it with the BBC version's packer (`tools/pack.py`: LZ77 in the style of ZX0) and port its
 unpacker to the Z80, since the loader may want packing too. ASSERTs in the build check every
 region, as the CPC version's do. If segment `&FF` doesn't fit, take the fallbacks in order.
+**Done:** `tools/memmap.py` (run by `build.sh` when the CPC version changes) measures it,
+`src/layout.asm` ASSERTs it, and `unpack.mjs` checks the Z80 unpacker (`src/unpack.asm`)
+unpacks the front end and the loader byte for byte, from `&FF` into `&FB` (the front end in
+about 0.2 seconds).
 
 ### Phase 3: plotter and drawing (`src/plot.asm`)
 
@@ -284,7 +296,7 @@ from re-optimising the memory map.
 
 ## Risks
 
-- **Segment `&FF` is nearly full** (above). The fallbacks are known, and phase 2 settles it.
+- ~~**Segment `&FF` is nearly full.**~~ It isn't: 1.2K to spare (phase 2).
 - ~~**EXDOS and EXOS may keep RAM** that the loader needs.~~ They don't: EXOS gives out `&F9-&FE`
   on a 128 with EXDOS (phase 0), keeping only page 0's segment and its own `&FF`.
 - **The ROMs:** MAME's `ep128` driver needs the Enterprise's ROMs, which this repository can't
