@@ -84,7 +84,8 @@ export function run(steps, { seconds = 120, disk = true } = {}) {
         const args = ['--exos', join(roms, 'ep128/9256ds-0019_enter08-45-a.u2'),
             '--exdos', join(roms, 'ep64_exdos/exdos13.rom'),
             ...(disk ? ['--disk', join(ROOT, 'build/frak.img')] : []),
-            '--steps', stepsFile, '--out', snapDir, '--seconds', String(seconds)];
+            '--steps', stepsFile, '--out', snapDir, '--seconds', String(seconds),
+            '--seed', process.env.EP_SEED || '1'];      // (the machine's state at power-on: EP_SEED)
         r = spawnSync(ephl, args, { encoding: 'utf8', maxBuffer: 1 << 26 });
         // (dump steps write beside the steps file, as steps.lua's do)
         for (const f of readdirSync(snapDir).filter(f => f.endsWith('.bin'))) renameSync(join(snapDir, f), join(dir, f));

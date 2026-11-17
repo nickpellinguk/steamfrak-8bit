@@ -25,11 +25,17 @@
 //   time LABEL             the emulated time in seconds: "OUT time LABEL secs"
 //   key ROW MASK 1|0       press (1) or let go of (0) the key at that row (0-9) and bit mask
 //                          of the keyboard matrix: "OUT key ROW MASK"
+//   lines LABEL            how many lines Nick drew between each of the last 16 vertical syncs,
+//                          oldest first: "OUT peek LABEL n1 n2 ..." (312 for a whole frame)
 //   snap LABEL             write the last whole frame to shotN.png (in the output directory):
 //                          "OUT snap LABEL"
 //   quit                   stop: "OUT done"
 //
-//   ephl --exos FILE [--exdos FILE] [--disk IMAGE] --steps FILE --out DIR [--seconds N]
+//   ephl --exos FILE [--exdos FILE] [--disk IMAGE] --steps FILE --out DIR [--seconds N] [--seed N]
+//
+// ep128emu starts Nick's registers and the Z80's in a random state at a reset, as a real machine
+// might be, seeded from the clock (Timer::getRandomSeedFromTime). ephl seeds it with --seed (1 by
+// default) instead, so a run does the same every time (build.sh links with --wrap for it).
 //
 // --exos is EXOS 2.1 (32K, ROM segments 0-1), --exdos EXDOS 1.3 (32K, ROM segments #20-#21).
 // The screenshots are 768 x 288: a Nick slot is 16 pixels across (so a 4-colour pixel is 2), and
@@ -60,12 +66,13 @@ static const int WIDTH = 768, HEIGHT = 288;
 class HeadlessDisplay : public Ep128Emu::VideoDisplay {
   Ep128Emu::VideoDisplay::DisplayParameters params;
   std::vector<uint8_t> cur, last;
-  int line, vsyncCnt;
+  int curLine, vsyncCnt, linesSinceSync;
   bool vsyncState;
  public:
   long frames;
-  HeadlessDisplay() : cur(WIDTH * HEIGHT), last(WIDTH * HEIGHT), line(0), vsyncCnt(0),
-                      vsyncState(false), frames(0) {}
+  std::vector<int> syncLines;               // (lines between vertical syncs, the last 16)
+  HeadlessDisplay() : cur(WIDTH * HEIGHT), last(WIDTH * HEIGHT), curLine(0), vsyncCnt(0),
+                      linesSinceSync(0), vsyncState(false), frames(0) {}
   virtual void setDisplayParameters(const DisplayParameters& dp) { params = dp; }
   virtual const DisplayParameters& getDisplayParameters() const { return params; }
   const std::vector<uint8_t>& frame() const { return last; }
@@ -91,26 +98,41 @@ class HeadlessDisplay : public Ep128Emu::VideoDisplay {
       out += 16;
     }
   }
-  // (the frame's lines counted from a vertical sync, as ep128emu's own display does: a frame
-  // ends on the first line with vertical sync on once it's long enough, or once it's too long,
-  // so it finds the sync again after an odd frame)
+  // The frame's lines, counted as ep128emu's own display counts them (FLTKDisplay_::drawLine
+  // and vsyncStateChange, in its src/fldisp.cpp), a line of the picture for each two of its
+  // (it doubles them, for interlace)
   virtual void drawLine(const uint8_t *buf, size_t nBytes) {
     (void) nBytes;
-    int y = line - EP128EMU_VSYNC_OFFSET;
-    if (y >= 0 && y < HEIGHT) decode(&cur[y * WIDTH], buf);
-    line++;
-    if (++vsyncCnt >= EP128EMU_VSYNC_MIN_LINES && (vsyncState || vsyncCnt >= EP128EMU_VSYNC_MAX_LINES))
+    linesSinceSync++;
+    if (curLine >= 0 && curLine < 2 * HEIGHT) decode(&cur[(curLine >> 1) * WIDTH], buf);
+    if (vsyncCnt != 0) {
+      curLine += 2;
+      if (vsyncCnt >= (EP128EMU_VSYNC_MIN_LINES + 2 - EP128EMU_VSYNC_OFFSET) &&
+          (vsyncState || vsyncCnt >= (EP128EMU_VSYNC_MAX_LINES + 2 - EP128EMU_VSYNC_OFFSET)))
+        vsyncCnt = 2 - EP128EMU_VSYNC_OFFSET;
+      vsyncCnt++;
+    }
+    else {
+      curLine = 0;
+      vsyncCnt++;
       endFrame();
+    }
   }
   virtual void vsyncStateChange(bool newState, unsigned int currentSlot) {
     (void) currentSlot;
-    if (newState && !vsyncState && vsyncCnt >= EP128EMU_VSYNC_MIN_LINES) endFrame();
+    if (newState && !vsyncState) {
+      syncLines.push_back(linesSinceSync);
+      if (syncLines.size() > 16) syncLines.erase(syncLines.begin());
+      linesSinceSync = 0;
+    }
     vsyncState = newState;
+    if (newState && vsyncCnt >= (EP128EMU_VSYNC_MIN_LINES + 2 - EP128EMU_VSYNC_OFFSET))
+      vsyncCnt = 2 - EP128EMU_VSYNC_OFFSET;
   }
   void endFrame() {
     last.swap(cur);
     std::fill(cur.begin(), cur.end(), 0);
-    line = 0; vsyncCnt = 0; frames++;
+    frames++;
   }
 };
 
@@ -120,6 +142,10 @@ class NullAudio : public Ep128Emu::AudioOutput {
 };
 
 static std::string outDir;
+static uint32_t randomSeed = 1;
+
+// (ep128emu's Timer::getRandomSeedFromTime, which Nick's and the Z80's resets call: see above)
+extern "C" uint32_t __wrap__ZN8Ep128Emu5Timer21getRandomSeedFromTimeEv() { return randomSeed; }
 static int shotNum = 0;
 
 static void put32(std::string& s, uint32_t v) {
@@ -188,10 +214,11 @@ int main(int argc, char **argv) {
     else if (a == "--steps") stepsFile = v;
     else if (a == "--out") outDir = v;
     else if (a == "--seconds") seconds = std::atof(v.c_str());
+    else if (a == "--seed") randomSeed = uint32_t(std::strtoul(v.c_str(), 0, 0));
     else { std::cerr << "ephl: unknown option " << a << "\n"; return 2; }
   }
   if (exos.empty() || stepsFile.empty() || outDir.empty()) {
-    std::cerr << "usage: ephl --exos FILE [--exdos FILE] [--disk IMAGE] --steps FILE --out DIR [--seconds N]\n";
+    std::cerr << "usage: ephl --exos FILE [--exdos FILE] [--disk IMAGE] --steps FILE --out DIR [--seconds N] [--seed N]\n";
     return 2;
   }
   std::vector<std::string> steps;
@@ -301,6 +328,12 @@ int main(int argc, char **argv) {
         while (bit < 8 && !(mask & (1 << bit))) bit++;
         vm->setKeyboardState(row * 8 + bit, v);
         std::cout << "OUT key " << row << " " << mask << "\n";
+      }
+      else if (op == "lines") {
+        std::string label; s >> label;
+        std::cout << "OUT peek " << label;
+        for (size_t k = 0; k < display.syncLines.size(); k++) std::cout << " " << display.syncLines[k];
+        std::cout << "\n";
       }
       else if (op == "snap") {
         std::string label; s >> label;

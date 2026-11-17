@@ -69,6 +69,17 @@ EP_ROMS=/path/to/roms node tools/emu/boot.mjs
 EP_EMU=mame EP_ROMS=/path/to/roms node tools/emu/boot.mjs      # (apt install mame)
 ```
 
+ep128emu starts the machine in a random state, seeded from the clock, as a real Enterprise might
+power up; `ephl` seeds it from `EP_SEED` (1 by default) instead, so every run of a test is the
+same. Running the tests with other seeds tries other power-up states (and so other timings):
+
+```sh
+for s in 1 2 3 4 5; do EP_SEED=$s EP_ROMS=/path/to/roms node tools/emu/screens.mjs; done
+```
+
+`ephl`'s `lines` step says how many lines Nick drew between each of the last 16 vertical syncs
+(312 for a whole frame).
+
 Until the disk starts the program by itself (phase 8), the harness waits for EXOS to start up
 (`EP_EXOS_FRAMES`, 400 frames by default), puts `FRAK.COM` at `&0100` in the segment at page 0,
 where EXOS would load it, and jumps to it.

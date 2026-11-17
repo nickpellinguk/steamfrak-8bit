@@ -62,8 +62,7 @@ main_loop
 .no_cmd
         ; new scroll positions and palettes from the test harness?
         ld a,(t_apply) : or a : jr z,.no_apply
-        xor a : call lpt_set
-        ld a,1 : call lpt_set
+        call apply_both
         xor a : ld (t_apply),a
         ld hl,(t_done) : inc hl : ld (t_done),hl
 .no_apply
@@ -122,6 +121,22 @@ signed_less
         ld a,d : xor #80 : ld d,a
         or a : sbc hl,de
         ret
+
+; For the test harness: set both buffers' playfield LPBs (from scroll0/1 and
+; pal0/1) without ever writing the table on show: Nick reads an LPB's line count
+; once, as it starts it, but the rest of the table as it goes, so rewriting the
+; table it's drawing can make a frame the wrong length (a TV would roll). So the
+; buffer not on show first; then show it (at the next vertical sync); then, once
+; Nick has started that one's table (by the vertical sync after), the other.
+; (The game only ever sets the table of the buffer it's drawing.)
+apply_both
+        ld a,(flip_pending) : or a : jr nz,apply_both   ; (no flip under way)
+        ld a,(front) : xor 1 : push af : call lpt_set
+        pop af : ld (flip_buf),a
+        ld a,1 : ld (flip_pending),a
+.wait   ld a,(flip_pending) : or a : jr nz,.wait        ; (shown at a vertical sync ...)
+        call wait_vsync                                 ; (... and its table started)
+        ld a,(front) : xor 1 : jp lpt_set
 
 ; For the test harness: unpack the data packed at t_unpack_src (an address at page
 ; 3, with segment #FF paged in there) into segment t_unpack_seg, from #4000

@@ -200,7 +200,12 @@ opinion.
   EXOS makes them (12 lines), and a 32-line top border that ends the table: 312 lines. The
   picture is 40 slots, margins 11 and 51, as EXOS's. Writing port `&83` with bits 6 and 7 set,
   as EXOS leaves them, only changes the table's address, and Nick takes it when it next starts
-  the table, so a flip is always a whole frame *(ep128emu)*. **Done** (`src/screen.asm`). (MAME's screen is 280 lines, and it starts a
+  the table, so a flip is always a whole frame *(ep128emu)*. **Done** (`src/screen.asm`).
+  **Never rewrite the table on show:** Nick reads a block's line count once, as it starts the
+  block, but the rest of the table as it goes, so changing the table it's drawing can make a
+  frame the wrong length (566 lines, seen in phase 3: a TV would roll). The game only sets the
+  table of the buffer it's drawing, which isn't on show; the test harness's `t_apply` sets the
+  hidden one, flips, waits for Nick to start that table, then sets the other. (MAME's screen is 280 lines, and it starts a
   frame as an LPB with VINT ends, so the playfield must come within 280 lines of that for the
   tests' screenshots to show it.)
 - **Pixels:** Nick packs 4 pixels into a byte as the CPC's Mode 1 and the BBC's MODE 1 do

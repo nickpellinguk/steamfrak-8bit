@@ -30,6 +30,8 @@ for f in src/bplist src/compress src/comprlib src/dave src/debuglib src/decompm2
     fi
     OBJS="$OBJS $o"
 done
-g++ $CXXFLAGS -o build/ephl tools/ephl/ephl.cpp $OBJS -lsndfile -lportaudio -lz -lpthread
+# (--wrap: ephl seeds ep128emu's reset state itself, so its runs are repeatable: see ephl.cpp)
+g++ $CXXFLAGS -o build/ephl tools/ephl/ephl.cpp $OBJS -lsndfile -lportaudio -lz -lpthread \
+    -Wl,--wrap=_ZN8Ep128Emu5Timer21getRandomSeedFromTimeEv
 g++ $CXXFLAGS -o build/unpackroms tools/ephl/unpackroms.cpp $OBJS -lsndfile -lportaudio -lz -lpthread
 echo "Built build/ephl and build/unpackroms"

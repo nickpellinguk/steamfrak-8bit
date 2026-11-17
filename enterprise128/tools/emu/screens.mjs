@@ -4,7 +4,8 @@
 // Every frame must be exactly one buffer's picture: every pixel of its 320x256 the colour its
 // byte in the ring gives it (line y, byte j from (scroll + y * 80 + j) MOD 20480; pixel k of a
 // byte from its bits 7-k and 3-k, as in the CPC's Mode 1), in that buffer's palette (no black,
-// so the border shows where the picture is), and the buffers must alternate.
+// so the border shows where the picture is), and the buffers must alternate, and every frame be
+// 312 lines (ephl's `lines`).
 //
 // The screenshots are 2 pixels across for each 4-colour pixel: the picture is 640x256 in
 // ephl's 768x288. This test is ephl's only: MAME's Nick moves on to the next LPB when port #83
@@ -27,9 +28,10 @@ const word = (addr, v) => [`poke ${addr} ${v & 255}`, `poke ${addr + 1} ${v >> 8
 
 const steps = [...boot(), 'fill 252 0 20480 1', 'fill 253 4352 20480 2', 'sdump ring0 252 0 20480', 'sdump ring1 253 4352 20480'];
 positions.forEach(([s0, s1], i) => {
-    steps.push(`poke ${sym.flip_rate} 0`, ...word(sym.scroll0, s0), ...word(sym.scroll1, s1), `poke ${sym.t_apply} 1`, 'wait 3',
+    steps.push(`poke ${sym.flip_rate} 0`, ...word(sym.scroll0, s0), ...word(sym.scroll1, s1), `poke ${sym.t_apply} 1`, `waitfor ${sym.t_apply} 0 50`, 'wait 2',
         `poke ${sym.flip_count} 1`, `poke ${sym.flip_rate} 1`, 'wait 3');
     for (let f = 0; f < FRAMES; f++) steps.push(`snap p${i}_${f}`, 'wait 1');
+    steps.push(`lines l${i}`);
 });
 const r = run(steps);
 const rings = [r.dump('ring0'), r.dump('ring1')];
@@ -75,6 +77,10 @@ positions.forEach(([s0, s1], i) => {
         if (buf === last) fail(`frame ${f}: buffer ${buf} again`);
         last = buf;
     }
+    // (and every frame of the case 312 lines: a table rewritten while Nick draws it can make one
+    // longer or shorter; the case's last 8: the first case's 16 go back to EXOS's own table)
+    const odd = r.peeks[`l${i}`].slice(-8).filter(n => n !== 312);
+    if (odd.length) fail(`frames of ${odd.join(', ')} lines, not 312, among the last 8`);
 });
 console.log(failed ? `${failed} failures (${EMULATOR})` : `all passed (${EMULATOR}): every pixel right, the buffers alternating`);
 process.exit(failed ? 1 : 0);
