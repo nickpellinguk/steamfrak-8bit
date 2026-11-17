@@ -1,12 +1,14 @@
 ; Steam Frak for the Enterprise 128 - assembled with RASM (see ../build.sh)
 ;
-; Phase 1 (see ../PLAN.md): the machine layer (src/machine.asm: paging,
-; interrupts, the keyboard) and the screen (src/screen.asm: Nick's line
-; parameter tables, the two ring buffers and their mirrors). The program loads
-; (as an EXOS type 5 file, at #0100), asks EXOS for every RAM segment it will give
-; out, takes the machine over, and then does what the test harness (tools/emu)
-; asks: it shows each buffer from the scroll position and palette the harness
-; pokes (t_apply), and flips between them every flip_rate frames.
+; Phase 3 (see ../PLAN.md): the machine layer (src/machine.asm: paging,
+; interrupts, the keyboard), the screen (src/screen.asm: Nick's line parameter
+; tables, the two ring buffers and their mirrors), the unpacker (src/unpack.asm)
+; and the plotter (src/plot.asm). The program loads (as an EXOS type 5 file, at
+; #0100), asks EXOS for every RAM segment it will give out, takes the machine
+; over, and then does what the test harness (tools/emu) asks: it shows each
+; buffer from the scroll position and palette the harness pokes (t_apply), and
+; flips between them every flip_rate frames; and it runs the commands the
+; harness pokes into t_cmd (the plotter's, as the CPC version's do: command).
 ;
 ; From here on, this grows into the CPC version's frak.asm, routine for routine
 ; (../cpc6128/src/frak.asm).
@@ -42,6 +44,7 @@ start
         di
         call machine_init
         call bank_test
+        call make_lines
         xor a : out (NICK_BORDER),a
         call lpt_init
         xor a : ld (front),a : call show_lpt
@@ -51,6 +54,12 @@ start
         ei
 
 main_loop
+        ; a command from the test harness?
+        ld a,(t_cmd) : or a : jr z,.no_cmd
+        call command
+        xor a : ld (t_cmd),a
+        ld hl,(t_done) : inc hl : ld (t_done),hl
+.no_cmd
         ; new scroll positions and palettes from the test harness?
         ld a,(t_apply) : or a : jr z,.no_apply
         xor a : call lpt_set
@@ -81,6 +90,38 @@ main_loop
         INCLUDE "screen.asm"
         INCLUDE "layout.asm"
         INCLUDE "unpack.asm"
+        INCLUDE "plot.asm"
+        INCLUDE "../../cpc6128/src/gen/images.asm"
+
+; A command from the test harness (the CPC version's numbers; it has no mode 9)
+command
+        dec a : jp z,plot                       ; 1
+        dec a : jp z,restore_saved              ; 2
+        dec a : jp z,hline                      ; 3
+        dec a : jr nz,.not4
+        ld a,(t_arg) : jp jit_build             ; 4
+.not4   dec a : jp z,plot_slow                  ; 5
+        dec a : jp z,log_sprite                 ; 6
+        dec a : jp z,log_line                   ; 7
+        dec a : jp z,restore_log                ; 8
+        dec a : dec a : jp z,log_sprite7        ; 10
+        ret
+
+; line_lo/line_hi[row] = row * 80: where ring row `row` starts in a ring
+make_lines
+        ld hl,0 : ld de,line_lo : ld bc,LINE_BYTES
+.row    ld a,l : ld (de),a
+        inc d : ld a,h : ld (de),a : dec d
+        add hl,bc
+        inc e : jr nz,.row
+        ret
+
+; Carry set if HL < DE, as signed numbers (HL, DE lost) (as the CPC version's, in level.asm)
+signed_less
+        ld a,h : xor #80 : ld h,a
+        ld a,d : xor #80 : ld d,a
+        or a : sbc hl,de
+        ret
 
 ; For the test harness: unpack the data packed at t_unpack_src (an address at page
 ; 3, with segment #FF paged in there) into segment t_unpack_seg, from #4000
@@ -135,9 +176,74 @@ t_unpack_seg db 0
 t_unpack_end dw 0                   ; ... and where it ended
 flip_rate    db 0                   ; flip the buffers every flip_rate frames (0: never)
 flip_count   db 1
+; the plotter's (as the CPC version's)
+t_cmd       db 0                    ; a command from the test harness
+t_arg       db 0
+p_img       db 0
+p_x         dw 0
+p_y         dw 0
+q_x         dw 0                    ; (hline's other end)
+p_mode      db 0
+p_sbank     db 0                    ; PM_SAVEONLY: the segment the save area is in
+clip_l      db 0                    ; the window, in level coordinates
+clip_r      db 80
+clip_t      dw 0
+clip_h      db 0
+sbase       dw 0                    ; the save record
+sptr        dw 0
+hl_yel      db 0                    ; hline: #F0 for yellow, 0 for black
+sfree       dw 0                    ; the back buffer's save area: free from sfree to send
+send        dw 0
+sfree7      dw 0                    ; ... and its slow save area (in segment p_sbank)
+send7       dw 0
+p_left      dw 0
+p_top       dw 0
+p_shift     db 0
+p_col       dw 0
+p_wb        db 0
+p_hgt       db 0
+p_r0        db 0
+p_rows      db 0
+p_firsty    dw 0
+p_cidx      db 0
+p_cend      db 0
+p_dcol      dw 0
+p_y0        db 0
+p_row       db 0                    ; a column's first line: its ring row ...
+p_r         db 0                    ; ... and byte in it
+p_k         db 0                    ; ... and the lines from there to the ring's end (0 = 256)
+p_tab       db 0
+p_oldbank   db 0
+p_oldbank0  db 0
+hl_right    dw 0
+hl_p0       db 0
+hl_p1       db 0
+hl_c0       db 0
+hl_c1       db 0
+hl_col      db 0
+log_n       db 0, 0
+log_recs    DEFS 2 * 40 * 16        ; (MAX_LOG records of LG_SIZE bytes each)
+jit_img     db 255                  ; the image compiled (255: none)
+jit_new     db 0
+jit_h       db 0
+jit_wb      db 0, 0                 ; its width in bytes at shifts 0 and 2
+jit_w       db 0
+jit_s       db 0
+jit_r       db 0
+jit_emit    dw 0
+jit_vecs    dw 0, 0                 ; its code at shifts 0 and 2 (in SEG_JIT)
+jit_count   dw 0                    ; times plot_slow used it (for the tests)
+hud_image   DEFS 64                 ; the timer, as a raw image: 8 byte columns of 8 rows (see plot)
 end_code
 
-        ASSERT end_code <= #3F00    ; (the stack is from #3F00 to #3FFF)
+        ALIGN 256
+line_lo     DEFS 256                ; row * 80 (make_lines)
+line_hi     DEFS 256
+savebuf0    DEFS 1024               ; save areas for the draw log, one per buffer
+savebuf1    DEFS 1024
+end_ram
+
+        ASSERT end_ram <= #3F00     ; (the stack is from #3F00 to #3FFF)
 
         SAVE 'build/FRAK.COM',exos_header,end_code-exos_header
-        PRINT "Code from ",{hex}start," to ",{hex}end_code
+        PRINT "Code from ",{hex}start," to ",{hex}end_code,", workspace to ",{hex}end_ram

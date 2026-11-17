@@ -4,8 +4,8 @@ A port of the CPC 6128 version ([`../cpc6128`](../cpc6128/README.md)), which is 
 of the BBC Master version, to the Enterprise 128. The plan, phase by phase, is in
 [`PLAN.md`](PLAN.md).
 
-**Status: phase 2 done** (the memory map, measured, fits; see [`PLAN.md`](PLAN.md)). Phase 1:
-the machine layer and the screen. Phase 0
+**Status: phase 3 done** (the plotter; see [`PLAN.md`](PLAN.md)). Phase 2: the memory map,
+measured, fits. Phase 1: the machine layer and the screen. Phase 0
 (the toolchain and the test harness): The program loads, asks EXOS
 which RAM segments it will give out, takes the machine over and tells the test harness it's
 ready, on EXOS 2.1 and EXDOS 1.3, in a headless build of ep128emu and in MAME. On an
@@ -77,6 +77,7 @@ where EXOS would load it, and jumps to it.
 EP_ROMS=/path/to/roms node tools/emu/screens.mjs       # phase 1: every pixel, scrolled and flipped (ephl only)
 EP_ROMS=/path/to/roms node tools/emu/machine.mjs       # phase 1: ticks, segments, keys
 EP_ROMS=/path/to/roms node tools/emu/unpack.mjs        # phase 2: the Z80 unpacker
+EP_ROMS=/path/to/roms node tools/emu/plot.mjs [seed]   # phase 3: the plotter, byte for byte
 ```
 
 `boot.mjs` is phase 0's test: the program must take the machine over, set `ready` and idle in

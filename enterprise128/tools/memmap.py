@@ -55,6 +55,9 @@ def cpc_raw():
     gfx = os.path.join(REPO, 'build', 'GFX4')
     if not os.path.exists(gfx):
         sys.exit('Build the BBC version first (../build.sh): the CPC version uses its graphics')
+    # (the CPC version's graphics bank and image directory: its tools/gfx.py makes them)
+    if not os.path.exists(os.path.join(CPC, 'build', 'GFX')):
+        subprocess.run([sys.executable, os.path.join('tools', 'gfx.py')], cwd=CPC, check=True)
     for name in os.listdir(os.path.join(CPC, 'build')):
         if name != 'frak.dsk':
             shutil.copy(os.path.join(CPC, 'build', name), os.path.join(work, 'build'))

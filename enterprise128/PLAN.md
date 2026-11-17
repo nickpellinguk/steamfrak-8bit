@@ -1,6 +1,10 @@
 # Plan: Frak! for the Enterprise 128
 
-Status: **phase 2 done:** the memory map, measured, fits (see "Memory"), and the Z80 unpacker
+Status: **phase 3 done:** the plotter, the draw log and the compiled meanie, for the ring
+buffers (`src/plot.asm`), pass the CPC version's `plot.mjs`, byte for byte, with cases across
+the ring's end added. Next: phase 4.
+
+Phase 2 done: the memory map, measured, fits (see "Memory"), and the Z80 unpacker
 works (`unpack.mjs`). Next: phase 3.
 
 Phase 1 done: The machine layer (paging, VINT interrupts, the keyboard) and the
@@ -223,7 +227,7 @@ region, as the CPC version's do. If segment `&FF` doesn't fit, take the fallback
 unpacks the front end and the loader byte for byte, from `&FF` into `&FB` (the front end in
 about 0.2 seconds).
 
-### Phase 3: plotter and drawing (`src/plot.asm`)
+### Phase 3: plotter and drawing (`src/plot.asm`) — done
 
 This is the CPC's plotter with a new screen layout. The CPC version works out a level position
 as `page + (y MOD 8) * &800 + ((y / 8) * width + c) MOD &800`; here it's `base + (y * 80 + c) MOD
@@ -240,6 +244,26 @@ as `page + (y MOD 8) * &800 + ((y / 8) * width + c) MOD &800`; here it's `base +
 - **Test:** `plot.mjs`: every image, clipped, saved and put back, the yoyo string and the
   compiled meanie, matching the reference byte for byte, with the reference's addressing
   changed to the linear ring.
+
+**Done**, as planned, with these details settled:
+- A level's byte column `c` of line `y` is at `((y MOD 256) * 80 + c) MOD 20480` in the ring.
+  With `c = 80q + r`, that's byte `r` of ring row `(y + q) MOD 256`, so each column's first line
+  says how many lines it has before the ring's end (`256 - row`). The column routines do those
+  (what's over 8 in a loop, then 8 at a time unrolled), then, if there are more, subtract
+  `&5000` once and carry on: no test on any line.
+- A line down is `80` on (`ld a,c : add a,80 : ld c,a : adc a,b : sub c : ld b,a`, 27 T-states
+  against the CPC's 15 for `&800`), and there's no character row to cross.
+- A save record keeps each column's ring row and byte (2 bytes, as the CPC's address did), so
+  putting it back works out the wrap again; the save areas' sizes are the CPC version's.
+- The compiled meanie steps `LD DE,80 - n : ADD HL,DE` between lines, with no `jit_row`;
+  `plot_slow` uses it wherever none of the meanie is past the ring's end.
+- `restore_chase` waits for phase 6.
+
+`plot.mjs` passes (on ephl and MAME): 408 images at every shift, 400 clipped at random, 210
+across the ring's end (rows 255 to 0, and columns across 80, 160 and 240), 120 saved and put
+back, 150 yoyo strings and their restores, 240 compiled meanies (the compiled code used in each
+of the 77 places it can be), 40 frames of the draw log, and nothing written over the code. A
+plotter stepping 81 bytes a line fails 652 of them.
 
 ### Phase 4: levels and background (`src/level.asm`, `src/bg.asm`)
 

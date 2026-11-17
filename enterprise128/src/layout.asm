@@ -11,6 +11,7 @@
 
 SEG_GFX    = #F9                    ; sprites and code tables (the CPC version's bank 0)
 SEG_LOGIC  = #FA                    ; the game logic (its bank 2)
+SEG_JIT    = #FE                    ; the compiled meanie (JIT_ORG, below), in #FE's spare
 SEG_CACHE  = #FB                    ; the background cache and slow save areas (its bank 3),
                                     ; or the front end, unpacked, while the menus are up
                                     ; (SEG_LOW, SEG_VIDEO and SEG_TOP: machine.asm)
@@ -34,6 +35,9 @@ FRONT_ORG = #4000
 FE_SPARE   = RING1_NICK + RING_SIZE + LINE_BYTES * 2 - #8000   ; (its offset in #FE)
 LOADER_RUN = #C000 + FE_SPARE
 JIT_ORG    = #4000 + FE_SPARE + LOADER_SIZE
+jit_tmp    = #8000                  ; (where jit_build decodes the image: buffer 0's ring, or,
+JIT_TMP_SIZE = 2560                 ; while a level loads, the screen being blank, #FC)
+BG_TOP     = #6A00                  ; (the slow save areas, in SEG_CACHE, from here)
         ASSERT FE_SPARE == #21A0
         ASSERT JIT_ORG + JIT_MAX <= #8000
 
