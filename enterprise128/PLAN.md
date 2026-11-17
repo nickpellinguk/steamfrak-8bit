@@ -1,6 +1,9 @@
 # Plan: Frak! for the Enterprise 128
 
-Status: **phase 8 done, but for a real machine:** the disk image runs the whole game on an
+Status: **the first milestone, but for a real machine;** then two speed-ups (see "After the first
+milestone: speed"): 10.0 frames a second on average.
+
+Phase 8 done, but for a real machine: the disk image runs the whole game on an
 emulated Enterprise 128 with EXDOS and BASIC (`LOAD` at BASIC's prompt), from memory full of
 garbage too (`disk.mjs`). What's left of the first milestone is playing it on a real one.
 
@@ -514,6 +517,101 @@ game starting by itself at the attract screen, and the menus choosing Read&Weep,
 with `EP_COLD=1` (the program's segments full of garbage first) too, on several power-up seeds.
 About 14 seconds from power-on in the emulator, most of it the disk. On MAME it isn't run (its
 ROM set has no BASIC cartridge).
+
+## After the first milestone: speed
+
+`tools/emu/profile.mjs` plays levels on ephl (Trogg unable to die, standing then walking, as
+`fps.mjs`) and samples where the Z80 is every 32 microseconds, with the video RAM's wait states,
+putting each sample down to its routine. On the first profile, the slowest levels (B_8, C_5,
+D_9: 5 frames a second) spent about 27% of their time in `paint_line` and the `pl_step` it
+called for every line (repainting the background: erasing the moving platforms and meanies,
+and the columns or rows scrolled into view), and the faster ones 4-6% in `lpt_set`, whose
+loop to find where the ring wraps could go round 256 times a flip. So far:
+
+- `paint_line` paints a cell's 8 lines unrolled, 80 bytes apart (`ADD HL,BC`: 29 T-states a
+  line, against about 65), unless the cell is within 3 pages of the ring's end, where it still
+  goes a line at a time, wrapping.
+- `lpt_set` finds where the ring wraps by division: the lines that start before the ring's end
+  are 256 less the ring row of the scroll position, and that row is the position / 80 (8 steps
+  of shift and subtract).
+- (To make room in the low RAM for the first, EXOS's font moved out of it, to segment `&FE`
+  after the compiled meanie's room: `front_call` copies it beside the front end as it unpacks
+  it. Only the timer's digits stay in the low RAM.)
+
+Frame rates now (`fps.mjs`), 3% to 17% up on each level (8% the median):
+
+<details><summary>Frame rates on every level, after the first speed-ups</summary>
+
+| Level | Scrolls | Frames a second, standing | Walking right |
+| --- | --- | --- | --- |
+| 0 | sideways | 16.9 | 15.5 |
+| A_1 | sideways | 15.5 | 15.9 |
+| A_2 | sideways | 15.3 | 15.2 |
+| A_3 | sideways | 15.6 | 16.3 |
+| A_4 | sideways | 15.4 | 15.0 |
+| A_5 | sideways | 14.9 | 14.6 |
+| A_6 | sideways | 15.3 | 16.7 |
+| A_7 | sideways | 14.5 | 16.0 |
+| A_8 | sideways | 16.2 | 16.4 |
+| A_9 | sideways | 15.0 | 12.0 |
+| B_1 | sideways | 7.1 | 6.2 |
+| B_2 | sideways | 7.2 | 7.1 |
+| B_3 | sideways | 6.5 | 6.4 |
+| B_4 | sideways | 9.4 | 7.4 |
+| B_5 | sideways | 8.0 | 6.7 |
+| B_6 | sideways | 7.2 | 7.2 |
+| B_7 | sideways | 9.4 | 8.2 |
+| B_8 | sideways | 5.6 | 5.2 |
+| B_9 | sideways | 6.1 | 5.9 |
+| C_1 | up and down | 6.1 | 7.3 |
+| C_2 | up and down | 7.2 | 5.1 |
+| C_3 | up and down | 6.6 | 6.0 |
+| C_4 | up and down | 6.9 | 11.5 |
+| C_5 | up and down | 5.8 | 5.5 |
+| C_6 | up and down | 5.9 | 4.9 |
+| C_7 | up and down | 8.9 | 8.2 |
+| C_8 | up and down | 8.8 | 8.6 |
+| C_9 | up and down | 8.1 | 6.4 |
+| D_1 | sideways | 10.8 | 11.1 |
+| D_2 | up and down | 6.8 | 5.8 |
+| D_3 | sideways | 5.9 | 5.9 |
+| D_4 | sideways | 9.1 | 9.5 |
+| D_5 | up and down | 5.8 | 5.7 |
+| D_6 | sideways | 9.5 | 9.3 |
+| D_7 | up and down | 8.3 | 6.3 |
+| D_8 | up and down | 6.5 | 6.4 |
+| D_9 | up and down | 5.5 | 5.6 |
+| E_1 | sideways | 13.4 | 11.1 |
+| E_2 | sideways | 11.1 | 11.1 |
+| E_3 | sideways | 8.3 | 8.7 |
+| E_4 | sideways | 13.4 | 14.3 |
+| E_5 | up and down | 10.2 | 8.1 |
+| E_6 | up and down | 8.8 | 8.2 |
+| E_7 | up and down | 13.7 | 13.4 |
+| E_8 | sideways | 9.4 | 8.7 |
+| E_9 | sideways | 10.1 | 10.0 |
+| F_1 | sideways | 9.4 | 10.3 |
+| F_2 | sideways | 12.1 | 11.8 |
+| F_3 | sideways | 10.1 | 10.3 |
+| F_4 | sideways | 9.1 | 11.0 |
+| F_5 | up and down | 10.2 | 8.8 |
+| F_6 | up and down | 9.1 | 8.3 |
+| F_7 | sideways | 10.9 | 10.5 |
+| F_8 | sideways | 14.9 | 11.8 |
+| F_9 | sideways | 11.5 | 11.7 |
+| average | | 10.0 | 9.7 |
+| average | sideways | 11.1 | 10.9 |
+| average | up and down | 7.9 | 7.4 |
+
+</details>
+
+That's 10.0 frames a second on average (9.3 before; the CPC version 10.3, the BBC version 14.4),
+7.9 on the levels that scroll up and down (the CPC version 8.2, on its smaller 320x200 window).
+The slowest levels are slow on every version (B_8: the BBC version 7.8, the CPC 6.6, the
+Enterprise 5.6): they're full of moving platforms and meanies, each erased every frame by
+repainting its character cells from the background cache. Much more would need that changed:
+saving the background under each as it's drawn, and putting it back, as the draw log does for
+the things that move every frame.
 
 ## Sound
 

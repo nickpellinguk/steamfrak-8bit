@@ -117,6 +117,7 @@ EP_ROMS=/path/to/roms node tools/emu/frames.mjs        # phase 6: every frame dr
 EP_ROMS=/path/to/roms node tools/emu/fps.mjs           # phase 6: the frame rate on every level
 EP_ROMS=/path/to/roms node tools/emu/front.mjs         # phase 7: the attract screen, menus, a level won, the records
 EP_ROMS=/path/to/roms node tools/emu/disk.mjs          # phase 8: the disk, LOADed from BASIC (EP_COLD=1: from garbage)
+EP_ROMS=/path/to/roms node tools/emu/profile.mjs       # where the time goes, playing (ephl's profile step)
 ```
 
 `boot.mjs` is phase 0's test: the program must take the machine over, set `ready` and idle in
