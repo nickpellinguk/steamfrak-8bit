@@ -38,6 +38,11 @@ KEY_J = 48 : KEY_K = 50 : KEY_SEMICOLON = 51 : KEY_L = 52 : KEY_COLON = 53 : KEY
 KEY_STOP = 56 : KEY_DOWN = 57 : KEY_RIGHT = 58 : KEY_UP = 59 : KEY_HOLD = 60 : KEY_LEFT = 61 : KEY_ENTER = 62 : KEY_ALT = 63
 KEY_M = 64 : KEY_DEL = 65 : KEY_COMMA = 66 : KEY_SLASH = 67 : KEY_STOP_ = 68 : KEY_SHIFT_R = 69 : KEY_SPACE = 70 : KEY_INS = 71
 KEY_I = 72 : KEY_O = 74 : KEY_AT = 75 : KEY_P = 76 : KEY_LBRACKET = 77
+; The CPC version's joystick (and its two fire buttons) is the Enterprise's own,
+; built in: the cursor keys, with Space as fire. (The external joysticks, on port
+; #B6, are for later.)
+KEY_JOY_UP = KEY_UP : KEY_JOY_DOWN = KEY_DOWN : KEY_JOY_LEFT = KEY_LEFT : KEY_JOY_RIGHT = KEY_RIGHT
+KEY_FIRE1 = KEY_SPACE : KEY_FIRE2 = KEY_SPACE
 
 ; Take the machine over from EXOS: the stack at the top of page 0, our interrupt
 ; handler at #0038, interrupt mode 1, the program's own segments paged in, and
@@ -59,7 +64,7 @@ machine_init
 ; Interrupts: only Nick's VINT, which Dave sees as INT1 and latches as VINT ends,
 ; once a frame, 12 lines after the playfield (see screen.asm). The handler counts
 ; the vertical sync, shows the buffer the game has finished drawing (if it asked:
-; flip_pending) and reads the keyboard.
+; flip_pending), reads the keyboard and runs the sound (sound.asm).
 ; ------------------------------------------------------------------------------
 irq
         push af : push bc : push hl
@@ -67,6 +72,7 @@ irq
         ld hl,vsyncs : inc (hl)
         ld a,(flip_pending) : or a : call nz,.flip
         call scan_keys
+        call snd_tick                           ; (the music and sound effects: stubs for now)
         pop hl : pop bc : pop af
         ei
         ret

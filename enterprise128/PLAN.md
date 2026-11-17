@@ -1,6 +1,11 @@
 # Plan: Frak! for the Enterprise 128
 
-Status: **phase 4 done:** the level loader and the background (`src/level.asm`, `src/loader.asm`,
+Status: **phase 5 done:** the game logic (`src/logic.asm`, with the CPC version's `trogg.asm`
+and `commands.asm` as they are) moves Trogg as GameMaker does on all 55 levels
+(`connections.mjs`, but for D_9's half-pixel ladder, as for the BBC and CPC versions), and does
+what the BBC version's does, tick for tick (`logic.mjs`: 440,000 ticks). Next: phase 6.
+
+Phase 4 done: the level loader and the background (`src/level.asm`, `src/loader.asm`,
 `src/bg.asm`) pass the CPC version's `levels.mjs` on all 55 levels: their tables, their
 background caches, and the window repainted from the cache, byte for byte. Next: phase 5.
 
@@ -301,12 +306,30 @@ the converter.
 81 bytes a line fails all 55; one putting each row a line low fails the 19 that scroll up and
 down.
 
-### Phase 5: game logic (`src/logic.asm`, `src/trogg.asm`, `src/commands.asm`)
+### Phase 5: game logic (`src/logic.asm`, `src/trogg.asm`, `src/commands.asm`) — done
 
 Unchanged, except for the window's size: the CPC's two window shapes become the BBC version's
 one, so the view's bands and clipping come from the BBC version.
 **Tests:** `connections.mjs` (Trogg moves as in GameMaker on all 55 levels) and `logic.mjs` (the
 logic does what the BBC version's does, tick for tick).
+
+**Done.** `src/logic.asm` is the CPC version's, in segment `&FA` at `&4000` (`build/LOGIC.BIN`),
+with its window variables the BBC version's (80 columns, 256 lines, 32 rows) and `play.asm`
+left out until phase 6 (the logic only mentions it in comments; the few constants of it the
+logic's variables use are in `logic.asm` until then). `trogg.asm` and `commands.asm` are the
+CPC version's files, included as they are. The CPC's joystick keys are the Enterprise's built-in
+joystick (the cursor keys, Space to fire). `src/sound.asm` is the sound stubs: the interrupt
+takes each request as the player would, and M and S change the options, as the logic's
+footsteps depend on them.
+
+- `connections.mjs`: 54 levels exactly as GameMaker; D_9 differs only by its ladder at x = 48.5,
+  which the converter rounds down, as the BBC and CPC versions' notes say (about 10,000 starts
+  in each level, 8.3 billion Z80 instructions). It needs `tools/connections.js` from the
+  steamfrak repository: it's on that repository's `ccr-c7940764-hxv6sv` branch, not on `main`.
+- `logic.mjs`: all 55 levels, mortal and immortal, 4,000 ticks each, the same as the BBC
+  version's (on jsbeeb) after every tick, with deaths, wins, keys, gems, meanies knocked off,
+  platforms carried, checkpoints, balloons and daggers among them; and again with other keys
+  on six of them.
 
 ### Phase 6: main loop and scrolling (`src/play.asm`)
 

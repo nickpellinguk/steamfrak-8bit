@@ -96,6 +96,8 @@ main_loop
         INCLUDE "../../cpc6128/src/gen/levels.asm"
         INCLUDE "level.asm"
         INCLUDE "bg.asm"
+        INCLUDE "../../cpc6128/src/gen/sounds.asm"
+        INCLUDE "sound.asm"
 
 ; A command from the test harness (the CPC version's numbers; it has no mode 9)
 command
@@ -201,6 +203,14 @@ t_unpack_seg db 0
 t_unpack_end dw 0                   ; ... and where it ended
 flip_rate    db 0                   ; flip the buffers every flip_rate frames (0: never)
 flip_count   db 1
+snd_music_req db #FF                ; sound (see sound.asm): a tune to start (#FF: none)
+snd_sfx_req db #FF                  ; ... sound effects to start (#FF: none)
+snd_sfx_req2 db #FF
+snd_music_opt db 0                  ; ... 0 all the tracks, 1 the first only, 2 no music (M)
+snd_sfx_opt db 0                    ; ... 0 sound effects on, 1 off (S)
+snd_cur     db 0                    ; ... the tune last asked for
+snd_m_last  db 0                    ; ... M and S as they were
+snd_s_last  db 0
 t_cmd       db 0                    ; a command from the test harness
 t_arg       db 0
 ll_level    db 0                    ; load_level's level
@@ -415,6 +425,14 @@ end_ram
 levels_end
         ASSERT PACK_ORG == LEVELS_ORG && levels_end - LEVELS_ORG == PACK_SIZE
         SAVE 'build/LEVELS.BIN',LEVELS_ORG,PACK_SIZE
+
+; The game's logic, for segment #FA at #4000 (as the CPC version's extra bank 2)
+        BANK
+        ORG #4000
+        INCLUDE "logic.asm"
+        ASSERT end_logic_bank <= #8000
+        SAVE 'build/LOGIC.BIN',#4000,end_logic_bank-#4000          ; (with its variables' starting values)
+        PRINT "Logic from ",{hex}#4000," to ",{hex}logic_vars,", its variables to ",{hex}end_logic_bank
 
 ; The level loader, for segment #FE after buffer 1's ring, where it runs (at page 3)
         BANK

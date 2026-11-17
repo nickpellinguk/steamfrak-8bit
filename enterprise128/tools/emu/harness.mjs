@@ -57,6 +57,13 @@ export function boot() {
     return [`wait ${EXOS_FRAMES}`, `load 256 ${program()}`, 'jump 256', `waitfor ${symbols().ready} ${READY} 500`];
 }
 
+// Steps that put the program's files in their segments, as it will load them itself (phase 8):
+// the graphics (#F9), the logic (#FA), the levels (#FF) and the level loader (#FE)
+export function loadFiles(sym) {
+    return [`sload ${sym.seg_gfx} 0 ${join(ROOT, 'build/cpc/GFX.BIN')}`, `sload ${sym.seg_logic} 0 ${join(ROOT, 'build/LOGIC.BIN')}`,
+            `sload ${sym.seg_top} 0 ${join(ROOT, 'build/LEVELS.BIN')}`, `sload ${sym.seg_jit} ${sym.fe_spare} ${join(ROOT, 'build/LOADER.BIN')}`];
+}
+
 // Run the steps (strings, as steps.lua and ephl take them; a final "quit" is added). Returns
 // { peeks: {label: [bytes]}, snaps: {label: png file}, times, keys, dump(label), log, dir }.
 export const EMULATOR = process.env.EP_EMU || 'ephl';

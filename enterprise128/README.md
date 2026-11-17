@@ -4,8 +4,8 @@ A port of the CPC 6128 version ([`../cpc6128`](../cpc6128/README.md)), which is 
 of the BBC Master version, to the Enterprise 128. The plan, phase by phase, is in
 [`PLAN.md`](PLAN.md).
 
-**Status: phase 4 done** (the levels and the background; see [`PLAN.md`](PLAN.md)). Phase 3:
-the plotter. Phase 2: the memory map, measured, fits. Phase 1: the machine layer and the
+**Status: phase 5 done** (the game logic; see [`PLAN.md`](PLAN.md)). Phase 4: the levels and
+the background. Phase 3: the plotter. Phase 2: the memory map, measured, fits. Phase 1: the machine layer and the
 screen. Phase 0
 (the toolchain and the test harness): The program loads, asks EXOS
 which RAM segments it will give out, takes the machine over and tells the test harness it's
@@ -79,6 +79,12 @@ same. Running the tests with other seeds tries other power-up states (and so oth
 for s in 1 2 3 4 5; do EP_SEED=$s EP_ROMS=/path/to/roms node tools/emu/screens.mjs; done
 ```
 
+`connections.mjs` and `logic.mjs` are the CPC version's, and need what they need: the steamfrak
+repository alongside this one (`STEAMFRAK=...` otherwise), with its `tools/connections.js` (on its
+`ccr-c7940764-hxv6sv` branch) and the GameMaker project alongside that; and the BBC version built,
+with jsbeeb installed in `../tools/emu` (`npm install` there). They import the CPC version's Z80
+and 6502 interpreters from `../cpc6128/tools/emu`.
+
 `ephl`'s `lines` step says how many lines Nick drew between each of the last 16 vertical syncs
 (312 for a whole frame).
 
@@ -92,6 +98,8 @@ EP_ROMS=/path/to/roms node tools/emu/machine.mjs       # phase 1: ticks, segment
 EP_ROMS=/path/to/roms node tools/emu/unpack.mjs        # phase 2: the Z80 unpacker
 EP_ROMS=/path/to/roms node tools/emu/plot.mjs [seed]   # phase 3: the plotter, byte for byte
 EP_ROMS=/path/to/roms node tools/emu/levels.mjs        # phase 4: all 55 levels' tables, caches and windows
+EP_ROMS=/path/to/roms node tools/emu/connections.mjs   # phase 5: Trogg moves as in GameMaker
+EP_ROMS=/path/to/roms node tools/emu/logic.mjs         # phase 5: the logic, tick for tick, against the BBC version's
 ```
 
 `boot.mjs` is phase 0's test: the program must take the machine over, set `ready` and idle in
