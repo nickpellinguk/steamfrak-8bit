@@ -1,0 +1,62 @@
+diff --git a/vecx.c b/vecx.c
+index 36cd857..347dd1f 100644
+--- a/vecx.c
++++ b/vecx.c
+@@ -87,6 +87,7 @@ static long alg_vector_y1;
+ static long alg_vector_dx;
+ static long alg_vector_dy;
+ static unsigned char alg_vector_color;
++static long alg_vector_cycles; /* (beam) cycles the current vector has been drawing for */
+ 
+ long vector_draw_cnt;
+ long vector_erse_cnt;
+@@ -767,6 +768,8 @@ static einline void alg_addline (long x0, long y0, long x1, long y1, unsigned ch
+ 	unsigned long key;
+ 	long index;
+ 
++	beam_line (x0, y0, x1, y1, color, alg_vector_cycles);
++
+ 	key = (unsigned long) x0;
+ 	key = key * 31 + (unsigned long) y0;
+ 	key = key * 31 + (unsigned long) x1;
+@@ -860,6 +863,7 @@ static einline void alg_sstep (void)
+ 			alg_vector_dx = sig_dx;
+ 			alg_vector_dy = sig_dy;
+ 			alg_vector_color = (unsigned char) alg_zsh;
++			alg_vector_cycles = 0;
+ 		}
+ 	} else {
+ 		/* already drawing a vector ... check if we need to turn it off */
+@@ -899,6 +903,7 @@ static einline void alg_sstep (void)
+ 				alg_vector_dx = sig_dx;
+ 				alg_vector_dy = sig_dy;
+ 				alg_vector_color = (unsigned char) alg_zsh;
++				alg_vector_cycles = 0;
+ 			} else {
+ 				alg_vectoring = 0;
+ 			}
+@@ -919,6 +924,9 @@ static einline void alg_sstep (void)
+ 		alg_vector_x1 = alg_curr_x;
+ 		alg_vector_y1 = alg_curr_y;
+ 	}
++
++	if (alg_vectoring == 1)
++		alg_vector_cycles++;
+ }
+ 
+ void vecx_emu (long cycles)
+diff --git a/vecx.h b/vecx.h
+index 729591d..3f10803 100644
+--- a/vecx.h
++++ b/vecx.h
+@@ -33,6 +33,10 @@ extern long vector_erse_cnt;
+ extern vector_t *vectors_draw;
+ extern vector_t *vectors_erse;
+ 
++/* (beam) called for every line the beam draws: its end points, intensity (0-127) and how many
++ * cycles it took, so a front end can work out its brightness from the beam's speed */
++void beam_line (long x0, long y0, long x1, long y1, unsigned char color, long cycles);
++
+ void vecx_reset (void);
+ void vecx_emu (long cycles);
+ 
