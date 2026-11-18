@@ -30,7 +30,7 @@ static long long now;                   /* cycles since the start of recording *
 void beam_line (long x0, long y0, long x1, long y1, unsigned char color, long cycles)
 {
 	if (out && color > 0)
-		fprintf (out, "%lld %ld %ld %ld %ld %d %ld\n", now, x0, y0, x1, y1, color, cycles);
+		fprintf (out, "%llu %ld %ld %ld %ld %d %ld\n", alg_cycles, x0, y0, x1, y1, color, cycles);
 }
 
 void osint_render (void) {}

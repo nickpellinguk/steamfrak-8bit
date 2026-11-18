@@ -21,8 +21,8 @@ starting the timer). Brightness goes as intensity / speed, so drawing the scener
 speed than the actors makes it dimmer, and cheaper. Blank moves between pieces of scenery are
 made at full speed, and the beam is reset to the centre every RESET_EVERY vectors (drift).
 
-Everything here is a parameter (top of the file); the numbers are estimates until a test program
-has been timed.
+Everything here is a parameter (top of the file). The overheads are the BIOS routines' costs as
+measured in vecx with vectrex/test/timing.asm; faster drawing code would lower them.
 """
 import math
 import os
@@ -43,8 +43,8 @@ WINDOWS = {                     # level pixels shown (w x h); the window fills t
 # --- costs, in cycles ----------------------------------------------------------------------------
 FRAME = 30000                   # 50 Hz at 1.5 MHz
 DRAW_SHARE = 20000              # what's left for drawing after game logic, sound and the BIOS
-VEC_OVERHEAD = 40               # per vector, drawn or blank (DACs, timer start, loop)
-RESET = 150                     # beam back to the centre, plus the wait for it to settle
+VEC_OVERHEAD = 73               # per vector, drawn or blank: the BIOS's Draw_VLc, measured in vecx
+RESET = 310                     # Reset0Ref and Moveto_d (scale $7F) for each shape, measured in vecx
 RESET_EVERY = 12                # vectors between resets in a chain of scenery
 BLANK_SPEED = 127               # moves with the beam off: as fast as possible
 

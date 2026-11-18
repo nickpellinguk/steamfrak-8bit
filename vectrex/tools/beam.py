@@ -7,9 +7,11 @@ it. The energy the beam leaves on each bit of the line is intensity x time / len
 as intensity / speed: a long line drawn in the same time as a short one is dimmer. A line with no
 length is the beam standing still: a dot with all the energy in one place.
 
-Each end of a line also gets DWELL cycles' worth of energy, for the beam being switched on a
-little before it starts moving and off a little after it stops (the bright dots at the ends of
-lines on a real Vectrex). The phosphor's response saturates (1 - exp(-E / E0)), the spot is a
+Where the beam stands still with the spot on (the bright dots at the ends of lines on a real
+Vectrex), that's a line with no length. A capture from vecx (beamshot) has them already; for
+shapes drawn here, polylines_to_lines adds them, as measured in vecx for the BIOS's Draw_VLc:
+the spot is on for DWELL_START cycles before the beam moves and DWELL_END after it stops. The
+phosphor's response saturates (1 - exp(-E / E0)), the spot is a
 Gaussian SPOT units wide, and a little of the energy spreads wider (BLOOM).
 
 None of the constants is measured: they're set so that a line at intensity 127 drawn at speed
@@ -22,7 +24,7 @@ import numpy as np
 from PIL import Image
 
 SCREEN_X, SCREEN_Y = 33000, 41000
-DWELL = 2.0                 # cycles of standing still at each end of a line
+DWELL_START, DWELL_END = 4, 15   # cycles the spot is on, still, before and after each vector
 SPOT = 70.0                 # beam units, the spot's standard deviation
 BLOOM, BLOOM_SPREAD = 0.06, 6.0
 REF_SPEED, REF_LEVEL = 48.0, 0.8
@@ -59,10 +61,6 @@ def _deposit(acc, upp, lines, ox, oy):
         xs = (x0 + (x1 - x0) * t - ox) / upp
         ys = (y0 + (y1 - y0) * t - oy) / upp
         es = np.full(n, e)
-        # the dwell at each end
-        xs = np.concatenate([xs, [(x0 - ox) / upp, (x1 - ox) / upp]])
-        ys = np.concatenate([ys, [(y0 - oy) / upp, (y1 - oy) / upp]])
-        es = np.concatenate([es, [z * DWELL, z * DWELL]])
         ix, iy = np.floor(xs).astype(int), np.floor(ys).astype(int)
         fx, fy = xs - ix, ys - iy
         for dx, dy, wgt in ((0, 0, (1 - fx) * (1 - fy)), (1, 0, fx * (1 - fy)),
@@ -107,11 +105,13 @@ def render(lines, path=None, width=660, view=None):
     return img
 
 
-def polylines_to_lines(polys, ox, oy, unit, speed, intensity=127, blank_speed=127):
+def polylines_to_lines(polys, ox, oy, unit, speed, intensity=127, blank_speed=127,
+                       dwell=(DWELL_START, DWELL_END)):
     """
     Beam lines for a shape: `polys` is a list of polylines (lists of (x, y) in sprite pixels; a
     single point is a dot), placed with its origin at (ox, oy) beam units, `unit` beam units a
-    pixel, drawn at `speed`. Returns (lines, cycles of beam time, drawn vectors, blank moves).
+    pixel, drawn at `speed`, with `dwell` (before, after) cycles of the spot standing still at the
+    ends of each vector. Returns (lines, cycles of beam time, drawn vectors, blank moves).
     """
     out, cycles, drawn, blanks = [], 0.0, 0, 0
     pos = None
@@ -121,13 +121,15 @@ def polylines_to_lines(polys, ox, oy, unit, speed, intensity=127, blank_speed=12
             cycles += math.dist(pos, pts[0]) / blank_speed
             blanks += 1
         if len(pts) == 1:
-            dwell = 6.0                       # a dot: the beam stays a few cycles
-            out.append((pts[0][0], pts[0][1], pts[0][0], pts[0][1], intensity, dwell))
-            cycles += dwell
+            stay = sum(dwell) + 1             # a dot: a vector of no length, so its dwell and a cycle
+            out.append((pts[0][0], pts[0][1], pts[0][0], pts[0][1], intensity, stay))
+            cycles += stay
             drawn += 1
         for a, b in zip(pts, pts[1:]):
             c = math.dist(a, b) / speed
+            out.append((a[0], a[1], a[0], a[1], intensity, dwell[0]))
             out.append((a[0], a[1], b[0], b[1], intensity, c))
+            out.append((b[0], b[1], b[0], b[1], intensity, dwell[1]))
             cycles += c
             drawn += 1
         pos = pts[-1]
