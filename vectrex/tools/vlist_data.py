@@ -4,6 +4,7 @@ Write the test lists for test/vlist.asm and test/vlist_a.asm:
 
     python3 vectrex/tools/vlist_data.py              # test/vlist_data.asm
     python3 vectrex/tools/vlist_data.py --computed   # test/vlist_a_data.asm
+    python3 vectrex/tools/vlist_data.py --short      # test/vlist_c_data.asm
 
 A square wave of vectors, each with its own scale, about the same length (dx or dy x scale).
 For vlist each vector carries the address of its wait (see vlist.asm); for vlist_a the wait is
@@ -18,6 +19,7 @@ TEST = os.path.join(HERE, '..', 'test')
 
 SCALES = [18, 19, 20, 21, 25, 32, 47, 64, 100, 127, 200, 255]
 SCALES_A = [28, 29, 30, 31, 33, 40, 47, 64, 100, 127, 200, 255]
+SCALES_C = [1, 2, 3, 4, 6, 8, 10, 11, 12, 14, 16, 20, 24, 27, 28, 29, 40, 100, 255]
 LENGTH = 2000           # beam units (DAC value x scale)
 
 
@@ -42,11 +44,11 @@ def vlist(vectors, label):
     return out
 
 
-def vlist_a(vectors, label):
-    """The same for vlist_a: 4 bytes a vector, then 0, 0."""
+def vlist_a(vectors, label, shortest=28):
+    """The same for vlist_a (or vlist_c, shortest=1): 4 bytes a vector, then 0, 0."""
     out = ['%s' % label]
     for scale, dy, dx, on in vectors:
-        assert 28 <= scale <= 255 and -128 <= dy <= 127 and -128 <= dx <= 127
+        assert shortest <= scale <= 255 and -128 <= dy <= 127 and -128 <= dx <= 127
         out.append('                fcb     %d,%d,%d,$%02X' % (scale, dy, dx, 0xFF if on else 0))
     out.append('                fcb     0,0')
     return out
@@ -64,12 +66,17 @@ def square_wave(scales):
 
 
 def main():
-    computed = '--computed' in sys.argv
-    scales = SCALES_A if computed else SCALES
-    out = os.path.join(TEST, 'vlist_a_data.asm' if computed else 'vlist_data.asm')
+    if '--short' in sys.argv:
+        flag, scales, name = ' --short', SCALES_C, 'vlist_c_data.asm'
+        make = lambda v, l: vlist_a(v, l, shortest=1)
+    elif '--computed' in sys.argv:
+        flag, scales, name, make = ' --computed', SCALES_A, 'vlist_a_data.asm', vlist_a
+    else:
+        flag, scales, name, make = '', SCALES, 'vlist_data.asm', vlist
+    out = os.path.join(TEST, name)
     lines = ['; made by vectrex/tools/vlist_data.py%s: scales %s, about %d beam units each'
-             % (' --computed' if computed else '', ', '.join(map(str, scales)), LENGTH)]
-    lines += (vlist_a if computed else vlist)(square_wave(scales), 'test_list')
+             % (flag, ', '.join(map(str, scales)), LENGTH)]
+    lines += make(square_wave(scales), 'test_list')
     open(out, 'w').write('\n'.join(lines) + '\n')
     print(out)
 
