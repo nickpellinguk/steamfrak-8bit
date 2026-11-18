@@ -29,7 +29,9 @@ At 50 Hz a frame is 30000 cycles of the 1.5 MHz 6809.
 | `tools/timing.py` | For each run of vectors in a capture: how many, cycles from one start to the next, cycles moving, and cycles of the spot standing still before and after. |
 | `test/timing.asm` | A cartridge that draws with the BIOS's routines and with a polling loop of its own, for measuring what each costs. |
 | `test/chain.asm` | `chain16`: a polyline drawn at scale 16 by counting cycles instead of polling, against the BIOS's `Draw_VLc` (`preview/chain_vs_bios.png`). |
-| `test/vlist.asm` | `vlist`: a vector list where each vector has its own scale (18-255), waited for exactly in software (`preview/vlist_vecx.png`); its test list is made by `tools/vlist_data.py`, which works out each vector's wait. |
+| `test/vlist.asm` | `vlist`: a vector list where each vector has its own scale (18-255), waited for exactly in software, each vector carrying its wait's address (`preview/vlist_vecx.png`). |
+| `test/vlist_a.asm` | `vlist_a`: the same, with the wait worked out from the scale as it draws (`LSRA`, `LBCS` to the next instruction for the odd cycle, `NEGA`, `JMP A,U` into a page-aligned run of NOPs): 4 bytes a vector. |
+| `tools/vlist_data.py` | Makes the test lists for both (`--computed` for vlist_a), working out each vector's wait for vlist. |
 
 asm6809 is built in `/opt/frak-tools/asm6809/bin/` by the Frak ports environment's setup script.
 
@@ -75,7 +77,8 @@ vecx's beam units are DAC value x cycles: a vector with dx = 16 at scale 8 is 12
 | BIOS `Draw_VLc` at scale 32 | 102 | 31 | 17 / 0 |
 | `draw16` (timing.asm: the BIOS's steps, polling, without its extras) | 78 | 8 | 17 / 3 |
 | `chain16` (chain.asm: counting cycles, scale 16 only) | 67 | 16 | 0 / 1 |
-| **`vlist`** (vlist.asm: exact software wait, any scale 18-255) | **scale + 51** | scale - 1 | **0 / 0** |
+| `vlist` (vlist.asm: exact software wait from an address in the data, any scale 18-255) | scale + 51 | scale - 1 | 0 / 0 |
+| **`vlist_a`** (vlist_a.asm: exact software wait worked out from the scale, 28-255) | **scale + 51** | scale | **1 / 0** |
 | a separate dot: `Reset0Ref`, `Moveto_d` at scale $7F, `Draw_Line_d` | about 390 | | |
 
 (Without the lag, vecx shows the BIOS's standing time as 4 before and 15 after: the same in all,
@@ -94,7 +97,13 @@ in different places.)
   vector carries the address to jump to (worked out when the list is made), so finding it costs
   nothing at run time. Measured in vecx for scales 18 to 255: every vector exactly scale + 51
   cycles from the one before, the spot never standing still.
-* Its costs: 6 bytes a vector (scale, dy, dx, spot on/off, wait address) against the BIOS's 2,
+* `vlist_a` works the wait out from the scale instead (on the 6809 a short branch takes 3 cycles
+  whether or not it branches, so the odd cycle comes from `LBCS`: 5 cycles, 6 if it branches;
+  and `JMP A,U` jumps with A as a signed offset, so A is negated and U is the end of the NOPs).
+  That costs about 9 more cycles, which go inside the wait, so they raise the shortest scale
+  (28) rather than costing time; in return it's 4 bytes a vector (scale, dy, dx, spot), the
+  list ends with a scale of 0, and its NOPs are one 128-byte page. It's the one to use.
+* `vlist`'s costs: 6 bytes a vector (scale, dy, dx, spot on/off, wait address) against the BIOS's 2,
   and about 480 bytes for the runs of NOPs. Vectors need a scale of at least 18 (shorter ones
   at a lower speed, which is brighter). The spot comes on a cycle late (lit for scale - 1):
   writing it a cycle earlier costs 3 cycles a vector, which didn't seem worth it.
