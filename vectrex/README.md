@@ -29,6 +29,7 @@ At 50 Hz a frame is 30000 cycles of the 1.5 MHz 6809.
 | `tools/timing.py` | For each run of vectors in a capture: how many, cycles from one start to the next, cycles moving, and cycles of the spot standing still before and after. |
 | `test/timing.asm` | A cartridge that draws with the BIOS's routines and with a polling loop of its own, for measuring what each costs. |
 | `test/chain.asm` | `chain16`: a polyline drawn at scale 16 by counting cycles instead of polling, against the BIOS's `Draw_VLc` (`preview/chain_vs_bios.png`). |
+| `test/vlist.asm` | `vlist`: a vector list where each vector has its own scale (18-255), waited for exactly in software (`preview/vlist_vecx.png`); its test list is made by `tools/vlist_data.py`, which works out each vector's wait. |
 
 asm6809 is built in `/opt/frak-tools/asm6809/bin/` by the Frak ports environment's setup script.
 
@@ -73,7 +74,8 @@ vecx's beam units are DAC value x cycles: a vector with dx = 16 at scale 8 is 12
 | BIOS `Draw_VLc` at scale 16 | 88 | 16 | 17 / 1 |
 | BIOS `Draw_VLc` at scale 32 | 102 | 31 | 17 / 0 |
 | `draw16` (timing.asm: the BIOS's steps, polling, without its extras) | 78 | 8 | 17 / 3 |
-| **`chain16`** (chain.asm: counting cycles, scale 16) | **67** | 16 | **0 / 1** |
+| `chain16` (chain.asm: counting cycles, scale 16 only) | 67 | 16 | 0 / 1 |
+| **`vlist`** (vlist.asm: exact software wait, any scale 18-255) | **scale + 51** | scale - 1 | **0 / 0** |
 | a separate dot: `Reset0Ref`, `Moveto_d` at scale $7F, `Draw_Line_d` | about 390 | | |
 
 (Without the lag, vecx shows the BIOS's standing time as 4 before and 15 after: the same in all,
@@ -86,9 +88,18 @@ in different places.)
   VIA that every vector needs (dy, mux on, mux off, dx, timer, spot on, spot off); the rest are
   the loop and the gap the BIOS leaves for Y's sample-and-hold to settle (kept, to be safe on
   real hardware). Shapes compiled into straight-line code could save perhaps 10 more.
-* A routine that counts cycles works for one scale. At a fixed scale a vector's speed, and so its
-  brightness, goes with its length: long segments come out dimmer than short ones. Line art
-  for it should keep its segments similar lengths, or long ones split.
+* `vlist` gives every vector its own scale, so a shape can be drawn at one speed (one
+  brightness) whatever its segments' lengths: scale = length / speed. The wait is a jump into a
+  run of NOPs, with two copies whose exits differ by a cycle, so it's exact to the cycle; each
+  vector carries the address to jump to (worked out when the list is made), so finding it costs
+  nothing at run time. Measured in vecx for scales 18 to 255: every vector exactly scale + 51
+  cycles from the one before, the spot never standing still.
+* Its costs: 6 bytes a vector (scale, dy, dx, spot on/off, wait address) against the BIOS's 2,
+  and about 480 bytes for the runs of NOPs. Vectors need a scale of at least 18 (shorter ones
+  at a lower speed, which is brighter). The spot comes on a cycle late (lit for scale - 1):
+  writing it a cycle earlier costs 3 cycles a vector, which didn't seem worth it.
+* (The 13-cycle lag and the spot's on/off timing are MAME's and vecx's: a real Vectrex could
+  need these offsets adjusted, which in vlist means moving a NOP or two.)
 
 ## Findings so far
 
