@@ -196,7 +196,7 @@ index 18e49ef..7d67cf4 100644
  	unsigned r, op, ea;
  
 diff --git a/vecx.c b/vecx.c
-index 36cd857..02a1acc 100644
+index 36cd857..24c8a33 100644
 --- a/vecx.c
 +++ b/vecx.c
 @@ -87,6 +87,8 @@ static long alg_vector_y1;
@@ -268,32 +268,99 @@ index 36cd857..02a1acc 100644
  	key = (unsigned long) x0;
  	key = key * 31 + (unsigned long) y0;
  	key = key * 31 + (unsigned long) x1;
-@@ -810,7 +814,7 @@ static einline void alg_addline (long x0, long y0, long x1, long y1, unsigned ch
+@@ -810,11 +814,23 @@ static einline void alg_addline (long x0, long y0, long x1, long y1, unsigned ch
  
  /* perform a single cycle worth of analog emulation */
  
 -static einline void alg_sstep (void)
++/* (beam) the analogue side lags the VIA: the ramp, the integrators' zeroing, the DAC's values
++ * and the intensity reach the integrators alg_delay cycles late, but the blanking (spot on/off)
++ * doesn't, as MAME models it (ANALOG_DELAY, 8.5 us). 0 = vecx's original behaviour. */
++#define ALG_DELAY_MAX 64
++int alg_delay = 0;
++static struct {
++	unsigned zero, ramp, zsh;
++	long dx, dy;
++} alg_lag[ALG_DELAY_MAX];
++static unsigned alg_lag_pos;
++
 +einline void alg_sstep (void)
  {
  	long sig_dx, sig_dy;
  	unsigned sig_ramp;
-@@ -860,6 +864,7 @@ static einline void alg_sstep (void)
+ 	unsigned sig_blank;
++	unsigned lag_now, lag_then;
+ 
+ 	if ((via_acr & 0x10) == 0x10) {
+ 		sig_blank = via_cb2s;
+@@ -822,7 +838,17 @@ static einline void alg_sstep (void)
+ 		sig_blank = via_cb2h;
+ 	}
+ 
+-	if (via_ca2 == 0) {
++	/* (beam) the analogue state now goes in the delay line; what comes out is what the
++	 * integrators see */
++	lag_now = alg_lag_pos++ % ALG_DELAY_MAX;
++	lag_then = (lag_now + ALG_DELAY_MAX - (unsigned) alg_delay) % ALG_DELAY_MAX;
++	alg_lag[lag_now].zero = via_ca2 == 0;
++	alg_lag[lag_now].ramp = (via_acr & 0x80) ? via_t1pb7 : (via_orb & 0x80);
++	alg_lag[lag_now].zsh = alg_zsh;
++	alg_lag[lag_now].dx = alg_dx;
++	alg_lag[lag_now].dy = alg_dy;
++
++	if (alg_lag[lag_then].zero) {
+ 		/* need to force the current point to the 'orgin' so just
+ 		 * calculate distance to origin and use that as dx,dy.
+ 		 */
+@@ -830,15 +856,11 @@ static einline void alg_sstep (void)
+ 		sig_dx = ALG_MAX_X / 2 - alg_curr_x;
+ 		sig_dy = ALG_MAX_Y / 2 - alg_curr_y;
+ 	} else {
+-		if (via_acr & 0x80) {
+-			sig_ramp = via_t1pb7;
+-		} else {
+-			sig_ramp = via_orb & 0x80;
+-		}
++		sig_ramp = alg_lag[lag_then].ramp;
+ 
+ 		if (sig_ramp == 0) {
+-			sig_dx = alg_dx;
+-			sig_dy = alg_dy;
++			sig_dx = alg_lag[lag_then].dx;
++			sig_dy = alg_lag[lag_then].dy;
+ 		} else {
+ 			sig_dx = 0;
+ 			sig_dy = 0;
+@@ -859,7 +881,8 @@ static einline void alg_sstep (void)
+ 			alg_vector_y1 = alg_curr_y;
  			alg_vector_dx = sig_dx;
  			alg_vector_dy = sig_dy;
- 			alg_vector_color = (unsigned char) alg_zsh;
+-			alg_vector_color = (unsigned char) alg_zsh;
++			alg_vector_color = (unsigned char) alg_lag[lag_then].zsh;
 +			alg_vector_cycles = 0;
  		}
  	} else {
  		/* already drawing a vector ... check if we need to turn it off */
-@@ -899,6 +904,7 @@ static einline void alg_sstep (void)
+@@ -876,7 +899,7 @@ static einline void alg_sstep (void)
+ 						 alg_vector_color);
+ 		} else if (sig_dx != alg_vector_dx ||
+ 				   sig_dy != alg_vector_dy ||
+-				   (unsigned char) alg_zsh != alg_vector_color) {
++				   (unsigned char) alg_lag[lag_then].zsh != alg_vector_color) {
+ 
+ 			/* the parameters of the vectoring processing has changed.
+ 			 * so end the current line.
+@@ -898,7 +921,8 @@ static einline void alg_sstep (void)
+ 				alg_vector_y1 = alg_curr_y;
  				alg_vector_dx = sig_dx;
  				alg_vector_dy = sig_dy;
- 				alg_vector_color = (unsigned char) alg_zsh;
+-				alg_vector_color = (unsigned char) alg_zsh;
++				alg_vector_color = (unsigned char) alg_lag[lag_then].zsh;
 +				alg_vector_cycles = 0;
  			} else {
  				alg_vectoring = 0;
  			}
-@@ -919,6 +925,10 @@ static einline void alg_sstep (void)
+@@ -919,6 +943,10 @@ static einline void alg_sstep (void)
  		alg_vector_x1 = alg_curr_x;
  		alg_vector_y1 = alg_curr_y;
  	}
@@ -305,15 +372,16 @@ index 36cd857..02a1acc 100644
  
  void vecx_emu (long cycles)
 diff --git a/vecx.h b/vecx.h
-index 729591d..8d069dc 100644
+index 729591d..3b1d334 100644
 --- a/vecx.h
 +++ b/vecx.h
-@@ -33,6 +33,11 @@ extern long vector_erse_cnt;
+@@ -33,6 +33,12 @@ extern long vector_erse_cnt;
  extern vector_t *vectors_draw;
  extern vector_t *vectors_erse;
  
 +/* (beam) called for every line the beam draws: its end points, intensity (0-127) and how many
 + * cycles it took, so a front end can work out its brightness from the beam's speed */
++extern int alg_delay;              /* (beam) analogue lag, cycles (< 64) */
 +extern unsigned long long alg_cycles; /* (beam) cycles since reset */
 +void beam_line (long x0, long y0, long x1, long y1, unsigned char color, long cycles);
 +

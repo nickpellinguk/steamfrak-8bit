@@ -24,7 +24,7 @@ import numpy as np
 from PIL import Image
 
 SCREEN_X, SCREEN_Y = 33000, 41000
-DWELL_START, DWELL_END = 4, 15   # cycles the spot is on, still, before and after each vector
+DWELL_START, DWELL_END = 0, 1    # cycles the spot is on, still, before and after each vector
 SPOT = 70.0                 # beam units, the spot's standard deviation
 BLOOM, BLOOM_SPREAD = 0.06, 6.0
 REF_SPEED, REF_LEVEL = 48.0, 0.8
@@ -45,8 +45,10 @@ def _gauss_kernel(sigma):
 
 def _blur(img, sigma):
     k = _gauss_kernel(sigma)
-    img = np.apply_along_axis(lambda m: np.convolve(m, k, mode='same'), 0, img)
-    return np.apply_along_axis(lambda m: np.convolve(m, k, mode='same'), 1, img)
+    r = len(k) // 2
+    # ('full', then the middle: 'same' goes wrong when the kernel is longer than the picture)
+    img = np.apply_along_axis(lambda m: np.convolve(m, k, mode='full')[r:r + len(m)], 0, img)
+    return np.apply_along_axis(lambda m: np.convolve(m, k, mode='full')[r:r + len(m)], 1, img)
 
 
 def _deposit(acc, upp, lines, ox, oy):

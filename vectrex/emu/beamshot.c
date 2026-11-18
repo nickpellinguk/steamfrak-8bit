@@ -1,7 +1,7 @@
 /*
  * beamshot: run vecx without a window and write down every line the beam draws.
  *
- *     beamshot ROM CART|- SKIP FRAMES OUT
+ *     beamshot [-d CYCLES] ROM CART|- SKIP FRAMES OUT
  *
  * Runs the Vectrex (BIOS ROM, and the cartridge CART unless it's "-") for SKIP frames of 30000
  * cycles (50 Hz), then records the lines drawn in the next FRAMES frames to OUT, one a line:
@@ -12,6 +12,9 @@
  * the beam took to draw it, in cycles. A line with the same start and end is the beam standing
  * still with the beam on. render.py turns this into a picture, the brightness of each line
  * coming from intensity x time / length (the beam's speed), as on a real Vectrex.
+ *
+ * -d sets how many cycles the analogue side (ramp, DAC values, zeroing, intensity) lags the VIA,
+ * while the spot's on/off doesn't: 13 by default, MAME's 8.5 microseconds; 0 for vecx as it was.
  *
  * It's linked with vecx's emulation (vecx.c, e6809.c, with beam.patch applied) in place of vecx's
  * SDL front end (osint.c) and sound (e8910.c), so it needs no SDL.
@@ -49,8 +52,14 @@ static void load (const char *name, unsigned char *buf, size_t size, int exact)
 int main (int argc, char *argv[])
 {
 	long skip, frames, i;
-	if (argc != 6) {
-		fprintf (stderr, "usage: beamshot ROM CART|- SKIP FRAMES OUT\n");
+	alg_delay = 13;
+	if (argc > 2 && strcmp (argv[1], "-d") == 0) {
+		alg_delay = atoi (argv[2]);
+		argc -= 2;
+		argv += 2;
+	}
+	if (argc != 6 || alg_delay < 0 || alg_delay >= 64) {
+		fprintf (stderr, "usage: beamshot [-d CYCLES (0-63)] ROM CART|- SKIP FRAMES OUT\n");
 		return 2;
 	}
 	load (argv[1], rom, sizeof rom, 1);
