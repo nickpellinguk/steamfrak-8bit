@@ -4,38 +4,38 @@ spr_trogg                                  ; 26 columns of 5 bytes
                 fcb     26,5
                 fdb     trogg_data,col5_down,col5_up,col5_down_l,col5_up_l
                 fcb     40
-                fdb     6406
+                fdb     80
 spr_scrubbly                                  ; 33 columns of 6 bytes
                 fcb     33,6
                 fdb     scrubbly_data,col6_down,col6_up,col6_down_l,col6_up_l
                 fcb     48
-                fdb     7688
+                fdb     96
 spr_poglet                                  ; 23 columns of 5 bytes
                 fcb     23,5
                 fdb     poglet_data,col5_down,col5_up,col5_down_l,col5_up_l
                 fcb     40
-                fdb     6406
+                fdb     80
 spr_hooter                                  ; 19 columns of 4 bytes
                 fcb     19,4
                 fdb     hooter_data,col4_down,col4_up,col4_down_l,col4_up_l
                 fcb     32
-                fdb     5125
+                fdb     64
 spr_gem                                  ; 11 columns of 2 bytes
                 fcb     11,2
                 fdb     gem_data,col2_down,col2_up,col2_down_l,col2_up_l
                 fcb     16
-                fdb     2562
+                fdb     32
 spr_ladder                                  ; 12 columns of 10 bytes
                 fcb     12,10
                 fdb     ladder_data,col10_down,col10_up,col10_down_l,col10_up_l
                 fcb     80
-                fdb     12812
+                fdb     160
 rsp_key                                  ; 10 rows of 3 bytes
                 fcb     22,3,10
-                fdb     1440,key_data,rows3_10
+                fdb     18,key_data,rows3_10
 rsp_yoyo                                  ; 6 rows of 1 bytes
                 fcb     7,1,6
-                fdb     960,yoyo_data,rows1_6
+                fdb     12,yoyo_data,rows1_6
 
 trogg_data
                 fcb     $00,$00,$0F,$E0,$00

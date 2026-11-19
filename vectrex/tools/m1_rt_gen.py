@@ -11,9 +11,9 @@ Descriptors (for test/m1_rt.asm):
   column sprite  spr_NAME:  fcb width, bytes a column
                             fdb data, (routines:) down, up, down_l, up_l
                             fcb the padded column's height in pixels
-                            fdb the same in beam units
+                            fdb the same in half pixels (the beam's units at run time)
   row sprite     rsp_NAME:  fcb width, bytes a row, rows
-                            fdb how far down it ends (beam units), data, routine
+                            fdb how far down it ends (half pixels), data, routine
   strip          stp_NAME:  fcb bytes a row
                             fdb row 0's data, row 1's (reversed: swept to the left)
 
@@ -149,12 +149,12 @@ def main():
                     '                fdb     %s_data,col%d_down,col%d_up,col%d_down_l,col%d_up_l'
                     % (label, nb, nb, nb, nb),
                     '                fcb     %d' % (8 * nb),
-                    '                fdb     %d' % round(8 * nb * g.UNIT)]
+                    '                fdb     %d' % (16 * nb)]
         else:
             drift = max(1, round(10 / nb))
             out += ['rsp_%s                                  ; %d rows of %d bytes' % (label, h, nb),
                     '                fcb     %d,%d,%d' % (w, nb, h),
-                    '                fdb     %d,%s_data,rows%d_%d' % (drift * 16 * nb * h, label, nb, h)]
+                    '                fdb     %d,%s_data,rows%d_%d' % (round(drift * 16 * nb * h / 80), label, nb, h)]
     out.append('')
     for label, (how, nb, items, h, w) in data.items():
         out.append('%s_data' % label)

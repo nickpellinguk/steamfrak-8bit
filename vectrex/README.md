@@ -229,16 +229,24 @@ clipped, positioned and moved between as it runs (`preview/m1_runtime.png`: thre
   slots entered by a table according to the length (the last slot ANDs the last byte with its
   mask), so every write keeps its 16-cycle beat. Keys and the yoyo, partly off the window, are
   drawn whole (the part outside is past the screen's edge: up to 22 pixels); wholly off, not drawn.
-* **Moves:** `move_to` from where the beam is (tracked in RAM) to where it's wanted: a coarse
-  vector at scale 128 (the distance / 128), then one at scale 1 for the rest (the distance's low 7
-  bits), left out if within a quarter of a pixel. `draw_cols` starts the coarse vector, sets up
-  the columns while it runs, then finishes the move. Note: the BIOS's `Reset0Ref` leaves the
+* **Moves:** `move_to` from where the beam is (tracked in RAM) to where it's wanted, at a fixed
+  speed of 80 on each axis that moves: a diagonal leg as long as the shorter axis, then a leg
+  along the longer axis. Positions are kept in half pixels (80 beam units: the beam's travel in a
+  cycle at speed 80), so each leg lasts as many cycles as the half pixels it covers: no
+  divisions or multiplications, and the beam lands exactly (no correction vector). `draw_cols`
+  starts the diagonal, sets up the columns while it runs, then finishes the move. (Milestone 1
+  first had a coarse vector at scale 128, the distance / 128, then one at scale 1 for the rest,
+  left out within a quarter of a pixel: 128 cycles however short the move, and corrections. A
+  first try at the legs at speed 127 spent 413 cycles converting beam units to cycles and back,
+  more than the travel saved; at speed 80 that's 168.) Note: the BIOS's `Reset0Ref` leaves the
   integrators held at zero (`Moveto_d` lets them go): after it, the VIA's control register needs
   $CE.
 * **Costs, measured** (`beamshot -p`, which prints the cycle whenever the 6809 reaches given
   addresses): per object, clipping 118 cycles, positions ~220, the move and set-up ~460 (~900 for
   a long move), the end ~80: **~900 cycles an object** besides its drawing. The scene (12 things,
-  ~25,000 cycles of drawing) takes ~35,700 a frame. Static scenery (platforms, ladders, gems)
+  ~25,000 cycles of drawing) takes ~35,700 a frame. With the moves in legs at speed 80, 35,578 a
+  frame on average over the whole scroll, against 37,067 with the scale-128 moves: ~115 cycles
+  saved an object. Static scenery (platforms, ladders, gems)
   doesn't move relative to itself, so in milestone 3 its moves can be worked out by the converter
   and chained (~200 each, nothing computed), leaving run-time moves for the things that move.
 

@@ -4,7 +4,9 @@
 ; data are made by vectrex/tools/m1_rt_gen.py (m1_rt_engine.asm, m1_rt_data.asm).
 ;
 ; Positions are in BBC pixels (16 bits, from the middle of the screen, y down); the beam's in
-; beam units (160 a pixel, y up). The window is the screen's width: x from WL to WR.
+; half pixels (y up): a half pixel is 80 beam units, the beam's travel in a cycle at a speed of 80,
+; so a move's legs last as many cycles as the half pixels they cover. The window is the screen's
+; width: x from WL to WR.
 ;
 ; asm6809 -B -o m1_rt.bin m1_rt.asm
 
@@ -25,12 +27,12 @@ VIA_int_flags   equ     $0D
 WL              equ     -103                    ; the window, in pixels
 WR              equ     103
 COL_PAD         equ     2                       ; blank pixels at each end of a column
-TOLERANCE       equ     40                      ; a move left this far short (beam units) isn't finished
+MSPEED          equ     80                      ; moves' speed: a half pixel a cycle
 
 ; RAM (the BIOS uses up to $C87F)
 COUNT           equ     $C880                   ; (the column routines')
 ROW1            equ     $C882                   ; (the strip's)
-BEAM_X          equ     $C884                   ; where the beam is (beam units)
+BEAM_X          equ     $C884                   ; where the beam is (half pixels)
 BEAM_Y          equ     $C886
 TGT_X           equ     $C888                   ; where to move it
 TGT_Y           equ     $C88A
@@ -56,12 +58,20 @@ AX              equ     $C8AA
 AY              equ     $C8AB
 B0              equ     $C8AD
 B1              equ     $C8AE
-MULT            equ     $C8B0
 X0              equ     $C8B2
 YT              equ     $C8B4
 MOVING          equ     $C8B6
 COLS            equ     $C8B7
 ROUTINE         equ     $C8B9
+CX              equ     $C8BA                   ; (move_to's: the cycles on each axis)
+CY              equ     $C8BC
+SGX             equ     $C8BF                   ; +-127: the direction on each axis (the low bytes
+SGY             equ     $C8C1                   ;  of words at $C8BE and $C8C0)
+L2N             equ     $C8C2                   ; the straight leg: its cycles and speeds
+L2Y             equ     $C8C4
+L2X             equ     $C8C5
+NHI             equ     $C8C6                   ; a leg's cycles' high byte
+
 
                 org     0
                 fcc     "g GCE 2026"
@@ -130,157 +140,102 @@ sc_end          lda     <VIA_t2_hi              ; (not the low byte: reading tha
 
 ; --- moving the beam -----------------------------------------------------------------------------
 
-; move_to: from BEAM to TGT (beam units). A coarse vector at scale 128 (the distance / 128),
-; then a fine one at scale 1 (its remainder: the distance's low 7 bits, in two's complement too),
-; the fine one left out if within TOLERANCE (BEAM then where the beam really is). Moves of 128
-; x 128 units (102 pixels) or more go in steps of 127 x 128 first.
+; move_to: from BEAM to TGT (half pixels), at a speed of 80 (a half pixel a cycle) on each axis
+; that moves: a diagonal leg (both axes moving) as long as the shorter axis, then a leg along the
+; longer axis for the rest. Each leg lasts as many cycles as the half pixels it covers: no
+; arithmetic but the distances, and the beam lands exactly.
 move_to         bsr     move_start
                 jmp     move_finish
 
-; move_start: as move_to, but returns with the coarse vector under way (do other work, then
+; move_start: as move_to, but returns with the first leg under way (do other work, then
 ; move_finish)
 move_start
                 clr     <VIA_shift_reg          ; spot off
-                lda     #$80
-                sta     <VIA_t1_cnt_lo          ; scale 128
-mt_again        ldd     TGT_X
+                ldx     #MSPEED                 ; X: the distance and direction (LDX before the
+                ldd     TGT_X                   ;  SUBD: it sets N too)
                 subd    BEAM_X
-                std     DX
+                bpl     ms_xp
+                jsr     negd
+                ldx     #-MSPEED&$FF
+ms_xp           stx     SGX-1                   ; (SGX = the low byte)
+                std     CX
+                ldx     #MSPEED                 ; Y
                 ldd     TGT_Y
                 subd    BEAM_Y
-                std     DY
-                lda     DX                      ; out of the coarse vector's reach
-                adda    #$40                    ; (-16384..16383: high byte + $40 under $80)?
-                cmpa    #$80
-                bhs     mt_far_go
-                lda     DY
-                adda    #$40
-                cmpa    #$80
-                blo     mt_coarse
-mt_far_go       ldd     DX
-                jsr     mt_far
-                stb     AX
-                ldd     DY
-                jsr     mt_far
-                stb     AY
-                lda     AY                      ; yes: a step of up to 127 x 128 that way first
-                ldb     AX
-                jsr     vec_blank
-                ldb     AX
-                jsr     mul128
-                addd    BEAM_X
+                bpl     ms_yp
+                jsr     negd
+                ldx     #-MSPEED&$FF
+ms_yp           stx     SGY-1
+                std     CY
+                ldd     TGT_X                   ; where the beam will be: exactly there
                 std     BEAM_X
-                ldb     AY
-                jsr     mul128
-                addd    BEAM_Y
+                ldd     TGT_Y
                 std     BEAM_Y
-                bra     mt_again
-mt_coarse       ldd     DX
-                aslb
-                rola
-                sta     AX                      ; DX / 128
-                ldd     DY
-                aslb
-                rola                            ; A = DY / 128
-                ldb     AX
-                bne     mt_c_go
-                tsta
-                beq     mt_fine                 ; (no coarse vector needed)
-mt_c_go         jsr     vec_start               ; the coarse vector: start it...
+                ; the legs: the diagonal for the shorter axis's cycles, the rest along the longer
+                ldd     CX
+                subd    CY
+                blo     ms_ylong
+                std     L2N                     ; X longer: then X alone
+                clr     L2Y
+                lda     SGX
+                sta     L2X
+                ldd     CY
+                bra     ms_leg1
+ms_ylong        jsr     negd                    ; Y longer: then Y alone
+                std     L2N
+                lda     SGY
+                sta     L2Y
+                clr     L2X
+                ldd     CX
+ms_leg1         beq     ms_nodiag               ; (no diagonal: the straight leg straight away)
+                stb     <VIA_t1_cnt_lo          ; the diagonal: its cycles to timer 1 (low byte...
+                sta     NHI                     ; ...the high byte starts it)
+                lda     SGY
+                ldb     SGX
+                jsr     vec_start16
                 lda     #1
                 sta     MOVING
-                bra     mt_rest
-mt_fine         clr     MOVING
-mt_rest         lda     DX+1                    ; the rest: the low 7 bits
-                anda    #$7F
-                sta     AX
-                lda     DY+1
-                anda    #$7F
-                sta     AY
+                rts
+ms_nodiag       clr     MOVING
                 rts
 
-; move_finish: wait for the coarse vector, then the fine one (or not)
+; move_finish: wait for the diagonal, then the straight leg (if any)
 move_finish     tst     MOVING
-                beq     mt_f2
+                beq     mf_leg2
                 jsr     vec_wait
-mt_f2           lda     AX
-                cmpa    #TOLERANCE
-                bhi     mt_last
-                lda     AY
-                cmpa    #TOLERANCE
-                bhi     mt_last
-                ldb     AX                      ; near enough: the beam's that short
-                clra
-                std     DX
-                ldd     TGT_X
-                subd    DX
-                std     BEAM_X
-                ldb     AY
-                clra
-                std     DY
-                ldd     TGT_Y
-                subd    DY
-                std     BEAM_Y
-                rts
-mt_last         lda     #1
-                sta     <VIA_t1_cnt_lo          ; scale 1: exactly the rest
-                lda     AY
-                ldb     AX
-                jsr     vec_blank
-                ldd     TGT_X
-                std     BEAM_X
-                ldd     TGT_Y
-                std     BEAM_Y
-                rts
+mf_leg2         ldd     L2N
+                beq     mf_done
+                stb     <VIA_t1_cnt_lo
+                sta     NHI
+                lda     L2Y
+                ldb     L2X
+                jsr     vec_start16
+                jmp     vec_wait
+mf_done         rts
 
-; mt_far: D -> B = 0 if within the coarse vector's reach (-16384..16383), else +-127
-mt_far          cmpd    #16384
-                blt     mf_a
-                ldb     #127
-                rts
-mf_a            cmpd    #-16384
-                bge     mf_b
-                ldb     #-127
-                rts
-mf_b            clrb
-                rts
-
-; mul128: D = B x 128 (B signed)
-mul128          tfr     b,a
-                clrb
-                asra
-                rorb
-                rts
-
-; vec_blank: a vector with the spot off: A = Y speed, B = X speed, the scale in timer 1's latch.
-; vec_start starts it and returns; vec_wait waits for it to finish.
-vec_blank       jsr     vec_start
-vec_wait        lda     #$40
-vb_wait         bita    <VIA_int_flags
-                beq     vb_wait
-                rts
-vec_start       sta     <VIA_port_a
+; vec_start16: a blank vector, A = Y speed, B = X speed, its cycles' low byte already in timer 1's
+; latch and the high byte in NHI (writing it starts the timer)
+vec_start16     sta     <VIA_port_a
                 clr     <VIA_port_b             ; mux on: to Y
                 nop
                 nop
                 nop
                 inc     <VIA_port_b             ; mux off
                 stb     <VIA_port_a
-                clr     <VIA_t1_cnt_hi          ; go
+                lda     NHI
+                sta     <VIA_t1_cnt_hi          ; go
                 rts
 
-; mul160: D = D x 160 (pixels to beam units), for D in -256..511: the low byte by MUL, then
-; the high byte's part (+-40960)
-mul160          sta     MULT
-                lda     #160
-                mul                             ; D = low byte x 160
-                tst     MULT
-                beq     m160_done
-                bmi     m160_neg
-                addd    #40960                  ; (high byte 1)
+; vec_wait: wait for timer 1 (a move's leg) to run out
+vec_wait        lda     #$40
+vb_wait         bita    <VIA_int_flags
+                beq     vb_wait
                 rts
-m160_neg        subd    #40960                  ; (high byte -1)
-m160_done       rts
+
+; mul2: D = D x 2 (pixels to half pixels)
+mul2            aslb
+                rola
+                rts
 
 negd            coma
                 comb
@@ -299,9 +254,9 @@ cw_ok           rts
 
 ; --- column sprites ------------------------------------------------------------------------------
 
-; draw_cols: U = the sprite's descriptor; OBJ_X, OBJ_Y, FACING. Positions: X0 = x x 160 and
-; YT = the padded column's top (y up) once, the rest by MUL (column x 160) and the descriptor's
-; column height in beam units.
+; draw_cols: U = the sprite's descriptor; OBJ_X, OBJ_Y, FACING. Positions (half pixels): X0 = x x 2
+; and YT = the padded column's top (y up) once, the rest from the column (x 2) and the
+; descriptor's column height.
 draw_cols       stu     SPR
                 ldb     ,u
                 clra
@@ -331,29 +286,31 @@ dc_have         ldb     C0
                 cmpb    C1
                 lbhs    dc_done                 ; (none in the window)
                 ldd     OBJ_X
-                jsr     mul160
+                jsr     mul2
                 std     X0
                 ldd     OBJ_Y
                 subd    #COL_PAD
-                jsr     mul160
+                jsr     mul2
                 jsr     negd
                 std     YT
                 ; the start: half a pixel before the first column drawn
                 tst     FACING
                 bne     dc_sx_l
-                lda     C0
-                ldb     #160
-                mul
+                ldb     C0
+                clra
+                aslb
+                rola
                 addd    X0
-                subd    #80
+                subd    #1
                 bra     dc_sx
-dc_sx_l         lda     ,u                      ; (width - 1 - C0) x 160 + 80
-                deca
-                suba    C0
-                ldb     #160
-                mul
+dc_sx_l         ldb     ,u                      ; (width - 1 - C0) x 2 + 1
+                decb
+                subb    C0
+                clra
+                aslb
+                rola
                 addd    X0
-                addd    #80
+                addd    #1
 dc_sx           std     TGT_X
                 ldb     C0                      ; at the top, or the bottom if the first
                 lsrb                            ; column drawn goes up
@@ -389,19 +346,21 @@ dc_r            addb    #4
                 ldu     SPR
                 tst     FACING
                 bne     dc_ex_l
-                lda     C1
-                deca
-                ldb     #160
-                mul
+                ldb     C1
+                decb
+                clra
+                aslb
+                rola
                 addd    X0
-                addd    #80
+                addd    #1
                 bra     dc_ex
-dc_ex_l         lda     ,u                      ; (width - C1) x 160 + 80
-                suba    C1
-                ldb     #160
-                mul
+dc_ex_l         ldb     ,u                      ; (width - C1) x 2 + 1
+                subb    C1
+                clra
+                aslb
+                rola
                 addd    X0
-                addd    #80
+                addd    #1
 dc_ex           std     BEAM_X
                 ldb     C1
                 lsrb                            ; (C1 odd: the last column went down)
@@ -425,10 +384,10 @@ draw_rows       stu     SPR
                 cmpd    #WL
                 lble    dr_done
                 ldd     OBJ_X
-                jsr     mul160
+                jsr     mul2
                 std     TGT_X
                 ldd     OBJ_Y
-                jsr     mul160
+                jsr     mul2
                 jsr     negd
                 std     TGT_Y
                 jsr     move_to
@@ -441,11 +400,9 @@ draw_rows       stu     SPR
                 lda     2,u
                 lsra
                 bcc     dr_ey
-                lda     1,u                     ; + bytes x 8 pixels x 160
-                ldb     #5
+                lda     1,u                     ; + bytes x 8 pixels x 2
+                ldb     #16
                 mul
-                tfr     b,a
-                clrb
                 addd    BEAM_X
                 std     BEAM_X
 dr_ey           ldd     TGT_Y                   ; and as far down as it drifted
@@ -530,11 +487,11 @@ ds_two          ldb     B0                      ; the start: byte B0's left end,
                 clra
                 jsr     asl3
                 addd    OBJ_X
-                jsr     mul160
+                jsr     mul2
                 std     TGT_X
                 ldd     OBJ_Y
-                jsr     mul160
-                addd    #80
+                jsr     mul2
+                addd    #1
                 jsr     negd
                 std     TGT_Y
                 jsr     move_to
@@ -553,7 +510,7 @@ ds_two          ldb     B0                      ; the start: byte B0's left end,
                 ldd     TGT_X                   ; it ends at the left, a pixel lower
                 std     BEAM_X
                 ldd     TGT_Y
-                subd    #160
+                subd    #2
                 std     BEAM_Y
 ds_done         rts
 
