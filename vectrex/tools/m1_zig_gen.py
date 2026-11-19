@@ -91,13 +91,18 @@ def schedule(w, rows, max_bytes, drift=None, h=None, extents=None):
         edge2 = 2 * w if going_right else 0
         if extents is not None:
             # only as far as the lit pixels of the sprite's rows near this pass need
-            # (the rows this pass crosses: it slants down a pitch, about drift x 2w cycles)
+            # (the rows this pass crosses, from where it starts to where it ends: worked out
+            # again with the end found, twice)
             y0 = drift * f_last / g.UNIT
-            y1 = y0 + drift * 2 * w / g.UNIT
-            band = [extents[r] for r in range(int(y0) - 1, int(y1) + 2) if 0 <= r < len(extents) and extents[r]]
-            if band:
-                edge2 = 2 * (max(e[1] for e in band) + 1) if going_right else 2 * min(e[0] for e in band)
-            edge2 = max(edge2, x2) if going_right else min(edge2, x2)
+            for _ in range(3):
+                y1 = y0 + drift * abs(edge2 - x2) / g.UNIT
+                band = [extents[r] for r in range(int(y0 - 0.5), int(y1 + 0.5) + 1)
+                        if 0 <= r < len(extents) and extents[r]]
+                if band:
+                    edge2 = 2 * (max(e[1] for e in band) + 1) if going_right else 2 * min(e[0] for e in band)
+                else:
+                    edge2 = 2 * w if going_right else 0
+                edge2 = max(edge2, x2) if going_right else min(edge2, x2)
         return edge2
 
     failed = set()
@@ -121,6 +126,8 @@ def schedule(w, rows, max_bytes, drift=None, h=None, extents=None):
             if last:
                 if 16 * jl2 < T + 3:
                     continue                            # (every byte before the ramp off loaded)
+                if 16 * j2 < T + 3 and j2 < max_bytes and stores[j2] - (T + 8) == 1:
+                    continue                            # (a 1-cycle gap can't be filled)
                 return acc + [(T, 'off', 8, None)], T + 3, j2, jl2, T + 8
             nx2 = x2 + (T - f_last) * (1 if going_right else -1)
             rest = solve(k + 1, T + ln, j2, jl2, nx2, T)
@@ -170,7 +177,7 @@ def path(flip_times, off_time, drift, nbits):
 MAX_PITCH = 1.05            # pixels between rows (on average)
 
 
-def zigzag(grid, lit='#'):
+def zigzag(grid, lit='#', force_drift=None):
     """Plan a sprite: the largest drift whose rows (late flips and all) are at most MAX_PITCH
     apart; the schedule, the data, where the beam ends."""
     h, w = len(grid), len(grid[0])
@@ -179,7 +186,7 @@ def zigzag(grid, lit='#'):
         xs = [x for x in range(w) if grid[r][x] in lit]
         extents.append((min(xs), max(xs)) if xs else None)
     best = None
-    for drift in range(1, 16):
+    for drift in ([force_drift] if force_drift else range(1, 16)):
         max_bytes = math.ceil(h * g.UNIT / drift / 16) + 2 * w + 16
         try:
             sched, flip_times, off_time, nbytes = schedule(w, 0, max_bytes, drift, h, extents)
@@ -187,7 +194,7 @@ def zigzag(grid, lit='#'):
             continue
         rows = len(flip_times) + 1
         pitch = drift * off_time / g.UNIT / rows
-        if pitch <= MAX_PITCH:
+        if pitch <= MAX_PITCH or force_drift:
             best = (drift, sched, flip_times, off_time, nbytes, rows, pitch)
     drift, sched, flip_times, off_time, nbytes, rows, pitch = best
     pos, end = path(flip_times, off_time, drift, 8 * nbytes)
@@ -251,34 +258,40 @@ def emit(name, z):
 SPRITES = [('trogg', 'sTrogg_wr_Beeb', 4), ('scrubbly', 'sScrubbly_Beeb', 1), ('poglet', 'sPoglet_Beeb', 1),
            ('hooter', 'sHooter_Beeb', 1), ('gem', 'sGem_Beeb', 1), ('ladder', 'sLadder5_Beeb', 1),
            ('bulb', 'sBulb_Beeb', 1)]
-SCENE = [   # (label, zigzag?, x, y)
-    ('trogg', 0, -100, -100), ('trogg', 1, -70, -100), ('scrubbly', 0, -40, -108), ('scrubbly', 1, -3, -108),
-    ('ladder', 0, 44, -100), ('ladder', 1, 62, -100),
-    ('poglet', 0, -100, -40), ('poglet', 1, -72, -40), ('hooter', 0, -44, -30), ('hooter', 1, -20, -30),
-    ('gem', 0, 10, -20), ('gem', 1, 26, -20), ('bulb', 0, 44, -20), ('bulb', 1, 60, -20),
+SCENE = [   # (label, 0 for columns or the zigzag's drift, x, y)
+    ('trogg', 0, -100, -104), ('trogg', 1, -72, -104), ('trogg', 2, -44, -104), ('trogg', 3, -16, -104),
+    ('trogg', 4, 12, -104),
+    ('poglet', 0, -100, -56), ('poglet', 2, -74, -56), ('poglet', 3, -48, -56), ('poglet', 4, -22, -56),
+    ('hooter', 0, 8, -50), ('hooter', 2, 30, -50), ('hooter', 3, 52, -50), ('hooter', 4, 74, -50),
+    ('scrubbly', 0, -100, -8), ('scrubbly', 1, -64, -8), ('scrubbly', 2, -28, -8),
+    ('gem', 0, 14, 0), ('gem', 3, 30, 0), ('gem', 5, 46, 0), ('bulb', 0, 64, -4), ('bulb', 3, 78, -4),
+    ('bulb', 6, 92, -4),
 ]
 
 
 def main():
     steamfrak = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, '..', '..', '..', 'steamfrak')
-    full, zig = {}, {}
+    full, zig, grids = {}, {}, {}
     for label, name, frames in SPRITES:
         grid = g.sprite_grid(steamfrak, name, 0, frames)
+        grids[label] = grid
         full[label] = (g.column_data(grid), len(grid), len(grid[0]))
-        zig[label] = zigzag(grid)
+    for label, mode, x, y in SCENE:
+        if mode and (label, mode) not in zig:
+            zig[(label, mode)] = zigzag(grids[label], force_drift=mode)
     eng = ['; made by vectrex/tools/m1_zig_gen.py', '']
     for nb in sorted({f[0][0] for f in full.values()}):
         eng += g.column_routine(nb) + ['']
-    for label, z in zig.items():
-        eng += emit('zig_%s' % label, z) + ['']
+    for (label, drift), z in zig.items():
+        eng += emit('zig_%s_%d' % (label, drift), z) + ['']
     open(os.path.join(TEST, 'm1z_engine.asm'), 'w').write('\n'.join(eng) + '\n')
 
     out = ['; made by vectrex/tools/m1_zig_gen.py: the test scene', '', 'draw_scene']
     moves = []
     g._beam[0] = None
-    for i, (label, zz, x, y) in enumerate(SCENE):
+    for i, (label, mode, x, y) in enumerate(SCENE):
         (nb, fcols), h, w = full[label]
-        if not zz:
+        if not mode:
             hs = 8 * nb
             code, mv = g.start_move(i, (x - 0.5) * g.UNIT, -(y - g.COL_PAD) * g.UNIT)
             out += ['; %s at (%d, %d): full columns' % (label, x, y)] + code + \
@@ -288,11 +301,11 @@ def main():
             last = w - 1
             g._beam[0] = ((x + last + 0.5) * g.UNIT, -((y - g.COL_PAD) + (0 if last % 2 else hs)) * g.UNIT)
         else:
-            z = zig[label]
+            z = zig[(label, mode)]
             code, mv = g.start_move(i, x * g.UNIT, -y * g.UNIT)
-            out += ['; %s at (%d, %d): zigzag' % (label, x, y)] + code + \
-                ['dc_%d_start' % i, '                ldx     #%s_z_data' % label,
-                 '                jsr     zig_%s' % label, 'dc_%d_end' % i]
+            out += ['; %s at (%d, %d): zigzag, drift %d' % (label, x, y, mode)] + code + \
+                ['dc_%d_start' % i, '                ldx     #%s_%d_z_data' % (label, mode),
+                 '                jsr     zig_%s_%d' % (label, mode), 'dc_%d_end' % i]
             ex, ey = z['end']
             g._beam[0] = ((x + ex) * g.UNIT, -(y + ey) * g.UNIT)
         moves += mv
@@ -301,14 +314,14 @@ def main():
     for label, ((nb, fcols), h, w) in full.items():
         out.append('%s_data' % label)
         out += ['                fcb     ' + ','.join('$%02X' % v for v in col) for col in fcols]
-    for label, z in zig.items():
-        out.append('%s_z_data' % label)
+    for (label, drift), z in zig.items():
+        out.append('%s_%d_z_data' % (label, drift))
         d = z['data']
         out += ['                fcb     ' + ','.join('$%02X' % v for v in d[i:i + 16]) for i in range(0, len(d), 16)]
     open(os.path.join(TEST, 'm1z_data.asm'), 'w').write('\n'.join(out) + '\n')
-    for label, z in zig.items():
-        print('%-9s %2d x %2d: drift %d, pitch %.2f, %d rows, %d bytes, ramp on %d cycles'
-              % (label, z['w'], z['h'], z['drift'], z['pitch'], z['rows'], z['nbytes'], z['off']))
+    for (label, drift), z in zig.items():
+        print('%-9s drift %d: %2d x %2d, pitch %.2f, %d rows, %d bytes, ramp on %d cycles'
+              % (label, drift, z['w'], z['h'], z['pitch'], z['rows'], z['nbytes'], z['off']))
 
 
 if __name__ == '__main__':

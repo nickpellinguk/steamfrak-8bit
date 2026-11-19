@@ -408,10 +408,25 @@ turn, so loads have slack; the rows' speeds in U and Y, so a flip is `STU` or `S
 Rows only as long as the lit pixels they cross; each flip as soon as the writes allow; each lit
 pixel lighting the nearest bit (the converter follows the beam's real path).
 
-* **Measured** (cycles with the call, columns then zigzag): Trogg 3,102 / 1,485 (-52%), Poglet
-  2,751 / 1,437 (-48%), gem 825 / 397 (-52%), bulb 918 / 525 (-43%), Hooter 1,981 / 1,373 (-31%),
-  Scrubbly 4,444 / 3,469 (-22%: a whole drift of 2, as 3 spreads its rows too far), ladder 2,443 /
-  2,333 (-5%).
+* **Rows track the edges row by row** (each pass only as far as the lit pixels of the rows it
+  crosses, from where it starts to where it ends), and the drift is a choice per sprite: the time
+  is the sprite's height x 160 / the drift whatever the rows do, and the herringbone is each row's
+  slant, the drift x its cycles / 160 pixels, so a slower drift looks smoother and costs more in
+  proportion.
+* **Measured** (cycles with the call; `preview/m1_zigzag.png`: columns, then the zigzag at each
+  drift, slowest first):
+
+  | | columns | drift 1 | drift 2 | drift 3 | drift 4 | |
+  |---|---|---|---|---|---|---|
+  | Trogg | 3,102 | 5,549 | 2,829 | 1,933 | 1,469 | (trimmed columns 2,524) |
+  | Poglet | 2,751 | | 2,749 | 1,885 | 1,421 | |
+  | Hooter | 1,981 | | 1,981 | 1,341 | 1,037 | |
+  | Scrubbly | 4,444 | 6,829 | 3,501 | | | |
+  | gem | 825 | | | 589 | | drift 5: 381 |
+  | bulb | 918 | | | 893 | | drift 6: 493 |
+
+  At drift 2 (rows half a pixel apart) the look is close to the columns' and so is the cost; at
+  drift 3 there's a slight herringbone for about two thirds of the cost; at 4 it shows.
 * **The model holds:** vecx's lit segments fit the converter's beam path best with the flips as
   modelled (mean distance under half a pixel).
 * **But it looks rougher** (`preview/m1_zigzag.png`, columns then zigzag): neighbouring rows slant
