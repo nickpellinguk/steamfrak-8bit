@@ -25,6 +25,7 @@ At 50 Hz a frame is 30000 cycles of the 1.5 MHz 6809.
 | `test/m1h_test.asm` | Half resolution against full: every kind of object drawn both ways (`M1_HALF=1 python3 vectrex/tools/m1_gen.py` writes its `m1h_engine.asm` and `m1h_data.asm`; `preview/m1_half.png`, `preview/m1_half_zoom.png`). |
 | `test/dagger.asm`, `tools/dagger.py` | A vector dagger (a sharp V, a crossguard, a handle) pointing four ways, beside the raster one (`preview/dagger.png`). |
 | `test/m1s_test.asm` | Columns swept at the fastest speed (127) against full resolution (`M1_STRETCH=1 python3 vectrex/tools/m1_gen.py`; `preview/m1_fast.png`). |
+| `test/m1t_test.asm`, `tools/m1_trim_gen.py` | Trimmed columns (each swept only as far as it needs) against full ones (`preview/m1_trim.png`). |
 | `tools/budget.py` | For every level, slides a 320x256 and a 256x256 window across it, and estimates the drawing cost of the busiest window position (platforms as one line, ladders as two, the line art's real vector counts, standing meanies, gems and keys, and moving things whose range is in view). |
 | `tools/beam.py` | A model of the beam: renders lines (end points, intensity, time) with brightness from intensity x time / length, a brighter dot at each end where the beam dwells, a Gaussian spot, phosphor saturation and a little bloom. Its constants aren't measured: they're for comparing lines with each other. |
 | `art/shapes.py` | The line art, as polylines over the BBC sprites' pixels: Trogg standing (37 vectors), the Scrubbly (52), a gem and a key. |
@@ -347,6 +348,29 @@ is: no thin line is lost). The routines are milestone 1's with the Y speed chang
   moves at 120, platforms swept at 127 too and one balloon or dagger at a time instead of three:
   8 fit, median 36,610. The turns (35 cycles a column, a third of a typical column's cost) and the
   number of objects in view are what's left.
+
+### Trimmed columns (test/m1t_test.asm, tools/m1_trim_gen.py)
+
+Each column swept only as far as it needs, by one data-driven routine for every sprite (the
+timing is in `tools/m1_trim_gen.py`): an unrolled run of byte slots for each direction, each
+column's data holding the address to jump into it (`JMP [,X++]`), so its length is its own;
+columns going down and up share their ends, so the beam never jumps; the column count in timer
+1's latch (`DEC <$06`); the slide across after each column's last bit. The first byte at 13 cycles
+(not 12) puts up columns a pixel out against down ones, made up for in the data.
+
+* **It draws correctly** (`preview/m1_trim.png`: full then trimmed, the same pixel for pixel), and
+  vecx's cycles match the worked-out ones.
+* **But it barely pays:** Trogg 3,026 / 2,842, the Scrubbly 4,371 / 4,153, the Poglet 2,678 /
+  2,703, the Hooter 1,908 / 1,979, the ladder 2,355 / 2,396, the small sprites slower. Two reasons:
+  the turn costs 6 cycles more (16 x bytes + 41 a column, against 35, + 3 every other column), and,
+  worse, with whole bytes a column's sweep is 8 x bytes + 3 pixels whichever way it goes, so every
+  down column's top is on the same row modulo 8: each shared end overshoots by ~3.5 pixels, nearly
+  a byte a column.
+* **Lengths by the bit** would save 7-22% (Trogg 2,362, Scrubbly 3,831, Poglet 2,241, Hooter 1,773,
+  gem 657, dagger 635, ladder 2,174; worked out). The ramp would have to go off part way through a
+  column's last byte, so its last slot's ending (the slide's and the ramp-off's stores) would need
+  a variant for each number of bits used: 8 copies of each direction's run (~1.7KB of code) or 4
+  for steps of 2 bits (~0.9KB). Not built.
 
 ### A vector dagger (test/dagger.asm, tools/dagger.py)
 
