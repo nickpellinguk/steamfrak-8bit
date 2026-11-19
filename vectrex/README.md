@@ -183,6 +183,55 @@ speed of 80.
   instruction's last cycle. Exact offsets like these (and vlist_d's) are vecx's, and need
   checking against MAME (which times writes within instructions) or a real Vectrex.
 
+## Milestone 1: the raster engine (test/m1_test.asm, tools/m1_gen.py)
+
+`tools/m1_gen.py` writes `test/raster_engine.asm` (the routines) and `test/m1_data.asm` (a test
+scene: every kind of object, two of them partly off the edges, a strip of ledges wider than the
+screen; `preview/m1_scene.png`). `M1_CHAIN=1` chains the moves between objects.
+
+* **Columns, data-driven:** one routine per column height (bytes), two columns a pass, the
+  sprite's columns stored in sweep order. The turn is cheaper: one `STY` turns the ramp off,
+  switches the mux on and puts the next Y speed on the DAC; the count, the next first byte and
+  the next Y speed are loaded while the sample-and-hold settles; one `STU` (U constant) switches
+  the mux off and sets the slide's speed; no spot-off (columns end blank). **35 cycles a turn**
+  (38 after the loop's branch), against 53: measured in vecx, the Scrubbly's columns exactly 131
+  and 134 cycles apart (16 x 6 + 35, + 3).
+* **Clipping by the column:** any first column (with its parity) and count; a Scrubbly and a
+  Poglet half off the left and right edges are cut there.
+* **Rows:** keys and the yoyo as *drifting* rows: Y's sample-and-hold holds a small speed down,
+  the ramp stays on, each turn is one store flipping the X speed (each row slopes by a pitch,
+  slight on the key, more on the 1-byte yoyo; the drift is 10 / bytes, so a 3-byte key's rows are
+  0.9 pixels apart). Platforms as a strip: two rows of any length, a 16-cycle byte loop, trimmed
+  to the window by the byte (the up-to-7 pixels past the screen's edge can't be seen).
+* Costs (cycles, in vecx): Trogg 3,026 (was 3,455), Trogg climbing 2,327, Scrubbly 4,371 (was
+  4,917), Poglet 2,678, Hooter 1,908, ladder (12 x 70) 2,365, chain 1,575, gem 752, balloon 819,
+  dagger 752, bulb 842, key 540 (was ~1,380), yoyo 156, ledges (2 rows of 26 bytes) 972.
+* **Moves between objects:** the test scene (16 objects, ~27,000 cycles of drawing) repeats every
+  35,460 cycles with the BIOS's reset and move before each object, 32,924 chained (a move straight
+  from where the last object left the beam; a move's rounding left uncorrected up to a quarter of
+  a pixel, as a second vector costs ~100 cycles). vecx doesn't model the integrators' drift, so
+  how far moves can be chained before a reset needs a real Vectrex.
+
+### Against MAME (tools/calib_gen.py, test/calib.asm)
+
+MAME 0.264, run without a window, a snapshot taken by a Lua script; calibration patterns whose
+misalignment reads off a screenshot (`preview/m1_calib_vecx_mame.png`: vecx above, MAME below):
+
+* **MAME loses the slide across:** it applies a DAC value 8.5 microseconds (12.75 cycles) after
+  it's written, but reads the DAC then, so a value replaced within 13 cycles never takes effect.
+  That looks like a simplification of MAME's (a real analogue lag passes a short pulse on, late),
+  but it can't be settled without hardware. With `M1_DRIFT_COLUMNS=1` the columns don't slide:
+  the DAC holds a small X speed through each column (a pixel across in a column's time: 10 /
+  bytes), and MAME steps across, but ~8% too far: a speed of 2 is so small that any offset in
+  the DAC (MAME's model has one; a real DAC may, which is what the BIOS's zero reference is for)
+  is a large error. The slide at 40 isn't sensitive to that.
+* **The spot runs ~1.7 cycles later against the beam in MAME than in vecx:** with drifting
+  columns, MAME's down and up columns' dots are 1.67 pixels apart with the first byte written 12
+  cycles after the ramp goes on (vecx's value), 0.17 apart at 10 (`M1_SR0=10`). Drifting rows and
+  the strip line up in MAME as they are.
+* So the engine keeps both the slide and the drift, and the first byte's time, as settings; vecx's
+  values are the defaults. Which is right needs a real Vectrex.
+
 ## Findings so far
 
 * **The number of vectors costs much more than their length.** Drawing the scenery fast (dim) or

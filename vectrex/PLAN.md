@@ -1,6 +1,7 @@
 # Plan: rasterised Frak! on the Vectrex
 
-Status: **proposed, not started.** The tools and the tests behind it are in `README.md`.
+Status: **milestone 1 under way** (the raster engine: see `README.md`, "Milestone 1"). The
+tools and the tests behind it are in `README.md`.
 
 The exit goal is the game as the CPC and BBC versions play it, for the levels that scroll
 sideways and fit in a frame, with the menus and records, on a Vectrex cartridge, aiming at 32KB
@@ -100,6 +101,13 @@ arithmetic (twentieths of a pixel, the debouncing) stays exactly as it is.
 Each is checked before the next, and this file is updated as they're done.
 
 ### 1. The raster engine
+
+Done so far (`README.md`, "Milestone 1"): data-driven columns with a 35-cycle turn, drifting rows,
+the platform strip, clipping by the column, chained moves, the check against MAME (which found
+two timing questions only a real Vectrex can settle: the slide across, and the spot's timing).
+Still to do: rows clipped by the pixel (they're trimmed by the byte), facing left (columns drawn
+right to left), and moving from object to object at run time (positions computed by the 6809,
+not the generator).
 
 * Data-driven column and row routines (not generated code): a sprite is columns (or rows) of
   bytes; the same data drawn facing either way.
