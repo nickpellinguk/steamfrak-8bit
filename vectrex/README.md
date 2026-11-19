@@ -1,6 +1,7 @@
 # Frak! for the Vectrex: feasibility
 
-Not a port yet: tools for deciding what a Vectrex version could draw, and first line art.
+Not a port yet: tools for deciding what a Vectrex version could draw, line art, and tests of drawing
+by vectors and by raster. The plan for a rasterised port is in `PLAN.md`.
 
 ## How the Vectrex draws, and what that costs
 
