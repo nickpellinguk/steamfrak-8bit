@@ -2,8 +2,9 @@
 
 Status: **milestones 1 and 2 done** (the raster engine and the converter: see `README.md`,
 "Milestone 1" and "Milestone 2"). **Milestone 2's budget says no level fits a frame at full
-resolution** (median 47,000 cycles against 30,000; 17 of 36 fit at half resolution), so how to
-draw less is to be decided before milestone 3.
+resolution** (median 47,000 cycles against 30,000). Half resolution (1x2: columns 2 pixels
+apart) is tried (`README.md`, "Half resolution"): it draws, but halved sprites look poor without
+art drawn for it, and only 9-11 levels fit; moves between objects are now the biggest cost.
 
 The exit goal is the game as the CPC and BBC versions play it, for the levels that scroll
 sideways and fit in a frame, with the menus and records, on a Vectrex cartridge, aiming at 32KB

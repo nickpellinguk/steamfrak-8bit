@@ -21,6 +21,8 @@ At 50 Hz a frame is 30000 cycles of the 1.5 MHz 6809.
 | | |
 |---|---|
 | `tools/vconvert.py` | Milestone 2's converter: the sprites to raster data (`gen/sprites.asm`, preview `preview/sprites.png`), the 36 sideways levels to the ROM format (`gen/levels.asm`, each decoded again and checked against `../tools/convert.py`'s `build_level`), and the raster budget of each level's busiest window (`gen/budget.txt`). `test/gen_check.asm` assembles both files. |
+| `tools/half_rules.py` | Ways of halving sprites for half resolution, side by side (`preview/half_rules.png`). |
+| `test/m1h_test.asm` | Half resolution against full: every kind of object drawn both ways (`M1_HALF=1 python3 vectrex/tools/m1_gen.py` writes its `m1h_engine.asm` and `m1h_data.asm`; `preview/m1_half.png`, `preview/m1_half_zoom.png`). |
 | `tools/budget.py` | For every level, slides a 320x256 and a 256x256 window across it, and estimates the drawing cost of the busiest window position (platforms as one line, ladders as two, the line art's real vector counts, standing meanies, gems and keys, and moving things whose range is in view). |
 | `tools/beam.py` | A model of the beam: renders lines (end points, intensity, time) with brightness from intensity x time / length, a brighter dot at each end where the beam dwells, a Gaussian spot, phosphor saturation and a little bloom. Its constants aren't measured: they're for comparing lines with each other. |
 | `art/shapes.py` | The line art, as polylines over the BBC sprites' pixels: Trogg standing (37 vectors), the Scrubbly (52), a gem and a key. |
@@ -295,8 +297,27 @@ platforms 8,240, ladders 15,712, things 15,327 (three Scrubblies 11,700 with mov
 The B levels are worst for moving meanies (B_4: 39,783, eleven Scrubblies' ranges), the A levels
 for ladders and standing meanies.
 
-The same budget **at half resolution** (2x2-pixel blocks: half the columns, half the bytes a
-column; the moves cost the same): 17 of the 36 fit, median 30,207, 34 within 40,000.
+### Half resolution, 1x2 (test/m1h_test.asm)
+
+Columns 2 pixels apart at full height (a column sweep is already at the sweep speed the shift
+register allows, so the height can't halve), rows 2 pixels apart, platforms one row. The routines
+are milestone 1's with the slide across doubled (DAC 80 for its 4 cycles: `colNh_*`), the rows'
+drift doubled (`rowsN_Mh`), and `strip1` for one row. Same cost a column, half the columns:
+Trogg 1,513 cycles (3,026), the Scrubbly 2,251 (4,371), a ladder 1,180 (2,365), the ledges 486
+(972).
+
+* **It draws correctly** (`preview/m1_half_zoom.png`: full and half side by side, half also
+  clipped at both edges), **but it looks poor with the sprites halved automatically**: each
+  column covering two pixels' worth (lit if either is) turns shading lines into hatching and the
+  ladders' hollow rungs into dots; every other column loses details; outlines alone lose the eyes
+  and fangs (`preview/half_rules.png`). Half-resolution sprites would need drawing for it (13
+  columns for Trogg, 17 for the Scrubbly), and the gaps between columns show (on a real Vectrex
+  too, probably: a pixel is about 0.9mm, the spot narrower).
+* **The budget at half resolution** (`gen/budget.txt`'s last two columns): 9 of the 36 fit with
+  Trogg at full resolution, 11 with him at half; median 35,184.
+* **Moves are now the biggest cost**: with free moves, 34 of the 36 would fit at half resolution
+  (median 23,024); with chained moves at 100 cycles instead of 250, 14 fit; without balloons and
+  daggers, 15. So the next saving is moving between objects, before any more resolution.
 
 ## Findings so far
 

@@ -77,8 +77,10 @@ class Code:
         self.out.append('; ' + text)
 
 
-def column_routine(nb):
+def column_routine(nb, step=1):
     """
+    (step 2: half resolution across: columns 2 pixels apart, the slide twice as fast; the
+    routines' labels end in h, as colNh_down.)
     The column routine for columns of nb bytes: entries colN_down and colN_up (facing right:
     the first column at the left, the next a pixel to the right), colN_down_l and colN_up_l
     (facing left: the same data, the first column at the right, the next a pixel to the left,
@@ -86,6 +88,7 @@ def column_routine(nb):
     """
     c = Code()
     n = nb
+    H = 'h' if step == 2 else ''
     c.comment('columns of %d bytes (%d pixels): %d cycles a column (%d after an up column)'
               % (n, 8 * n, 16 * n + TURN, 16 * n + TURN + 3))
     c.comment('in: X = the first column\'s data, %s = the number of columns + 1, the beam at the' % COUNT)
@@ -93,12 +96,12 @@ def column_routine(nb):
 
     def across(left):
         if DRIFT_COLUMNS:
-            v = max(1, round(10 / n))
+            v = max(1, round(10 * step / n))
             c.ins('ldu     #$81%02X' % ((-v if left else v) & 0xFF), 3,
                   'port B = mux off, DAC = the drift across (%s)' % ('left' if left else 'right'))
         else:
-            c.ins('ldu     #$81%02X' % ((-40 if left else 40) & 0xFF), 3,
-                  'port B = mux off, DAC = %d: the slide across' % (-40 if left else 40))
+            c.ins('ldu     #$81%02X' % ((-40 * step if left else 40 * step) & 0xFF), 3,
+                  'port B = mux off, DAC = %d: the slide across' % (-40 * step if left else 40 * step))
 
     def prologue():
         c.ins('lda     #$81', 2)
@@ -107,11 +110,11 @@ def column_routine(nb):
         c.ins('sta     <VIA_aux_cntl', 4, 'ACR: ramp from port B, shift register out on the clock')
 
     def half(down):
-        name = 'col%d_%s_loop' % (n, 'd' if down else 'u')
+        name = 'col%d%s_%s_loop' % (n, H, 'd' if down else 'u')
         c.label(name)
         t = 6                                               # (after the STY at e)
         c.ins('dec     %s' % COUNT, 7, 'the sample-and-hold settles from here...')
-        c.ins('lbeq    col%d_out' % n, 5, '(5 not branching)')
+        c.ins('lbeq    col%d%s_out' % (n, H), 5, '(5 not branching)')
         c.ins('lda     ,x+', 6, 'the first byte')
         c.ins('ldb     #$01', 2, 'port B = ramp on')
         c.ins('ldy     #$80%02X' % ((SPEED if down else -SPEED) & 0xFF), 4,
@@ -145,32 +148,32 @@ def column_routine(nb):
         c.ins('sty     <VIA_port_b', 6, 't = %d = e: ramp off, mux on, DAC = the next Y speed' % tt)
 
     c.comment('facing left: the same columns, drawn from the right, the slide going left')
-    c.label('col%d_down_l' % n)
+    c.label('col%d%s_down_l' % (n, H))
     across(True)
-    c.ins('lbra    col%d_down_c' % n, 5, '(not timed)')
-    c.label('col%d_up_l' % n)
+    c.ins('lbra    col%d%s_down_c' % (n, H), 5, '(not timed)')
+    c.label('col%d%s_up_l' % (n, H))
     across(True)
-    c.ins('lbra    col%d_up_c' % n, 5, '(not timed)')
-    c.label('col%d_down' % n)
+    c.ins('lbra    col%d%s_up_c' % (n, H), 5, '(not timed)')
+    c.label('col%d%s_down' % (n, H))
     across(False)
-    c.label('col%d_down_c' % n)
+    c.label('col%d%s_down_c' % (n, H))
     prologue()
     c.ins('ldy     #$80%02X' % (-SPEED & 0xFF), 4, 'Y speed down')
     c.ins('sty     <VIA_port_b', 6, 'mux on, DAC = the first Y speed')
     half(True)
     half(False)
     if n <= 6:
-        c.ins('bra     col%d_d_loop' % n, 3, '(in the settling time)')
+        c.ins('bra     col%d%s_d_loop' % (n, H), 3, '(in the settling time)')
     else:
-        c.ins('lbra    col%d_d_loop' % n, 5, '(in the settling time; too far for BRA)')
-    c.label('col%d_up' % n)
+        c.ins('lbra    col%d%s_d_loop' % (n, H), 5, '(in the settling time; too far for BRA)')
+    c.label('col%d%s_up' % (n, H))
     across(False)
-    c.label('col%d_up_c' % n)
+    c.label('col%d%s_up_c' % (n, H))
     prologue()
     c.ins('ldy     #$80%02X' % (SPEED & 0xFF), 4, 'Y speed up')
     c.ins('sty     <VIA_port_b', 6, 'mux on, DAC = the first Y speed')
-    c.ins('bra     col%d_u_loop' % n, 3)
-    c.label('col%d_out' % n)
+    c.ins('bra     col%d%s_u_loop' % (n, H), 3)
+    c.label('col%d%s_out' % (n, H))
     c.ins('lda     #$81', 2)
     c.ins('sta     <VIA_port_b', 4, 'mux off')
     c.ins('lda     #$98', 2)
@@ -210,19 +213,20 @@ def column_data(grid, lit='#'):
     return nb, cols
 
 
-def drift_rows_routine(nb, nrows):
+def drift_rows_routine(nb, nrows, step=1):
     """
+    (step 2: half resolution down: rows 2 pixels apart, the drift twice as fast; rowsN_Mh.)
     Rows for small things (keys, the yoyo), nb bytes a row, back and forth without stopping:
     Y's sample-and-hold holds a small speed down for the whole thing (the drift: a row's pitch
     in a row's time), the ramp stays on, and each turn is just the X speed flipped, so each row
     slopes down a pitch as it goes. t = 0: the ramp on; row r starts at 16 x nb x r.
     """
     c = Code()
-    drift = max(1, round(10 / nb))          # 160 units a pixel / (16 nb cycles a row)
+    drift = max(1, round(10 * step / nb))   # 160 units a pixel / (16 nb cycles a row)
     c.comment('drifting rows of %d bytes, %d of them: %d cycles; drift %d (rows %d units apart)'
               % (nb, nrows, 16 * nb * nrows, drift, drift * 16 * nb))
     c.comment('in: X = the rows\' data (in sweep order), the beam at the first row\'s left end')
-    c.label('rows%d_%d' % (nb, nrows))
+    c.label('rows%d_%d%s' % (nb, nrows, 'h' if step == 2 else ''))
     c.ins('lda     #$81', 2)
     c.ins('sta     <VIA_port_b', 4, 'ramp off, mux off, before port B takes over the ramp')
     c.ins('lda     #$18', 2)
@@ -268,7 +272,7 @@ def drift_rows_routine(nb, nrows):
     return c.out
 
 
-def strip_routine():
+def strip_routine(rows=2):
     """
     Two rows of any length (platforms on a line): row 0 to the right, a pixel down, row 1 back
     to the left. A data-driven byte loop: LDA ,X+ / STA >shift_reg / DECB / BNE, 16 cycles.
@@ -276,8 +280,8 @@ def strip_routine():
     the beam at row 0's left end.
     """
     c = Code()
-    c.comment('two rows of any length: 32 x bytes + ~140 cycles')
-    c.label('strip')
+    c.comment('%d row(s) of any length: %d x bytes + ~%d cycles' % (rows, 16 * rows, 70 * rows))
+    c.label('strip' if rows == 2 else 'strip1')
     c.ins('stb     %s' % COUNT, 5)
     c.ins('lda     #$81', 2)
     c.ins('sta     <VIA_port_b', 4, 'ramp off, mux off, before port B takes over the ramp')
@@ -313,7 +317,12 @@ def strip_routine():
         c.ins('clr     <VIA_shift_reg', 6, 't = 16n + 12: spot off')
 
     ysh(0, SPEED)
-    row('strip_0')
+    row('strip_0' if rows == 2 else 'strip1_0')
+    if rows == 1:
+        c.ins('lda     #$98', 2)
+        c.ins('sta     <VIA_aux_cntl', 4, 'ACR back')
+        c.ins('rts', 5)
+        return c.out
     # a pixel down: Y speed -40 for 4 cycles, X speed 0
     ysh(-40, 0)
     c.ins('lda     #$01', 2)
@@ -327,6 +336,22 @@ def strip_routine():
     c.ins('sta     <VIA_aux_cntl', 4, 'ACR back')
     c.ins('rts', 5)
     return c.out
+
+
+def halve_cols(grid, lit='#'):
+    """Half resolution across: each pair of columns as one, lit if either pixel is."""
+    w = len(grid[0])
+    return [''.join('#' if any(row[x] in lit for x in (2 * c, 2 * c + 1) if x < w) else '.'
+                    for c in range((w + 1) // 2)) for row in grid]
+
+
+def halve_rows(grid, lit='#'):
+    """Half resolution down: each pair of rows as one, lit if either pixel is."""
+    out = []
+    for r in range(0, len(grid), 2):
+        pair = grid[r:r + 2]
+        out.append(''.join('#' if any(p[x] in lit for p in pair) else '.' for x in range(len(grid[0]))))
+    return out
 
 
 def row_data(grid, lit='#'):
@@ -391,6 +416,23 @@ SCENE = [
 ]
 LEDGES = (-120, 30, [(0, 64), (80, 128), (144, 192), (208, 240)])   # x, y, spans: wider than the screen
 
+# M1_HALF=1: full resolution against half (labels ending _h: columns 2 pixels apart, rows 2 pixels
+# apart, the ledges one row), written to test/m1h_engine.asm and test/m1h_data.asm for
+# test/m1h_test.asm
+HALF = os.environ.get('M1_HALF') == '1'
+if HALF:
+    SPRITES = SPRITES + [(l + '_h', n, f, h) for l, n, f, h in SPRITES]
+    SCENE = [
+        ('trogg', -100, -100), ('trogg_h', -72, -100), ('scrubbly', -44, -108), ('scrubbly_h', -9, -108),
+        ('ladder', 44, -100), ('ladder_h', 58, -100), ('chain', 72, -100), ('chain_h', 84, -100),
+        ('trogg_climb', -100, -50), ('trogg_climb_h', -78, -50), ('poglet', -56, -49), ('poglet_h', -31, -49),
+        ('hooter', -6, -39), ('hooter_h', 15, -39),
+        ('gem', -100, 0), ('gem_h', -87, 0), ('balloon', -74, 0), ('balloon_h', -60, 0), ('dagger', -46, 0),
+        ('dagger_h', -33, 0), ('key', -18, 0), ('key_h', 6, 2), ('yoyo', 32, 0), ('yoyo_h', 42, 1),
+        ('scrubbly_h', -112, 54), ('poglet_h', 94, 60),          # partly off the left and right edges
+    ]
+    LEDGES_H = (-120, 40)
+
 
 CHAIN = os.environ.get('M1_CHAIN') == '1'
 _beam = [None]                  # where the last object left the beam (chained moves)
@@ -429,25 +471,53 @@ def main():
     data = {}
     for label, name, frames, how in SPRITES:
         g = sprite_grid(steamfrak, name, 0, frames)
+        step = 2 if label.endswith('_h') else 1
+        if step == 2:
+            g = halve_cols(g) if how == 'cols' else halve_rows(g)
         nb, items = (column_data if how == 'cols' else row_data)(g)
-        data[label] = (how, nb, items, len(g), len(g[0]))
-    col_sizes = sorted({nb for how, nb, _, _, _ in data.values() if how == 'cols'})
-    row_sizes = sorted({(nb, h) for how, nb, _, h, _ in data.values() if how == 'rows'})
+        data[label] = (how, nb, items, len(g), len(g[0]), step)
+    col_sizes = sorted({(nb, st) for how, nb, _, _, _, st in data.values() if how == 'cols'})
+    row_sizes = sorted({(nb, h, st) for how, nb, _, h, _, st in data.values() if how == 'rows'})
 
     eng = ['; made by vectrex/tools/m1_gen.py: the raster engine', '']
-    for nb in col_sizes:
-        eng += column_routine(nb) + ['']
-    for nb, h in row_sizes:
-        eng += drift_rows_routine(nb, h) + ['']
+    for nb, st in col_sizes:
+        eng += column_routine(nb, st) + ['']
+    for nb, h, st in row_sizes:
+        eng += drift_rows_routine(nb, h, st) + ['']
     eng += strip_routine() + ['']
-    open(os.path.join(TEST, 'raster_engine.asm'), 'w').write('\n'.join(eng) + '\n')
+    if HALF:
+        eng += strip_routine(1) + ['']
+    open(os.path.join(TEST, 'm1h_engine.asm' if HALF else 'raster_engine.asm'), 'w').write('\n'.join(eng) + '\n')
 
     out = ['; made by vectrex/tools/m1_gen.py: the test scene', '', 'draw_scene']
     moves = []
     table = []
     for i, (label, x, y) in enumerate(SCENE):
-        how, nb, items, h, w = data[label]
-        if how == 'cols':
+        how, nb, items, h, w, st = data[label]
+        H = 'h' if st == 2 else ''
+        if how == 'cols' and st == 2:
+            # column c covers pixels 2c and 2c + 1: the beam starts a column's pitch left of the
+            # first's centre (x + 2c + 1) and slides 2 pixels
+            c0, c1 = max(0, -(-(WINDOW[0] - x) // 2)), min(w, (WINDOW[1] - x) // 2)
+            if c0 >= c1:
+                continue
+            hs = 8 * nb
+            sx = (x + 2 * c0 - 1) * UNIT
+            sy = -((y - COL_PAD) + (hs if c0 % 2 else 0)) * UNIT
+            code, mv = start_move(i, sx, sy)
+            out.append('; %s at (%d, %d), half resolution: columns %d-%d of %d, %d bytes each'
+                       % (label, x, y, c0, c1 - 1, w, nb))
+            out += code
+            out += ['                ldx     #%s_data+%d' % (label, c0 * nb),
+                    '                lda     #%d' % (c1 - c0 + 1),
+                    '                sta     %s' % COUNT,
+                    '                jsr     col%dh_%s' % (nb, 'up' if c0 % 2 else 'down')]
+            cyc = sum(16 * nb + TURN + ((3 if nb <= 6 else 5) if k % 2 == 0 and k > c0 else 0)
+                      for k in range(c0, c1))
+            table.append(('%s, columns %d-%d of %d' % (label, c0, c1 - 1, w), cyc))
+            last = c1 - 1
+            _beam[0] = ((x + 2 * last + 1) * UNIT, -((y - COL_PAD) + (0 if last % 2 else hs)) * UNIT)
+        elif how == 'cols':
             c0, c1 = max(0, WINDOW[0] - x), min(w, WINDOW[1] - x)
             if c0 >= c1:
                 continue
@@ -474,9 +544,9 @@ def main():
             out.append('; %s at (%d, %d): %d drifting rows of %d bytes' % (label, x, y, h, nb))
             out += code
             out += ['                ldx     #%s_data' % label,
-                    '                jsr     rows%d_%d' % (nb, h)]
+                    '                jsr     rows%d_%d%s' % (nb, h, H)]
             table.append(('%s, %d rows' % (label, h), 16 * nb * h + 60))
-            drift = max(1, round(10 / nb))
+            drift = max(1, round(10 * st / nb))
             _beam[0] = ((x + (8 * nb if h % 2 else 0)) * UNIT, -y * UNIT - drift * 16 * nb * h)
         moves += mv
     # the ledges: the top two rows of sLedge1_Beeb, repeated, over the spans; trimmed to the
@@ -504,10 +574,23 @@ def main():
             '                jsr     strip']
     table.append(('ledges, 2 rows of %d bytes' % n, 32 * n + 140))
     moves += mv
+    if HALF:
+        # the same ledges at half resolution: row 0 only
+        _beam[0] = ((lx + 8 * b0) * UNIT, -(ly + 1.5) * UNIT)
+        hx, hy = LEDGES_H
+        sx, sy = (hx + 8 * b0) * UNIT, -(hy + 0.5) * UNIT
+        code, mv = start_move('ledges_h', sx, sy)
+        out.append('; ledges at (%d, %d), half resolution: one row, bytes %d-%d' % (hx, hy, b0, b1 - 1))
+        out += code
+        out += ['                ldx     #ledges_row0+%d' % b0,
+                '                ldb     #%d' % n,
+                '                jsr     strip1']
+        table.append(('ledges, 1 row of %d bytes' % n, 16 * n + 70))
+        moves += mv
     out.append('                rts')
     out.append('')
     out += moves + ['']
-    for label, (how, nb, items, h, w) in data.items():
+    for label, (how, nb, items, h, w, st) in data.items():
         out.append('%s_data                                  ; %d %s of %d bytes' % (label, len(items), 'columns' if how == 'cols' else 'rows', nb))
         for it in items:
             out.append('                fcb     ' + ','.join('$%02X' % b for b in it))
@@ -518,7 +601,7 @@ def main():
     rev = [int('{:08b}'.format(b)[::-1], 2) for b in reversed(full[1])]
     for i in range(0, nfull, 16):
         out.append('                fcb     ' + ','.join('$%02X' % b for b in rev[i:i + 16]))
-    open(os.path.join(TEST, 'm1_data.asm'), 'w').write('\n'.join(out) + '\n')
+    open(os.path.join(TEST, 'm1h_data.asm' if HALF else 'm1_data.asm'), 'w').write('\n'.join(out) + '\n')
     for name, cyc in table:
         print('%-34s %5d cycles' % (name, cyc))
 

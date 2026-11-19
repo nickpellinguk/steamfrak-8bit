@@ -816,7 +816,7 @@ rows3_10
                 sta     <VIA_aux_cntl           ;  4 ACR back
                 rts                             ;  5 
 
-; two rows of any length: 32 x bytes + ~140 cycles
+; 2 row(s) of any length: 32 x bytes + ~140 cycles
 strip
                 stb     $C880                   ;  5 
                 lda     #$81                    ;  2 

@@ -499,12 +499,25 @@ LOGIC = 5000                                # the game logic (a guess until mile
 FRAME = 30000
 
 
-def cols_cost(info, ncols):
+HALF = [False]
+TROGG_HALF = [False]  # (with HALF) Trogg at half resolution too       # half resolution (1x2): columns 2 pixels apart, rows 2 apart, strips one row
+
+
+def cols_cost(info, ncols, half=None):
+    """ncols: the pixel columns in view."""
+    if HALF[0] if half is None else half:
+        ncols = (ncols + 1) // 2
     return ncols * (16 * info['nb'] + TURN) + (ncols // 2) * BRA_EXTRA
 
 
 def rows_cost(info):
-    return 16 * info['nb'] * info['h'] + ROWS_FIXED
+    h = (info['h'] + 1) // 2 if HALF[0] else info['h']
+    return 16 * info['nb'] * h + ROWS_FIXED
+
+
+def strip_cost(npx):
+    nb = math.ceil(npx / 8)
+    return 16 * nb + STRIP_FIXED // 2 if HALF[0] else 32 * nb + STRIP_FIXED
 
 
 CATEGORIES = ('platforms', 'ladders', 'things', 'moving', 'fixed')
@@ -516,7 +529,7 @@ def level_budget(name, lev, data, sinfo, things, strips):
     W = WINDOW
     items = []      # (category, x0, x1, cost function of the visible part, chained?)
     for x, y, pat, w in strips:
-        items.append(('platforms', x, x + w, lambda a, b: 32 * math.ceil((b - a) / 8) + STRIP_FIXED, True))
+        items.append(('platforms', x, x + w, lambda a, b: strip_cost(b - a), True))
     for (spr, yorig), (lx, ly, lh, ext) in zip(lev['ladder_spr'], lev['ladders']):
         info = sinfo[spr]
         xo = data.sprites[spr]['xo']
@@ -531,7 +544,7 @@ def level_budget(name, lev, data, sinfo, things, strips):
         if v['kind'] == convert.SL_PLATFORM:
             w = data.sprites[v['spr']]['w']
             items.append(('moving', v['amin'], v['amax'] + w,
-                          lambda a, b, w=w: 32 * math.ceil(min(w, b - a) / 8) + STRIP_FIXED, False))
+                          lambda a, b, w=w: strip_cost(min(w, b - a)), False))
         else:
             info = sinfo[v['spr']]
             xo = data.sprites[v['spr']]['xo']
@@ -539,7 +552,7 @@ def level_budget(name, lev, data, sinfo, things, strips):
             hi = v['amax'] if v['kind'] == convert.SL_SCRUBBLY else v['x']
             items.append(('moving', lo - xo, hi - xo + info['w'],
                           lambda a, b, i=info: cols_cost(i, min(i['w'], b - a)), False))
-    fixed = cols_cost(sinfo[TROGG], sinfo[TROGG]['w']) + MOVE_RUNTIME + \
+    fixed = cols_cost(sinfo[TROGG], sinfo[TROGG]['w'], TROGG_HALF[0] and HALF[0]) + MOVE_RUNTIME + \
         FLYING * (cols_cost(sinfo['sBalloon_Beeb'], 12) + MOVE_RUNTIME) + HUD + LOGIC
     best = (0, 0, {})
     for x0 in range(0, max(1, lev['w'] - W + 1), 4):
@@ -586,7 +599,12 @@ def main():
         out += ['', 'level_%s                                 ; %d bytes' % (n[5:], len(b))] + asm_bytes(b)
         total += len(b)
         cost, at, cat = level_budget(n, lev, data, sinfo, things, strips)
-        budget.append((n, cost, at, cat))
+        HALF[0] = True
+        hcost = level_budget(n, lev, data, sinfo, things, strips)[0]
+        TROGG_HALF[0] = True
+        h2cost = level_budget(n, lev, data, sinfo, things, strips)[0]
+        HALF[0] = TROGG_HALF[0] = False
+        budget.append((n, cost, at, cat, hcost, h2cost))
     open(os.path.join(gen, 'levels.asm'), 'w').write('\n'.join(out) + '\n')
 
     sbytes = sum(i['bytes'] for k, i in sinfo.items() if not k.startswith(('pattern:', 'log:')))
@@ -603,14 +621,19 @@ def main():
              'Each split into platforms, ladders (and chains and poles), things (gems, keys, meanies',
              'standing still, springs), moving things (meanies, platforms) and the fixed part (Trogg,',
              'balloons or daggers, HUD, logic), each with its moves.', '',
-             '  level   total   at x  ' + ''.join('%10s' % k for k in CATEGORIES)]
-    fit = 0
-    for n, cost, at, cat in budget:
-        ok = cost <= FRAME
-        fit += ok
-        lines.append('  %-6s %6d   %4d  %s  %s' % (n[5:], cost, at, ''.join('%10d' % cat[k] for k in CATEGORIES),
-                                                  'fits' if ok else 'over by %d' % (cost - FRAME)))
-    lines += ['', '%d of %d levels fit.' % (fit, len(names))]
+             'The last two columns: at half resolution (1x2: columns 2 pixels apart at full height, rows',
+             '2 apart, platforms one row; moves cost the same), Trogg at full resolution, then him too.', '',
+             '  level   total   at x  ' + ''.join('%10s' % k for k in CATEGORIES) + '      half  half+Trogg']
+    fit = hfit = h2fit = 0
+    for n, cost, at, cat, hcost, h2cost in budget:
+        fit += cost <= FRAME
+        hfit += hcost <= FRAME
+        h2fit += h2cost <= FRAME
+        mark = lambda c: '%6d%s' % (c, ' ' if c <= FRAME else '*')
+        lines.append('  %-6s %s  %4d  %s  %s    %s' % (n[5:], mark(cost), at, ''.join('%10d' % cat[k] for k in CATEGORIES),
+                                                   mark(hcost), mark(h2cost)))
+    lines += ['', '(* over %d.) Levels that fit: %d of %d at full resolution; at half, %d (Trogg full), %d (Trogg half).'
+              % (FRAME, fit, len(names), hfit, h2fit)]
     open(os.path.join(gen, 'budget.txt'), 'w').write('\n'.join(lines) + '\n')
     print('\n'.join(lines[:2] + lines[-1:]))
     return sinfo, data, web
