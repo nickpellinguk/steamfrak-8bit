@@ -196,10 +196,19 @@ index 18e49ef..7d67cf4 100644
  	unsigned r, op, ea;
  
 diff --git a/vecx.c b/vecx.c
-index 36cd857..24c8a33 100644
+index 36cd857..f9c1630 100644
 --- a/vecx.c
 +++ b/vecx.c
-@@ -87,6 +87,8 @@ static long alg_vector_y1;
+@@ -35,6 +35,8 @@ static unsigned via_sr;
+ static unsigned via_srb;   /* number of bits shifted so far */
+ static unsigned via_src;   /* shift counter */
+ static unsigned via_srclk;
++static unsigned via_o2phase; /* (beam) cycles since the last bit, shifting under the system clock */
++int via_o2_div = 2;           /* (beam) cycles a bit in that mode: 2 (as a 6522 and MAME), 1 (vecx as was) */
+ static unsigned via_acr;
+ static unsigned via_pcr;
+ static unsigned via_ifr;
+@@ -87,6 +89,8 @@ static long alg_vector_y1;
  static long alg_vector_dx;
  static long alg_vector_dy;
  static unsigned char alg_vector_color;
@@ -208,7 +217,7 @@ index 36cd857..24c8a33 100644
  
  long vector_draw_cnt;
  long vector_erse_cnt;
-@@ -100,7 +102,7 @@ static long fcycles;
+@@ -100,7 +104,7 @@ static long fcycles;
  
  /* update the snd chips internal registers when via_ora/via_orb changes */
  
@@ -217,7 +226,7 @@ index 36cd857..24c8a33 100644
  {
  	switch (via_orb & 0x18) {
  	case 0x00:
-@@ -131,7 +133,7 @@ static einline void snd_update (void)
+@@ -131,7 +135,7 @@ static einline void snd_update (void)
  
  /* update the various analog values when orb is written. */
  
@@ -226,7 +235,7 @@ index 36cd857..24c8a33 100644
  {
  	switch (via_orb & 0x06) {
  	case 0x00:
-@@ -190,7 +192,7 @@ static einline void alg_update (void)
+@@ -190,7 +194,7 @@ static einline void alg_update (void)
   * ifr.
   */
  
@@ -235,7 +244,23 @@ index 36cd857..24c8a33 100644
  {
  	if ((via_ifr & 0x7f) & (via_ier & 0x7f)) {
  		via_ifr |= 0x80;
-@@ -605,7 +607,7 @@ void vecx_reset (void)
+@@ -312,6 +316,7 @@ unsigned char read8 (unsigned address)
+ 				via_ifr &= 0xfb; /* remove shift register interrupt flag */
+ 				via_srb = 0;
+ 				via_srclk = 1;
++				via_o2phase = 0;
+ 
+ 				int_update ();
+ 
+@@ -459,6 +464,7 @@ void write8 (unsigned address, unsigned char data)
+ 				via_ifr &= 0xfb; /* remove shift register interrupt flag */
+ 				via_srb = 0;
+ 				via_srclk = 1;
++				via_o2phase = 0;
+ 
+ 				int_update ();
+ 
+@@ -605,7 +611,7 @@ void vecx_reset (void)
   * via_sstep0 is the first postion of the emulation.
   */
  
@@ -244,7 +269,28 @@ index 36cd857..24c8a33 100644
  {
  	unsigned t2shift;
  
-@@ -743,7 +745,7 @@ static einline void via_sstep0 (void)
+@@ -722,11 +728,16 @@ static einline void via_sstep0 (void)
+ 		case 0x18:
+ 			/* shift out under system clock control */
+ 
+-			via_cb2s = (via_sr >> 7) & 1;
++			/* (beam) a 6522 shifts on CB1's falling edges, and CB1 toggles every cycle: a bit
++			 * every 2 cycles, the first 2 cycles after the shift register is written */
++			if (++via_o2phase >= (unsigned) via_o2_div) {
++				via_o2phase = 0;
++				via_cb2s = (via_sr >> 7) & 1;
+ 
+-			via_sr <<= 1;
+-			via_sr |= via_cb2s;
+-			via_srb++;
++				via_sr <<= 1;
++				via_sr |= via_cb2s;
++				via_srb++;
++			}
+ 
+ 			break;
+ 		case 0x1c:
+@@ -743,7 +754,7 @@ static einline void via_sstep0 (void)
  
  /* perform the second part of the via emulation */
  
@@ -253,7 +299,7 @@ index 36cd857..24c8a33 100644
  {
  	if ((via_pcr & 0x0e) == 0x0a) {
  		/* if ca2 is in pulse mode, then make sure
-@@ -762,11 +764,13 @@ static einline void via_sstep1 (void)
+@@ -762,11 +773,13 @@ static einline void via_sstep1 (void)
  	}
  }
  
@@ -268,7 +314,7 @@ index 36cd857..24c8a33 100644
  	key = (unsigned long) x0;
  	key = key * 31 + (unsigned long) y0;
  	key = key * 31 + (unsigned long) x1;
-@@ -810,11 +814,23 @@ static einline void alg_addline (long x0, long y0, long x1, long y1, unsigned ch
+@@ -810,11 +823,23 @@ static einline void alg_addline (long x0, long y0, long x1, long y1, unsigned ch
  
  /* perform a single cycle worth of analog emulation */
  
@@ -293,7 +339,7 @@ index 36cd857..24c8a33 100644
  
  	if ((via_acr & 0x10) == 0x10) {
  		sig_blank = via_cb2s;
-@@ -822,7 +838,17 @@ static einline void alg_sstep (void)
+@@ -822,7 +847,17 @@ static einline void alg_sstep (void)
  		sig_blank = via_cb2h;
  	}
  
@@ -312,7 +358,7 @@ index 36cd857..24c8a33 100644
  		/* need to force the current point to the 'orgin' so just
  		 * calculate distance to origin and use that as dx,dy.
  		 */
-@@ -830,15 +856,11 @@ static einline void alg_sstep (void)
+@@ -830,15 +865,11 @@ static einline void alg_sstep (void)
  		sig_dx = ALG_MAX_X / 2 - alg_curr_x;
  		sig_dy = ALG_MAX_Y / 2 - alg_curr_y;
  	} else {
@@ -331,7 +377,7 @@ index 36cd857..24c8a33 100644
  		} else {
  			sig_dx = 0;
  			sig_dy = 0;
-@@ -859,7 +881,8 @@ static einline void alg_sstep (void)
+@@ -859,7 +890,8 @@ static einline void alg_sstep (void)
  			alg_vector_y1 = alg_curr_y;
  			alg_vector_dx = sig_dx;
  			alg_vector_dy = sig_dy;
@@ -341,7 +387,7 @@ index 36cd857..24c8a33 100644
  		}
  	} else {
  		/* already drawing a vector ... check if we need to turn it off */
-@@ -876,7 +899,7 @@ static einline void alg_sstep (void)
+@@ -876,7 +908,7 @@ static einline void alg_sstep (void)
  						 alg_vector_color);
  		} else if (sig_dx != alg_vector_dx ||
  				   sig_dy != alg_vector_dy ||
@@ -350,7 +396,7 @@ index 36cd857..24c8a33 100644
  
  			/* the parameters of the vectoring processing has changed.
  			 * so end the current line.
-@@ -898,7 +921,8 @@ static einline void alg_sstep (void)
+@@ -898,7 +930,8 @@ static einline void alg_sstep (void)
  				alg_vector_y1 = alg_curr_y;
  				alg_vector_dx = sig_dx;
  				alg_vector_dy = sig_dy;
@@ -360,7 +406,7 @@ index 36cd857..24c8a33 100644
  			} else {
  				alg_vectoring = 0;
  			}
-@@ -919,6 +943,10 @@ static einline void alg_sstep (void)
+@@ -919,6 +952,10 @@ static einline void alg_sstep (void)
  		alg_vector_x1 = alg_curr_x;
  		alg_vector_y1 = alg_curr_y;
  	}
@@ -372,15 +418,16 @@ index 36cd857..24c8a33 100644
  
  void vecx_emu (long cycles)
 diff --git a/vecx.h b/vecx.h
-index 729591d..3b1d334 100644
+index 729591d..0d701ae 100644
 --- a/vecx.h
 +++ b/vecx.h
-@@ -33,6 +33,12 @@ extern long vector_erse_cnt;
+@@ -33,6 +33,13 @@ extern long vector_erse_cnt;
  extern vector_t *vectors_draw;
  extern vector_t *vectors_erse;
  
 +/* (beam) called for every line the beam draws: its end points, intensity (0-127) and how many
 + * cycles it took, so a front end can work out its brightness from the beam's speed */
++extern int via_o2_div;             /* (beam) shift register: cycles a bit under the system clock */
 +extern int alg_delay;              /* (beam) analogue lag, cycles (< 64) */
 +extern unsigned long long alg_cycles; /* (beam) cycles since reset */
 +void beam_line (long x0, long y0, long x1, long y1, unsigned char color, long cycles);

@@ -33,6 +33,9 @@ At 50 Hz a frame is 30000 cycles of the 1.5 MHz 6809.
 | `test/vlist_a.asm` | `vlist_a`: the same, with the wait worked out from the scale as it draws (`LSRA`, `LBCS` to the next instruction for the odd cycle, `NEGA`, `JMP A,U` into a page-aligned run of NOPs): 4 bytes a vector. |
 | `test/vlist_c.asm` | `vlist_c`: vlist_a for scales of 28 and over, and the timer polled (as the BIOS does) for scales under 28 (`SUBA #28` sets the carry, `BLO` picks the path before the timer starts): any scale from 1 to 255. |
 | `test/vlist_d.asm` | `vlist_d`: every scale exact. 28 and over as vlist_a; under 28, a table gives each scale its own block: a fixed delay (spot on, NOPs and BRNs, spot off), or where there's time, the timer polled with the reads lined up (a delay of 0-8 cycles by scale mod 7, then the `BIT` loop). |
+| `test/raster_test.asm` | Vectors and raster together (`preview/raster_test.png`): Trogg and the Scrubbly from `art/frak-graphics-v001.svg` drawn with vlist_d (`test/vlist_d_routine.asm`), Trogg's head and the Scrubbly's eyes as raster patches from the BBC sprites, and a row of ledges as two raster lines (the top two rows of `sLedge1_Beeb`, repeated). |
+| `tools/raster_test.py` | Makes its data: the vector lists (each vector's rounding carried into the next) and the raster code, straight-line, with every write at a counted cycle. |
+| `tools/svg_shapes.py` | Reads line art drawn in Inkscape over the tracing sheets (`art/frak-graphics-v001.svg`) into polylines in each sprite's pixels. |
 | `tools/vlist_d_short.py` | Makes vlist_d's table and blocks (`test/vlist_d_short.asm`), choosing polling for each scale where the loop's first read can come early enough. |
 | `tools/vlist_data.py` | Makes the test lists (`--computed` for vlist_a, `--short` for vlist_c, `--all` for vlist_d), working out each vector's wait for vlist. |
 
@@ -133,6 +136,33 @@ in different places.)
   writing it a cycle earlier costs 3 cycles a vector, which didn't seem worth it.
 * (The 13-cycle lag and the spot's on/off timing are MAME's and vecx's: a real Vectrex could
   need these offsets adjusted, which in vlist means moving a NOP or two.)
+
+## Raster patches (test/raster_test.asm)
+
+As the BIOS's text routine does (see the RUM source, `RASTER`): the ramp switched by port B
+(ACR = $18) rather than timer 1, the beam sweeping steadily along a row while the shift register
+sends a byte of pixels out a bit at a time (a lit bit is a short dash), rewritten every 16 cycles
+so the bits run on without a break. Rows go back and forth (the bits reversed going left), a
+pixel apart: between rows Y's sample-and-hold is set to a small speed for a 4-cycle ramp, then
+back to 0. With the screen 256 BBC pixels tall (160 beam units a pixel), a pixel a bit is a sweep
+speed of 80.
+
+* **The shift register shifts a bit every 2 cycles** in that mode (a 6522 shifts on CB1's
+  falling edges and CB1 toggles every cycle; MAME does this), not every cycle as vecx did:
+  `beam.patch` fixes it (`beamshot -s 1` for vecx as it was). This moves every routine's spot
+  timing by a cycle: vlist_d's vectors now stand a cycle at the end, and need their spot-off
+  writes moving a cycle earlier.
+* Measured in vecx, the bits start 12 cycles after the ramp goes on (the model said 11), and
+  the ramp must be on exactly 2 cycles a pixel, or a row going right ends half a pixel out and
+  the row back is shifted. With both right, every row's pixels land exactly on the grid, both
+  ways, a pixel apart.
+* Costs (from the code's cycle counts): Trogg's head, 9 rows of 24 pixels, 1241 cycles (about
+  the same as the ~20 vectors it replaces); the Scrubbly's eyes, 6 rows of 16, 725 (about half
+  the vectors'); the ledges, 2 rows of 192, 933. About 90 cycles a row are the turn: two trips
+  through the sample-and-hold to step Y and zero it again. That's what to make cheaper.
+* Caveat: vecx makes each write as its instruction starts; a real 6809 writes in an
+  instruction's last cycle. Exact offsets like these (and vlist_d's) are vecx's, and need
+  checking against MAME (which times writes within instructions) or a real Vectrex.
 
 ## Findings so far
 
