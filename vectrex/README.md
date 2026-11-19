@@ -26,6 +26,7 @@ At 50 Hz a frame is 30000 cycles of the 1.5 MHz 6809.
 | `test/dagger.asm`, `tools/dagger.py` | A vector dagger (a sharp V, a crossguard, a handle) pointing four ways, beside the raster one (`preview/dagger.png`). |
 | `test/m1s_test.asm` | Columns swept at the fastest speed (127) against full resolution (`M1_STRETCH=1 python3 vectrex/tools/m1_gen.py`; `preview/m1_fast.png`). |
 | `test/m1t_test.asm`, `tools/m1_trim_gen.py` | Trimmed columns (each swept only as far as it needs) against full ones (`preview/m1_trim.png`). |
+| `test/m1c_test.asm`, `tools/m1_cave_gen.py` | Cave platforms (the ledges) as 8 rows against milestone 1's 2-row strip (`preview/m1_cave.png`). |
 | `tools/budget.py` | For every level, slides a 320x256 and a 256x256 window across it, and estimates the drawing cost of the busiest window position (platforms as one line, ladders as two, the line art's real vector counts, standing meanies, gems and keys, and moving things whose range is in view). |
 | `tools/beam.py` | A model of the beam: renders lines (end points, intensity, time) with brightness from intensity x time / length, a brighter dot at each end where the beam dwells, a Gaussian spot, phosphor saturation and a little bloom. Its constants aren't measured: they're for comparing lines with each other. |
 | `art/shapes.py` | The line art, as polylines over the BBC sprites' pixels: Trogg standing (37 vectors), the Scrubbly (52), a gem and a key. |
@@ -382,6 +383,19 @@ columns going down and up share their ends, so the beam never jumps; the column 
 * **The budget** (`gen/budget.txt`'s last column): the median level 45,123 cycles (from 47,432), 1
   of 36 fitting; with the measured run-time moves, scenery moves at 120 and one balloon or dagger
   at a time, 38,315 and 5.
+
+### Cave platforms as rows (test/m1c_test.asm, tools/m1_cave_gen.py)
+
+The ledges drawn as more of their rows (black pixels): rows 0 and 1, the blank rows 2 and 3
+skipped, rows 4 and 5, then every other row of the stalactites (7, 9, 11, 13). Back and forth, a
+step down between rows (the sample-and-hold to 40 x the step, the ramp on for 4 cycles, back to 0
+and the next row's speed). No clipping yet.
+
+* **Looks:** like the ledges (`preview/m1_cave.png`: 2 rows, then 8, for 64, 128 and 206 pixels).
+* **Costs, measured** (cycles, 2 rows then 8): 64 pixels 465 / 1,851; 128 pixels 721 / 2,875; 206
+  pixels 1,041 / 4,155: 4 times as much, each row 16 cycles a byte + ~100 for its turn and set-up.
+* **The budget:** 13 of the 36 levels have ledges; with them at 8 rows, the median level goes from
+  45,123 to 49,295 (trimmed columns), the most on A_7 (+21,815), A_1 (+15,658), B_7 (+14,660).
 
 ### A vector dagger (test/dagger.asm, tools/dagger.py)
 
