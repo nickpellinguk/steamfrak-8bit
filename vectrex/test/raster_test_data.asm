@@ -1233,3 +1233,3332 @@ ledges
                 sta     <VIA_aux_cntl           ;  4 ACR back: the ramp from timer 1 (run out: off)
                 rts                             ;  5 
 
+; sTrogg_wr_Beeb as columns: the move to the first column
+trogg_raster_start
+                fcb     47,119,-46,$00
+                fcb     0,0
+
+; sTrogg_wr_Beeb as columns, # lit: 26 columns of 40 pixels (5 bytes)
+trogg_raster
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 ramp off, before port B takes over the ramp
+                lda     #$18                    ;  2 
+                sta     <VIA_aux_cntl           ;  4 ACR: ramp from port B, shift register out on the clock
+; column 0, down: 00 00 0F E0 00
+                lda     #-80                    ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$00                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$0F                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$E0                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                stb     <VIA_port_b             ;  4 t = 80: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 92: spot off
+; column 1, up: 00 0E 98 00 00
+                lda     #80                     ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$00                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$0E                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$98                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                stb     <VIA_port_b             ;  4 t = 80: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 92: spot off
+; column 2, down: 00 01 F2 F0 00
+                lda     #-80                    ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$00                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$01                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$F2                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$F0                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                stb     <VIA_port_b             ;  4 t = 80: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 92: spot off
+; column 3, up: 00 0F 40 F0 00
+                lda     #80                     ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$00                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$0F                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$40                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$F0                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                stb     <VIA_port_b             ;  4 t = 80: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 92: spot off
+; column 4, down: 00 18 0A F0 00
+                lda     #-80                    ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$00                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$18                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$0A                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$F0                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                stb     <VIA_port_b             ;  4 t = 80: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 92: spot off
+; column 5, up: 00 0F FC 0C 00
+                lda     #80                     ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$00                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$0F                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$FC                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$0C                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                stb     <VIA_port_b             ;  4 t = 80: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 92: spot off
+; column 6, down: 00 20 E3 E0 70
+                lda     #-80                    ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$00                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$20                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$E3                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$E0                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$70                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                stb     <VIA_port_b             ;  4 t = 80: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 92: spot off
+; column 7, up: 0B 87 85 C6 80
+                lda     #80                     ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$0B                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$87                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$85                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$C6                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$80                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                stb     <VIA_port_b             ;  4 t = 80: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 92: spot off
+; column 8, down: 03 C2 20 F7 10
+                lda     #-80                    ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$03                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$C2                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$20                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$F7                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$10                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                stb     <VIA_port_b             ;  4 t = 80: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 92: spot off
+; column 9, up: 08 3A 04 43 C0
+                lda     #80                     ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$08                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$3A                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$04                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$43                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$C0                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                stb     <VIA_port_b             ;  4 t = 80: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 92: spot off
+; column 10, down: 07 86 20 48 50
+                lda     #-80                    ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$07                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$86                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$20                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$48                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$50                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                stb     <VIA_port_b             ;  4 t = 80: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 92: spot off
+; column 11, up: 0B A2 06 23 F0
+                lda     #80                     ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$0B                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$A2                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$06                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$23                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$F0                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                stb     <VIA_port_b             ;  4 t = 80: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 92: spot off
+; column 12, down: 0F BF C0 43 F0
+                lda     #-80                    ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$0F                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$BF                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$C0                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$43                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$F0                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                stb     <VIA_port_b             ;  4 t = 80: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 92: spot off
+; column 13, up: 0B 02 00 F3 F8
+                lda     #80                     ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$0B                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$02                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$F3                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$F8                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                stb     <VIA_port_b             ;  4 t = 80: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 92: spot off
+; column 14, down: 1F 60 00 60 10
+                lda     #-80                    ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$1F                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$60                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$60                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$10                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                stb     <VIA_port_b             ;  4 t = 80: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 92: spot off
+; column 15, up: 08 1F 00 3D FC
+                lda     #80                     ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$08                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$1F                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$3D                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$FC                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                stb     <VIA_port_b             ;  4 t = 80: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 92: spot off
+; column 16, down: 38 C7 00 8F D0
+                lda     #-80                    ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$38                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$C7                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$8F                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$D0                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                stb     <VIA_port_b             ;  4 t = 80: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 92: spot off
+; column 17, up: 0A 01 83 86 0C
+                lda     #80                     ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$0A                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$01                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$83                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$86                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$0C                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                stb     <VIA_port_b             ;  4 t = 80: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 92: spot off
+; column 18, down: 30 B8 63 00 90
+                lda     #-80                    ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$30                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$B8                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$63                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$90                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                stb     <VIA_port_b             ;  4 t = 80: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 92: spot off
+; column 19, up: 0F 00 7F F5 6C
+                lda     #80                     ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$0F                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$7F                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$F5                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$6C                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                stb     <VIA_port_b             ;  4 t = 80: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 92: spot off
+; column 20, down: 11 C0 00 00 00
+                lda     #-80                    ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$11                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$C0                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                stb     <VIA_port_b             ;  4 t = 80: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 92: spot off
+; column 21, up: 00 00 00 01 B0
+                lda     #80                     ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$00                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$01                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$B0                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                stb     <VIA_port_b             ;  4 t = 80: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 92: spot off
+; column 22, down: 05 00 00 00 00
+                lda     #-80                    ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$05                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                stb     <VIA_port_b             ;  4 t = 80: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 92: spot off
+; column 23, up: 00 00 00 00 A0
+                lda     #80                     ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$00                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$A0                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                stb     <VIA_port_b             ;  4 t = 80: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 92: spot off
+; column 24, down: 05 00 00 00 00
+                lda     #-80                    ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$05                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                stb     <VIA_port_b             ;  4 t = 80: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 92: spot off
+; column 25, up: 00 00 00 00 E0
+                lda     #80                     ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$00                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$E0                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                stb     <VIA_port_b             ;  4 t = 80: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 92: spot off
+                lda     #$98                    ;  2 
+                sta     <VIA_aux_cntl           ;  4 ACR back: the ramp from timer 1 (run out: off)
+                rts                             ;  5 
+
+; sScrubbly_Beeb as columns: the move to the first column
+scrub_raster_start
+                fcb     58,119,-46,$00
+                fcb     0,0
+
+; sScrubbly_Beeb as columns, # lit: 33 columns of 48 pixels (6 bytes)
+scrub_raster
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 ramp off, before port B takes over the ramp
+                lda     #$18                    ;  2 
+                sta     <VIA_aux_cntl           ;  4 ACR: ramp from port B, shift register out on the clock
+; column 0, down: 00 00 03 F0 FC 00
+                lda     #-80                    ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$00                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$03                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$F0                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$FC                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 92
+                stb     <VIA_port_b             ;  4 t = 96: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 108: spot off
+; column 1, up: 00 4F C2 F0 00 00
+                lda     #80                     ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$00                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$4F                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$C2                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$F0                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 92
+                stb     <VIA_port_b             ;  4 t = 96: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 108: spot off
+; column 2, down: 00 01 1C C7 20 00
+                lda     #-80                    ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$00                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$01                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$1C                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$C7                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$20                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 92
+                stb     <VIA_port_b             ;  4 t = 96: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 108: spot off
+; column 3, up: 00 1E 3F 9C C0 00
+                lda     #80                     ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$00                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$1E                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$3F                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$9C                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$C0                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 92
+                stb     <VIA_port_b             ;  4 t = 96: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 108: spot off
+; column 4, down: 00 06 70 00 1E 00
+                lda     #-80                    ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$00                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$06                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$70                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$1E                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 92
+                stb     <VIA_port_b             ;  4 t = 96: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 108: spot off
+; column 5, up: 00 C0 00 03 70 00
+                lda     #80                     ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$00                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$C0                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$03                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$70                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 92
+                stb     <VIA_port_b             ;  4 t = 96: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 108: spot off
+; column 6, down: 00 1F 80 00 01 E0
+                lda     #-80                    ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$00                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$1F                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$80                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$01                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                lda     #$E0                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 92
+                stb     <VIA_port_b             ;  4 t = 96: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 108: spot off
+; column 7, up: 0D 80 18 00 D8 E0
+                lda     #80                     ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$0D                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$80                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$18                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$D8                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                lda     #$E0                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 92
+                stb     <VIA_port_b             ;  4 t = 96: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 108: spot off
+; column 8, down: 0D 32 1F 0F 00 90
+                lda     #-80                    ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$0D                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$32                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$1F                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$0F                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                lda     #$90                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 92
+                stb     <VIA_port_b             ;  4 t = 96: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 108: spot off
+; column 9, up: 09 07 89 8C 0C 58
+                lda     #80                     ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$09                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$07                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$89                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$8C                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$0C                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                lda     #$58                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 92
+                stb     <VIA_port_b             ;  4 t = 96: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 108: spot off
+; column 10, down: 12 60 60 90 38 D0
+                lda     #-80                    ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$12                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$60                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$60                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$90                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$38                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                lda     #$D0                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 92
+                stb     <VIA_port_b             ;  4 t = 96: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 108: spot off
+; column 11, up: 0B 07 89 E2 02 28
+                lda     #80                     ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$0B                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$07                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$89                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$E2                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$02                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                lda     #$28                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 92
+                stb     <VIA_port_b             ;  4 t = 96: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 108: spot off
+; column 12, down: 16 C0 4F 8F 00 70
+                lda     #-80                    ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$16                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$C0                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$4F                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$8F                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                lda     #$70                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 92
+                stb     <VIA_port_b             ;  4 t = 96: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 108: spot off
+; column 13, up: 06 00 19 F2 01 CC
+                lda     #80                     ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$06                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$19                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$F2                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$01                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                lda     #$CC                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 92
+                stb     <VIA_port_b             ;  4 t = 96: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 108: spot off
+; column 14, down: 3B 80 67 08 00 40
+                lda     #-80                    ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$3B                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$80                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$67                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$08                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                lda     #$40                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 92
+                stb     <VIA_port_b             ;  4 t = 96: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 108: spot off
+; column 15, up: 02 00 08 7C 00 14
+                lda     #80                     ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$02                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$08                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$7C                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                lda     #$14                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 92
+                stb     <VIA_port_b             ;  4 t = 96: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 108: spot off
+; column 16, down: 20 00 00 08 00 40
+                lda     #-80                    ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$20                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$08                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                lda     #$40                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 92
+                stb     <VIA_port_b             ;  4 t = 96: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 108: spot off
+; column 17, up: 02 00 08 7C 00 1C
+                lda     #80                     ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$02                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$08                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$7C                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                lda     #$1C                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 92
+                stb     <VIA_port_b             ;  4 t = 96: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 108: spot off
+; column 18, down: 19 80 67 08 00 40
+                lda     #-80                    ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$19                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$80                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$67                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$08                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                lda     #$40                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 92
+                stb     <VIA_port_b             ;  4 t = 96: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 108: spot off
+; column 19, up: 06 00 19 F2 01 CC
+                lda     #80                     ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$06                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$19                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$F2                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$01                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                lda     #$CC                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 92
+                stb     <VIA_port_b             ;  4 t = 96: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 108: spot off
+; column 20, down: 36 C0 4F 8F 00 70
+                lda     #-80                    ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$36                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$C0                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$4F                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$8F                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                lda     #$70                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 92
+                stb     <VIA_port_b             ;  4 t = 96: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 108: spot off
+; column 21, up: 0B 07 89 E2 02 24
+                lda     #80                     ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$0B                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$07                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$89                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$E2                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$02                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                lda     #$24                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 92
+                stb     <VIA_port_b             ;  4 t = 96: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 108: spot off
+; column 22, down: 2C 60 60 90 38 D0
+                lda     #-80                    ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$2C                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$60                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$60                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$90                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$38                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                lda     #$D0                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 92
+                stb     <VIA_port_b             ;  4 t = 96: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 108: spot off
+; column 23, up: 09 07 89 8C 0C 64
+                lda     #80                     ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$09                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$07                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$89                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$8C                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$0C                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                lda     #$64                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 92
+                stb     <VIA_port_b             ;  4 t = 96: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 108: spot off
+; column 24, down: 32 32 1F 0F 00 90
+                lda     #-80                    ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$32                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$32                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$1F                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$0F                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                lda     #$90                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 92
+                stb     <VIA_port_b             ;  4 t = 96: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 108: spot off
+; column 25, up: 0D 00 18 00 D8 78
+                lda     #80                     ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$0D                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$18                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$D8                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                lda     #$78                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 92
+                stb     <VIA_port_b             ;  4 t = 96: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 108: spot off
+; column 26, down: 00 1F 80 00 01 E0
+                lda     #-80                    ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$00                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$1F                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$80                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$01                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                lda     #$E0                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 92
+                stb     <VIA_port_b             ;  4 t = 96: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 108: spot off
+; column 27, up: 00 C0 00 03 70 00
+                lda     #80                     ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$00                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$C0                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$03                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$70                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 92
+                stb     <VIA_port_b             ;  4 t = 96: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 108: spot off
+; column 28, down: 00 06 70 00 1E 00
+                lda     #-80                    ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$00                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$06                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$70                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$1E                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 92
+                stb     <VIA_port_b             ;  4 t = 96: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 108: spot off
+; column 29, up: 00 1E 3F 9C C0 00
+                lda     #80                     ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$00                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$1E                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$3F                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$9C                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$C0                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 92
+                stb     <VIA_port_b             ;  4 t = 96: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 108: spot off
+; column 30, down: 00 01 1C C7 20 00
+                lda     #-80                    ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$00                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$01                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$1C                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$C7                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$20                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 92
+                stb     <VIA_port_b             ;  4 t = 96: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 108: spot off
+; column 31, up: 00 4F C2 F0 00 00
+                lda     #80                     ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$00                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$4F                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$C2                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$F0                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 92
+                stb     <VIA_port_b             ;  4 t = 96: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 108: spot off
+; column 32, down: 00 00 03 F0 FC 00
+                lda     #-80                    ;  2 
+                sta     <VIA_port_a             ;  4 DAC
+                lda     #$80                    ;  2 
+                sta     <VIA_port_b             ;  4 mux on: to Y (ramp off)
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 (settling)
+                lda     #$81                    ;  2 
+                sta     <VIA_port_b             ;  4 mux off, ramp off
+                lda     #40                     ;  2 
+                sta     <VIA_port_a             ;  4 X speed: the slide across
+                ldb     #$01                    ;  2 
+                lda     #$00                    ;  2 (the first byte)
+                stb     <VIA_port_b             ;  4 t = 0: ramp on
+                clr     <VIA_port_a             ;  6 t = 4: X speed 0 (after 4 cycles: a pixel across)
+                ldb     #$81                    ;  2 (for the ramp off)
+                sta     <VIA_shift_reg          ;  4 t = 12
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 28
+                lda     #$03                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 44
+                lda     #$F0                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 60
+                lda     #$FC                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 76
+                lda     #$00                    ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                sta     <VIA_shift_reg          ;  4 t = 92
+                stb     <VIA_port_b             ;  4 t = 96: ramp off
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
+                clr     <VIA_shift_reg          ;  6 t = 108: spot off
+                lda     #$98                    ;  2 
+                sta     <VIA_aux_cntl           ;  4 ACR back: the ramp from timer 1 (run out: off)
+                rts                             ;  5 
+

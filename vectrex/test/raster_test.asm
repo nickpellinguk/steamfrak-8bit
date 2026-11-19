@@ -1,5 +1,6 @@
 ; Vectors and raster together: Trogg and the Scrubbly as vectors (vlist_d) with Trogg's head and
-; the Scrubbly's eyes as raster patches, and a row of ledges as two raster lines, all from
+; the Scrubbly's eyes as raster patches; Trogg and the Scrubbly wholly as raster columns, from
+; the BBC sprites; and a row of ledges as two raster lines, all from
 ; vectrex/tools/raster_test.py (raster_test_data.asm). The screen is 256 BBC pixels tall (a
 ; pixel = 160 beam units, ~1.26 x 127).
 ;
@@ -20,10 +21,12 @@ VIA_aux_cntl    equ     $0B
 PIXEL           equ     160                     ; beam units a BBC pixel
 ; where things are, in pixels from the middle of the screen (x right, y up); Moveto_d moves
 ; 127 units a step at scale $7F
-TROGG_X         equ     -55
+TROGG_X         equ     -78                     ; vectors, with a raster head
 TROGG_Y         equ     -10
-SCRUB_X         equ     45
+TROGGR_X        equ     -40                     ; all raster (columns)
+SCRUB_X         equ     12                      ; vectors, with raster eyes
 SCRUB_Y         equ     -10
+SCRUBR_X        equ     62                      ; all raster (columns)
 LEDGE_X         equ     -96
 LEDGE_Y         equ     -10
 
@@ -60,6 +63,26 @@ main
                 ldx     #scrub_body
                 jsr     vlist_d
                 jsr     scrub_eyes
+
+                ; Trogg, all raster
+                jsr     Reset0Ref
+                lda     #$7F
+                sta     <VIA_t1_cnt_lo
+                ldd     #((TROGG_Y*PIXEL/127)&$FF)*256+((TROGGR_X*PIXEL/127)&$FF)
+                jsr     Moveto_d
+                ldx     #trogg_raster_start
+                jsr     vlist_d
+                jsr     trogg_raster
+
+                ; the Scrubbly, all raster
+                jsr     Reset0Ref
+                lda     #$7F
+                sta     <VIA_t1_cnt_lo
+                ldd     #((SCRUB_Y*PIXEL/127)&$FF)*256+((SCRUBR_X*PIXEL/127)&$FF)
+                jsr     Moveto_d
+                ldx     #scrub_raster_start
+                jsr     vlist_d
+                jsr     scrub_raster
 
                 ; the ledges: the first row's left end half a pixel below their tops
                 jsr     Reset0Ref

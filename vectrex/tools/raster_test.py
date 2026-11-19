@@ -184,6 +184,118 @@ def raster_rows(label, rows, comment):
     return out
 
 
+COL_STEP_SPEED, COL_STEP_TIME = 40, 4  # the slide to the next column: 40 x 4 = 160, a pixel
+COL_PAD = 2                     # blank pixels at each end of a column: the slide across covers 2
+                                # (4 cycles at 2 a pixel)
+
+
+def column_bits(grid, lit):
+    """
+    The columns of a sprite (grid: rows of pixel kinds) as bit lists in each column's sweep
+    order: down, up, down... Each column is the sprite's height plus COL_PAD blank pixels at each
+    end, made up to a multiple of 8 with more blanks at the bottom.
+    """
+    h, w = len(grid), len(grid[0])
+    hs = 8 * math.ceil((h + 2 * COL_PAD) / 8)
+    cols = []
+    for c in range(w):
+        spatial = [0] * hs                       # from the top
+        for r in range(h):
+            spatial[COL_PAD + r] = 1 if grid[r][c] in lit else 0
+        cols.append(spatial if c % 2 == 0 else spatial[::-1])
+    return cols
+
+
+def raster_columns(label, cols, comment):
+    """
+    Code for a sprite drawn as columns, back and forth (cols from column_bits). Starts with the
+    beam half a pixel left of the first column, at the top of the padded column, the spot off,
+    DP = $D0, ACR = $98; ends with ACR = $98.
+
+    Each column: Y's sample-and-hold holds the sweep speed (down or up); the DAC (X) is set to
+    COL_STEP_SPEED for the ramp's first COL_STEP_TIME cycles, so the beam slides across to the
+    column as it sets off (through the blank pixels at the column's end), then to 0.
+    """
+    nb = len(cols[0]) // 8
+    out = ['; %s: %d columns of %d pixels (%d bytes)' % (comment, len(cols), 8 * nb, nb), label]
+
+    def ins(op, c, note=''):
+        out.append('                %-31s ;%3d %s' % (op, c, note))
+
+    def ysh(value):
+        ins('lda     #%d' % value, 2)
+        ins('sta     <VIA_port_a', 4, 'DAC')
+        ins('lda     #$80', 2)
+        ins('sta     <VIA_port_b', 4, 'mux on: to Y (ramp off)')
+        ins('nop', 2)
+        ins('nop', 2)
+        ins('nop', 2, '(settling)')
+        ins('lda     #$81', 2)
+        ins('sta     <VIA_port_b', 4, 'mux off, ramp off')
+
+    ins('lda     #$81', 2)
+    ins('sta     <VIA_port_b', 4, 'ramp off, before port B takes over the ramp')
+    ins('lda     #$18', 2)
+    ins('sta     <VIA_aux_cntl', 4, 'ACR: ramp from port B, shift register out on the clock')
+    for c, bits in enumerate(cols):
+        down = c % 2 == 0
+        byts = [int(''.join(map(str, bits[i * 8:i * 8 + 8])), 2) for i in range(nb)]
+        out.append('; column %d, %s: %s' % (c, 'down' if down else 'up', ' '.join('%02X' % b for b in byts)))
+        ysh(-RASTER_SPEED if down else RASTER_SPEED)
+        ins('lda     #%d' % COL_STEP_SPEED, 2)
+        ins('sta     <VIA_port_a', 4, 'X speed: the slide across')
+        ins('ldb     #$01', 2)
+        ins('lda     #$%02X' % byts[0], 2, '(the first byte)')
+        ins('stb     <VIA_port_b', 4, 't = 0: ramp on')
+        t = 4
+        ins('clr     <VIA_port_a', 6, 't = 4: X speed 0 (after %d cycles: a pixel across)' % COL_STEP_TIME)
+        t += 6
+        ins('ldb     #$81', 2, '(for the ramp off)')
+        t += 2
+        e = SR0 + 16 * nb - 12
+        for j, b in enumerate(byts):
+            s = SR0 + 16 * j
+            if j > 0:
+                ins('lda     #$%02X' % b, 2)
+                t += 2
+            for op, cyc in delay(s - t):
+                ins(op, cyc)
+            t = s
+            if j == nb - 1 and e - s == 5:
+                ins('sta     >$D000+VIA_shift_reg', 5, 't = %d: last byte' % s)
+                t += 5
+            else:
+                ins('sta     <VIA_shift_reg', 4, 't = %d' % s)
+                t += 4
+        assert t == e, (t, e)
+        ins('stb     <VIA_port_b', 4, 't = %d: ramp off' % e)
+        t += 4
+        off = SR0 + 16 * nb
+        for op, cyc in delay(off - t):
+            ins(op, cyc)
+        ins('clr     <VIA_shift_reg', 6, 't = %d: spot off' % off)
+    ins('lda     #$98', 2)
+    ins('sta     <VIA_aux_cntl', 4, 'ACR back: the ramp from timer 1 (run out: off)')
+    ins('rts', 5)
+    return out
+
+
+def sprite_grid(steamfrak, name, frame=0):
+    """A sprite frame's pixels as rows of kinds: '.' clear, '#' black, 'y' yellow, 'm' other."""
+    im = Image.open(os.path.join(steamfrak, 'assets', 'sprites', name + '.png')).convert('RGBA')
+    n = {'sTrogg_wr_Beeb': 4}.get(name, 1)
+    fw = im.width // n
+    grid = []
+    for y in range(im.height):
+        row = ''
+        for x in range(frame * fw, frame * fw + fw):
+            r, g, b, a = im.getpixel((x, y))
+            row += '.' if a < 128 else '#' if (r, g, b) == (0, 0, 0) else \
+                'y' if (r > 200 and g > 200 and b < 100) else 'm'
+        grid.append(row)
+    return grid
+
+
 def sprite_bits(steamfrak, name, frame, x0, y0, w, h, lit, width8=None):
     im = Image.open(os.path.join(steamfrak, 'assets', 'sprites', name + '.png')).convert('RGBA')
     n = {'sTrogg_wr_Beeb': 4}.get(name, 1)
@@ -247,6 +359,18 @@ def main():
     for t in tile:
         rows.append([t[x % 16] if any(a <= x < b for a, b in spans) else 0 for x in range(192)])
     out += raster_rows('ledges', rows, 'three ledges, the top two rows of sLedge1_Beeb repeated') + ['']
+
+    # Trogg and the Scrubbly drawn wholly as columns, from the sprites: a move from the origin to
+    # the first column's start (half a pixel left of it, at the top of the padded column), then
+    # the columns. Trogg: the black pixels; the Scrubbly: the black and the yellow.
+    for label, name, origin, lit in (('trogg_raster', 'sTrogg_wr_Beeb', trogg_o, '#'),
+                                     ('scrub_raster', 'sScrubbly_Beeb', scrub_o, '#')):
+        grid = sprite_grid(steamfrak, name)
+        e = Encoder()
+        e.to(screen((-0.5, -COL_PAD), origin), False, MOVE_SPEED)
+        out += ['; %s as columns: the move to the first column' % name]
+        out += vector_list(label + '_start', e.out) + ['']
+        out += raster_columns(label, column_bits(grid, lit), '%s as columns, %s lit' % (name, lit)) + ['']
 
     open(OUT, 'w').write('\n'.join(out) + '\n')
     print('%s: Trogg %d vectors, the Scrubbly %d' % (OUT, n_trogg, n_scrub))

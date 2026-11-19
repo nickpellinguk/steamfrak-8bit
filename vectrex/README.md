@@ -33,7 +33,7 @@ At 50 Hz a frame is 30000 cycles of the 1.5 MHz 6809.
 | `test/vlist_a.asm` | `vlist_a`: the same, with the wait worked out from the scale as it draws (`LSRA`, `LBCS` to the next instruction for the odd cycle, `NEGA`, `JMP A,U` into a page-aligned run of NOPs): 4 bytes a vector. |
 | `test/vlist_c.asm` | `vlist_c`: vlist_a for scales of 28 and over, and the timer polled (as the BIOS does) for scales under 28 (`SUBA #28` sets the carry, `BLO` picks the path before the timer starts): any scale from 1 to 255. |
 | `test/vlist_d.asm` | `vlist_d`: every scale exact. 28 and over as vlist_a; under 28, a table gives each scale its own block: a fixed delay (spot on, NOPs and BRNs, spot off), or where there's time, the timer polled with the reads lined up (a delay of 0-8 cycles by scale mod 7, then the `BIT` loop). |
-| `test/raster_test.asm` | Vectors and raster together (`preview/raster_test.png`): Trogg and the Scrubbly from `art/frak-graphics-v001.svg` drawn with vlist_d (`test/vlist_d_routine.asm`), Trogg's head and the Scrubbly's eyes as raster patches from the BBC sprites, and a row of ledges as two raster lines (the top two rows of `sLedge1_Beeb`, repeated). |
+| `test/raster_test.asm` | Vectors and raster together (`preview/raster_test.png`, `preview/raster_columns.png`): Trogg and the Scrubbly from `art/frak-graphics-v001.svg` drawn with vlist_d (`test/vlist_d_routine.asm`), with Trogg's head and the Scrubbly's eyes as raster patches from the BBC sprites; Trogg and the Scrubbly wholly as raster columns from the sprites; and a row of ledges as two raster lines (the top two rows of `sLedge1_Beeb`, repeated). |
 | `tools/raster_test.py` | Makes its data: the vector lists (each vector's rounding carried into the next) and the raster code, straight-line, with every write at a counted cycle. |
 | `tools/svg_shapes.py` | Reads line art drawn in Inkscape over the tracing sheets (`art/frak-graphics-v001.svg`) into polylines in each sprite's pixels. |
 | `tools/vlist_d_short.py` | Makes vlist_d's table and blocks (`test/vlist_d_short.asm`), choosing polling for each scale where the loop's first read can come early enough. |
@@ -160,6 +160,24 @@ speed of 80.
   the same as the ~20 vectors it replaces); the Scrubbly's eyes, 6 rows of 16, 725 (about half
   the vectors'); the ledges, 2 rows of 192, 933. About 90 cycles a row are the turn: two trips
   through the sample-and-hold to step Y and zero it again. That's what to make cheaper.
+* **Whole sprites as columns** (`preview/raster_columns.png`): sweeping down and up rather than
+  across turns out much better, as the axes aren't alike: Y goes through the sample-and-hold, X
+  comes straight from the DAC. So a column's turn is one trip through the sample-and-hold (the Y
+  speed reversed), and the step across is the DAC at X speed 40 for the ramp's first 4 cycles (a
+  pixel), through 2 blank pixels at each end of the column. In vecx every column lands exactly a
+  pixel from the last, and every lit run starts and ends on a whole pixel, down and up.
+  * Trogg (26 columns of 40 pixels, the black pixels lit): **3,455 cycles**, against about
+    6,400 for the traced vectors (48 vectors, 5,168 cycles: most are short, so they take
+    vlist_d's slower path) with the raster head (1,241). The Scrubbly (33 columns of 48):
+    about 4,900, against about 6,400. They look like the BBC sprites drawn in light; for the
+    Scrubbly, lighting only the black pixels keeps its eyes' crescents (lighting the yellow too
+    fills them in).
+  * Every frame comes straight from the sprite (no tracing), facing left is the columns the
+    other way round, and an object at the screen's edge can lose whole columns, a pixel at a
+    time. The code here is generated straight-line (about 2KB for Trogg); as data for a loop,
+    a frame is about 130 bytes.
+  * Still to do: sweep only each column's occupied part (most of the cost is blank pixels at
+    the top and bottom of narrow columns), and a data-driven loop.
 * Caveat: vecx makes each write as its instruction starts; a real 6809 writes in an
   instruction's last cycle. Exact offsets like these (and vlist_d's) are vecx's, and need
   checking against MAME (which times writes within instructions) or a real Vectrex.
