@@ -27,6 +27,7 @@ At 50 Hz a frame is 30000 cycles of the 1.5 MHz 6809.
 | `test/m1s_test.asm` | Columns swept at the fastest speed (127) against full resolution (`M1_STRETCH=1 python3 vectrex/tools/m1_gen.py`; `preview/m1_fast.png`). |
 | `test/m1t_test.asm`, `tools/m1_trim_gen.py` | Trimmed columns (each swept only as far as it needs) against full ones (`preview/m1_trim.png`). |
 | `test/m1c_test.asm`, `tools/m1_cave_gen.py` | Cave platforms (the ledges) as 8 rows against milestone 1's 2-row strip (`preview/m1_cave.png`). |
+| `test/m1z_test.asm`, `tools/m1_zig_gen.py` | Zigzag sprites (the beam drifting down, X flipping every row) beside full columns (`preview/m1_zigzag.png`). |
 | `tools/budget.py` | For every level, slides a 320x256 and a 256x256 window across it, and estimates the drawing cost of the busiest window position (platforms as one line, ladders as two, the line art's real vector counts, standing meanies, gems and keys, and moving things whose range is in view). |
 | `tools/beam.py` | A model of the beam: renders lines (end points, intensity, time) with brightness from intensity x time / length, a brighter dot at each end where the beam dwells, a Gaussian spot, phosphor saturation and a little bloom. Its constants aren't measured: they're for comparing lines with each other. |
 | `art/shapes.py` | The line art, as polylines over the BBC sprites' pixels: Trogg standing (37 vectors), the Scrubbly (52), a gem and a key. |
@@ -396,6 +397,29 @@ and the next row's speed). No clipping yet.
   pixels 1,041 / 4,155: 4 times as much, each row 16 cycles a byte + ~100 for its turn and set-up.
 * **The budget:** 13 of the 36 levels have ledges; with them at 8 rows, the median level goes from
   45,123 to 49,295 (trimmed columns), the most on A_7 (+21,815), A_1 (+15,658), B_7 (+14,660).
+
+### Zigzag sprites (test/m1z_test.asm, tools/m1_zig_gen.py)
+
+The beam drifting down slowly and steadily (Y's sample-and-hold set once) while X flips back and
+forth every row: one store each, as X is fed straight from the DAC. The shift register is written
+every 16 cycles all the way through, so there are no turns: a sprite is one sweep, its time its
+height x 160 / the drift. Straight-line code for each sprite's size (bytes through A and B in
+turn, so loads have slack; the rows' speeds in U and Y, so a flip is `STU` or `STY` to port B).
+Rows only as long as the lit pixels they cross; each flip as soon as the writes allow; each lit
+pixel lighting the nearest bit (the converter follows the beam's real path).
+
+* **Measured** (cycles with the call, columns then zigzag): Trogg 3,102 / 1,485 (-52%), Poglet
+  2,751 / 1,437 (-48%), gem 825 / 397 (-52%), bulb 918 / 525 (-43%), Hooter 1,981 / 1,373 (-31%),
+  Scrubbly 4,444 / 3,469 (-22%: a whole drift of 2, as 3 spreads its rows too far), ladder 2,443 /
+  2,333 (-5%).
+* **The model holds:** vecx's lit segments fit the converter's beam path best with the flips as
+  modelled (mean distance under half a pixel).
+* **But it looks rougher** (`preview/m1_zigzag.png`, columns then zigzag): neighbouring rows slant
+  opposite ways (meeting at one end, up to 2 pixels apart at the other), so horizontal lines come
+  out as chevrons (a herringbone: the ladder's rungs, Trogg's outline).
+* **On a real Vectrex:** the drift is a small DAC value (2-6), so an offset in the DAC would change
+  each sprite's height by a noticeable fraction (MAME's DAC offset changed drifting columns' width
+  by ~8%); to be checked.
 
 ### A vector dagger (test/dagger.asm, tools/dagger.py)
 

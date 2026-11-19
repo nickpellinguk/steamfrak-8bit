@@ -1,0 +1,315 @@
+#!/usr/bin/env python3
+"""
+Zigzag sprites: the beam drifting down slowly and steadily (Y's sample-and-hold set once) while X
+flips back and forth every row (one store each: X is fed straight from the DAC), the shift
+register written every 16 cycles all the way through. No turns: the whole sprite is one sweep.
+Writes test/m1z_engine.asm (straight-line code for each sprite's size) and test/m1z_data.asm for
+test/m1z_test.asm, which draws each sprite as full columns and as a zigzag.
+
+    python3 vectrex/tools/m1_zig_gen.py [../steamfrak]
+
+Timing (as milestone 1's drifting rows, measured in vecx): t = 0 the ramp on; byte j of the
+stream written at 12 + 16j; bit b of byte j belongs to the beam's position at T = 16j + 2b, and a
+speed change written at t applies from T = t. The rows' speeds are in U ($0150: ramp on, mux
+off, X +80) and Y ($01B0: X -80), so a flip is STU or STY to port B; the bytes go through A and B
+in turn (byte j + 2 loaded after byte j is written), so loads have slack. A flip that can't be
+written on its cycle (it would overlap a write, or leave a 1-cycle gap) moves a cycle or two: the
+converter follows the beam's real path, where every bit is, and takes the sprite's pixel there.
+
+The sweep lasts the sprite's height x 160 / the drift (units a cycle down, set once in Y's
+sample-and-hold), so the drift is what sets the time; each sprite gets the largest drift that keeps
+its rows at most MAX_PITCH pixels apart. A row only goes as far as the lit pixels of the sprite's
+rows it crosses (shorter rows, so a higher drift), and its flip comes as soon after as the writes
+allow (schedule(): flip by flip, backtracking). Each lit pixel then lights the bit whose dot lands
+nearest it, so none is lost where neighbouring rows fan apart (they meet at one end and are up to
+2 pixels apart at the other).
+"""
+import math
+import os
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+TEST = os.path.join(HERE, '..', 'test')
+sys.path.insert(0, HERE)
+import m1_gen as g  # noqa: E402
+
+SPEED = 80
+TOL = 3                     # cycles a flip may move
+SR0 = 12
+
+
+LATE = 12                   # cycles a flip (or the ramp off) may come after the beam reaches the edge
+
+
+def schedule(w, rows, max_bytes, drift=None, h=None, extents=None):
+    """
+    The instructions in time order [(t, op, cycles, arg)], the flips' times and the ramp-off's.
+    Each flip comes once the beam has reached the sprite's edge (x = w going right, 0 going left),
+    as soon after as the writes allow (up to LATE cycles: the row going on past the edge, blank),
+    so a row never falls short. Flip by flip: the least lateness that can be reached.
+    """
+    stores = [SR0 + 16 * j for j in range(max_bytes)]
+    out = []
+    t, j, jl, x2, f_last = 5, 0, 2, 0, 0        # t = 0: STU (ramp on), bytes 0 and 1 loaded before
+
+    def seg(t, j, jl, T, ln, acc, loads_ok, dead=None):
+        """Instructions from t to exactly T (then ln cycles of the event), or None."""
+        if dead is None:
+            dead = set()
+        if (t, j, jl) in dead:
+            return None
+        r = seg1(t, j, jl, T, ln, acc, loads_ok, dead)
+        if r is None:
+            dead.add((t, j, jl))
+        return r
+
+    def seg1(t, j, jl, T, ln, acc, loads_ok, dead):
+        if j < max_bytes and t == stores[j]:
+            if jl <= j:
+                return None
+            return seg(t + 4, j + 1, jl, T, ln, acc + [(t, 'sta' if j % 2 == 0 else 'stb', 4, j)], loads_ok, dead)
+        if t == T:
+            if j < max_bytes and T + ln > stores[j]:
+                return None
+            return acc, j, jl
+        if t > T:
+            return None
+        nxt = min(stores[j] if j < max_bytes else 10 ** 9, T)
+        if loads_ok and jl < max_bytes and j >= jl - 1 and t + 6 <= nxt:
+            r = seg(t + 6, j, jl + 1, T, ln, acc + [(t, 'lda' if jl % 2 == 0 else 'ldb', 6, jl)], loads_ok, dead)
+            if r:
+                return r
+        for d in (2, 3, 4, 5):
+            if t + d <= nxt:
+                r = seg(t + d, j, jl, T, ln, acc + [(t, 'delay', d, None)], loads_ok, dead)
+                if r:
+                    return r
+        return None
+
+    def edge_of(k, x2, f_last):
+        going_right = k % 2 == 0
+        edge2 = 2 * w if going_right else 0
+        if extents is not None:
+            # only as far as the lit pixels of the sprite's rows near this pass need
+            # (the rows this pass crosses: it slants down a pitch, about drift x 2w cycles)
+            y0 = drift * f_last / g.UNIT
+            y1 = y0 + drift * 2 * w / g.UNIT
+            band = [extents[r] for r in range(int(y0) - 1, int(y1) + 2) if 0 <= r < len(extents) and extents[r]]
+            if band:
+                edge2 = 2 * (max(e[1] for e in band) + 1) if going_right else 2 * min(e[0] for e in band)
+            edge2 = max(edge2, x2) if going_right else min(edge2, x2)
+        return edge2
+
+    failed = set()
+
+    def solve(k, t, j, jl, x2, f_last):
+        """The rest from flip k on: (instructions, off time, j, jl) or None."""
+        key = (k, t, j, jl, x2, f_last)
+        if key in failed:
+            return None
+        going_right = k % 2 == 0
+        earliest = f_last + abs(edge_of(k, x2, f_last) - x2)
+        last = (drift * earliest / g.UNIT >= h) if h is not None else k == rows - 1
+        ln = 8 if last else (6 if k % 2 == 0 else 5)
+        start = max(earliest - (3 if last else 0), t)   # (the ramp off: LDX, then STX at T + 3)
+        for d in range(LATE + 1):
+            T = start + d
+            r = seg(t, j, jl, T, ln, [], True)
+            if not r:
+                continue
+            acc, j2, jl2 = r
+            if last:
+                if 16 * jl2 < T + 3:
+                    continue                            # (every byte before the ramp off loaded)
+                return acc + [(T, 'off', 8, None)], T + 3, j2, jl2, T + 8
+            nx2 = x2 + (T - f_last) * (1 if going_right else -1)
+            rest = solve(k + 1, T + ln, j2, jl2, nx2, T)
+            if rest:
+                return (acc + [(T, 'flip', ln, k)] + rest[0],) + rest[1:]
+        failed.add(key)
+        return None
+
+    import threading
+    result = []
+    threading.stack_size(256 * 1024 * 1024)
+    sys.setrecursionlimit(100000)
+    th = threading.Thread(target=lambda: result.append(solve(0, t, j, jl, x2, f_last)))
+    th.start()
+    th.join()
+    if not result or not result[0]:
+        raise AssertionError('no schedule')
+    out, off_time, j, jl, t = result[0]
+    # the writes still due (bytes with bits before the ramp off)
+    while 16 * j < off_time:
+        if t < stores[j]:
+            d = stores[j] - t
+            out.append((t, 'delay', d, None))
+            t = stores[j]
+        assert t == stores[j] and jl > j
+        out.append((t, 'sta' if j % 2 == 0 else 'stb', 4, j))
+        t += 4
+        j += 1
+    flip_times = [t for t, op, _, _ in out if op == 'flip']
+    return out, flip_times, off_time, j
+
+
+def path(flip_times, off_time, drift, nbits):
+    """Each bit's beam position (x, y: pixels from the start, y down), at the middle of its 2 cycles."""
+    def x_at(T):
+        x, v, last = 0.0, SPEED / g.UNIT, 0
+        for f in flip_times:
+            if f >= T:
+                break
+            x += v * (f - last)
+            v, last = -v, f
+        return x + v * (T - last)
+    return [(x_at(2 * i + 1), drift * (2 * i + 1) / g.UNIT) for i in range(nbits)], \
+        (x_at(off_time), drift * off_time / g.UNIT)
+
+
+MAX_PITCH = 1.05            # pixels between rows (on average)
+
+
+def zigzag(grid, lit='#'):
+    """Plan a sprite: the largest drift whose rows (late flips and all) are at most MAX_PITCH
+    apart; the schedule, the data, where the beam ends."""
+    h, w = len(grid), len(grid[0])
+    extents = []
+    for r in range(h):
+        xs = [x for x in range(w) if grid[r][x] in lit]
+        extents.append((min(xs), max(xs)) if xs else None)
+    best = None
+    for drift in range(1, 16):
+        max_bytes = math.ceil(h * g.UNIT / drift / 16) + 2 * w + 16
+        try:
+            sched, flip_times, off_time, nbytes = schedule(w, 0, max_bytes, drift, h, extents)
+        except (AssertionError, IndexError):
+            continue
+        rows = len(flip_times) + 1
+        pitch = drift * off_time / g.UNIT / rows
+        if pitch <= MAX_PITCH:
+            best = (drift, sched, flip_times, off_time, nbytes, rows, pitch)
+    drift, sched, flip_times, off_time, nbytes, rows, pitch = best
+    pos, end = path(flip_times, off_time, drift, 8 * nbytes)
+    # each lit pixel lights the bit whose dot is nearest its middle (so none is lost where the rows
+    # fan apart), the dots up to the ramp off
+    n_on = off_time // 2
+    bits = [0] * len(pos)
+    for r in range(h):
+        for c in range(w):
+            if grid[r][c] in lit:
+                i = min(range(n_on), key=lambda i: (pos[i][0] - c - 0.5) ** 2 + (pos[i][1] - r - 0.5) ** 2)
+                bits[i] = 1
+    data = [int(''.join(map(str, bits[i:i + 8])), 2) for i in range(0, len(bits), 8)]
+    return {'drift': drift, 'pitch': pitch, 'rows': rows, 'nbytes': nbytes, 'sched': sched, 'data': data,
+            'end': end, 'off': off_time, 'w': w, 'h': h, 'ideal': 2 * w * rows}
+
+
+def emit(name, z):
+    """The routine, with the ramp off as LDD/STD (the schedule leaves 5 cycles for STD; the LDD
+    goes in the gap before it)."""
+    c = g.Code()
+    c.comment('a zigzag sprite, %d x %d: %d rows (pitch %.2f pixels), drift %d, %d bytes: ramp on %d cycles'
+              % (z['w'], z['h'], z['rows'], z['pitch'], z['drift'], z['nbytes'], z['off']))
+    c.comment('in: X = the data, the beam at the sprite\'s top left')
+    c.label(name)
+    c.ins('lda     #$81', 2)
+    c.ins('sta     <VIA_port_b', 4, 'ramp off, mux off, before port B takes over the ramp')
+    c.ins('lda     #$18', 2)
+    c.ins('sta     <VIA_aux_cntl', 4, 'ACR')
+    c.ins('ldy     #$80%02X' % (-z['drift'] & 0xFF), 4)
+    c.ins('sty     <VIA_port_b', 6, 'mux on: Y speed %d (the drift down)' % -z['drift'])
+    c.ins('ldu     #$01%02X' % SPEED, 3, '(the sample-and-hold settles)')
+    c.ins('ldy     #$01%02X' % (-SPEED & 0xFF), 4)
+    c.ins('ldd     #$81%02X' % SPEED, 3)
+    c.ins('std     <VIA_port_b', 5, 'mux off, X speed %d' % SPEED)
+    c.ins('lda     ,x+', 6, 'bytes 0 and 1')
+    c.ins('ldb     ,x+', 6)
+    c.ins('stu     <VIA_port_b', 5, 't = 0: ramp on')
+    sched = z['sched']
+    for idx, (t, op, ln, arg) in enumerate(sched):
+        if op in ('sta', 'stb'):
+            c.ins('%s     <VIA_shift_reg' % op, 4, 't = %d: byte %d' % (t, arg))
+        elif op in ('lda', 'ldb'):
+            c.ins('%s     ,x+' % op, 6, 't = %d: byte %d' % (t, arg))
+        elif op == 'flip':
+            c.ins('%s     <VIA_port_b' % ('sty' if arg % 2 == 0 else 'stu'), ln,
+                  't = %d: row %d, X speed %s' % (t, arg + 1, '-80' if arg % 2 == 0 else '+80'))
+        elif op == 'off':
+            c.ins('ldx     #$8100', 3)
+            c.ins('stx     <VIA_port_b', 5, 't = %d: ramp off' % (t + 3))
+        else:
+            for o, cy in g.delay(ln):
+                c.ins(o, cy)
+    c.ins('clr     <VIA_shift_reg', 6, 'spot off')
+    c.ins('lda     #$98', 2)
+    c.ins('sta     <VIA_aux_cntl', 4, 'ACR back')
+    c.ins('rts', 5)
+    return c.out
+
+
+SPRITES = [('trogg', 'sTrogg_wr_Beeb', 4), ('scrubbly', 'sScrubbly_Beeb', 1), ('poglet', 'sPoglet_Beeb', 1),
+           ('hooter', 'sHooter_Beeb', 1), ('gem', 'sGem_Beeb', 1), ('ladder', 'sLadder5_Beeb', 1),
+           ('bulb', 'sBulb_Beeb', 1)]
+SCENE = [   # (label, zigzag?, x, y)
+    ('trogg', 0, -100, -100), ('trogg', 1, -70, -100), ('scrubbly', 0, -40, -108), ('scrubbly', 1, -3, -108),
+    ('ladder', 0, 44, -100), ('ladder', 1, 62, -100),
+    ('poglet', 0, -100, -40), ('poglet', 1, -72, -40), ('hooter', 0, -44, -30), ('hooter', 1, -20, -30),
+    ('gem', 0, 10, -20), ('gem', 1, 26, -20), ('bulb', 0, 44, -20), ('bulb', 1, 60, -20),
+]
+
+
+def main():
+    steamfrak = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, '..', '..', '..', 'steamfrak')
+    full, zig = {}, {}
+    for label, name, frames in SPRITES:
+        grid = g.sprite_grid(steamfrak, name, 0, frames)
+        full[label] = (g.column_data(grid), len(grid), len(grid[0]))
+        zig[label] = zigzag(grid)
+    eng = ['; made by vectrex/tools/m1_zig_gen.py', '']
+    for nb in sorted({f[0][0] for f in full.values()}):
+        eng += g.column_routine(nb) + ['']
+    for label, z in zig.items():
+        eng += emit('zig_%s' % label, z) + ['']
+    open(os.path.join(TEST, 'm1z_engine.asm'), 'w').write('\n'.join(eng) + '\n')
+
+    out = ['; made by vectrex/tools/m1_zig_gen.py: the test scene', '', 'draw_scene']
+    moves = []
+    g._beam[0] = None
+    for i, (label, zz, x, y) in enumerate(SCENE):
+        (nb, fcols), h, w = full[label]
+        if not zz:
+            hs = 8 * nb
+            code, mv = g.start_move(i, (x - 0.5) * g.UNIT, -(y - g.COL_PAD) * g.UNIT)
+            out += ['; %s at (%d, %d): full columns' % (label, x, y)] + code + \
+                ['dc_%d_start' % i, '                ldx     #%s_data' % label,
+                 '                lda     #%d' % (w + 1), '                sta     %s' % g.COUNT,
+                 '                jsr     col%d_down' % nb, 'dc_%d_end' % i]
+            last = w - 1
+            g._beam[0] = ((x + last + 0.5) * g.UNIT, -((y - g.COL_PAD) + (0 if last % 2 else hs)) * g.UNIT)
+        else:
+            z = zig[label]
+            code, mv = g.start_move(i, x * g.UNIT, -y * g.UNIT)
+            out += ['; %s at (%d, %d): zigzag' % (label, x, y)] + code + \
+                ['dc_%d_start' % i, '                ldx     #%s_z_data' % label,
+                 '                jsr     zig_%s' % label, 'dc_%d_end' % i]
+            ex, ey = z['end']
+            g._beam[0] = ((x + ex) * g.UNIT, -(y + ey) * g.UNIT)
+        moves += mv
+    out.append('                rts')
+    out += [''] + moves + ['']
+    for label, ((nb, fcols), h, w) in full.items():
+        out.append('%s_data' % label)
+        out += ['                fcb     ' + ','.join('$%02X' % v for v in col) for col in fcols]
+    for label, z in zig.items():
+        out.append('%s_z_data' % label)
+        d = z['data']
+        out += ['                fcb     ' + ','.join('$%02X' % v for v in d[i:i + 16]) for i in range(0, len(d), 16)]
+    open(os.path.join(TEST, 'm1z_data.asm'), 'w').write('\n'.join(out) + '\n')
+    for label, z in zig.items():
+        print('%-9s %2d x %2d: drift %d, pitch %.2f, %d rows, %d bytes, ramp on %d cycles'
+              % (label, z['w'], z['h'], z['drift'], z['pitch'], z['rows'], z['nbytes'], z['off']))
+
+
+if __name__ == '__main__':
+    main()
