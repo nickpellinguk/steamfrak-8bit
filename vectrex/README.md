@@ -32,6 +32,8 @@ At 50 Hz a frame is 30000 cycles of the 1.5 MHz 6809.
 | `test/m1cz_test.asm`, `tools/m1_cavez_gen.py` | Zigzag cave platforms (ledges in bands) and the cave ladder, beside the 8-row strip and columns (`preview/m1_cave_zigzag.png`). |
 | `tools/ledge_hatch_preview.py` | Ledges as a textured top line and a 22.5-degree hatch for each block, previewed in Python (`preview/ledge_hatch.png`). |
 | `test/m1lz_test.asm`, `tools/m1_ledgez_gen.py` | Ledges as a top line and a drift zigzag for each block, beside the 8-row strip (`preview/m1_ledge_zigzag.png`; `M1_CHAIN=1` for chained moves). |
+| `tools/ledge_lines_preview.py` | Ledges as a top line and steep parallel lines, previewed in Python (`preview/ledge_lines.png`). |
+| `test/m1ll_test.asm`, `tools/m1_ledgel_gen.py` | The same as 6809 code, beside the 8-row strip (`preview/m1_ledge_lines.png`; `M1_CHAIN=1`). |
 | `tools/budget.py` | For every level, slides a 320x256 and a 256x256 window across it, and estimates the drawing cost of the busiest window position (platforms as one line, ladders as two, the line art's real vector counts, standing meanies, gems and keys, and moving things whose range is in view). |
 | `tools/beam.py` | A model of the beam: renders lines (end points, intensity, time) with brightness from intensity x time / length, a brighter dot at each end where the beam dwells, a Gaussian spot, phosphor saturation and a little bloom. Its constants aren't measured: they're for comparing lines with each other. |
 | `art/shapes.py` | The line art, as polylines over the BBC sprites' pixels: Trogg standing (37 vectors), the Scrubbly (52), a gem and a key. |
@@ -509,6 +511,30 @@ move (`preview/m1_ledge_zigzag.png`: the strip, then drift 2, 3, 4, 5).
   are short and many, and here the cost is the sweep.
 * **Looks:** the stalactites come out solid and well shaped at every drift (denser than the strip's
   8 rows); the top line keeps the ledge's texture.
+
+### Ledges as a top line and steep parallel lines (test/m1ll_test.asm, tools/m1_ledgel_gen.py)
+
+The top line (one raster row: the ledge's row 0), then the undersides hatched with steep
+parallel lines (84 degrees: Y at 80, X at -8 down and +8 up), solid, down one line and up the
+next, each as deep as the ledge's shape where it is.
+
+* **The turns:** the bottom one is the sample-and-hold write itself (STY $0050: mux on, DAC +80:
+  "up", the DAC driving X at +80 meanwhile, so the beam steps up and right onto the next line),
+  then STU $0108 (X +8); the top one: STX $80B0 (ramp off, "down"), 6 cycles, STS $0150 (ramp on,
+  X +80: a step down and right), then STB (X -8). Every register holds one value for the whole run
+  (Y, U, X, S; B = $F8; S saved and restored): no reloads. Turns of 7 cycles are avoided (a 1-cycle
+  gap after STY or STS); where a store still has to move a cycle, the next line the other way
+  grows by a cycle too, and the spot's changes move with them, so nothing drifts.
+* **The spot by shift-register bytes:** writing the spot on or off at the exact cycle doesn't fit
+  between the turns' stores; instead each write is a byte whose bits make the change at the right
+  moment (`LDA #%00011111` / `STA`: on after 3 bits), so the change lands to within a bit wherever
+  the write falls in the 14 cycles before it; two changes close together share a byte. Each line
+  stops being lit 2 pixels before its turn, so the write has room.
+* **Measured** (cycles for a 128-pixel run, top line and all; strip 2,875): lines 3.2 pixels apart
+  (5 a tile) 1,964 (-32%); 4 pixels apart 1,821 (-37%).
+* **Looks** (`preview/m1_ledge_lines.png`: the strip, then 3.2, then 4 pixels apart): at 3.2, clean
+  parallel lines, their lengths tracing the stalactites; at 4, some bottom turns still lit (a pair
+  of deep lines whose spot change can't be placed before the turn: open).
 
 ### A vector dagger (test/dagger.asm, tools/dagger.py)
 
