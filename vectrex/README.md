@@ -23,6 +23,7 @@ At 50 Hz a frame is 30000 cycles of the 1.5 MHz 6809.
 | `tools/vconvert.py` | Milestone 2's converter: the sprites to raster data (`gen/sprites.asm`, preview `preview/sprites.png`), the 36 sideways levels to the ROM format (`gen/levels.asm`, each decoded again and checked against `../tools/convert.py`'s `build_level`), and the raster budget of each level's busiest window (`gen/budget.txt`). `test/gen_check.asm` assembles both files. |
 | `tools/half_rules.py` | Ways of halving sprites for half resolution, side by side (`preview/half_rules.png`). |
 | `test/m1h_test.asm` | Half resolution against full: every kind of object drawn both ways (`M1_HALF=1 python3 vectrex/tools/m1_gen.py` writes its `m1h_engine.asm` and `m1h_data.asm`; `preview/m1_half.png`, `preview/m1_half_zoom.png`). |
+| `test/dagger.asm`, `tools/dagger.py` | A vector dagger (a sharp V, a crossguard, a handle) pointing four ways, beside the raster one (`preview/dagger.png`). |
 | `tools/budget.py` | For every level, slides a 320x256 and a 256x256 window across it, and estimates the drawing cost of the busiest window position (platforms as one line, ladders as two, the line art's real vector counts, standing meanies, gems and keys, and moving things whose range is in view). |
 | `tools/beam.py` | A model of the beam: renders lines (end points, intensity, time) with brightness from intensity x time / length, a brighter dot at each end where the beam dwells, a Gaussian spot, phosphor saturation and a little bloom. Its constants aren't measured: they're for comparing lines with each other. |
 | `art/shapes.py` | The line art, as polylines over the BBC sprites' pixels: Trogg standing (37 vectors), the Scrubbly (52), a gem and a key. |
@@ -318,6 +319,21 @@ Trogg 1,513 cycles (3,026), the Scrubbly 2,251 (4,371), a ladder 1,180 (2,365), 
 * **Moves are now the biggest cost**: with free moves, 34 of the 36 would fit at half resolution
   (median 23,024); with chained moves at 100 cycles instead of 250, 14 fit; without balloons and
   daggers, 15. So the next saving is moving between objects, before any more resolution.
+
+### A vector dagger (test/dagger.asm, tools/dagger.py)
+
+A sharp V for the blade, a crossguard and a handle: one path of 6 vectors with vlist_d, no
+blank moves, pointed any way from the same shape (`preview/dagger.png`: the raster dagger, then
+vector daggers pointing right, left, up and down). Measured in vecx, not counting the move to it:
+
+| | cycles |
+|---|---|
+| raster dagger (11 columns of 2 bytes, as drawn) | 825 |
+| vector, speed 80 like the raster (scales 4-18: vlist_d's short path, ~115 a vector) | 692 (`preview/dagger_speed80.png`) |
+| vector, every vector at scale 28 (vlist_d's long path, 82 a vector) | **533** |
+
+At scale 28 the short lines (the guard) are drawn slowly, so they come out brighter than the
+blade; the intensity could be turned down for daggers if that shows on a real Vectrex.
 
 ## Findings so far
 
