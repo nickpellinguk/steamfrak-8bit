@@ -20,6 +20,7 @@ At 50 Hz a frame is 30000 cycles of the 1.5 MHz 6809.
 
 | | |
 |---|---|
+| `tools/vconvert.py` | Milestone 2's converter: the sprites to raster data (`gen/sprites.asm`, preview `preview/sprites.png`), the 36 sideways levels to the ROM format (`gen/levels.asm`, each decoded again and checked against `../tools/convert.py`'s `build_level`), and the raster budget of each level's busiest window (`gen/budget.txt`). `test/gen_check.asm` assembles both files. |
 | `tools/budget.py` | For every level, slides a 320x256 and a 256x256 window across it, and estimates the drawing cost of the busiest window position (platforms as one line, ladders as two, the line art's real vector counts, standing meanies, gems and keys, and moving things whose range is in view). |
 | `tools/beam.py` | A model of the beam: renders lines (end points, intensity, time) with brightness from intensity x time / length, a brighter dot at each end where the beam dwells, a Gaussian spot, phosphor saturation and a little bloom. Its constants aren't measured: they're for comparing lines with each other. |
 | `art/shapes.py` | The line art, as polylines over the BBC sprites' pixels: Trogg standing (37 vectors), the Scrubbly (52), a gem and a key. |
@@ -257,6 +258,45 @@ misalignment reads off a screenshot (`preview/m1_calib_vecx_mame.png`: vecx abov
   the strip line up in MAME as they are.
 * So the engine keeps both the slide and the drift, and the first byte's time, as settings; vecx's
   values are the defaults. Which is right needs a real Vectrex.
+
+## Milestone 2: the converter (tools/vconvert.py)
+
+`python3 vectrex/tools/vconvert.py ../steamfrak` writes `gen/sprites.asm`, `gen/levels.asm`,
+`gen/budget.txt` and `preview/sprites.png`. The formats are in the script's docstring.
+
+* **Sprites** (`preview/sprites.png`: each BBC frame beside its lit pixels, which are decoded back out
+  of the bytes and checked against the sprite): Trogg's frames, the three meanies, gem, balloon,
+  the daggers, spring, ladders, chains and Qiana poles as columns; key, yoyo and "FRAK!" as rows.
+  The lit pixels are the black ones everywhere for now. **Trogg's left frames aren't mirror images
+  of his right ones** (a third of his black pixels differ: the shading is lit from one side), so
+  they're stored too, not drawn mirrored: 44 frames, 3,530 bytes.
+* **Platforms:** ledges and girders repeat a tile, so a run of them touching on one line is one
+  strip from a repeating buffer (ledges 2-byte period, girders 3), 382 bytes with the logs' own
+  rows. The 36 levels have 263 strips where they have 1,020 platform pieces.
+* **Levels:** 11,757 bytes for the 36 (326 a level): the pieces in the original order (for
+  `platform_find`'s ties), the ladders with their extensions worked out, the things standing still
+  (gems, keys, meanies that don't move, springs) sorted by x, the moving meanies and platforms
+  with their ranges worked out, and the drawing strips sorted by x. Every level decodes back to
+  what `build_level` gives (positions, sizes, sprites, bounciness, ladder extensions, every moving
+  thing's parameters), and the strips cover exactly the static platforms' top pixels.
+* All of it assembles (`test/gen_check.asm`): 16,145 bytes. More than the plan's 9-10KB for the
+  levels; packing is milestone 9's.
+
+### The budget (gen/budget.txt)
+
+Each level's busiest 206-pixel window, from milestone 1's measured costs: columns 16 a byte + 35
+a turn, strips 32 a byte + 150, 250 a move for scenery (chained by the converter, milestone 3's
+plan), 900 for things that move; plus a fixed 15,095 (Trogg 3,029 + his move, three balloons or
+daggers, the HUD at 1,000 and the game logic guessed at 5,000).
+
+**No level fits in a 30,000-cycle frame.** The closest are F_9 (30,925) and E_9 (31,451); the
+median is 47,432 and the worst B_4 at 77,429. Split up (A_1 at its worst, x = 304: 54,374):
+platforms 8,240, ladders 15,712, things 15,327 (three Scrubblies 11,700 with moves), fixed 15,095.
+The B levels are worst for moving meanies (B_4: 39,783, eleven Scrubblies' ranges), the A levels
+for ladders and standing meanies.
+
+The same budget **at half resolution** (2x2-pixel blocks: half the columns, half the bytes a
+column; the moves cost the same): 17 of the 36 fit, median 30,207, 34 within 40,000.
 
 ## Findings so far
 

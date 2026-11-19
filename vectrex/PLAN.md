@@ -1,7 +1,9 @@
 # Plan: rasterised Frak! on the Vectrex
 
-Status: **milestone 1 done** (the raster engine: see `README.md`, "Milestone 1"). The tools and
-the tests behind it are in `README.md`.
+Status: **milestones 1 and 2 done** (the raster engine and the converter: see `README.md`,
+"Milestone 1" and "Milestone 2"). **Milestone 2's budget says no level fits a frame at full
+resolution** (median 47,000 cycles against 30,000; 17 of 36 fit at half resolution), so how to
+draw less is to be decided before milestone 3.
 
 The exit goal is the game as the CPC and BBC versions play it, for the levels that scroll
 sideways and fit in a frame, with the menus and records, on a Vectrex cartridge, aiming at 32KB
@@ -124,6 +126,11 @@ real Vectrex can settle (the slide across, and the spot's timing), kept as build
   measured cycles for each.
 
 ### 2. The converter
+
+**Done** (`README.md`, "Milestone 2"; `tools/vconvert.py`): 44 sprite frames (3,530 bytes; Trogg's
+left frames stored, as they aren't mirror images), platform strips (263 for 1,020 pieces), the 36
+levels in 11,757 bytes, every one decoded back and checked against `build_level`; the budget
+(`gen/budget.txt`): none fits at full resolution.
 
 * **2.1 Sprites:** from the steamfrak repository's sprites, to raster data: the lit pixels
   chosen per sprite (an art pass, with a preview sheet through the beam model,
