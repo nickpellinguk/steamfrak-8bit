@@ -28,6 +28,7 @@ At 50 Hz a frame is 30000 cycles of the 1.5 MHz 6809.
 | `test/m1t_test.asm`, `tools/m1_trim_gen.py` | Trimmed columns (each swept only as far as it needs) against full ones (`preview/m1_trim.png`). |
 | `test/m1c_test.asm`, `tools/m1_cave_gen.py` | Cave platforms (the ledges) as 8 rows against milestone 1's 2-row strip (`preview/m1_cave.png`). |
 | `test/m1z_test.asm`, `tools/m1_zig_gen.py` | Zigzag sprites (the beam drifting down, X flipping every row) beside full columns (`preview/m1_zigzag.png`). |
+| `tools/hatch_preview.py` | A crosshatch renderer, previewed in Python (not yet 6809 code): `preview/hatch.png`. |
 | `tools/budget.py` | For every level, slides a 320x256 and a 256x256 window across it, and estimates the drawing cost of the busiest window position (platforms as one line, ladders as two, the line art's real vector counts, standing meanies, gems and keys, and moving things whose range is in view). |
 | `tools/beam.py` | A model of the beam: renders lines (end points, intensity, time) with brightness from intensity x time / length, a brighter dot at each end where the beam dwells, a Gaussian spot, phosphor saturation and a little bloom. Its constants aren't measured: they're for comparing lines with each other. |
 | `art/shapes.py` | The line art, as polylines over the BBC sprites' pixels: Trogg standing (37 vectors), the Scrubbly (52), a gem and a key. |
@@ -435,6 +436,24 @@ pixel lighting the nearest bit (the converter follows the beam's real path).
 * **On a real Vectrex:** the drift is a small DAC value (2-6), so an offset in the DAC would change
   each sprite's height by a noticeable fraction (MAME's DAC offset changed drifting columns' width
   by ~8%); to be checked.
+
+### Crosshatch (tools/hatch_preview.py: a preview, not yet 6809 code)
+
+Passes down and up a sprite, the beam across at 0.5 pixel a cycle and down (or up) at 0.25, so
+each row is a diagonal of slope 1/2, flipping at the edges; the passes' diagonals cross. Each pass
+takes 4 x the height in cycles (168 for the Scrubbly) + ~50 to reverse Y.
+
+* **Spreading the lines:** with slope 1/2 bouncing off four edges the path is a periodic billiard:
+  after a dozen passes new passes retrace old lines (overshooting the top or bottom only shifts one
+  of the two directions). The turn breaks it: while the sample-and-hold takes its new Y speed, the
+  shared DAC drives X at that value, so holding the ramp on for k cycles there nudges the beam k/4
+  pixels sideways. Choosing each pass's overshoot and nudge to fill the gaps, every pass adds lines.
+* **Outline art doesn't hatch well** (`preview/hatch.png`, rows 1, 4, 5): the outline turns into
+  fragments of hatching; the Scrubbly reads clearly only at ~20 passes (~4,600 cycles: more than
+  its columns, 4,444).
+* **Fill does** (rows 2 and 3: the Scrubbly's magenta body lit, and body and eyes): a crosshatched
+  silhouette, the eyes and mouth as holes, 6-12 passes (~1,350-2,700 cycles). The face needs more
+  definition: crisp eyes and fangs drawn over it some other way.
 
 ### A vector dagger (test/dagger.asm, tools/dagger.py)
 
