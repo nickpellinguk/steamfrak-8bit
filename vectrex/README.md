@@ -30,6 +30,7 @@ At 50 Hz a frame is 30000 cycles of the 1.5 MHz 6809.
 | `test/m1z_test.asm`, `tools/m1_zig_gen.py` | Zigzag sprites (the beam drifting down, X flipping every row) beside full columns (`preview/m1_zigzag.png`). |
 | `tools/hatch_preview.py` | A crosshatch renderer, previewed in Python (not yet 6809 code): `preview/hatch.png`. |
 | `test/m1cz_test.asm`, `tools/m1_cavez_gen.py` | Zigzag cave platforms (ledges in bands) and the cave ladder, beside the 8-row strip and columns (`preview/m1_cave_zigzag.png`). |
+| `tools/ledge_hatch_preview.py` | Ledges as a textured top line and a 22.5-degree hatch for each block, previewed in Python (`preview/ledge_hatch.png`). |
 | `tools/budget.py` | For every level, slides a 320x256 and a 256x256 window across it, and estimates the drawing cost of the busiest window position (platforms as one line, ladders as two, the line art's real vector counts, standing meanies, gems and keys, and moving things whose range is in view). |
 | `tools/beam.py` | A model of the beam: renders lines (end points, intensity, time) with brightness from intensity x time / length, a brighter dot at each end where the beam dwells, a Gaussian spot, phosphor saturation and a little bloom. Its constants aren't measured: they're for comparing lines with each other. |
 | `art/shapes.py` | The line art, as polylines over the BBC sprites' pixels: Trogg standing (37 vectors), the Scrubbly (52), a gem and a key. |
@@ -475,6 +476,21 @@ with its rows squared off to 16 pixels (32 cycles: every flip on the same beat).
   band with a step at every band's edge; the ladder's rungs come out bowed.
 * So for ledges, cheaper turns in the strip itself are the better route (the same saving, none of
   the slope); the ladder stays in (trimmed) columns.
+
+### Ledges as a top line and hatched blocks (tools/ledge_hatch_preview.py: a preview)
+
+One raster row (the ledge's row 0) across the whole run, the blank rows 2-3 as a gap, then each
+16-pixel block's rows 4-13 (a trapezoid narrowing from 16 to 8 pixels) filled by a zigzag of
+lines at +-22.5 degrees (X 0.5 pixel a cycle, Y 0.207), flipping at the trapezoid's edges, passes
+down and up in turn with Y reversed on the move (one sample-and-hold write: ~2 pixels sideways).
+
+* **Estimated** (cycles; 8-row strip measured 1,851 / 2,875 / 4,155 for 64 / 128 / 208 pixels):
+  2 passes a block 845 / 1,645 / 2,644; 4 passes 1,403 / 2,739 / 4,408; 6 passes 1,974 / 3,878 /
+  6,259.
+* **Looks** (`preview/ledge_hatch.png`): a line at 22.5 degrees drops 6.6 pixels across a
+  16-pixel block, so a pass down a 10-row block is only about 1.5 lines: 2 passes give chevrons, 4
+  a lopsided hatch (every pass starts at the top left), 6 a proper hatched band with the
+  stalactites' shape, for a third more than the strip.
 
 ### A vector dagger (test/dagger.asm, tools/dagger.py)
 
