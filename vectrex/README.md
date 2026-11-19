@@ -29,6 +29,7 @@ At 50 Hz a frame is 30000 cycles of the 1.5 MHz 6809.
 | `test/m1c_test.asm`, `tools/m1_cave_gen.py` | Cave platforms (the ledges) as 8 rows against milestone 1's 2-row strip (`preview/m1_cave.png`). |
 | `test/m1z_test.asm`, `tools/m1_zig_gen.py` | Zigzag sprites (the beam drifting down, X flipping every row) beside full columns (`preview/m1_zigzag.png`). |
 | `tools/hatch_preview.py` | A crosshatch renderer, previewed in Python (not yet 6809 code): `preview/hatch.png`. |
+| `test/m1cz_test.asm`, `tools/m1_cavez_gen.py` | Zigzag cave platforms (ledges in bands) and the cave ladder, beside the 8-row strip and columns (`preview/m1_cave_zigzag.png`). |
 | `tools/budget.py` | For every level, slides a 320x256 and a 256x256 window across it, and estimates the drawing cost of the busiest window position (platforms as one line, ladders as two, the line art's real vector counts, standing meanies, gems and keys, and moving things whose range is in view). |
 | `tools/beam.py` | A model of the beam: renders lines (end points, intensity, time) with brightness from intensity x time / length, a brighter dot at each end where the beam dwells, a Gaussian spot, phosphor saturation and a little bloom. Its constants aren't measured: they're for comparing lines with each other. |
 | `art/shapes.py` | The line art, as polylines over the BBC sprites' pixels: Trogg standing (37 vectors), the Scrubbly (52), a gem and a key. |
@@ -454,6 +455,26 @@ takes 4 x the height in cycles (168 for the Scrubbly) + ~50 to reverse Y.
 * **Fill does** (rows 2 and 3: the Scrubbly's magenta body lit, and body and eyes): a crosshatched
   silhouette, the eyes and mouth as holes, 6-12 passes (~1,350-2,700 cycles). The face needs more
   definition: crisp eyes and fangs drawn over it some other way.
+
+### Zigzag cave platforms and ladder (test/m1cz_test.asm, tools/m1_cavez_gen.py)
+
+Ledges as zigzag bands: a run cut into 64-pixel bands (whole tiles), each a zigzag over the
+ledge's 14 rows (rows a band wide, about 1.6 pixels apart), going down and up in turn, each band
+ending at its right edge where the next starts, Y reversed between bands. The ladder as a zigzag
+with its rows squared off to 16 pixels (32 cycles: every flip on the same beat).
+
+* **Measured** (cycles, 8-row strip then bands): 64 pixels 1,851 / 1,240; 128 pixels 2,875 /
+  2,723; 208 pixels 4,155 / 4,633. Ladder: columns 2,443, zigzag 2,365.
+* **Why it doesn't pay here:** both sweep the same area at the same speed, 16 cycles a pixel of
+  length for 8 rows' worth; the zigzag only saves the strip's turns (~100 a row), and pays back
+  with a row more per band (rows 1.6 pixels apart against the strip's 8 rows in 14) and a last row
+  added so each band ends at its right edge. The zigzag won on sprites because their columns are
+  short, so the turns were most of the cost; a long row or a tall column is mostly sweep.
+* **And it looks worse** (`preview/m1_cave_zigzag.png`, strips at the top, bands at the bottom):
+  rows 0 and 1 fall on the same pass, so the ledge's top becomes a solid line, sloping across each
+  band with a step at every band's edge; the ladder's rungs come out bowed.
+* So for ledges, cheaper turns in the strip itself are the better route (the same saving, none of
+  the slope); the ladder stays in (trimmed) columns.
 
 ### A vector dagger (test/dagger.asm, tools/dagger.py)
 

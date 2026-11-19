@@ -41,7 +41,7 @@ SR0 = 12
 LATE = 12                   # cycles a flip (or the ramp off) may come after the beam reaches the edge
 
 
-def schedule(w, rows, max_bytes, drift=None, h=None, extents=None):
+def schedule(w, rows, max_bytes, drift=None, h=None, extents=None, end_right=False):
     """
     The instructions in time order [(t, op, cycles, arg)], the flips' times and the ramp-off's.
     Each flip comes once the beam has reached the sprite's edge (x = w going right, 0 going left),
@@ -114,7 +114,9 @@ def schedule(w, rows, max_bytes, drift=None, h=None, extents=None):
             return None
         going_right = k % 2 == 0
         earliest = f_last + abs(edge_of(k, x2, f_last) - x2)
-        last = (drift * earliest / g.UNIT >= h) if h is not None else k == rows - 1
+        last = (abs(drift) * earliest / g.UNIT >= h) if h is not None else k == rows - 1
+        if end_right and not going_right:
+            last = False                                # (the last row ends at the right edge)
         ln = 8 if last else (6 if k % 2 == 0 else 5)
         start = max(earliest - (3 if last else 0), t)   # (the ramp off: LDX, then STX at T + 3)
         for d in range(LATE + 1):
@@ -177,7 +179,7 @@ def path(flip_times, off_time, drift, nbits):
 MAX_PITCH = 1.05            # pixels between rows (on average)
 
 
-def zigzag(grid, lit='#', force_drift=None):
+def zigzag(grid, lit='#', force_drift=None, track=True):
     """Plan a sprite: the largest drift whose rows (late flips and all) are at most MAX_PITCH
     apart; the schedule, the data, where the beam ends."""
     h, w = len(grid), len(grid[0])
@@ -189,7 +191,7 @@ def zigzag(grid, lit='#', force_drift=None):
     for drift in ([force_drift] if force_drift else range(1, 16)):
         max_bytes = math.ceil(h * g.UNIT / drift / 16) + 2 * w + 16
         try:
-            sched, flip_times, off_time, nbytes = schedule(w, 0, max_bytes, drift, h, extents)
+            sched, flip_times, off_time, nbytes = schedule(w, 0, max_bytes, drift, h, extents if track else None)
         except (AssertionError, IndexError):
             continue
         rows = len(flip_times) + 1
