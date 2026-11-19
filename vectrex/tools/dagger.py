@@ -27,9 +27,9 @@ GUARD_HALF = 3.0        # the crossguard's half-width
 BLADE_HALF = 1.3        # the blade's half-width at the guard (the V's opening)
 SPEED = int(os.environ.get('DAGGER_SPEED', '80'))
 FIXED_SCALE = int(os.environ.get('DAGGER_SCALE', '28'))
-                        # every vector at DAGGER_SCALE (28; 0 for speed SPEED instead) at that scale (its speed from its length):
-                        # vlist_d's long path (scale + 54 cycles a vector) instead of its short one
-                        # for scales under 28, but slower lines are brighter
+                        # every vector at this scale, its speed from its length (0: speed SPEED
+                        # instead): vlist_d's long path (scale + 54 cycles a vector) rather than its
+                        # short one for scales under 28, but slower lines are brighter
 
 # the path, (u, v): pommel, guard centre, one end of the guard, back along it to the blade's
 # edge, the tip, the blade's other edge, the guard's other end
