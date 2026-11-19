@@ -31,6 +31,7 @@ At 50 Hz a frame is 30000 cycles of the 1.5 MHz 6809.
 | `tools/hatch_preview.py` | A crosshatch renderer, previewed in Python (not yet 6809 code): `preview/hatch.png`. |
 | `test/m1cz_test.asm`, `tools/m1_cavez_gen.py` | Zigzag cave platforms (ledges in bands) and the cave ladder, beside the 8-row strip and columns (`preview/m1_cave_zigzag.png`). |
 | `tools/ledge_hatch_preview.py` | Ledges as a textured top line and a 22.5-degree hatch for each block, previewed in Python (`preview/ledge_hatch.png`). |
+| `test/m1lz_test.asm`, `tools/m1_ledgez_gen.py` | Ledges as a top line and a drift zigzag for each block, beside the 8-row strip (`preview/m1_ledge_zigzag.png`; `M1_CHAIN=1` for chained moves). |
 | `tools/budget.py` | For every level, slides a 320x256 and a 256x256 window across it, and estimates the drawing cost of the busiest window position (platforms as one line, ladders as two, the line art's real vector counts, standing meanies, gems and keys, and moving things whose range is in view). |
 | `tools/beam.py` | A model of the beam: renders lines (end points, intensity, time) with brightness from intensity x time / length, a brighter dot at each end where the beam dwells, a Gaussian spot, phosphor saturation and a little bloom. Its constants aren't measured: they're for comparing lines with each other. |
 | `art/shapes.py` | The line art, as polylines over the BBC sprites' pixels: Trogg standing (37 vectors), the Scrubbly (52), a gem and a key. |
@@ -491,6 +492,23 @@ down and up in turn with Y reversed on the move (one sample-and-hold write: ~2 p
   16-pixel block, so a pass down a 10-row block is only about 1.5 lines: 2 passes give chevrons, 4
   a lopsided hatch (every pass starts at the top left), 6 a proper hatched band with the
   stalactites' shape, for a third more than the strip.
+
+### Ledges as a top line and drift-zigzag blocks (test/m1lz_test.asm, tools/m1_ledgez_gen.py)
+
+The top line (one raster row: the ledge's row 0) across a 128-pixel run, then each 16-pixel
+block's rows 4-13 as a drift zigzag (rows turning at the stalactite's edges), reached by a chained
+move (`preview/m1_ledge_zigzag.png`: the strip, then drift 2, 3, 4, 5).
+
+* **Measured** (cycles for the run, chained moves): 8-row strip 2,875; drift 2 9,292; drift 3 6,897;
+  drift 4 5,880; drift 5 5,368. A block's zigzag alone: 835 / 547 / 419 / 355 (rows 0.4 / 0.6 / 0.8
+  / 1.0 pixels apart: a block is only 16 wide, so these drifts are denser than on Trogg).
+* **Where it goes** (drift 5): the blocks 2,840, their set-ups ~440, the top line ~330, the 8 moves
+  ~1,750. Even with the moves gone (blocks going down and up in turn, each starting where the last
+  ended), ~3,600: more than the strip. A block is 10 rows of 16 pixels whichever way it's swept,
+  and the strip's turns are spread over a whole run; the zigzag's free turns only pay where rows
+  are short and many, and here the cost is the sweep.
+* **Looks:** the stalactites come out solid and well shaped at every drift (denser than the strip's
+  8 rows); the top line keeps the ledge's texture.
 
 ### A vector dagger (test/dagger.asm, tools/dagger.py)
 
