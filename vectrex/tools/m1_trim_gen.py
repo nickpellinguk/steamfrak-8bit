@@ -48,8 +48,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TEST = os.path.join(HERE, '..', 'test')
 sys.path.insert(0, HERE)
 import m1_gen as g  # noqa: E402
+import trim_plan  # noqa: E402
 
-MAXN = 12                   # the longest column, bytes (96 pixels)
+MAXN = 14                   # the longest column, bytes (112 pixels: sQiana4 is 104 tall)
 SLIDE = 32                  # the slide's DAC: 5 cycles x 32 = 160 units, a pixel
 SPEED = g.SPEED
 T1_LATCH_LO = '$06'         # (VIA register, direct page: the column count)
@@ -83,6 +84,11 @@ def trim_routine():
         name = 'td' if d == 'down' else 'tu'
         nxt_after = -SPEED if d == 'down' else SPEED      # the speed after the next column
         c.comment('the %s run: slot k for a column of %d - k bytes' % (d, MAXN))
+        c.comment('(a prefix, for entering slot 0 with a lead-in)')
+        c.ins('lda     ,x+', 6)
+        c.ins('nop', 2)
+        c.ins('nop', 2)
+        c.ins('nop', 2)
         c.label('%s_slots' % name)
         for k in range(MAXN - 1):
             c.ins('sta     <VIA_shift_reg', 4)
@@ -117,65 +123,48 @@ def trim_routine():
     return c.out
 
 
+LEADS = [0, 1, 2, 3, 6]      # pixels: entering a slot's padding 0, 2, 4, 6 or 12 cycles before its store
+
+
 def trim_columns(grid, lit='#'):
     """
-    The chain for a sprite: [(n, first bit's row (D or U), [bytes])...] for each column, and each
+    The cheapest chain (tools/trim_plan.py): [(n, lead, [bytes])...] for each column, and each
     column's start row (beam, pixels from the top, y down) with one more for where the last ends.
     """
+    total, chain, starts = trim_plan.plan(grid, LEADS, [0], lit)
     h, w = len(grid), len(grid[0])
-    rows = [[r for r in range(h) if grid[r][col] in lit] for col in range(w)]
-    a = [min(r) if r else None for r in rows]
-    b = [max(r) if r else None for r in rows]
-    cols, starts = [], []
-    pos = a[0] if a[0] is not None else 0                  # D_0
-    for k in range(w):
-        down = k % 2 == 0
-        nxt = k + 1 if k + 1 < w else None
-        if down:
-            D = pos
-            need = [1]
-            if b[k] is not None:
-                assert a[k] >= D, (k, a[k], D)
-                need.append(math.ceil((b[k] - D + 2) / 8))          # own pixels, the last bit blank
-            if nxt is not None and b[nxt] is not None:
-                need.append(math.ceil((b[nxt] - D - 1) / 8))        # reach the next's bottom
-            n = max(need)
-            bits = [0] * (8 * n)
-            for r in rows[k]:
-                bits[r - D] = 1
-            starts.append(D - 0.5)
-            pos = D + 8 * n + 1                                    # U for the next
-        else:
-            U = pos
-            need = [1]
-            if a[k] is not None:
-                assert b[k] <= U, (k, b[k], U)
-                need.append(math.ceil((U - a[k] + 2) / 8))
-            if nxt is not None and a[nxt] is not None:
-                need.append(math.ceil((U - 1 - a[nxt]) / 8))        # reach the next's top
-            n = max(need)
-            bits = [0] * (8 * n)
-            for r in rows[k]:
-                bits[U - r] = 1
-            starts.append(U + 1.5)
-            pos = U - 8 * n - 1                                    # D for the next
-        assert n <= MAXN, n
-        data = [int(''.join(map(str, bits[i:i + 8])), 2) for i in range(0, 8 * n, 8)]
-        cols.append((n, data))
-    starts.append(pos - 0.5 if w % 2 == 0 else pos + 1.5)
+    cols = []
+    for k, (n, l, q, first) in enumerate(chain):
+        bits = [0] * (8 * n)
+        for r in range(h):
+            if grid[r][k] in lit:
+                i = int(r - first) if k % 2 == 0 else int(first - r)
+                assert 0 <= i < 8 * n - 1, (k, r, first, n)
+                bits[i] = 1
+        cols.append((n, l, [int(''.join(map(str, bits[i:i + 8])), 2) for i in range(0, 8 * n, 8)]))
     return cols, starts
 
 
+ENTRY_BACK = {0: 0, 1: 1, 2: 2, 3: 3, 6: 5}     # bytes back from a slot's STA for each lead-in
+
+
 def column_asm(label, cols):
-    """The data: each column's first byte, its entry into the run, the rest."""
+    """The data: each column's first byte, its entry into the run, the rest (with a lead-in of 6,
+    entering at a slot's LDA ,X+, the first byte again before the rest)."""
     out = ['%s_data' % label]
-    for k, (n, data) in enumerate(cols):
+    for k, (n, l, data) in enumerate(cols):
         run = 'td' if k % 2 == 0 else 'tu'
         out.append('                fcb     $%02X' % data[0])
-        out.append('                fdb     %s_slots+%d             ; %d bytes' % (run, 7 * (MAXN - n), n))
-        if n > 1:
-            out.append('                fcb     ' + ','.join('$%02X' % v for v in data[1:]))
+        out.append('                fdb     %s_slots+%d             ; %d bytes, lead-in %d'
+                   % (run, 7 * (MAXN - n) - ENTRY_BACK[l], n, l))
+        rest = data if l == 6 else data[1:]
+        if rest:
+            out.append('                fcb     ' + ','.join('$%02X' % v for v in rest))
     return out
+
+
+def column_size(n, l):
+    return 3 + n - 1 + (1 if l == 6 else 0)
 
 
 SPRITES = [  # (label, sprite, frames)
@@ -235,7 +224,7 @@ def main():
                                                      for k in range(c0, c1))))
         else:
             cols, starts = trim[label]
-            offset = sum(3 + n - 1 for n, _ in cols[:c0])
+            offset = sum(column_size(n, l) for n, l, _ in cols[:c0])
             sx = (x + c0 + 0.5) * g.UNIT                   # (the slide comes after each column)
             sy = -(y + starts[c0]) * g.UNIT
             code, mv = g.start_move(i, sx, sy)
@@ -248,7 +237,7 @@ def main():
                            '                jsr     trim_%s' % ('up' if c0 % 2 else 'down'),
                            'dc_%d_end' % i]
             g._beam[0] = ((x + c1 + 0.5) * g.UNIT, -(y + starts[c1]) * g.UNIT)
-            table.append((i, '%s, trimmed' % label, sum(16 * n + 41 for n, _ in cols[c0:c1])))
+            table.append((i, '%s, trimmed' % label, sum(16 * n + 41 + 2 * l for n, l, _ in cols[c0:c1])))
         moves += mv
     out.append('                rts')
     out += [''] + moves + ['']

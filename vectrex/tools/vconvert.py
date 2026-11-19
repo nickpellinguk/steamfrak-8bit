@@ -68,7 +68,13 @@ import beam     # noqa: E402
 
 UNIT = 41000 / 256                  # beam units a pixel (the screen 256 pixels tall)
 COL_PAD = 2
-FAST_PX = 2 * 127 / UNIT            # pixels a bit, in columns swept at 127 (the fastest)
+
+
+def trim_cost(grids, lit):
+    """A column's average cycles when trimmed (tools/trim_plan.py: the cheapest chain, lead-ins
+    0-6 pixels, one run), over the frames."""
+    import trim_plan
+    return sum(trim_plan.plan(gr, [0, 1, 2, 3, 6], [0], lit)[0] / len(gr[0]) for gr in grids) / len(grids)
 WINDOW = 206                        # pixels across the screen
 
 # --- the sprites ----------------------------------------------------------------------------------
@@ -192,7 +198,7 @@ def build_sprites(data, web):
                     '                fcb     %d,%d' % (spr['xo'], spr['yo']),
                     '%s_d' % label(name)] + asm_bytes(allb)
         info[name] = {'how': how, 'nb': nb, 'w': w, 'h': h, 'frames': frames, 'bytes': len(allb), 'data': allb,
-                      'nb_fast': math.ceil((math.ceil(h / FAST_PX) + 2 * COL_PAD) / 8),
+                      'trim_col': trim_cost(grids, lit) if how == 'cols' else None,
                       'grids': grids, 'lit': lit}
         out.append('')
     # the patterns: each row PERIOD bytes repeated to cover MAX_STRIP pixels (+ a period, for
@@ -501,13 +507,14 @@ LOGIC = 5000                                # the game logic (a guess until mile
 FRAME = 30000
 
 
-FAST = [False]       # columns swept at 127 (bits 1.59 pixels tall), all but Trogg's
+TRIM = [False]       # trimmed columns (test/m1t_test.asm), Trogg's too
 
 
-def cols_cost(info, ncols, fast=None):
+def cols_cost(info, ncols, trim=None):
     """ncols: the pixel columns in view."""
-    nb = info['nb_fast'] if (FAST[0] if fast is None else fast) else info['nb']
-    return ncols * (16 * nb + TURN) + (ncols // 2) * BRA_EXTRA
+    if TRIM[0] if trim is None else trim:
+        return round(ncols * info['trim_col'])
+    return ncols * (16 * info['nb'] + TURN) + (ncols // 2) * BRA_EXTRA
 
 
 def rows_cost(info):
@@ -550,7 +557,7 @@ def level_budget(name, lev, data, sinfo, things, strips):
             hi = v['amax'] if v['kind'] == convert.SL_SCRUBBLY else v['x']
             items.append(('moving', lo - xo, hi - xo + info['w'],
                           lambda a, b, i=info: cols_cost(i, min(i['w'], b - a)), False))
-    fixed = cols_cost(sinfo[TROGG], sinfo[TROGG]['w'], False) + MOVE_RUNTIME + \
+    fixed = cols_cost(sinfo[TROGG], sinfo[TROGG]['w']) + MOVE_RUNTIME + \
         FLYING * (cols_cost(sinfo['sBalloon_Beeb'], 12) + MOVE_RUNTIME) + HUD + LOGIC
     best = (0, 0, {})
     for x0 in range(0, max(1, lev['w'] - W + 1), 4):
@@ -597,9 +604,9 @@ def main():
         out += ['', 'level_%s                                 ; %d bytes' % (n[5:], len(b))] + asm_bytes(b)
         total += len(b)
         cost, at, cat = level_budget(n, lev, data, sinfo, things, strips)
-        FAST[0] = True
+        TRIM[0] = True
         hcost = level_budget(n, lev, data, sinfo, things, strips)[0]
-        FAST[0] = False
+        TRIM[0] = False
         budget.append((n, cost, at, cat, hcost))
     open(os.path.join(gen, 'levels.asm'), 'w').write('\n'.join(out) + '\n')
 
@@ -617,9 +624,9 @@ def main():
              'Each split into platforms, ladders (and chains and poles), things (gems, keys, meanies',
              'standing still, springs), moving things (meanies, platforms) and the fixed part (Trogg,',
              'balloons or daggers, HUD, logic), each with its moves.', '',
-             'The last column: with every column sprite but Trogg swept at 127, the fastest (each bit',
-             '1.59 pixels tall, the sprites resampled: test/m1s_test.asm).', '',
-             '  level   total   at x  ' + ''.join('%10s' % k for k in CATEGORIES) + '      fast']
+             'The last column: with trimmed columns (each swept only as far as it needs:',
+             'test/m1t_test.asm, tools/trim_plan.py).', '',
+             '  level   total   at x  ' + ''.join('%10s' % k for k in CATEGORIES) + '   trimmed']
     fit = hfit = 0
     for n, cost, at, cat, hcost in budget:
         fit += cost <= FRAME
@@ -627,7 +634,7 @@ def main():
         mark = lambda c: '%6d%s' % (c, ' ' if c <= FRAME else '*')
         lines.append('  %-6s %s  %4d  %s  %s' % (n[5:], mark(cost), at, ''.join('%10d' % cat[k] for k in CATEGORIES),
                                              mark(hcost)))
-    lines += ['', '(* over %d.) Levels that fit: %d of %d at full resolution, %d with fast columns (Trogg full).'
+    lines += ['', '(* over %d.) Levels that fit: %d of %d at full resolution, %d with trimmed columns.'
               % (FRAME, fit, len(names), hfit)]
     open(os.path.join(gen, 'budget.txt'), 'w').write('\n'.join(lines) + '\n')
     print('\n'.join(lines[:2] + lines[-1:]))

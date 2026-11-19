@@ -48,7 +48,7 @@ dc_2_end
                 jsr     Reset0Ref
                 lda     #$7F
                 sta     <VIA_t1_cnt_lo
-                ldd     #$6FF6
+                ldd     #$78F6
                 jsr     Moveto_d
                 ldx     #move_3
                 jsr     vlist_d
@@ -77,7 +77,7 @@ dc_4_end
                 jsr     Reset0Ref
                 lda     #$7F
                 sta     <VIA_t1_cnt_lo
-                ldd     #$7C49
+                ldd     #$7F49
                 jsr     Moveto_d
                 ldx     #move_5
                 jsr     vlist_d
@@ -106,7 +106,7 @@ dc_6_end
                 jsr     Reset0Ref
                 lda     #$7F
                 sta     <VIA_t1_cnt_lo
-                ldd     #$7E6A
+                ldd     #$7F6A
                 jsr     Moveto_d
                 ldx     #move_7
                 jsr     vlist_d
@@ -135,7 +135,7 @@ dc_8_end
                 jsr     Reset0Ref
                 lda     #$7F
                 sta     <VIA_t1_cnt_lo
-                ldd     #$359F
+                ldd     #$3A9F
                 jsr     Moveto_d
                 ldx     #move_9
                 jsr     vlist_d
@@ -164,7 +164,7 @@ dc_10_end
                 jsr     Reset0Ref
                 lda     #$7F
                 sta     <VIA_t1_cnt_lo
-                ldd     #$1EDA
+                ldd     #$27DA
                 jsr     Moveto_d
                 ldx     #move_11
                 jsr     vlist_d
@@ -193,7 +193,7 @@ dc_12_end
                 jsr     Reset0Ref
                 lda     #$7F
                 sta     <VIA_t1_cnt_lo
-                ldd     #$3013
+                ldd     #$3113
                 jsr     Moveto_d
                 ldx     #move_13
                 jsr     vlist_d
@@ -222,7 +222,7 @@ dc_14_end
                 jsr     Reset0Ref
                 lda     #$7F
                 sta     <VIA_t1_cnt_lo
-                ldd     #$FF93
+                ldd     #$0393
                 jsr     Moveto_d
                 ldx     #move_15
                 jsr     vlist_d
@@ -251,7 +251,7 @@ dc_16_end
                 jsr     Reset0Ref
                 lda     #$7F
                 sta     <VIA_t1_cnt_lo
-                ldd     #$FFC0
+                ldd     #$00C0
                 jsr     Moveto_d
                 ldx     #move_17
                 jsr     vlist_d
@@ -280,7 +280,7 @@ dc_18_end
                 jsr     Reset0Ref
                 lda     #$7F
                 sta     <VIA_t1_cnt_lo
-                ldd     #$F5E5
+                ldd     #$FBE5
                 jsr     Moveto_d
                 ldx     #move_19
                 jsr     vlist_d
@@ -324,12 +324,12 @@ dc_21_end
                 jsr     Reset0Ref
                 lda     #$7F
                 sta     <VIA_t1_cnt_lo
-                ldd     #$8281
+                ldd     #$8181
                 jsr     Moveto_d
                 ldx     #move_22
                 jsr     vlist_d
 dc_22_start
-                ldx     #scrubbly_t_data+59
+                ldx     #scrubbly_t_data+55
                 lda     #24
                 sta     <$06
                 ldu     #$0120
@@ -339,7 +339,7 @@ dc_22_end
                 jsr     Reset0Ref
                 lda     #$7F
                 sta     <VIA_t1_cnt_lo
-                ldd     #$9677
+                ldd     #$9F77
                 jsr     Moveto_d
                 ldx     #move_23
                 jsr     vlist_d
@@ -361,54 +361,53 @@ move_2
                 fcb     12,124,-1,$00
                 fcb     0,0
 move_3
-                fcb     1,77,-91,$00
+                fcb     1,55,-91,$00
                 fcb     0,0
 move_4
                 fcb     2,103,54,$00
                 fcb     0,0
 move_5
-                fcb     1,27,98,$00
+                fcb     1,127,98,$00
                 fcb     0,0
 move_6
                 fcb     2,103,11,$00
                 fcb     0,0
 move_7
-                fcb     1,94,71,$00
+                fcb     4,112,18,$00
                 fcb     0,0
 move_8
                 fcb     1,73,-94,$00
                 fcb     0,0
 move_9
-                fcb     1,76,-93,$00
+                fcb     1,81,-93,$00
                 fcb     0,0
 move_10
                 fcb     0,0
 move_11
-                fcb     1,114,-59,$00
+                fcb     1,92,-59,$00
                 fcb     0,0
 move_12
                 fcb     1,89,-25,$00
                 fcb     0,0
 move_13
-                fcb     1,70,69,$00
+                fcb     1,103,69,$00
                 fcb     0,0
 move_14
                 fcb     1,66,-94,$00
                 fcb     0,0
 move_15
-                fcb     1,-113,-11,$00
                 fcb     0,0
 move_16
                 fcb     1,66,-109,$00
                 fcb     0,0
 move_17
-                fcb     1,-113,-120,$00
+                fcb     1,80,-120,$00
                 fcb     0,0
 move_18
                 fcb     1,66,-4,$00
                 fcb     0,0
 move_19
-                fcb     1,-124,-14,$00
+                fcb     1,-86,-14,$00
                 fcb     0,0
 move_20
                 fcb     1,66,-25,$00
@@ -417,10 +416,10 @@ move_21
                 fcb     1,-58,91,$00
                 fcb     0,0
 move_22
-                fcb     3,-31,-96,$00
+                fcb     3,-42,-96,$00
                 fcb     0,0
 move_23
-                fcb     1,-71,22,$00
+                fcb     1,-93,22,$00
                 fcb     0,0
 
 trogg_data
@@ -621,561 +620,533 @@ chain_data
                 fcb     $1F,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$1C
 trogg_t_data
                 fcb     $FE
-                fdb     td_slots+77             ; 1 bytes
+                fdb     td_slots+77             ; 1 bytes, lead-in 0
                 fcb     $3A
-                fdb     tu_slots+70             ; 2 bytes
+                fdb     tu_slots+70             ; 2 bytes, lead-in 0
                 fcb     $60
+                fcb     $3E
+                fdb     td_slots+69             ; 2 bytes, lead-in 1
+                fcb     $5E
+                fcb     $1E
+                fdb     tu_slots+63             ; 3 bytes, lead-in 0
+                fcb     $81,$E0
+                fcb     $03
+                fdb     td_slots+63             ; 3 bytes, lead-in 0
+                fcb     $01,$5E
                 fcb     $1F
-                fdb     td_slots+63             ; 3 bytes
-                fcb     $2F,$00
-                fcb     $00
-                fdb     tu_slots+56             ; 4 bytes
-                fcb     $3D,$03,$C0
+                fdb     tu_slots+63             ; 3 bytes, lead-in 0
+                fcb     $F8,$18
+                fcb     $04
+                fdb     td_slots+56             ; 4 bytes, lead-in 0
+                fcb     $1C,$7C,$0E
+                fcb     $2E
+                fdb     tu_slots+55             ; 4 bytes, lead-in 1
+                fcb     $1E,$17,$1A
+                fcb     $78
+                fdb     td_slots+55             ; 4 bytes, lead-in 1
+                fcb     $44,$1E,$E2
+                fcb     $41
+                fdb     tu_slots+54             ; 4 bytes, lead-in 2
+                fcb     $D0,$22,$1E
+                fcb     $F0
+                fdb     td_slots+54             ; 4 bytes, lead-in 2
+                fcb     $C4,$09,$0A
+                fcb     $17
+                fdb     tu_slots+49             ; 5 bytes, lead-in 0
+                fcb     $44,$0C,$47,$E0
                 fcb     $01
-                fdb     td_slots+56             ; 4 bytes
-                fcb     $80,$AF,$00
-                fcb     $00
-                fdb     tu_slots+56             ; 4 bytes
-                fcb     $3F,$F0,$30
-                fcb     $02
-                fdb     td_slots+49             ; 5 bytes
-                fcb     $0E,$3E,$07,$00
-                fcb     $00
-                fdb     tu_slots+49             ; 5 bytes
-                fcb     $2E,$1E,$17,$1A
-                fcb     $3C
-                fdb     td_slots+49             ; 5 bytes
-                fcb     $22,$0F,$71,$00
-                fcb     $00
-                fdb     tu_slots+42             ; 6 bytes
-                fcb     $20,$E8,$11,$0F,$00
-                fcb     $00
-                fdb     td_slots+42             ; 6 bytes
-                fcb     $78,$62,$04,$85,$00
-                fcb     $00
-                fdb     tu_slots+42             ; 6 bytes
-                fcb     $2E,$88,$18,$8F,$C0
-                fcb     $00
-                fdb     td_slots+42             ; 6 bytes
-                fcb     $FB,$FC,$04,$3F,$00
-                fcb     $00
-                fdb     tu_slots+42             ; 6 bytes
-                fcb     $2C,$08,$03,$CF,$E0
-                fcb     $01
-                fdb     td_slots+42             ; 6 bytes
-                fcb     $F6,$00,$06,$01,$00
-                fcb     $00
-                fdb     tu_slots+42             ; 6 bytes
-                fcb     $20,$7C,$00,$F7,$F0
+                fdb     td_slots+49             ; 5 bytes, lead-in 0
+                fcb     $F7,$F8,$08,$7E
+                fcb     $16
+                fdb     tu_slots+49             ; 5 bytes, lead-in 0
+                fcb     $04,$01,$E7,$F0
                 fcb     $03
-                fdb     td_slots+42             ; 6 bytes
-                fcb     $8C,$70,$08,$FD,$00
-                fcb     $00
-                fdb     tu_slots+42             ; 6 bytes
-                fcb     $28,$06,$0E,$18,$30
-                fcb     $03
-                fdb     td_slots+42             ; 6 bytes
-                fcb     $0B,$86,$30,$09,$00
-                fcb     $00
-                fdb     tu_slots+42             ; 6 bytes
-                fcb     $3C,$01,$FF,$D5,$B0
-                fcb     $01
-                fdb     td_slots+70             ; 2 bytes
-                fcb     $1C
+                fdb     td_slots+49             ; 5 bytes, lead-in 0
+                fcb     $EC,$00,$0C,$02
+                fcb     $10
+                fdb     tu_slots+49             ; 5 bytes, lead-in 0
+                fcb     $3E,$00,$7B,$F8
+                fcb     $07
+                fdb     td_slots+49             ; 5 bytes, lead-in 0
+                fcb     $18,$E0,$11,$FA
+                fcb     $14
+                fdb     tu_slots+49             ; 5 bytes, lead-in 0
+                fcb     $03,$07,$0C,$18
                 fcb     $06
-                fdb     tu_slots+70             ; 2 bytes
-                fcb     $C0
-                fcb     $00
-                fdb     td_slots+70             ; 2 bytes
-                fcb     $50
-                fcb     $02
-                fdb     tu_slots+70             ; 2 bytes
-                fcb     $80
-                fcb     $00
-                fdb     td_slots+70             ; 2 bytes
-                fcb     $50
-                fcb     $03
-                fdb     tu_slots+70             ; 2 bytes
-                fcb     $80
+                fdb     td_slots+49             ; 5 bytes, lead-in 0
+                fcb     $17,$0C,$60,$12
+                fcb     $1E
+                fdb     tu_slots+49             ; 5 bytes, lead-in 0
+                fcb     $00,$FF,$EA,$D8
+                fcb     $8E
+                fdb     td_slots+72             ; 1 bytes, lead-in 6
+                fcb     $8E
+                fcb     $36
+                fdb     tu_slots+75             ; 1 bytes, lead-in 2
+                fcb     $0A
+                fdb     td_slots+77             ; 1 bytes, lead-in 0
+                fcb     $14
+                fdb     tu_slots+77             ; 1 bytes, lead-in 0
+                fcb     $0A
+                fdb     td_slots+77             ; 1 bytes, lead-in 0
+                fcb     $1C
+                fdb     tu_slots+77             ; 1 bytes, lead-in 0
 trogg_climb_t_data
-                fcb     $E0
-                fdb     td_slots+77             ; 1 bytes
-                fcb     $03
-                fdb     tu_slots+70             ; 2 bytes
-                fcb     $70
-                fcb     $0F
-                fdb     td_slots+63             ; 3 bytes
-                fcb     $1F,$F8
+                fcb     $0E
+                fdb     td_slots+77             ; 1 bytes, lead-in 0
+                fcb     $6E
+                fdb     tu_slots+76             ; 1 bytes, lead-in 1
+                fcb     $78
+                fdb     td_slots+63             ; 3 bytes, lead-in 0
+                fcb     $FF,$C0
                 fcb     $7C
-                fdb     tu_slots+63             ; 3 bytes
+                fdb     tu_slots+60             ; 3 bytes, lead-in 3
                 fcb     $2E,$26
                 fcb     $13
-                fdb     td_slots+56             ; 4 bytes
+                fdb     td_slots+56             ; 4 bytes, lead-in 0
                 fcb     $01,$04,$FE
                 fcb     $34
-                fdb     tu_slots+56             ; 4 bytes
+                fdb     tu_slots+56             ; 4 bytes, lead-in 0
                 fcb     $88,$30,$3E
-                fcb     $7F
-                fdb     td_slots+49             ; 5 bytes
-                fcb     $02,$04,$11,$00
-                fcb     $00
-                fdb     tu_slots+42             ; 6 bytes
-                fcb     $2F,$88,$10,$7F,$C0
-                fcb     $00
-                fdb     td_slots+42             ; 6 bytes
-                fcb     $FF,$C6,$07,$C7,$00
-                fcb     $00
-                fdb     tu_slots+42             ; 6 bytes
-                fcb     $00,$30,$0C,$FF,$C0
-                fcb     $00
-                fdb     td_slots+42             ; 6 bytes
-                fcb     $FF,$F8,$01,$FF,$C0
-                fcb     $00
-                fdb     tu_slots+42             ; 6 bytes
-                fcb     $92,$20,$01,$FF,$C0
-                fcb     $00
-                fdb     td_slots+42             ; 6 bytes
-                fcb     $FF,$80,$01,$01,$40
-                fcb     $00
-                fdb     tu_slots+42             ; 6 bytes
-                fcb     $A0,$20,$3E,$3F,$80
-                fcb     $00
-                fdb     td_slots+42             ; 6 bytes
-                fcb     $1F,$F1,$83,$1F,$C0
-                fcb     $00
-                fdb     tu_slots+49             ; 5 bytes
-                fcb     $03,$F8,$C8,$F8
+                fcb     $FE
+                fdb     td_slots+55             ; 4 bytes, lead-in 1
+                fcb     $04,$08,$22
+                fcb     $17
+                fdb     tu_slots+49             ; 5 bytes, lead-in 0
+                fcb     $C4,$08,$3F,$E0
+                fcb     $07
+                fdb     td_slots+47             ; 5 bytes, lead-in 2
+                fcb     $FE,$30,$3E,$38
+                fcb     $01
+                fdb     tu_slots+51             ; 4 bytes, lead-in 6
+                fcb     $01,$80,$67,$FE
+                fcb     $1F
+                fdb     td_slots+49             ; 5 bytes, lead-in 0
+                fcb     $FF,$00,$3F,$F8
                 fcb     $04
-                fdb     td_slots+63             ; 3 bytes
+                fdb     tu_slots+49             ; 5 bytes, lead-in 0
+                fcb     $91,$00,$0F,$FE
+                fcb     $1F
+                fdb     td_slots+49             ; 5 bytes, lead-in 0
+                fcb     $F0,$00,$20,$28
+                fcb     $05
+                fdb     tu_slots+49             ; 5 bytes, lead-in 0
+                fcb     $01,$01,$F1,$FC
+                fcb     $FF
+                fdb     td_slots+51             ; 4 bytes, lead-in 6
+                fcb     $FF,$8C,$18,$FE
+                fcb     $03
+                fdb     tu_slots+53             ; 4 bytes, lead-in 3
+                fcb     $F8,$C8,$F8
+                fcb     $04
+                fdb     td_slots+63             ; 3 bytes, lead-in 0
                 fcb     $8F,$FC
-                fcb     $00
-                fdb     tu_slots+63             ; 3 bytes
-                fcb     $06,$58
-                fcb     $03
-                fdb     td_slots+70             ; 2 bytes
-                fcb     $30
                 fcb     $01
-                fdb     tu_slots+70             ; 2 bytes
-                fcb     $E0
-scrubbly_t_data
-                fcb     $FC
-                fdb     td_slots+63             ; 3 bytes
-                fcb     $3F,$00
-                fcb     $00
-                fdb     tu_slots+56             ; 4 bytes
-                fcb     $4F,$C2,$F0
-                fcb     $47
-                fdb     td_slots+63             ; 3 bytes
-                fcb     $31,$C8
+                fdb     tu_slots+65             ; 2 bytes, lead-in 6
+                fcb     $01,$96
+                fcb     $66
+                fdb     td_slots+74             ; 1 bytes, lead-in 3
                 fcb     $1E
-                fdb     tu_slots+56             ; 4 bytes
-                fcb     $3F,$9C,$C0
+                fdb     tu_slots+76             ; 1 bytes, lead-in 1
+scrubbly_t_data
                 fcb     $01
-                fdb     td_slots+49             ; 5 bytes
-                fcb     $9C,$00,$07,$80
-                fcb     $00
-                fdb     tu_slots+49             ; 5 bytes
-                fcb     $C0,$00,$03,$70
-                fcb     $07
-                fdb     td_slots+49             ; 5 bytes
-                fcb     $E0,$00,$00,$78
-                fcb     $0D
-                fdb     tu_slots+42             ; 6 bytes
-                fcb     $80,$18,$00,$D8,$E0
-                fcb     $03
-                fdb     td_slots+42             ; 6 bytes
-                fcb     $4C,$87,$C3,$C0,$24
-                fcb     $09
-                fdb     tu_slots+42             ; 6 bytes
-                fcb     $07,$89,$8C,$0C,$58
+                fdb     td_slots+63             ; 3 bytes, lead-in 0
+                fcb     $F8,$7E
+                fcb     $9F
+                fdb     tu_slots+61             ; 3 bytes, lead-in 2
+                fcb     $85,$E0
+                fcb     $23
+                fdb     td_slots+63             ; 3 bytes, lead-in 0
+                fcb     $98,$E4
+                fcb     $F1
+                fdb     tu_slots+61             ; 3 bytes, lead-in 2
+                fcb     $FC,$E6
+                fcb     $33
+                fdb     td_slots+56             ; 4 bytes, lead-in 0
+                fcb     $80,$00,$F0
+                fcb     $30
+                fdb     tu_slots+53             ; 4 bytes, lead-in 3
+                fcb     $00,$00,$DC
+                fcb     $1F
+                fdb     td_slots+49             ; 5 bytes, lead-in 0
+                fcb     $80,$00,$01,$E0
+                fcb     $06
+                fdb     tu_slots+41             ; 6 bytes, lead-in 1
+                fcb     $C0,$0C,$00,$6C,$70
+                fcb     $06
+                fdb     td_slots+42             ; 6 bytes, lead-in 0
+                fcb     $99,$0F,$87,$80,$48
                 fcb     $04
-                fdb     td_slots+42             ; 6 bytes
-                fcb     $98,$18,$24,$0E,$34
-                fcb     $0B
-                fdb     tu_slots+42             ; 6 bytes
-                fcb     $07,$89,$E2,$02,$28
-                fcb     $05
-                fdb     td_slots+42             ; 6 bytes
-                fcb     $B0,$13,$E3,$C0,$1C
-                fcb     $06
-                fdb     tu_slots+42             ; 6 bytes
-                fcb     $00,$19,$F2,$01,$CC
-                fcb     $0E
-                fdb     td_slots+42             ; 6 bytes
-                fcb     $E0,$19,$C2,$00,$10
-                fcb     $02
-                fdb     tu_slots+42             ; 6 bytes
-                fcb     $00,$08,$7C,$00,$14
-                fcb     $08
-                fdb     td_slots+42             ; 6 bytes
-                fcb     $00,$00,$02,$00,$10
-                fcb     $02
-                fdb     tu_slots+42             ; 6 bytes
-                fcb     $00,$08,$7C,$00,$1C
-                fcb     $06
-                fdb     td_slots+42             ; 6 bytes
-                fcb     $60,$19,$C2,$00,$10
-                fcb     $06
-                fdb     tu_slots+42             ; 6 bytes
-                fcb     $00,$19,$F2,$01,$CC
-                fcb     $0D
-                fdb     td_slots+42             ; 6 bytes
-                fcb     $B0,$13,$E3,$C0,$1C
-                fcb     $0B
-                fdb     tu_slots+42             ; 6 bytes
-                fcb     $07,$89,$E2,$02,$24
-                fcb     $0B
-                fdb     td_slots+42             ; 6 bytes
-                fcb     $18,$18,$24,$0E,$34
+                fdb     tu_slots+42             ; 6 bytes, lead-in 0
+                fcb     $83,$C4,$C6,$06,$2C
                 fcb     $09
-                fdb     tu_slots+42             ; 6 bytes
-                fcb     $07,$89,$8C,$0C,$64
+                fdb     td_slots+42             ; 6 bytes, lead-in 0
+                fcb     $30,$30,$48,$1C,$68
+                fcb     $05
+                fdb     tu_slots+42             ; 6 bytes, lead-in 0
+                fcb     $83,$C4,$F1,$01,$14
+                fcb     $0B
+                fdb     td_slots+42             ; 6 bytes, lead-in 0
+                fcb     $60,$27,$C7,$80,$38
+                fcb     $03
+                fdb     tu_slots+42             ; 6 bytes, lead-in 0
+                fcb     $00,$0C,$F9,$00,$E6
+                fcb     $1D
+                fdb     td_slots+42             ; 6 bytes, lead-in 0
+                fcb     $C0,$33,$84,$00,$20
+                fcb     $01
+                fdb     tu_slots+42             ; 6 bytes, lead-in 0
+                fcb     $00,$04,$3E,$00,$0A
+                fcb     $10
+                fdb     td_slots+42             ; 6 bytes, lead-in 0
+                fcb     $00,$00,$04,$00,$20
+                fcb     $01
+                fdb     tu_slots+42             ; 6 bytes, lead-in 0
+                fcb     $00,$04,$3E,$00,$0E
                 fcb     $0C
-                fdb     td_slots+42             ; 6 bytes
-                fcb     $8C,$87,$C3,$C0,$24
+                fdb     td_slots+42             ; 6 bytes, lead-in 0
+                fcb     $C0,$33,$84,$00,$20
+                fcb     $03
+                fdb     tu_slots+42             ; 6 bytes, lead-in 0
+                fcb     $00,$0C,$F9,$00,$E6
+                fcb     $1B
+                fdb     td_slots+42             ; 6 bytes, lead-in 0
+                fcb     $60,$27,$C7,$80,$38
+                fcb     $05
+                fdb     tu_slots+42             ; 6 bytes, lead-in 0
+                fcb     $83,$C4,$F1,$01,$12
+                fcb     $16
+                fdb     td_slots+42             ; 6 bytes, lead-in 0
+                fcb     $30,$30,$48,$1C,$68
+                fcb     $04
+                fdb     tu_slots+42             ; 6 bytes, lead-in 0
+                fcb     $83,$C4,$C6,$06,$32
+                fcb     $19
+                fdb     td_slots+42             ; 6 bytes, lead-in 0
+                fcb     $19,$0F,$87,$80,$48
                 fcb     $0D
-                fdb     tu_slots+42             ; 6 bytes
+                fdb     tu_slots+41             ; 6 bytes, lead-in 1
                 fcb     $00,$18,$00,$D8,$78
-                fcb     $00
-                fdb     td_slots+42             ; 6 bytes
-                fcb     $07,$E0,$00,$00,$78
-                fcb     $00
-                fdb     tu_slots+49             ; 5 bytes
-                fcb     $C0,$00,$03,$70
                 fcb     $01
-                fdb     td_slots+49             ; 5 bytes
-                fcb     $9C,$00,$07,$80
-                fcb     $00
-                fdb     tu_slots+49             ; 5 bytes
-                fcb     $1E,$3F,$9C,$C0
-                fcb     $00
-                fdb     td_slots+56             ; 4 bytes
-                fcb     $47,$31,$C8
+                fdb     td_slots+44             ; 5 bytes, lead-in 6
+                fcb     $01,$F8,$00,$00,$1E
+                fcb     $18
+                fdb     tu_slots+53             ; 4 bytes, lead-in 3
+                fcb     $00,$00,$6E
+                fcb     $0C
+                fdb     td_slots+56             ; 4 bytes, lead-in 0
+                fcb     $E0,$00,$3C
+                fcb     $F1
+                fdb     tu_slots+58             ; 3 bytes, lead-in 6
+                fcb     $F1,$FC,$E6
+                fcb     $47
+                fdb     td_slots+60             ; 3 bytes, lead-in 3
+                fcb     $31,$C8
                 fcb     $4F
-                fdb     tu_slots+63             ; 3 bytes
+                fdb     tu_slots+63             ; 3 bytes, lead-in 0
                 fcb     $C2,$F0
-                fcb     $00
-                fdb     td_slots+56             ; 4 bytes
-                fcb     $FC,$3F,$00
+                fcb     $01
+                fdb     td_slots+62             ; 3 bytes, lead-in 1
+                fcb     $F8,$7E
 poglet_t_data
-                fcb     $F7
-                fdb     td_slots+70             ; 2 bytes
-                fcb     $00
-                fcb     $00
-                fdb     tu_slots+56             ; 4 bytes
-                fcb     $2E,$60,$00
-                fcb     $3F
-                fdb     td_slots+56             ; 4 bytes
-                fcb     $81,$05,$00
-                fcb     $00
-                fdb     tu_slots+49             ; 5 bytes
-                fcb     $27,$A3,$C1,$C0
-                fcb     $03
-                fdb     td_slots+49             ; 5 bytes
-                fcb     $80,$1B,$5F,$00
-                fcb     $00
-                fdb     tu_slots+49             ; 5 bytes
-                fcb     $1C,$94,$7F,$FC
-                fcb     $3A
-                fdb     td_slots+49             ; 5 bytes
-                fcb     $18,$EF,$DB,$00
-                fcb     $00
-                fdb     tu_slots+42             ; 6 bytes
-                fcb     $23,$87,$04,$11,$80
-                fcb     $00
-                fdb     td_slots+42             ; 6 bytes
-                fcb     $CF,$1F,$90,$31,$00
-                fcb     $00
-                fdb     tu_slots+42             ; 6 bytes
-                fcb     $26,$02,$81,$C6,$C0
                 fcb     $01
-                fdb     td_slots+42             ; 6 bytes
-                fcb     $B0,$BB,$B0,$1F,$00
-                fcb     $00
-                fdb     tu_slots+42             ; 6 bytes
-                fcb     $2A,$00,$5E,$41,$20
-                fcb     $01
-                fdb     td_slots+42             ; 6 bytes
-                fcb     $20,$9E,$80,$15,$00
-                fcb     $00
-                fdb     tu_slots+42             ; 6 bytes
-                fcb     $2E,$03,$77,$41,$20
-                fcb     $01
-                fdb     td_slots+42             ; 6 bytes
-                fcb     $21,$E0,$50,$19,$00
-                fcb     $00
-                fdb     tu_slots+42             ; 6 bytes
-                fcb     $37,$F2,$7E,$31,$E0
-                fcb     $00
-                fdb     td_slots+49             ; 5 bytes
-                fcb     $02,$08,$1E,$02
-                fcb     $18
-                fdb     tu_slots+56             ; 4 bytes
-                fcb     $04,$02,$10
-                fcb     $03
-                fdb     td_slots+49             ; 5 bytes
-                fcb     $F0,$07,$FF,$00
-                fcb     $00
-                fdb     tu_slots+63             ; 3 bytes
-                fcb     $27,$A0
-                fcb     $01
-                fdb     td_slots+63             ; 3 bytes
-                fcb     $05,$00
-                fcb     $00
-                fdb     tu_slots+63             ; 3 bytes
-                fcb     $2E,$60
-                fcb     $00
-                fdb     td_slots+63             ; 3 bytes
-                fcb     $F7,$00
-hooter_t_data
-                fcb     $C0
-                fdb     td_slots+63             ; 3 bytes
-                fcb     $FC,$0C
-                fcb     $0C
-                fdb     tu_slots+56             ; 4 bytes
-                fcb     $08,$70,$E0
-                fcb     $01
-                fdb     td_slots+56             ; 4 bytes
-                fcb     $06,$0F,$94
-                fcb     $0A
-                fdb     tu_slots+56             ; 4 bytes
-                fcb     $C3,$8E,$60
-                fcb     $00
-                fdb     td_slots+56             ; 4 bytes
-                fcb     $79,$C0,$6C
-                fcb     $09
-                fdb     tu_slots+56             ; 4 bytes
-                fcb     $00,$0C,$C0
-                fcb     $00
-                fdb     td_slots+56             ; 4 bytes
-                fcb     $B4,$78,$24
-                fcb     $0B
-                fdb     tu_slots+56             ; 4 bytes
-                fcb     $0D,$6B,$40
-                fcb     $00
-                fdb     td_slots+56             ; 4 bytes
-                fcb     $FE,$44,$2C
-                fcb     $01
-                fdb     tu_slots+56             ; 4 bytes
-                fcb     $08,$84,$80
-                fcb     $00
-                fdb     td_slots+56             ; 4 bytes
-                fcb     $FE,$44,$2C
-                fcb     $0B
-                fdb     tu_slots+56             ; 4 bytes
-                fcb     $0D,$6B,$40
-                fcb     $00
-                fdb     td_slots+56             ; 4 bytes
-                fcb     $B4,$78,$24
-                fcb     $09
-                fdb     tu_slots+56             ; 4 bytes
-                fcb     $00,$0C,$C0
-                fcb     $00
-                fdb     td_slots+56             ; 4 bytes
-                fcb     $79,$C0,$6C
-                fcb     $0A
-                fdb     tu_slots+56             ; 4 bytes
-                fcb     $C3,$8E,$60
-                fcb     $01
-                fdb     td_slots+56             ; 4 bytes
-                fcb     $07,$0F,$94
-                fcb     $0C
-                fdb     tu_slots+56             ; 4 bytes
-                fcb     $08,$E0,$E0
-                fcb     $00
-                fdb     td_slots+56             ; 4 bytes
-                fcb     $C0,$7C,$0C
-gem_t_data
-                fcb     $C0
-                fdb     td_slots+77             ; 1 bytes
-                fcb     $01
-                fdb     tu_slots+70             ; 2 bytes
-                fcb     $E0
-                fcb     $03
-                fdb     td_slots+70             ; 2 bytes
-                fcb     $30
-                fcb     $06
-                fdb     tu_slots+70             ; 2 bytes
-                fcb     $50
-                fcb     $02
-                fdb     td_slots+70             ; 2 bytes
-                fcb     $8C
-                fcb     $18
-                fdb     tu_slots+70             ; 2 bytes
-                fcb     $50
-                fcb     $02
-                fdb     td_slots+70             ; 2 bytes
-                fcb     $8C
-                fcb     $06
-                fdb     tu_slots+70             ; 2 bytes
-                fcb     $50
-                fcb     $03
-                fdb     td_slots+70             ; 2 bytes
-                fcb     $30
-                fcb     $01
-                fdb     tu_slots+70             ; 2 bytes
-                fcb     $E0
-                fcb     $00
-                fdb     td_slots+70             ; 2 bytes
-                fcb     $C0
-balloon_t_data
-                fcb     $F8
-                fdb     td_slots+77             ; 1 bytes
-                fcb     $08
-                fdb     tu_slots+70             ; 2 bytes
-                fcb     $20
-                fcb     $01
-                fdb     td_slots+70             ; 2 bytes
-                fcb     $04
-                fcb     $10
-                fdb     tu_slots+70             ; 2 bytes
-                fcb     $10
-                fcb     $02
-                fdb     td_slots+70             ; 2 bytes
-                fcb     $02
-                fcb     $30
-                fdb     tu_slots+70             ; 2 bytes
-                fcb     $10
-                fcb     $02
-                fdb     td_slots+63             ; 3 bytes
-                fcb     $03,$00
-                fcb     $00
-                fdb     tu_slots+63             ; 3 bytes
-                fcb     $10,$10
-                fcb     $02
-                fdb     td_slots+70             ; 2 bytes
-                fcb     $02
-                fcb     $08
-                fdb     tu_slots+70             ; 2 bytes
-                fcb     $20
-                fcb     $01
-                fdb     td_slots+70             ; 2 bytes
-                fcb     $04
+                fdb     td_slots+70             ; 2 bytes, lead-in 0
+                fcb     $EE
+                fcb     $17
+                fdb     tu_slots+63             ; 3 bytes, lead-in 0
+                fcb     $30,$00
+                fcb     $7F
+                fdb     td_slots+63             ; 3 bytes, lead-in 0
+                fcb     $02,$0A
+                fcb     $13
+                fdb     tu_slots+56             ; 4 bytes, lead-in 0
+                fcb     $D1,$E0,$E0
                 fcb     $07
-                fdb     tu_slots+70             ; 2 bytes
-                fcb     $C0
-dagger_t_data
-                fcb     $80
-                fdb     td_slots+77             ; 1 bytes
-                fcb     $00
-                fdb     tu_slots+70             ; 2 bytes
-                fcb     $30
-                fcb     $05
-                fdb     td_slots+70             ; 2 bytes
-                fcb     $00
-                fcb     $00
-                fdb     tu_slots+63             ; 3 bytes
-                fcb     $16,$20
-                fcb     $01
-                fdb     td_slots+70             ; 2 bytes
-                fcb     $A4
+                fdb     td_slots+56             ; 4 bytes, lead-in 0
+                fcb     $00,$36,$BE
+                fcb     $0E
+                fdb     tu_slots+56             ; 4 bytes, lead-in 0
+                fcb     $4A,$3F,$FE
+                fcb     $74
+                fdb     td_slots+56             ; 4 bytes, lead-in 0
+                fcb     $31,$DF,$B6
+                fcb     $8E
+                fdb     tu_slots+53             ; 4 bytes, lead-in 3
+                fcb     $1C,$10,$46
+                fcb     $33
+                fdb     td_slots+49             ; 5 bytes, lead-in 0
+                fcb     $C7,$E4,$0C,$40
+                fcb     $02
+                fdb     tu_slots+47             ; 5 bytes, lead-in 2
+                fcb     $60,$28,$1C,$6C
+                fcb     $1B
+                fdb     td_slots+49             ; 5 bytes, lead-in 0
+                fcb     $0B,$BB,$01,$F0
+                fcb     $02
+                fdb     tu_slots+49             ; 5 bytes, lead-in 0
+                fcb     $A0,$05,$E4,$12
+                fcb     $12
+                fdb     td_slots+49             ; 5 bytes, lead-in 0
+                fcb     $09,$E8,$01,$50
+                fcb     $02
+                fdb     tu_slots+49             ; 5 bytes, lead-in 0
+                fcb     $E0,$37,$74,$12
+                fcb     $12
+                fdb     td_slots+49             ; 5 bytes, lead-in 0
+                fcb     $1E,$05,$01,$90
+                fcb     $03
+                fdb     tu_slots+49             ; 5 bytes, lead-in 0
+                fcb     $7F,$27,$E3,$1E
                 fcb     $08
-                fdb     tu_slots+70             ; 2 bytes
-                fcb     $C0
-                fcb     $00
-                fdb     td_slots+70             ; 2 bytes
-                fcb     $68
+                fdb     td_slots+51             ; 4 bytes, lead-in 6
+                fcb     $08,$20,$78,$08
+                fcb     $06
+                fdb     tu_slots+56             ; 4 bytes, lead-in 0
+                fcb     $01,$00,$84
+                fcb     $0F
+                fdb     td_slots+56             ; 4 bytes, lead-in 0
+                fcb     $C0,$1F,$FC
+                fcb     $09
+                fdb     tu_slots+70             ; 2 bytes, lead-in 0
+                fcb     $E8
+                fcb     $04
+                fdb     td_slots+70             ; 2 bytes, lead-in 0
+                fcb     $14
+                fcb     $0B
+                fdb     tu_slots+70             ; 2 bytes, lead-in 0
+                fcb     $98
                 fcb     $03
-                fdb     tu_slots+70             ; 2 bytes
+                fdb     td_slots+70             ; 2 bytes, lead-in 0
+                fcb     $DC
+hooter_t_data
+                fcb     $60
+                fdb     td_slots+63             ; 3 bytes, lead-in 0
+                fcb     $7E,$06
                 fcb     $C0
-                fcb     $03
-                fdb     td_slots+70             ; 2 bytes
-                fcb     $D8
+                fdb     tu_slots+60             ; 3 bytes, lead-in 3
+                fcb     $87,$0E
+                fcb     $83
+                fdb     td_slots+60             ; 3 bytes, lead-in 3
+                fcb     $07,$CA
+                fcb     $AC
+                fdb     tu_slots+60             ; 3 bytes, lead-in 3
+                fcb     $38,$E6
+                fcb     $3C
+                fdb     td_slots+60             ; 3 bytes, lead-in 3
+                fcb     $E0,$36
+                fcb     $48
+                fdb     tu_slots+61             ; 3 bytes, lead-in 2
+                fcb     $00,$66
+                fcb     $5A
+                fdb     td_slots+61             ; 3 bytes, lead-in 2
+                fcb     $3C,$12
+                fcb     $58
+                fdb     tu_slots+61             ; 3 bytes, lead-in 2
+                fcb     $6B,$5A
+                fcb     $7F
+                fdb     td_slots+61             ; 3 bytes, lead-in 2
+                fcb     $22,$16
+                fcb     $04
+                fdb     tu_slots+62             ; 3 bytes, lead-in 1
+                fcb     $22,$12
+                fcb     $7F
+                fdb     td_slots+62             ; 3 bytes, lead-in 1
+                fcb     $22,$16
+                fcb     $58
+                fdb     tu_slots+61             ; 3 bytes, lead-in 2
+                fcb     $6B,$5A
+                fcb     $5A
+                fdb     td_slots+61             ; 3 bytes, lead-in 2
+                fcb     $3C,$12
+                fcb     $48
+                fdb     tu_slots+61             ; 3 bytes, lead-in 2
+                fcb     $00,$66
+                fcb     $3C
+                fdb     td_slots+61             ; 3 bytes, lead-in 2
+                fcb     $E0,$36
+                fcb     $AC
+                fdb     tu_slots+60             ; 3 bytes, lead-in 3
+                fcb     $38,$E6
+                fcb     $83
+                fdb     td_slots+60             ; 3 bytes, lead-in 3
+                fcb     $87,$CA
+                fcb     $C0
+                fdb     tu_slots+60             ; 3 bytes, lead-in 3
+                fcb     $8E,$0E
+                fcb     $60
+                fdb     td_slots+60             ; 3 bytes, lead-in 3
+                fcb     $3E,$06
+gem_t_data
                 fcb     $0C
-                fdb     tu_slots+70             ; 2 bytes
+                fdb     td_slots+77             ; 1 bytes, lead-in 0
+                fcb     $1E
+                fdb     tu_slots+77             ; 1 bytes, lead-in 0
+                fcb     $66
+                fdb     td_slots+76             ; 1 bytes, lead-in 1
+                fcb     $CA
+                fdb     tu_slots+75             ; 1 bytes, lead-in 2
+                fcb     $14
+                fdb     td_slots+70             ; 2 bytes, lead-in 0
+                fcb     $60
+                fcb     $03
+                fdb     tu_slots+70             ; 2 bytes, lead-in 0
+                fcb     $0A
+                fcb     $14
+                fdb     td_slots+70             ; 2 bytes, lead-in 0
                 fcb     $60
                 fcb     $00
-                fdb     td_slots+70             ; 2 bytes
-                fcb     $80
+                fdb     tu_slots+70             ; 2 bytes, lead-in 0
+                fcb     $CA
+                fcb     $66
+                fdb     td_slots+75             ; 1 bytes, lead-in 2
+                fcb     $1E
+                fdb     tu_slots+76             ; 1 bytes, lead-in 1
+                fcb     $0C
+                fdb     td_slots+77             ; 1 bytes, lead-in 0
+balloon_t_data
+                fcb     $3E
+                fdb     td_slots+77             ; 1 bytes, lead-in 0
+                fcb     $82
+                fdb     tu_slots+75             ; 1 bytes, lead-in 2
+                fcb     $82
+                fdb     td_slots+74             ; 1 bytes, lead-in 3
+                fcb     $20
+                fdb     tu_slots+70             ; 2 bytes, lead-in 0
+                fcb     $20
+                fcb     $08
+                fdb     td_slots+67             ; 2 bytes, lead-in 3
+                fcb     $08
+                fcb     $0C
+                fdb     tu_slots+70             ; 2 bytes, lead-in 0
+                fcb     $04
+                fcb     $08
+                fdb     td_slots+70             ; 2 bytes, lead-in 0
+                fcb     $0C
+                fcb     $04
+                fdb     tu_slots+70             ; 2 bytes, lead-in 0
+                fcb     $04
+                fcb     $08
+                fdb     td_slots+70             ; 2 bytes, lead-in 0
+                fcb     $08
+                fcb     $82
+                fdb     tu_slots+72             ; 1 bytes, lead-in 6
+                fcb     $82
+                fcb     $82
+                fdb     td_slots+74             ; 1 bytes, lead-in 3
+                fcb     $3E
+                fdb     tu_slots+75             ; 1 bytes, lead-in 2
+dagger_t_data
+                fcb     $04
+                fdb     td_slots+77             ; 1 bytes, lead-in 0
+                fcb     $06
+                fdb     tu_slots+77             ; 1 bytes, lead-in 0
+                fcb     $50
+                fdb     td_slots+76             ; 1 bytes, lead-in 1
+                fcb     $01
+                fdb     tu_slots+70             ; 2 bytes, lead-in 0
+                fcb     $62
+                fcb     $D2
+                fdb     td_slots+74             ; 1 bytes, lead-in 3
+                fcb     $46
+                fdb     tu_slots+75             ; 1 bytes, lead-in 2
+                fcb     $1A
+                fdb     td_slots+76             ; 1 bytes, lead-in 1
+                fcb     $1E
+                fdb     tu_slots+76             ; 1 bytes, lead-in 1
+                fcb     $F6
+                fdb     td_slots+76             ; 1 bytes, lead-in 1
+                fcb     $C6
+                fdb     tu_slots+75             ; 1 bytes, lead-in 2
+                fcb     $08
+                fdb     td_slots+77             ; 1 bytes, lead-in 0
 bulb_t_data
                 fcb     $F8
-                fdb     td_slots+77             ; 1 bytes
+                fdb     td_slots+77             ; 1 bytes, lead-in 0
                 fcb     $0C
-                fdb     tu_slots+70             ; 2 bytes
+                fdb     tu_slots+70             ; 2 bytes, lead-in 0
                 fcb     $60
                 fcb     $47
-                fdb     td_slots+70             ; 2 bytes
+                fdb     td_slots+70             ; 2 bytes, lead-in 0
                 fcb     $06
-                fcb     $10
-                fdb     tu_slots+63             ; 3 bytes
-                fcb     $0F,$C0
+                fcb     $80
+                fdb     tu_slots+67             ; 2 bytes, lead-in 3
+                fcb     $7E
+                fcb     $F0
+                fdb     td_slots+67             ; 2 bytes, lead-in 3
+                fcb     $02
+                fcb     $80
+                fdb     tu_slots+67             ; 2 bytes, lead-in 3
+                fcb     $1E
+                fcb     $FC
+                fdb     td_slots+67             ; 2 bytes, lead-in 3
+                fcb     $02
+                fcb     $60
+                fdb     tu_slots+68             ; 2 bytes, lead-in 2
+                fcb     $E2
                 fcb     $00
-                fdb     td_slots+63             ; 3 bytes
-                fcb     $F0,$02
-                fcb     $10
-                fdb     tu_slots+63             ; 3 bytes
-                fcb     $03,$C0
-                fcb     $00
-                fdb     td_slots+63             ; 3 bytes
-                fcb     $FC,$02
-                fcb     $18
-                fdb     tu_slots+63             ; 3 bytes
-                fcb     $38,$80
-                fcb     $00
-                fdb     td_slots+63             ; 3 bytes
-                fcb     $01,$8C
-                fcb     $07
-                fdb     tu_slots+70             ; 2 bytes
-                fcb     $C0
+                fdb     td_slots+69             ; 2 bytes, lead-in 1
+                fcb     $C6
+                fcb     $3E
+                fdb     tu_slots+75             ; 1 bytes, lead-in 2
 ladder_t_data
-                fcb     $E1
-                fdb     td_slots+21             ; 9 bytes
-                fcb     $C3,$87,$0E,$1C,$38,$70,$E1,$C0
-                fcb     $00
-                fdb     tu_slots+14             ; 10 bytes
-                fcb     $A1,$42,$85,$0A,$14,$28,$50,$A1,$40
-                fcb     $00
-                fdb     td_slots+14             ; 10 bytes
-                fcb     $A1,$42,$85,$0A,$14,$28,$50,$A1,$40
-                fcb     $00
-                fdb     tu_slots+14             ; 10 bytes
-                fcb     $A1,$42,$85,$0A,$14,$28,$50,$A1,$40
-                fcb     $03
-                fdb     td_slots+14             ; 10 bytes
-                fcb     $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$F0
-                fcb     $00
-                fdb     tu_slots+14             ; 10 bytes
-                fcb     $40,$81,$02,$04,$08,$10,$20,$40,$80
-                fcb     $00
-                fdb     td_slots+14             ; 10 bytes
-                fcb     $40,$81,$02,$04,$08,$10,$20,$40,$80
-                fcb     $03
-                fdb     tu_slots+14             ; 10 bytes
-                fcb     $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$F0
-                fcb     $00
-                fdb     td_slots+14             ; 10 bytes
-                fcb     $A1,$42,$85,$0A,$14,$28,$50,$A1,$40
-                fcb     $00
-                fdb     tu_slots+14             ; 10 bytes
-                fcb     $A1,$42,$85,$0A,$14,$28,$50,$A1,$40
-                fcb     $00
-                fdb     td_slots+14             ; 10 bytes
-                fcb     $A1,$42,$85,$0A,$14,$28,$50,$A1,$40
-                fcb     $00
-                fdb     tu_slots+14             ; 10 bytes
-                fcb     $E1,$C3,$87,$0E,$1C,$38,$70,$E1,$C0
+                fcb     $1C
+                fdb     td_slots+21             ; 9 bytes, lead-in 0
+                fcb     $38,$70,$E1,$C3,$87,$0E,$1C,$38
+                fcb     $05
+                fdb     tu_slots+21             ; 9 bytes, lead-in 0
+                fcb     $0A,$14,$28,$50,$A1,$42,$85,$0A
+                fcb     $14
+                fdb     td_slots+21             ; 9 bytes, lead-in 0
+                fcb     $28,$50,$A1,$42,$85,$0A,$14,$28
+                fcb     $05
+                fdb     tu_slots+21             ; 9 bytes, lead-in 0
+                fcb     $0A,$14,$28,$50,$A1,$42,$85,$0A
+                fcb     $7F
+                fdb     td_slots+21             ; 9 bytes, lead-in 0
+                fcb     $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FE
+                fcb     $08
+                fdb     tu_slots+19             ; 9 bytes, lead-in 2
+                fcb     $10,$20,$40,$81,$02,$04,$08,$10
+                fcb     $02
+                fdb     td_slots+21             ; 9 bytes, lead-in 0
+                fcb     $04,$08,$10,$20,$40,$81,$02,$04
+                fcb     $7F
+                fdb     tu_slots+21             ; 9 bytes, lead-in 0
+                fcb     $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FE
+                fcb     $05
+                fdb     td_slots+21             ; 9 bytes, lead-in 0
+                fcb     $0A,$14,$28,$50,$A1,$42,$85,$0A
+                fcb     $14
+                fdb     tu_slots+21             ; 9 bytes, lead-in 0
+                fcb     $28,$50,$A1,$42,$85,$0A,$14,$28
+                fcb     $05
+                fdb     td_slots+21             ; 9 bytes, lead-in 0
+                fcb     $0A,$14,$28,$50,$A1,$42,$85,$0A
+                fcb     $1C
+                fdb     tu_slots+21             ; 9 bytes, lead-in 0
+                fcb     $38,$70,$E1,$C3,$87,$0E,$1C,$38
 chain_t_data
-                fcb     $E1
-                fdb     td_slots+14             ; 10 bytes
-                fcb     $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$E0
-                fcb     $03
-                fdb     tu_slots+7             ; 11 bytes
-                fcb     $00,$CC,$03,$30,$0C,$C0,$33,$00,$A3,$40
-                fcb     $00
-                fdb     td_slots+7             ; 11 bytes
-                fcb     $9E,$9F,$9E,$7E,$79,$F9,$E7,$E7,$9F,$90
-                fcb     $02
-                fdb     tu_slots+7             ; 11 bytes
-                fcb     $C5,$4A,$95,$2A,$54,$A9,$52,$A5,$72,$40
-                fcb     $00
-                fdb     td_slots+7             ; 11 bytes
-                fcb     $91,$C9,$52,$A5,$4A,$95,$2A,$54,$A8,$D0
-                fcb     $02
-                fdb     tu_slots+7             ; 11 bytes
-                fcb     $7C,$FC,$F3,$F3,$CF,$CF,$3F,$3E,$0E,$40
-                fcb     $00
-                fdb     td_slots+7             ; 11 bytes
-                fcb     $B6,$20,$80,$42,$01,$08,$04,$20,$10,$30
-                fcb     $01
-                fdb     tu_slots+7             ; 11 bytes
-                fcb     $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$F1,$C0
+                fcb     $1C
+                fdb     td_slots+14             ; 10 bytes, lead-in 0
+                fcb     $3F,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FC
+                fcb     $18
+                fdb     tu_slots+14             ; 10 bytes, lead-in 0
+                fcb     $06,$60,$19,$80,$66,$01,$98,$05,$1A
+                fcb     $13
+                fdb     td_slots+14             ; 10 bytes, lead-in 0
+                fcb     $D3,$F3,$CF,$CF,$3F,$3C,$FC,$F3,$F2
+                fcb     $16
+                fdb     tu_slots+14             ; 10 bytes, lead-in 0
+                fcb     $2A,$54,$A9,$52,$A5,$4A,$95,$2B,$92
+                fcb     $12
+                fdb     td_slots+14             ; 10 bytes, lead-in 0
+                fcb     $39,$2A,$54,$A9,$52,$A5,$4A,$95,$1A
+                fcb     $13
+                fdb     tu_slots+14             ; 10 bytes, lead-in 0
+                fcb     $E7,$E7,$9F,$9E,$7E,$79,$F9,$F0,$72
+                fcb     $16
+                fdb     td_slots+14             ; 10 bytes, lead-in 0
+                fcb     $C4,$10,$08,$40,$21,$00,$84,$02,$06
+                fcb     $0F
+                fdb     tu_slots+14             ; 10 bytes, lead-in 0
+                fcb     $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$8E

@@ -626,6 +626,11 @@ trim_up
                 sty     <VIA_port_b             ;  6 mux on
                 jmp     td_next                 ;  3 (the down run's turn: an up column next)
 ; the down run: slot k for a column of 12 - k bytes
+; (a prefix, for entering slot 0 with a lead-in)
+                lda     ,x+                     ;  6 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
 td_slots
                 sta     <VIA_shift_reg          ;  4 
                 lda     ,x+                     ;  6 
@@ -698,6 +703,11 @@ td_next
 td_out
                 lbra    trim_out                ;  5 
 ; the up run: slot k for a column of 12 - k bytes
+; (a prefix, for entering slot 0 with a lead-in)
+                lda     ,x+                     ;  6 
+                nop                             ;  2 
+                nop                             ;  2 
+                nop                             ;  2 
 tu_slots
                 sta     <VIA_shift_reg          ;  4 
                 lda     ,x+                     ;  6 

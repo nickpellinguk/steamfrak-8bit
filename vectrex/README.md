@@ -358,19 +358,30 @@ columns going down and up share their ends, so the beam never jumps; the column 
 1's latch (`DEC <$06`); the slide across after each column's last bit. The first byte at 13 cycles
 (not 12) puts up columns a pixel out against down ones, made up for in the data.
 
-* **It draws correctly** (`preview/m1_trim.png`: full then trimmed, the same pixel for pixel), and
-  vecx's cycles match the worked-out ones.
-* **But it barely pays:** Trogg 3,026 / 2,842, the Scrubbly 4,371 / 4,153, the Poglet 2,678 /
-  2,703, the Hooter 1,908 / 1,979, the ladder 2,355 / 2,396, the small sprites slower. Two reasons:
-  the turn costs 6 cycles more (16 x bytes + 41 a column, against 35, + 3 every other column), and,
-  worse, with whole bytes a column's sweep is 8 x bytes + 3 pixels whichever way it goes, so every
-  down column's top is on the same row modulo 8: each shared end overshoots by ~3.5 pixels, nearly
-  a byte a column.
-* **Lengths by the bit** would save 7-22% (Trogg 2,362, Scrubbly 3,831, Poglet 2,241, Hooter 1,773,
-  gem 657, dagger 635, ladder 2,174; worked out). The ramp would have to go off part way through a
-  column's last byte, so its last slot's ending (the slide's and the ramp-off's stores) would need
-  a variant for each number of bits used: 8 copies of each direction's run (~1.7KB of code) or 4
-  for steps of 2 bits (~0.9KB). Not built.
+* **Choosing the lengths:** with whole bytes, a column's sweep is 8 x bytes + 3 pixels whichever
+  way it goes, so where the ends fall is tied from column to column; picking each column's length
+  greedily, left to right, left ~3.5 pixels of overshoot at each end and barely paid (Trogg -6%).
+  `tools/trim_plan.py` instead finds the cheapest chain for a sprite by dynamic programming over
+  where the beam is between columns, with **lead-ins**: entering the run part way through a slot's
+  padding (0, 2, 4, 6 or 12 cycles before its store) starts a column's bits 0, 1, 2, 3 or 6 pixels
+  later, free where a column has blank room at its start (a lead-in of 6 enters at the slot's
+  `LDA ,X+`, so its first byte is in the data twice).
+* **More runs don't help:** copies of the runs with a delay before the closing stores (4 copies,
+  or 8 for any number of cycles: ~0.9KB and ~1.7KB of code) come out exactly as cheap as one run
+  with lead-ins, by the same search: a delay is blank sweep at a column's end, a lead-in at its
+  start, where columns often have room anyway.
+* **Measured in vecx** (cycles with the call, full then trimmed; `preview/m1_trim.png`: the same
+  pixel for pixel): Trogg 3,102 / 2,524 (-19%), Trogg climbing 2,403 / 2,056 (-14%), bulb 918 / 800
+  (-13%), Poglet 2,751 / 2,441 (-11%), dagger 825 / 733 (-11%), Scrubbly 4,444 / 4,101 (-8%),
+  Hooter 1,981 / 1,843 (-7%), gem 825 / 771 (-7%), ladder 2,443 / 2,292 (-6%), balloon 895 / 886,
+  chain 1,653 / 1,676 (+1%). Exactly as worked out.
+* **ROM:** the column sprites' data 3,812 bytes trimmed (with each column's entry address) against
+  3,343; for clipping at the left edge, a start row (690 bytes) and a data offset (1,304) a column,
+  or none if a sprite clipped at the left steps through the columns it skips (~25 cycles each).
+  One routine (~160 lines) instead of one for each column height.
+* **The budget** (`gen/budget.txt`'s last column): the median level 45,123 cycles (from 47,432), 1
+  of 36 fitting; with the measured run-time moves, scenery moves at 120 and one balloon or dagger
+  at a time, 38,315 and 5.
 
 ### A vector dagger (test/dagger.asm, tools/dagger.py)
 
