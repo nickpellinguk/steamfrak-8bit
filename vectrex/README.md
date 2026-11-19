@@ -314,8 +314,8 @@ Trogg 1,513 cycles (3,026), the Scrubbly 2,251 (4,371), a ladder 1,180 (2,365), 
   and fangs (`preview/half_rules.png`). Half-resolution sprites would need drawing for it (13
   columns for Trogg, 17 for the Scrubbly), and the gaps between columns show (on a real Vectrex
   too, probably: a pixel is about 0.9mm, the spot narrower).
-* **The budget at half resolution** (`gen/budget.txt`'s last two columns): 9 of the 36 fit with
-  Trogg at full resolution, 11 with him at half; median 35,184.
+* **The budget at half resolution** (`gen/budget.txt`'s last column, Trogg always at full
+  resolution): 9 of the 36 fit; median 35,184.
 * **Moves are now the biggest cost**: with free moves, 34 of the 36 would fit at half resolution
   (median 23,024); with chained moves at 100 cycles instead of 250, 14 fit; without balloons and
   daggers, 15. So the next saving is moving between objects, before any more resolution.

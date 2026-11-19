@@ -499,8 +499,7 @@ LOGIC = 5000                                # the game logic (a guess until mile
 FRAME = 30000
 
 
-HALF = [False]
-TROGG_HALF = [False]  # (with HALF) Trogg at half resolution too       # half resolution (1x2): columns 2 pixels apart, rows 2 apart, strips one row
+HALF = [False]       # (Trogg stays at full resolution)       # half resolution (1x2): columns 2 pixels apart, rows 2 apart, strips one row
 
 
 def cols_cost(info, ncols, half=None):
@@ -552,7 +551,7 @@ def level_budget(name, lev, data, sinfo, things, strips):
             hi = v['amax'] if v['kind'] == convert.SL_SCRUBBLY else v['x']
             items.append(('moving', lo - xo, hi - xo + info['w'],
                           lambda a, b, i=info: cols_cost(i, min(i['w'], b - a)), False))
-    fixed = cols_cost(sinfo[TROGG], sinfo[TROGG]['w'], TROGG_HALF[0] and HALF[0]) + MOVE_RUNTIME + \
+    fixed = cols_cost(sinfo[TROGG], sinfo[TROGG]['w'], False) + MOVE_RUNTIME + \
         FLYING * (cols_cost(sinfo['sBalloon_Beeb'], 12) + MOVE_RUNTIME) + HUD + LOGIC
     best = (0, 0, {})
     for x0 in range(0, max(1, lev['w'] - W + 1), 4):
@@ -601,10 +600,8 @@ def main():
         cost, at, cat = level_budget(n, lev, data, sinfo, things, strips)
         HALF[0] = True
         hcost = level_budget(n, lev, data, sinfo, things, strips)[0]
-        TROGG_HALF[0] = True
-        h2cost = level_budget(n, lev, data, sinfo, things, strips)[0]
-        HALF[0] = TROGG_HALF[0] = False
-        budget.append((n, cost, at, cat, hcost, h2cost))
+        HALF[0] = False
+        budget.append((n, cost, at, cat, hcost))
     open(os.path.join(gen, 'levels.asm'), 'w').write('\n'.join(out) + '\n')
 
     sbytes = sum(i['bytes'] for k, i in sinfo.items() if not k.startswith(('pattern:', 'log:')))
@@ -621,19 +618,18 @@ def main():
              'Each split into platforms, ladders (and chains and poles), things (gems, keys, meanies',
              'standing still, springs), moving things (meanies, platforms) and the fixed part (Trogg,',
              'balloons or daggers, HUD, logic), each with its moves.', '',
-             'The last two columns: at half resolution (1x2: columns 2 pixels apart at full height, rows',
-             '2 apart, platforms one row; moves cost the same), Trogg at full resolution, then him too.', '',
-             '  level   total   at x  ' + ''.join('%10s' % k for k in CATEGORIES) + '      half  half+Trogg']
-    fit = hfit = h2fit = 0
-    for n, cost, at, cat, hcost, h2cost in budget:
+             'The last column: at half resolution (1x2: columns 2 pixels apart at full height, rows 2',
+             'apart, platforms one row; moves cost the same), all but Trogg.', '',
+             '  level   total   at x  ' + ''.join('%10s' % k for k in CATEGORIES) + '      half']
+    fit = hfit = 0
+    for n, cost, at, cat, hcost in budget:
         fit += cost <= FRAME
         hfit += hcost <= FRAME
-        h2fit += h2cost <= FRAME
         mark = lambda c: '%6d%s' % (c, ' ' if c <= FRAME else '*')
-        lines.append('  %-6s %s  %4d  %s  %s    %s' % (n[5:], mark(cost), at, ''.join('%10d' % cat[k] for k in CATEGORIES),
-                                                   mark(hcost), mark(h2cost)))
-    lines += ['', '(* over %d.) Levels that fit: %d of %d at full resolution; at half, %d (Trogg full), %d (Trogg half).'
-              % (FRAME, fit, len(names), hfit, h2fit)]
+        lines.append('  %-6s %s  %4d  %s  %s' % (n[5:], mark(cost), at, ''.join('%10d' % cat[k] for k in CATEGORIES),
+                                             mark(hcost)))
+    lines += ['', '(* over %d.) Levels that fit: %d of %d at full resolution, %d at half (Trogg full).'
+              % (FRAME, fit, len(names), hfit)]
     open(os.path.join(gen, 'budget.txt'), 'w').write('\n'.join(lines) + '\n')
     print('\n'.join(lines[:2] + lines[-1:]))
     return sinfo, data, web
