@@ -1,7 +1,16 @@
 diff --git a/e6809.c b/e6809.c
-index 18e49ef..7d67cf4 100644
+index 18e49ef..c3cc33c 100644
 --- a/e6809.c
 +++ b/e6809.c
+@@ -41,7 +41,7 @@ static unsigned reg_s;
+ 
+ /* program counter */
+ 
+-static unsigned reg_pc;
++unsigned reg_pc;           /* (beam) not static: beamshot -p watches it */
+ 
+ /* accumulators */
+ 
 @@ -74,7 +74,7 @@ void (*e6809_write8) (unsigned address, unsigned char data);
  
  /* obtain a particular condition code. returns 0 or 1. */
@@ -196,9 +205,18 @@ index 18e49ef..7d67cf4 100644
  	unsigned r, op, ea;
  
 diff --git a/vecx.c b/vecx.c
-index 36cd857..f9c1630 100644
+index 36cd857..48414ce 100644
 --- a/vecx.c
 +++ b/vecx.c
+@@ -8,7 +8,7 @@
+ 
+ unsigned char rom[8192];
+ unsigned char cart[32768];
+-static unsigned char ram[1024];
++unsigned char ram[1024];          /* (beam) not static: beamshot -m reads it */
+ 
+ /* the sound chip registers */
+ 
 @@ -35,6 +35,8 @@ static unsigned via_sr;
  static unsigned via_srb;   /* number of bits shifted so far */
  static unsigned via_src;   /* shift counter */
@@ -208,16 +226,17 @@ index 36cd857..f9c1630 100644
  static unsigned via_acr;
  static unsigned via_pcr;
  static unsigned via_ifr;
-@@ -87,6 +89,8 @@ static long alg_vector_y1;
+@@ -87,6 +89,9 @@ static long alg_vector_y1;
  static long alg_vector_dx;
  static long alg_vector_dy;
  static unsigned char alg_vector_color;
 +static long alg_vector_cycles;
-+unsigned long long alg_cycles; /* (beam) cycles since reset */ /* (beam) cycles the current vector has been drawing for */
++unsigned long long alg_cycles; /* (beam) cycles since reset */
++void (*beam_watch) (unsigned long long cycles);   /* (beam) called after each instruction, if set */ /* (beam) cycles the current vector has been drawing for */
  
  long vector_draw_cnt;
  long vector_erse_cnt;
-@@ -100,7 +104,7 @@ static long fcycles;
+@@ -100,7 +105,7 @@ static long fcycles;
  
  /* update the snd chips internal registers when via_ora/via_orb changes */
  
@@ -226,7 +245,7 @@ index 36cd857..f9c1630 100644
  {
  	switch (via_orb & 0x18) {
  	case 0x00:
-@@ -131,7 +135,7 @@ static einline void snd_update (void)
+@@ -131,7 +136,7 @@ static einline void snd_update (void)
  
  /* update the various analog values when orb is written. */
  
@@ -235,7 +254,7 @@ index 36cd857..f9c1630 100644
  {
  	switch (via_orb & 0x06) {
  	case 0x00:
-@@ -190,7 +194,7 @@ static einline void alg_update (void)
+@@ -190,7 +195,7 @@ static einline void alg_update (void)
   * ifr.
   */
  
@@ -244,7 +263,7 @@ index 36cd857..f9c1630 100644
  {
  	if ((via_ifr & 0x7f) & (via_ier & 0x7f)) {
  		via_ifr |= 0x80;
-@@ -312,6 +316,7 @@ unsigned char read8 (unsigned address)
+@@ -312,6 +317,7 @@ unsigned char read8 (unsigned address)
  				via_ifr &= 0xfb; /* remove shift register interrupt flag */
  				via_srb = 0;
  				via_srclk = 1;
@@ -252,7 +271,7 @@ index 36cd857..f9c1630 100644
  
  				int_update ();
  
-@@ -459,6 +464,7 @@ void write8 (unsigned address, unsigned char data)
+@@ -459,6 +465,7 @@ void write8 (unsigned address, unsigned char data)
  				via_ifr &= 0xfb; /* remove shift register interrupt flag */
  				via_srb = 0;
  				via_srclk = 1;
@@ -260,7 +279,7 @@ index 36cd857..f9c1630 100644
  
  				int_update ();
  
-@@ -605,7 +611,7 @@ void vecx_reset (void)
+@@ -605,7 +612,7 @@ void vecx_reset (void)
   * via_sstep0 is the first postion of the emulation.
   */
  
@@ -269,7 +288,7 @@ index 36cd857..f9c1630 100644
  {
  	unsigned t2shift;
  
-@@ -722,11 +728,16 @@ static einline void via_sstep0 (void)
+@@ -722,11 +729,16 @@ static einline void via_sstep0 (void)
  		case 0x18:
  			/* shift out under system clock control */
  
@@ -290,7 +309,7 @@ index 36cd857..f9c1630 100644
  
  			break;
  		case 0x1c:
-@@ -743,7 +754,7 @@ static einline void via_sstep0 (void)
+@@ -743,7 +755,7 @@ static einline void via_sstep0 (void)
  
  /* perform the second part of the via emulation */
  
@@ -299,7 +318,7 @@ index 36cd857..f9c1630 100644
  {
  	if ((via_pcr & 0x0e) == 0x0a) {
  		/* if ca2 is in pulse mode, then make sure
-@@ -762,11 +773,13 @@ static einline void via_sstep1 (void)
+@@ -762,11 +774,13 @@ static einline void via_sstep1 (void)
  	}
  }
  
@@ -314,7 +333,7 @@ index 36cd857..f9c1630 100644
  	key = (unsigned long) x0;
  	key = key * 31 + (unsigned long) y0;
  	key = key * 31 + (unsigned long) x1;
-@@ -810,11 +823,23 @@ static einline void alg_addline (long x0, long y0, long x1, long y1, unsigned ch
+@@ -810,11 +824,23 @@ static einline void alg_addline (long x0, long y0, long x1, long y1, unsigned ch
  
  /* perform a single cycle worth of analog emulation */
  
@@ -339,7 +358,7 @@ index 36cd857..f9c1630 100644
  
  	if ((via_acr & 0x10) == 0x10) {
  		sig_blank = via_cb2s;
-@@ -822,7 +847,17 @@ static einline void alg_sstep (void)
+@@ -822,7 +848,17 @@ static einline void alg_sstep (void)
  		sig_blank = via_cb2h;
  	}
  
@@ -358,7 +377,7 @@ index 36cd857..f9c1630 100644
  		/* need to force the current point to the 'orgin' so just
  		 * calculate distance to origin and use that as dx,dy.
  		 */
-@@ -830,15 +865,11 @@ static einline void alg_sstep (void)
+@@ -830,15 +866,11 @@ static einline void alg_sstep (void)
  		sig_dx = ALG_MAX_X / 2 - alg_curr_x;
  		sig_dy = ALG_MAX_Y / 2 - alg_curr_y;
  	} else {
@@ -377,7 +396,7 @@ index 36cd857..f9c1630 100644
  		} else {
  			sig_dx = 0;
  			sig_dy = 0;
-@@ -859,7 +890,8 @@ static einline void alg_sstep (void)
+@@ -859,7 +891,8 @@ static einline void alg_sstep (void)
  			alg_vector_y1 = alg_curr_y;
  			alg_vector_dx = sig_dx;
  			alg_vector_dy = sig_dy;
@@ -387,7 +406,7 @@ index 36cd857..f9c1630 100644
  		}
  	} else {
  		/* already drawing a vector ... check if we need to turn it off */
-@@ -876,7 +908,7 @@ static einline void alg_sstep (void)
+@@ -876,7 +909,7 @@ static einline void alg_sstep (void)
  						 alg_vector_color);
  		} else if (sig_dx != alg_vector_dx ||
  				   sig_dy != alg_vector_dy ||
@@ -396,7 +415,7 @@ index 36cd857..f9c1630 100644
  
  			/* the parameters of the vectoring processing has changed.
  			 * so end the current line.
-@@ -898,7 +930,8 @@ static einline void alg_sstep (void)
+@@ -898,7 +931,8 @@ static einline void alg_sstep (void)
  				alg_vector_y1 = alg_curr_y;
  				alg_vector_dx = sig_dx;
  				alg_vector_dy = sig_dy;
@@ -406,7 +425,7 @@ index 36cd857..f9c1630 100644
  			} else {
  				alg_vectoring = 0;
  			}
-@@ -919,6 +952,10 @@ static einline void alg_sstep (void)
+@@ -919,6 +953,10 @@ static einline void alg_sstep (void)
  		alg_vector_x1 = alg_curr_x;
  		alg_vector_y1 = alg_curr_y;
  	}
@@ -417,11 +436,28 @@ index 36cd857..f9c1630 100644
  }
  
  void vecx_emu (long cycles)
+@@ -927,6 +965,8 @@ void vecx_emu (long cycles)
+ 
+ 	while (cycles > 0) {
+ 		icycles = e6809_sstep (via_ifr & 0x80, 0);
++		if (beam_watch)
++			beam_watch (alg_cycles);		/* (beam) after each instruction */
+ 
+ 		for (c = 0; c < icycles; c++) {
+ 			via_sstep0 ();
 diff --git a/vecx.h b/vecx.h
-index 729591d..0d701ae 100644
+index 729591d..591f256 100644
 --- a/vecx.h
 +++ b/vecx.h
-@@ -33,6 +33,13 @@ extern long vector_erse_cnt;
+@@ -21,6 +21,7 @@ typedef struct vector_type {
+ 
+ extern unsigned char rom[8192];
+ extern unsigned char cart[32768];
++extern unsigned char ram[1024];     /* (beam) */
+ 
+ extern unsigned snd_regs[16];
+ extern unsigned alg_jch0;
+@@ -33,6 +34,15 @@ extern long vector_erse_cnt;
  extern vector_t *vectors_draw;
  extern vector_t *vectors_erse;
  
@@ -429,7 +465,9 @@ index 729591d..0d701ae 100644
 + * cycles it took, so a front end can work out its brightness from the beam's speed */
 +extern int via_o2_div;             /* (beam) shift register: cycles a bit under the system clock */
 +extern int alg_delay;              /* (beam) analogue lag, cycles (< 64) */
-+extern unsigned long long alg_cycles; /* (beam) cycles since reset */
++extern unsigned long long alg_cycles;
++extern void (*beam_watch) (unsigned long long cycles);  /* (beam) */
++extern unsigned reg_pc;             /* (beam) the 6809's PC */ /* (beam) cycles since reset */
 +void beam_line (long x0, long y0, long x1, long y1, unsigned char color, long cycles);
 +
  void vecx_reset (void);

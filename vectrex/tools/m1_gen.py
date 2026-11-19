@@ -78,7 +78,12 @@ class Code:
 
 
 def column_routine(nb):
-    """The column routine for columns of nb bytes: entries colN_down, colN_up."""
+    """
+    The column routine for columns of nb bytes: entries colN_down and colN_up (facing right:
+    the first column at the left, the next a pixel to the right), colN_down_l and colN_up_l
+    (facing left: the same data, the first column at the right, the next a pixel to the left,
+    so the sprite comes out mirrored).
+    """
     c = Code()
     n = nb
     c.comment('columns of %d bytes (%d pixels): %d cycles a column (%d after an up column)'
@@ -86,15 +91,20 @@ def column_routine(nb):
     c.comment('in: X = the first column\'s data, %s = the number of columns + 1, the beam at the' % COUNT)
     c.comment('first column\'s start (half a pixel left of it, at the top for _down, the bottom for _up)')
 
+    def across(left):
+        if DRIFT_COLUMNS:
+            v = max(1, round(10 / n))
+            c.ins('ldu     #$81%02X' % ((-v if left else v) & 0xFF), 3,
+                  'port B = mux off, DAC = the drift across (%s)' % ('left' if left else 'right'))
+        else:
+            c.ins('ldu     #$81%02X' % ((-40 if left else 40) & 0xFF), 3,
+                  'port B = mux off, DAC = %d: the slide across' % (-40 if left else 40))
+
     def prologue():
         c.ins('lda     #$81', 2)
         c.ins('sta     <VIA_port_b', 4, 'ramp off, mux off, before port B takes over the ramp')
         c.ins('lda     #$18', 2)
         c.ins('sta     <VIA_aux_cntl', 4, 'ACR: ramp from port B, shift register out on the clock')
-        if DRIFT_COLUMNS:
-            c.ins('ldu     #$81%02X' % max(1, round(10 / n)), 3, 'port B = mux off, DAC = the drift across')
-        else:
-            c.ins('ldu     #$8128', 3, 'port B = mux off, DAC = 40: the slide across')
 
     def half(down):
         name = 'col%d_%s_loop' % (n, 'd' if down else 'u')
@@ -107,7 +117,7 @@ def column_routine(nb):
         c.ins('ldy     #$80%02X' % ((SPEED if down else -SPEED) & 0xFF), 4,
               'the Y speed after this column (%s)' % ('up' if down else 'down'))
         t += 7 + 5 + 6 + 2 + 4
-        c.ins('stu     <VIA_port_b', 5, 'e+%d: ...to here: mux off, DAC = 40' % t)
+        c.ins('stu     <VIA_port_b', 5, 'e+%d: ...to here: mux off, DAC = the slide' % t)
         t += 5
         assert t == TURN, t
         c.ins('stb     <VIA_port_b', 4, 't = 0: ramp on')
@@ -134,7 +144,16 @@ def column_routine(nb):
         tt = 16 * n
         c.ins('sty     <VIA_port_b', 6, 't = %d = e: ramp off, mux on, DAC = the next Y speed' % tt)
 
+    c.comment('facing left: the same columns, drawn from the right, the slide going left')
+    c.label('col%d_down_l' % n)
+    across(True)
+    c.ins('lbra    col%d_down_c' % n, 5, '(not timed)')
+    c.label('col%d_up_l' % n)
+    across(True)
+    c.ins('lbra    col%d_up_c' % n, 5, '(not timed)')
     c.label('col%d_down' % n)
+    across(False)
+    c.label('col%d_down_c' % n)
     prologue()
     c.ins('ldy     #$80%02X' % (-SPEED & 0xFF), 4, 'Y speed down')
     c.ins('sty     <VIA_port_b', 6, 'mux on, DAC = the first Y speed')
@@ -145,6 +164,8 @@ def column_routine(nb):
     else:
         c.ins('lbra    col%d_d_loop' % n, 5, '(in the settling time; too far for BRA)')
     c.label('col%d_up' % n)
+    across(False)
+    c.label('col%d_up_c' % n)
     prologue()
     c.ins('ldy     #$80%02X' % (SPEED & 0xFF), 4, 'Y speed up')
     c.ins('sty     <VIA_port_b', 6, 'mux on, DAC = the first Y speed')

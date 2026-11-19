@@ -212,6 +212,32 @@ screen; `preview/m1_scene.png`). `M1_CHAIN=1` chains the moves between objects.
   a pixel, as a second vector costs ~100 cycles). vecx doesn't model the integrators' drift, so
   how far moves can be chained before a reset needs a real Vectrex.
 
+### At run time (test/m1_rt.asm, tools/m1_rt_gen.py)
+
+`test/m1_rt.asm` is the engine driven by the 6809 itself: a scene table (column sprites facing
+either way, a key, the yoyo, a strip of ledges) that scrolls 40 pixels each way, everything
+clipped, positioned and moved between as it runs (`preview/m1_runtime.png`: three frames).
+
+* **Facing left:** the same column data, drawn from the right with the slide going left
+  (`colN_down_l`, `colN_up_l`): the sprite comes out mirrored, at no extra cost.
+* **Clipping:** columns by the column, at both edges, facing either way. Strips by the pixel: the
+  bytes in the window, the first and last masked; the strip's rows are an unrolled run of byte
+  slots entered by a table according to the length (the last slot ANDs the last byte with its
+  mask), so every write keeps its 16-cycle beat. Keys and the yoyo, partly off the window, are
+  drawn whole (the part outside is past the screen's edge: up to 22 pixels); wholly off, not drawn.
+* **Moves:** `move_to` from where the beam is (tracked in RAM) to where it's wanted: a coarse
+  vector at scale 128 (the distance / 128), then one at scale 1 for the rest (the distance's low 7
+  bits), left out if within a quarter of a pixel. `draw_cols` starts the coarse vector, sets up
+  the columns while it runs, then finishes the move. Note: the BIOS's `Reset0Ref` leaves the
+  integrators held at zero (`Moveto_d` lets them go): after it, the VIA's control register needs
+  $CE.
+* **Costs, measured** (`beamshot -p`, which prints the cycle whenever the 6809 reaches given
+  addresses): per object, clipping 118 cycles, positions ~220, the move and set-up ~460 (~900 for
+  a long move), the end ~80: **~900 cycles an object** besides its drawing. The scene (12 things,
+  ~25,000 cycles of drawing) takes ~35,700 a frame. Static scenery (platforms, ladders, gems)
+  doesn't move relative to itself, so in milestone 3 its moves can be worked out by the converter
+  and chained (~200 each, nothing computed), leaving run-time moves for the things that move.
+
 ### Against MAME (tools/calib_gen.py, test/calib.asm)
 
 MAME 0.264, run without a window, a snapshot taken by a Lua script; calibration patterns whose

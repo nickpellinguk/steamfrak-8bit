@@ -1,7 +1,7 @@
 /*
  * beamshot: run vecx without a window and write down every line the beam draws.
  *
- *     beamshot [-d CYCLES] [-s CYCLES] ROM CART|- SKIP FRAMES OUT
+ *     beamshot [-d CYCLES] [-s CYCLES] [-m ADDR] [-p ADDR,...] ROM CART|- SKIP FRAMES OUT
  *
  * Runs the Vectrex (BIOS ROM, and the cartridge CART unless it's "-") for SKIP frames of 30000
  * cycles (50 Hz), then records the lines drawn in the next FRAMES frames to OUT, one a line:
@@ -20,6 +20,10 @@
  * clock, the mode the BIOS uses for the spot: 2 by default, as a 6522 (and MAME) does; 1 for
  * vecx as it was.
  *
+ * -m ADDR (hex, $C800-$CBFF) prints the 16-bit word in RAM there at the end (high byte first).
+ * -p ADDR,ADDR,... (hex) prints "p ADDR CYCLE" whenever the 6809 is about to run the instruction
+ * at one of them, while recording: for timing code.
+ *
  * It's linked with vecx's emulation (vecx.c, e6809.c, with beam.patch applied) in place of vecx's
  * SDL front end (osint.c) and sound (e8910.c), so it needs no SDL.
  */
@@ -32,6 +36,18 @@
 #define FRAME_CYCLES 30000
 
 static FILE *out;
+static unsigned watch[32];
+static int nwatch;
+
+static void on_instruction (unsigned long long cycles)
+{
+	int i;
+	if (!out)
+		return;
+	for (i = 0; i < nwatch; i++)
+		if (reg_pc == watch[i])
+			printf ("p %04x %llu\n", watch[i], cycles);
+}
 static long long now;                   /* cycles since the start of recording */
 
 void beam_line (long x0, long y0, long x1, long y1, unsigned char color, long cycles)
@@ -56,18 +72,31 @@ static void load (const char *name, unsigned char *buf, size_t size, int exact)
 int main (int argc, char *argv[])
 {
 	long skip, frames, i;
+	long mem = -1;
 	alg_delay = 13;
 	via_o2_div = 2;
-	while (argc > 2 && (strcmp (argv[1], "-d") == 0 || strcmp (argv[1], "-s") == 0)) {
+	while (argc > 2 && (strcmp (argv[1], "-d") == 0 || strcmp (argv[1], "-s") == 0 ||
+	                    strcmp (argv[1], "-m") == 0 || strcmp (argv[1], "-p") == 0)) {
 		if (argv[1][1] == 'd')
 			alg_delay = atoi (argv[2]);
-		else
+		else if (argv[1][1] == 's')
 			via_o2_div = atoi (argv[2]);
+		else if (argv[1][1] == 'm')
+			mem = strtol (argv[2], NULL, 16);
+		else {
+			char *p = argv[2];
+			while (*p && nwatch < 32) {
+				watch[nwatch++] = (unsigned) strtol (p, &p, 16);
+				if (*p == ',')
+					p++;
+			}
+			beam_watch = on_instruction;
+		}
 		argc -= 2;
 		argv += 2;
 	}
 	if (argc != 6 || alg_delay < 0 || alg_delay >= 64 || via_o2_div < 1) {
-		fprintf (stderr, "usage: beamshot [-d CYCLES (0-63)] [-s CYCLES] ROM CART|- SKIP FRAMES OUT\n");
+		fprintf (stderr, "usage: beamshot [-d CYCLES (0-63)] [-s CYCLES] [-m ADDR] ROM CART|- SKIP FRAMES OUT\n");
 		return 2;
 	}
 	load (argv[1], rom, sizeof rom, 1);
@@ -89,5 +118,7 @@ int main (int argc, char *argv[])
 		now = i;
 	}
 	fclose (out);
+	if (mem >= 0)
+		printf ("%04lx: %u\n", mem, (unsigned) ram[mem & 0x3ff] << 8 | ram[(mem + 1) & 0x3ff]);
 	return 0;
 }
