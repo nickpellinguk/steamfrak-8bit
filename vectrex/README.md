@@ -24,6 +24,7 @@ At 50 Hz a frame is 30000 cycles of the 1.5 MHz 6809.
 | `tools/half_rules.py` | Ways of halving sprites for half resolution, side by side (`preview/half_rules.png`). |
 | `test/m1h_test.asm` | Half resolution against full: every kind of object drawn both ways (`M1_HALF=1 python3 vectrex/tools/m1_gen.py` writes its `m1h_engine.asm` and `m1h_data.asm`; `preview/m1_half.png`, `preview/m1_half_zoom.png`). |
 | `test/dagger.asm`, `tools/dagger.py` | A vector dagger (a sharp V, a crossguard, a handle) pointing four ways, beside the raster one (`preview/dagger.png`). |
+| `test/m1s_test.asm` | Columns swept at the fastest speed (127) against full resolution (`M1_STRETCH=1 python3 vectrex/tools/m1_gen.py`; `preview/m1_fast.png`). |
 | `tools/budget.py` | For every level, slides a 320x256 and a 256x256 window across it, and estimates the drawing cost of the busiest window position (platforms as one line, ladders as two, the line art's real vector counts, standing meanies, gems and keys, and moving things whose range is in view). |
 | `tools/beam.py` | A model of the beam: renders lines (end points, intensity, time) with brightness from intensity x time / length, a brighter dot at each end where the beam dwells, a Gaussian spot, phosphor saturation and a little bloom. Its constants aren't measured: they're for comparing lines with each other. |
 | `art/shapes.py` | The line art, as polylines over the BBC sprites' pixels: Trogg standing (37 vectors), the Scrubbly (52), a gem and a key. |
@@ -322,11 +323,30 @@ Trogg 1,513 cycles (3,026), the Scrubbly 2,251 (4,371), a ladder 1,180 (2,365), 
   and fangs (`preview/half_rules.png`). Half-resolution sprites would need drawing for it (13
   columns for Trogg, 17 for the Scrubbly), and the gaps between columns show (on a real Vectrex
   too, probably: a pixel is about 0.9mm, the spot narrower).
-* **The budget at half resolution** (`gen/budget.txt`'s last column, Trogg always at full
-  resolution): 9 of the 36 fit; median 35,184.
+* **The budget at half resolution** (Trogg always at full resolution): 9 of the 36 fit; median
+  35,184. (`gen/budget.txt` now shows fast columns instead: below.)
 * **Moves are now the biggest cost**: with free moves, 34 of the 36 would fit at half resolution
   (median 23,024); with chained moves at 100 cycles instead of 250, 14 fit; without balloons and
   daggers, 15. So the next saving is moving between objects, before any more resolution.
+
+### Fast columns (test/m1s_test.asm)
+
+Columns swept at 127, the DAC's fastest, instead of 80: the shift register can't go faster than
+a bit every 2 cycles, so each bit is 1.59 pixels tall (not 2: that would need a speed of 160). The
+sprites are resampled so every row of pixels goes into exactly one bit (lit if any of its rows
+is: no thin line is lost). The routines are milestone 1's with the Y speed changed (`colNs_*`).
+
+* **Looks:** much better than halving the width (`preview/m1_fast.png`, full then fast for each):
+  everything recognisable, small details merging (Trogg's eye, the Hooter's eyes), and dimmer, as
+  the beam moves faster (the intensity could be turned up for them).
+* **Costs** (cycles, full then fast): Trogg 3,026 / 2,610, Scrubbly 4,371 / 3,315, Poglet 2,678 /
+  2,310, Hooter 1,908 / 1,604, ladder 2,365 / 1,789, chain 1,575 / 1,191; gems, balloons and
+  daggers save nothing (their columns stay 2 bytes: a column's time goes by whole bytes).
+* **The budget** (`gen/budget.txt`'s last column, every column sprite but Trogg fast): 2 of the 36
+  fit, median 44,016 (from 47,432). Adding the cheaper run-time moves (measured), chained scenery
+  moves at 120, platforms swept at 127 too and one balloon or dagger at a time instead of three:
+  8 fit, median 36,610. The turns (35 cycles a column, a third of a typical column's cost) and the
+  number of objects in view are what's left.
 
 ### A vector dagger (test/dagger.asm, tools/dagger.py)
 

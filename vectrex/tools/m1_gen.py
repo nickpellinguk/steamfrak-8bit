@@ -77,8 +77,10 @@ class Code:
         self.out.append('; ' + text)
 
 
-def column_routine(nb, step=1):
+def column_routine(nb, step=1, speed=None):
     """
+    (speed: the sweep speed, SPEED by default; 127, the fastest, makes each bit 1.59 pixels tall
+    and the routines' labels end in s, as colNs_down.)
     (step 2: half resolution across: columns 2 pixels apart, the slide twice as fast; the
     routines' labels end in h, as colNh_down.)
     The column routine for columns of nb bytes: entries colN_down and colN_up (facing right:
@@ -88,7 +90,8 @@ def column_routine(nb, step=1):
     """
     c = Code()
     n = nb
-    H = 'h' if step == 2 else ''
+    H = 'h' if step == 2 else 's' if speed else ''
+    sp = speed or SPEED
     c.comment('columns of %d bytes (%d pixels): %d cycles a column (%d after an up column)'
               % (n, 8 * n, 16 * n + TURN, 16 * n + TURN + 3))
     c.comment('in: X = the first column\'s data, %s = the number of columns + 1, the beam at the' % COUNT)
@@ -117,7 +120,7 @@ def column_routine(nb, step=1):
         c.ins('lbeq    col%d%s_out' % (n, H), 5, '(5 not branching)')
         c.ins('lda     ,x+', 6, 'the first byte')
         c.ins('ldb     #$01', 2, 'port B = ramp on')
-        c.ins('ldy     #$80%02X' % ((SPEED if down else -SPEED) & 0xFF), 4,
+        c.ins('ldy     #$80%02X' % ((sp if down else -sp) & 0xFF), 4,
               'the Y speed after this column (%s)' % ('up' if down else 'down'))
         t += 7 + 5 + 6 + 2 + 4
         c.ins('stu     <VIA_port_b', 5, 'e+%d: ...to here: mux off, DAC = the slide' % t)
@@ -158,7 +161,7 @@ def column_routine(nb, step=1):
     across(False)
     c.label('col%d%s_down_c' % (n, H))
     prologue()
-    c.ins('ldy     #$80%02X' % (-SPEED & 0xFF), 4, 'Y speed down')
+    c.ins('ldy     #$80%02X' % (-sp & 0xFF), 4, 'Y speed down')
     c.ins('sty     <VIA_port_b', 6, 'mux on, DAC = the first Y speed')
     half(True)
     half(False)
@@ -170,7 +173,7 @@ def column_routine(nb, step=1):
     across(False)
     c.label('col%d%s_up_c' % (n, H))
     prologue()
-    c.ins('ldy     #$80%02X' % (SPEED & 0xFF), 4, 'Y speed up')
+    c.ins('ldy     #$80%02X' % (sp & 0xFF), 4, 'Y speed up')
     c.ins('sty     <VIA_port_b', 6, 'mux on, DAC = the first Y speed')
     c.ins('bra     col%d%s_u_loop' % (n, H), 3)
     c.label('col%d%s_out' % (n, H))
@@ -338,6 +341,22 @@ def strip_routine(rows=2):
     return c.out
 
 
+FAST = 127                      # the fastest sweep: a bit (2 cycles) 254 beam units, 1.59 pixels
+FAST_PX = 2 * FAST / UNIT
+
+
+def stretch_rows(grid, lit='#'):
+    """For columns swept at FAST: each bit FAST_PX pixels tall, each row of pixels in exactly one
+    bit (row r in bit r / FAST_PX), lit if any of its rows is."""
+    nbits = math.ceil(len(grid) / FAST_PX)
+    out = [['.'] * len(grid[0]) for _ in range(nbits)]
+    for r, row in enumerate(grid):
+        for x, ch in enumerate(row):
+            if ch in lit:
+                out[int(r / FAST_PX)][x] = '#'
+    return [''.join(r) for r in out]
+
+
 def halve_cols(grid, lit='#'):
     """Half resolution across: each pair of columns as one, lit if either pixel is."""
     w = len(grid[0])
@@ -420,6 +439,20 @@ LEDGES = (-120, 30, [(0, 64), (80, 128), (144, 192), (208, 240)])   # x, y, span
 # apart, the ledges one row), written to test/m1h_engine.asm and test/m1h_data.asm for
 # test/m1h_test.asm
 HALF = os.environ.get('M1_HALF') == '1'
+# M1_STRETCH=1: full resolution against columns swept at FAST (labels ending _s), written to
+# test/m1s_engine.asm and test/m1s_data.asm for test/m1s_test.asm
+STRETCH = os.environ.get('M1_STRETCH') == '1'
+if STRETCH:
+    SPRITES = SPRITES + [(l + '_s', n, f, h) for l, n, f, h in SPRITES if h == 'cols']
+    SCENE = [
+        ('trogg', -100, -100), ('trogg_s', -72, -100), ('scrubbly', -44, -108), ('scrubbly_s', -9, -108),
+        ('ladder', 44, -100), ('ladder_s', 58, -100), ('chain', 72, -100), ('chain_s', 84, -100),
+        ('trogg_climb', -100, -50), ('trogg_climb_s', -78, -50), ('poglet', -56, -49), ('poglet_s', -31, -49),
+        ('hooter', -6, -39), ('hooter_s', 15, -39),
+        ('gem', -100, 0), ('gem_s', -87, 0), ('balloon', -66, 0), ('balloon_s', -52, 0), ('dagger', -36, 0),
+        ('dagger_s', -22, 0), ('bulb', -6, 0), ('bulb_s', 8, 0), ('key', 30, 0),
+        ('scrubbly_s', -112, 54), ('poglet_s', 94, 60),          # partly off the left and right edges
+    ]
 if HALF:
     SPRITES = SPRITES + [(l + '_h', n, f, h) for l, n, f, h in SPRITES]
     SCENE = [
@@ -471,9 +504,11 @@ def main():
     data = {}
     for label, name, frames, how in SPRITES:
         g = sprite_grid(steamfrak, name, 0, frames)
-        step = 2 if label.endswith('_h') else 1
+        step = 2 if label.endswith('_h') else 3 if label.endswith('_s') else 1
         if step == 2:
             g = halve_cols(g) if how == 'cols' else halve_rows(g)
+        elif step == 3:
+            g = stretch_rows(g)
         nb, items = (column_data if how == 'cols' else row_data)(g)
         data[label] = (how, nb, items, len(g), len(g[0]), step)
     col_sizes = sorted({(nb, st) for how, nb, _, _, _, st in data.values() if how == 'cols'})
@@ -481,13 +516,13 @@ def main():
 
     eng = ['; made by vectrex/tools/m1_gen.py: the raster engine', '']
     for nb, st in col_sizes:
-        eng += column_routine(nb, st) + ['']
+        eng += (column_routine(nb, speed=FAST) if st == 3 else column_routine(nb, st)) + ['']
     for nb, h, st in row_sizes:
         eng += drift_rows_routine(nb, h, st) + ['']
     eng += strip_routine() + ['']
     if HALF:
         eng += strip_routine(1) + ['']
-    open(os.path.join(TEST, 'm1h_engine.asm' if HALF else 'raster_engine.asm'), 'w').write('\n'.join(eng) + '\n')
+    open(os.path.join(TEST, 'm1h_engine.asm' if HALF else 'm1s_engine.asm' if STRETCH else 'raster_engine.asm'), 'w').write('\n'.join(eng) + '\n')
 
     out = ['; made by vectrex/tools/m1_gen.py: the test scene', '', 'draw_scene']
     moves = []
@@ -517,6 +552,28 @@ def main():
             table.append(('%s, columns %d-%d of %d' % (label, c0, c1 - 1, w), cyc))
             last = c1 - 1
             _beam[0] = ((x + 2 * last + 1) * UNIT, -((y - COL_PAD) + (0 if last % 2 else hs)) * UNIT)
+        elif how == 'cols' and st == 3:
+            # swept at FAST: the padded column 8nb bits of FAST_PX pixels; the pad 2 bits
+            c0, c1 = max(0, WINDOW[0] - x), min(w, WINDOW[1] - x)
+            if c0 >= c1:
+                continue
+            hs = 8 * nb * FAST_PX
+            top = y - COL_PAD * FAST_PX
+            sx = (x + c0 - 0.5) * UNIT
+            sy = -(top + (hs if c0 % 2 else 0)) * UNIT
+            code, mv = start_move(i, sx, sy)
+            out.append('; %s at (%d, %d), swept at %d: columns %d-%d of %d, %d bytes each'
+                       % (label, x, y, FAST, c0, c1 - 1, w, nb))
+            out += code
+            out += ['                ldx     #%s_data+%d' % (label, c0 * nb),
+                    '                lda     #%d' % (c1 - c0 + 1),
+                    '                sta     %s' % COUNT,
+                    '                jsr     col%ds_%s' % (nb, 'up' if c0 % 2 else 'down')]
+            cyc = sum(16 * nb + TURN + ((3 if nb <= 6 else 5) if k % 2 == 0 and k > c0 else 0)
+                      for k in range(c0, c1))
+            table.append(('%s, columns %d-%d of %d' % (label, c0, c1 - 1, w), cyc))
+            last = c1 - 1
+            _beam[0] = ((x + last + 0.5) * UNIT, -(top + (0 if last % 2 else hs)) * UNIT)
         elif how == 'cols':
             c0, c1 = max(0, WINDOW[0] - x), min(w, WINDOW[1] - x)
             if c0 >= c1:
@@ -601,7 +658,7 @@ def main():
     rev = [int('{:08b}'.format(b)[::-1], 2) for b in reversed(full[1])]
     for i in range(0, nfull, 16):
         out.append('                fcb     ' + ','.join('$%02X' % b for b in rev[i:i + 16]))
-    open(os.path.join(TEST, 'm1h_data.asm' if HALF else 'm1_data.asm'), 'w').write('\n'.join(out) + '\n')
+    open(os.path.join(TEST, 'm1h_data.asm' if HALF else 'm1s_data.asm' if STRETCH else 'm1_data.asm'), 'w').write('\n'.join(out) + '\n')
     for name, cyc in table:
         print('%-34s %5d cycles' % (name, cyc))
 

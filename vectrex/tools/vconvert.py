@@ -68,6 +68,7 @@ import beam     # noqa: E402
 
 UNIT = 41000 / 256                  # beam units a pixel (the screen 256 pixels tall)
 COL_PAD = 2
+FAST_PX = 2 * 127 / UNIT            # pixels a bit, in columns swept at 127 (the fastest)
 WINDOW = 206                        # pixels across the screen
 
 # --- the sprites ----------------------------------------------------------------------------------
@@ -191,6 +192,7 @@ def build_sprites(data, web):
                     '                fcb     %d,%d' % (spr['xo'], spr['yo']),
                     '%s_d' % label(name)] + asm_bytes(allb)
         info[name] = {'how': how, 'nb': nb, 'w': w, 'h': h, 'frames': frames, 'bytes': len(allb), 'data': allb,
+                      'nb_fast': math.ceil((math.ceil(h / FAST_PX) + 2 * COL_PAD) / 8),
                       'grids': grids, 'lit': lit}
         out.append('')
     # the patterns: each row PERIOD bytes repeated to cover MAX_STRIP pixels (+ a period, for
@@ -499,24 +501,21 @@ LOGIC = 5000                                # the game logic (a guess until mile
 FRAME = 30000
 
 
-HALF = [False]       # (Trogg stays at full resolution)       # half resolution (1x2): columns 2 pixels apart, rows 2 apart, strips one row
+FAST = [False]       # columns swept at 127 (bits 1.59 pixels tall), all but Trogg's
 
 
-def cols_cost(info, ncols, half=None):
+def cols_cost(info, ncols, fast=None):
     """ncols: the pixel columns in view."""
-    if HALF[0] if half is None else half:
-        ncols = (ncols + 1) // 2
-    return ncols * (16 * info['nb'] + TURN) + (ncols // 2) * BRA_EXTRA
+    nb = info['nb_fast'] if (FAST[0] if fast is None else fast) else info['nb']
+    return ncols * (16 * nb + TURN) + (ncols // 2) * BRA_EXTRA
 
 
 def rows_cost(info):
-    h = (info['h'] + 1) // 2 if HALF[0] else info['h']
-    return 16 * info['nb'] * h + ROWS_FIXED
+    return 16 * info['nb'] * info['h'] + ROWS_FIXED
 
 
 def strip_cost(npx):
-    nb = math.ceil(npx / 8)
-    return 16 * nb + STRIP_FIXED // 2 if HALF[0] else 32 * nb + STRIP_FIXED
+    return 32 * math.ceil(npx / 8) + STRIP_FIXED
 
 
 CATEGORIES = ('platforms', 'ladders', 'things', 'moving', 'fixed')
@@ -598,9 +597,9 @@ def main():
         out += ['', 'level_%s                                 ; %d bytes' % (n[5:], len(b))] + asm_bytes(b)
         total += len(b)
         cost, at, cat = level_budget(n, lev, data, sinfo, things, strips)
-        HALF[0] = True
+        FAST[0] = True
         hcost = level_budget(n, lev, data, sinfo, things, strips)[0]
-        HALF[0] = False
+        FAST[0] = False
         budget.append((n, cost, at, cat, hcost))
     open(os.path.join(gen, 'levels.asm'), 'w').write('\n'.join(out) + '\n')
 
@@ -618,9 +617,9 @@ def main():
              'Each split into platforms, ladders (and chains and poles), things (gems, keys, meanies',
              'standing still, springs), moving things (meanies, platforms) and the fixed part (Trogg,',
              'balloons or daggers, HUD, logic), each with its moves.', '',
-             'The last column: at half resolution (1x2: columns 2 pixels apart at full height, rows 2',
-             'apart, platforms one row; moves cost the same), all but Trogg.', '',
-             '  level   total   at x  ' + ''.join('%10s' % k for k in CATEGORIES) + '      half']
+             'The last column: with every column sprite but Trogg swept at 127, the fastest (each bit',
+             '1.59 pixels tall, the sprites resampled: test/m1s_test.asm).', '',
+             '  level   total   at x  ' + ''.join('%10s' % k for k in CATEGORIES) + '      fast']
     fit = hfit = 0
     for n, cost, at, cat, hcost in budget:
         fit += cost <= FRAME
@@ -628,7 +627,7 @@ def main():
         mark = lambda c: '%6d%s' % (c, ' ' if c <= FRAME else '*')
         lines.append('  %-6s %s  %4d  %s  %s' % (n[5:], mark(cost), at, ''.join('%10d' % cat[k] for k in CATEGORIES),
                                              mark(hcost)))
-    lines += ['', '(* over %d.) Levels that fit: %d of %d at full resolution, %d at half (Trogg full).'
+    lines += ['', '(* over %d.) Levels that fit: %d of %d at full resolution, %d with fast columns (Trogg full).'
               % (FRAME, fit, len(names), hfit)]
     open(os.path.join(gen, 'budget.txt'), 'w').write('\n'.join(lines) + '\n')
     print('\n'.join(lines[:2] + lines[-1:]))
