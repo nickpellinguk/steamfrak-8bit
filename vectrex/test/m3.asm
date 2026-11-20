@@ -106,6 +106,7 @@ LSTART          equ     $C8DC
                 clr     Vec_Joy_Mux+2
                 clr     Vec_Joy_Mux+3
                 clr     LEVEL
+                clr     IDLE                    ; (RAM starts with anything in it)
                 jsr     new_level
 main
                 jsr     Wait_Recal
