@@ -23,6 +23,7 @@ sys.path.insert(0, HERE)
 import m1_gen as g  # noqa: E402
 import m1_zig_gen as z  # noqa: E402
 import resample  # noqa: E402
+import zig_gaps  # noqa: E402
 
 THRESH = 0.3                # (scale2x) a bit is lit if this much of its patch is lit
 
@@ -84,13 +85,13 @@ def plan_sprite(grid, drift, passes, lit='#', regular=False, method='nearest', s
             out.append(plan_pass(w, h, ext, drift, down, x, y, 0, start_left=sl))
             break
         best = None
-        for step in range(1, 9):
+        for step in range(1, 17):
             for turn_back in (False, True):
-                p = plan_pass(w, h, ext, drift, down, x, y, 0, start_left=sl, end_frac=step / 8)
+                p = plan_pass(w, h, ext, drift, down, x, y, 0, start_left=sl, end_frac=step / 16)
                 nl = p['last_left'] != turn_back          # (the next pass: on the same way, or back)
                 nxt = plan_pass(w, h, ext, drift, not down, p["end"][0], p["end"][1], 0, start_left=nl)
-                dots = [d for q in out for d in q['dots']] + p['dots'] + nxt['dots']
-                score = coverage(grid, lit, dots) + 0.0005 * (p['off'] + nxt['off'])
+                # the rows' gaps over the passes so far: the largest ones count most
+                score = zig_gaps.mean_square(out + [p, nxt], w, h) + 0.0002 * (p['off'] + nxt['off'])
                 if best is None or score < best[0]:
                     best = (score, p, nl)
         _, p, sl = best
@@ -163,8 +164,9 @@ def emit_sprite(name, passes):
 
 SPRITES = [('trogg', 'sTrogg_wr_Beeb', 4), ('scrubbly', 'sScrubbly_Beeb', 1), ('poglet', 'sPoglet_Beeb', 1),
            ('hooter', 'sHooter_Beeb', 1)]
-MODES = [('columns', 0, 0, None), ('1 pass, nearest', None, 1, 'nearest'), ('1 pass, scale2x', None, 1, 'scale2x'),
-         ('2 passes, nearest', None, 2, 'nearest'), ('2 passes, scale2x', None, 2, 'scale2x')]
+MODES = [('columns', 0, 0, None, None), ('2 passes, spacing 1', None, 2, 'scale2x', 1.0),
+         ('2 passes, spacing 0.75', None, 2, 'scale2x', 0.75), ('2 passes, spacing 0.6', None, 2, 'scale2x', 0.6),
+         ('1 pass, spacing 0.6', None, 1, 'scale2x', 0.6)]
 SPACING = 1.0               # pixels between rows, over all the passes (regular rows)
 LAYOUT = {'trogg': (-100, -104), 'scrubbly': (-100, -60), 'poglet': (-100, -10), 'hooter': (-100, 34)}
 STEP = {'trogg': 34, 'scrubbly': 40, 'poglet': 28, 'hooter': 26}
@@ -185,7 +187,7 @@ def main():
         data.append('%s_cols' % label)
         data += ['                fcb     ' + ','.join('$%02X' % v for v in col) for col in cols]
         x0, y0 = LAYOUT[label]
-        for mi, (mname, drift, npass, method) in enumerate(MODES):
+        for mi, (mname, drift, npass, method, spacing) in enumerate(MODES):
             x = x0 + mi * STEP[label]
             if npass == 0:
                 hs = 8 * nb
@@ -198,10 +200,10 @@ def main():
                 g._beam[0] = ((x + last + 0.5) * g.UNIT, -((y0 - g.COL_PAD) + (0 if last % 2 else hs)) * g.UNIT)
             else:
                 wp = -(-len(grid[0]) // 8) * 8
-                drift = max(1, round(npass * SPACING * g.UNIT / (2 * wp)))
-                passes, d, _ = plan_sprite(grid, drift, npass, regular=True, method=method)
+                drift = max(1, round(npass * spacing * g.UNIT / (2 * wp)))
+                passes, d, _ = plan_sprite(grid, drift, npass, regular=True, method=method, spacing=spacing)
                 x -= (wp - len(grid[0])) // 2           # (the padding: the sprite where it was)
-                rname = 'zp_%s_%d_%s' % (label, npass, method)
+                rname = 'zp_%s_%d' % (label, mi)
                 eng += emit_sprite(rname, passes) + ['']
                 data.append('%s_d' % rname)
                 data += ['                fcb     ' + ','.join('$%02X' % v for v in d[k:k + 16]) for k in range(0, len(d), 16)]

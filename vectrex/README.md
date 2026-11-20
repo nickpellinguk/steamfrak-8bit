@@ -560,6 +560,27 @@ ramp off, ~50 cycles); one stream of bits for all the passes.
 * **Looks** (`preview/m1_zigzag_passes.png`: columns, then 1, 2, 3 passes): the shapes hold, with a
   fine crosshatch texture instead of the herringbone; the 2-pass Scrubbly reads best.
 
+### The spacing of multi-pass zigzags (tools/zig_gaps.py)
+
+The rows' real gaps, measured column by column (`tools/zig_gaps.py`): with a target spacing of 1
+pixel the mean gap is 1, but the 90th percentile is 1.6-2 and the worst interior gaps 2-4. That's
+the geometry of two crossing families of lines: each family's lines are 2 x the target spacing
+apart (a pass's right-going rows are every other row), and the families slide past each other
+across the sprite, so phased to interleave perfectly in the middle they bunch towards the edges
+(where each pass's lines meet at its turns), and phased to interleave at the edges they coincide in
+the middle. The worst gap is about a pass's pitch whatever the phase, and about the same as one
+zigzag's fan for the same time: more passes change the texture (diamonds rather than a
+herringbone), not the worst gap. (The phases are now chosen by the gaps' mean square.)
+
+* **Closer rows close the gaps** (`preview/m1_zigzag_spacing.png`, vecx, Scale2x sampling: columns;
+  2 passes at spacing 1, 0.75, 0.6; 1 pass at 0.6): at 0.6 the sprites are solid and continuous,
+  near the columns' look, a little bolder.
+* **But then they cost as much as columns** (cycles with the call; columns, 2 passes at 1 / 0.75 /
+  0.6, 1 pass at 0.6): Trogg 3,102 / 2,392 / 2,904 / 3,800 / 2,845; Scrubbly 4,444 / 3,592 / 4,712 /
+  6,952 / 6,893; Poglet 2,751 / 1,640 / 2,360 / 2,792 / 2,781; Hooter 1,981 / 1,208 / 1,688 / 2,024 /
+  1,965. The zigzag's saving came from sparse rows; at a gap-free density it's gone (the Scrubbly's
+  whole drifts make it worse: 1 or 2, nothing between).
+
 ### Upsampling before resampling (tools/resample.py)
 
 A zigzag's dots fall between the original pixels, so lighting the bit nearest each lit pixel snaps
