@@ -146,6 +146,11 @@ levels in 11,757 bytes, every one decoded back and checked against `build_level`
 
 ### 3. A level on screen, scrolling
 
+**Started** (`README.md`, "Milestone 3"; `test/m3.asm`): A_1, A_2 and A_3 drawn from ROM and
+scrolling, measured over every view: 43,000-57,000 cycles a frame at the median, up to 74,000;
+45% of the busiest frame is overhead around the drawing (clipping, masks, run-time moves), to cut
+next.
+
 * Static scenery's moves chained, worked out by the converter (milestone 1 found ~900 cycles an
   object for moves worked out at run time).
 * A level drawn from ROM, the view moved by the joystick: platforms grouped by line, ladders

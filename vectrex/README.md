@@ -36,6 +36,7 @@ At 50 Hz a frame is 30000 cycles of the 1.5 MHz 6809.
 | `test/m1ll_test.asm`, `tools/m1_ledgel_gen.py` | The same as 6809 code, beside the 8-row strip (`preview/m1_ledge_lines.png`; `M1_CHAIN=1`). |
 | `test/m1zp_test.asm`, `tools/m1_zigp_gen.py` | Multi-pass zigzags (2 or 3 constant-Y zigzags, phase-shifted) beside columns and one pass (`preview/m1_zigzag_passes.png`; `M1_CHAIN=1`). |
 | `tools/resample.py`, `tools/resample_preview.py` | Pixel art upsampled 8x (Scale2x, three times) and sampled at a renderer's own dots (`preview/resample.png`, `preview/resample_zigzag.png`). |
+| `test/m3.asm`, `tools/m3_gen.py` | Milestone 3: A_1, A_2 and A_3 drawn from ROM, scrolling (joystick, or by itself), with a frame meter (`preview/m3_levels.png`). |
 | `tools/budget.py` | For every level, slides a 320x256 and a 256x256 window across it, and estimates the drawing cost of the busiest window position (platforms as one line, ladders as two, the line art's real vector counts, standing meanies, gems and keys, and moving things whose range is in view). |
 | `tools/beam.py` | A model of the beam: renders lines (end points, intensity, time) with brightness from intensity x time / length, a brighter dot at each end where the beam dwells, a Gaussian spot, phosphor saturation and a little bloom. Its constants aren't measured: they're for comparing lines with each other. |
 | `art/shapes.py` | The line art, as polylines over the BBC sprites' pixels: Trogg standing (37 vectors), the Scrubbly (52), a gem and a key. |
@@ -608,6 +609,29 @@ vector daggers pointing right, left, up and down). Measured in vecx, not countin
 
 At scale 28 the short lines (the guard) are drawn slowly, so they come out brighter than the
 blade; the intensity could be turned down for daggers if that shows on a real Vectrex.
+
+## Milestone 3: levels on screen, scrolling (test/m3.asm, tools/m3_gen.py)
+
+A_1, A_2 and A_3 from the BBC converter's build_level: the static platforms as 2-row strips (each
+run's exact pixels), everything else as column sprites at their start (ladders, chains, Qiana
+poles, gems, springs, the meanies standing, Trogg standing), keys as drifting rows; for each level
+two lists sorted by x (strips, sprites), so a frame walks only from the first entry that can reach
+the window to the last that starts in it. The engine is milestone 1's run-time one (test/m1_rt.asm:
+clipping, moves in half pixels). The joystick scrolls the view 2 pixels a frame; with none for 2
+seconds it scrolls by itself, back and forth, then on to the next level (so vecx can measure every
+view); a bar at the bottom shows the frame's time (full width: 30,000 cycles; a tick: over).
+
+* **Measured** (every frame of a whole sweep in vecx, the drawing only, without the BIOS's frame
+  wait, the joystick and the meter, ~1,400): A_1 median 57,489, 90% 71,395, worst 74,001; A_2
+  55,388 / 66,296 / 70,277; A_3 43,547 / 47,718 / 52,844 cycles. Every A_1 and A_3 frame, and 90% of
+  A_2's, is over 30,000.
+* **Where it goes** (the busiest frame, 71,476): 15 column sprites 26,030 in their column routines
+  + 14,625 around them (~975 each: clipping, positions, the move); 17 strips 5,544 in the strip
+  routine + 17,944 around (~1,055 each: the edge masks worked out bit by bit even when a strip is
+  wholly in the window, and a move); 2 keys 2,390. So 45% of the frame isn't drawing.
+* **Next:** fast paths for things wholly in the window (no masks, no clipping), the masks from a
+  table, and static scenery's moves chained by the converter (the plan's ~250 an object); that
+  would take the busiest frame to ~45,000; the drawing itself (~34,000 there) is still over a frame.
 
 ## Findings so far
 
