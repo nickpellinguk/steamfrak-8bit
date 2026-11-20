@@ -41,7 +41,11 @@ SR0 = 12
 LATE = 12                   # cycles a flip (or the ramp off) may come after the beam reaches the edge
 
 
-def schedule(w, rows, max_bytes, drift=None, h=None, extents=None, end_right=False):
+def schedule(w, rows, max_bytes, drift=None, h=None, extents=None, end_right=False,
+             start_left=False, x_start=None, y_start=0.0, y_target=None, end_frac=1.0):
+    # (start_left: the first row goes left, from x_start (pixels; the left edge by default, the
+    # right going left); y_start: where the beam starts down the sprite; y_target: the pass ends
+    # once the beam is past it, going down or (drift < 0) up; default h, from the top)
     """
     The instructions in time order [(t, op, cycles, arg)], the flips' times and the ramp-off's.
     Each flip comes once the beam has reached the sprite's edge (x = w going right, 0 going left),
@@ -50,7 +54,12 @@ def schedule(w, rows, max_bytes, drift=None, h=None, extents=None, end_right=Fal
     """
     stores = [SR0 + 16 * j for j in range(max_bytes)]
     out = []
-    t, j, jl, x2, f_last = 5, 0, 2, 0, 0        # t = 0: STU (ramp on), bytes 0 and 1 loaded before
+    t, j, jl, f_last = 5, 0, 2, 0                # t = 0: STU (ramp on), bytes 0 and 1 loaded before
+    if x_start is None:
+        x_start = w if start_left else 0
+    x2 = int(round(2 * x_start))
+    if y_target is None and h is not None:
+        y_target = h if drift > 0 else 0
 
     def seg(t, j, jl, T, ln, acc, loads_ok, dead=None):
         """Instructions from t to exactly T (then ln cycles of the event), or None."""
@@ -87,13 +96,13 @@ def schedule(w, rows, max_bytes, drift=None, h=None, extents=None, end_right=Fal
         return None
 
     def edge_of(k, x2, f_last):
-        going_right = k % 2 == 0
+        going_right = (k % 2 == 0) != start_left
         edge2 = 2 * w if going_right else 0
         if extents is not None:
             # only as far as the lit pixels of the sprite's rows near this pass need
             # (the rows this pass crosses, from where it starts to where it ends: worked out
             # again with the end found, twice)
-            y0 = drift * f_last / g.UNIT
+            y0 = y_start + drift * f_last / g.UNIT
             for _ in range(3):
                 y1 = y0 + drift * abs(edge2 - x2) / g.UNIT
                 band = [extents[r] for r in range(int(y0 - 0.5), int(y1 + 0.5) + 1)
@@ -112,12 +121,19 @@ def schedule(w, rows, max_bytes, drift=None, h=None, extents=None, end_right=Fal
         key = (k, t, j, jl, x2, f_last)
         if key in failed:
             return None
-        going_right = k % 2 == 0
+        going_right = (k % 2 == 0) != start_left
         earliest = f_last + abs(edge_of(k, x2, f_last) - x2)
-        last = (abs(drift) * earliest / g.UNIT >= h) if h is not None else k == rows - 1
+        if h is not None:
+            y_e = y_start + drift * earliest / g.UNIT
+            last = y_e >= y_target if drift > 0 else y_e <= y_target
+        else:
+            last = k == rows - 1
         if end_right and not going_right:
             last = False                                # (the last row ends at the right edge)
         ln = 8 if last else (6 if k % 2 == 0 else 5)
+        if last and end_frac < 1:
+            # (the ramp off part way along the last row: the next pass's phase)
+            earliest = f_last + int(round(end_frac * abs(edge_of(k, x2, f_last) - x2)))
         start = max(earliest - (3 if last else 0), t)   # (the ramp off: LDX, then STX at T + 3)
         for d in range(LATE + 1):
             T = start + d
@@ -162,18 +178,18 @@ def schedule(w, rows, max_bytes, drift=None, h=None, extents=None, end_right=Fal
     return out, flip_times, off_time, j
 
 
-def path(flip_times, off_time, drift, nbits):
+def path(flip_times, off_time, drift, nbits, start_left=False, x_start=0.0, y_start=0.0):
     """Each bit's beam position (x, y: pixels from the start, y down), at the middle of its 2 cycles."""
     def x_at(T):
-        x, v, last = 0.0, SPEED / g.UNIT, 0
+        x, v, last = x_start, (-1 if start_left else 1) * SPEED / g.UNIT, 0
         for f in flip_times:
             if f >= T:
                 break
             x += v * (f - last)
             v, last = -v, f
         return x + v * (T - last)
-    return [(x_at(2 * i + 1), drift * (2 * i + 1) / g.UNIT) for i in range(nbits)], \
-        (x_at(off_time), drift * off_time / g.UNIT)
+    return [(x_at(2 * i + 1), y_start + drift * (2 * i + 1) / g.UNIT) for i in range(nbits)], \
+        (x_at(off_time), y_start + drift * off_time / g.UNIT)
 
 
 MAX_PITCH = 1.05            # pixels between rows (on average)

@@ -34,6 +34,7 @@ At 50 Hz a frame is 30000 cycles of the 1.5 MHz 6809.
 | `test/m1lz_test.asm`, `tools/m1_ledgez_gen.py` | Ledges as a top line and a drift zigzag for each block, beside the 8-row strip (`preview/m1_ledge_zigzag.png`; `M1_CHAIN=1` for chained moves). |
 | `tools/ledge_lines_preview.py` | Ledges as a top line and steep parallel lines, previewed in Python (`preview/ledge_lines.png`). |
 | `test/m1ll_test.asm`, `tools/m1_ledgel_gen.py` | The same as 6809 code, beside the 8-row strip (`preview/m1_ledge_lines.png`; `M1_CHAIN=1`). |
+| `test/m1zp_test.asm`, `tools/m1_zigp_gen.py` | Multi-pass zigzags (2 or 3 constant-Y zigzags, phase-shifted) beside columns and one pass (`preview/m1_zigzag_passes.png`; `M1_CHAIN=1`). |
 | `tools/budget.py` | For every level, slides a 320x256 and a 256x256 window across it, and estimates the drawing cost of the busiest window position (platforms as one line, ladders as two, the line art's real vector counts, standing meanies, gems and keys, and moving things whose range is in view). |
 | `tools/beam.py` | A model of the beam: renders lines (end points, intensity, time) with brightness from intensity x time / length, a brighter dot at each end where the beam dwells, a Gaussian spot, phosphor saturation and a little bloom. Its constants aren't measured: they're for comparing lines with each other. |
 | `art/shapes.py` | The line art, as polylines over the BBC sprites' pixels: Trogg standing (37 vectors), the Scrubbly (52), a gem and a key. |
@@ -535,6 +536,28 @@ next, each as deep as the ledge's shape where it is.
 * **Looks** (`preview/m1_ledge_lines.png`: the strip, then 3.2, then 4 pixels apart): at 3.2, clean
   parallel lines, their lengths tracing the stalactites; at 4, some bottom turns still lit (a pair
   of deep lines whose spot change can't be placed before the turn: open).
+
+### Multi-pass zigzags (test/m1zp_test.asm, tools/m1_zigp_gen.py)
+
+A sprite as 2 or 3 constant-Y zigzags going down and up in turn, each with a fast drift (its
+rows far apart), phase-shifted so their rows interleave: the right-going rows of all the passes
+make one family of evenly spaced parallel lines and the left-going rows another (a shallow
+crosshatch), instead of one zigzag's fan. Between passes Y's sample-and-hold is reversed (the
+ramp off, ~50 cycles); one stream of bits for all the passes.
+
+* **Regular rows:** each sprite padded to a whole number of bytes wide (Trogg 32, the Scrubbly 40,
+  the Poglet and Hooter 24) and every row its full width, so a row is a whole number of 16-cycle
+  beats and every flip falls on time (with rows tracking the edges, flips came late and the passes
+  fell out of phase: irregular streaks).
+* **The phase:** a pass ends part way along its last row (the ramp off there), and the next
+  carries on the same way or turns back; the converter picks the point and the way that spread the
+  rows most evenly. (Ending at a row's end, the next pass going up retraces the last one exactly.)
+* **The drift** set for rows a pixel apart over all the passes: N x 160 / (2 x the padded width).
+* **Measured** (cycles with the call; columns, 1 pass, 2 passes, 3 passes): Trogg 3,102 / 1,949 /
+  2,392 / 2,259; Scrubbly 4,444 / 3,533 / 3,592 / 3,651; Poglet 2,751 / 1,869 / 1,640 / 1,843;
+  Hooter 1,981 / 1,341 / 1,208 / 1,379. vecx's lit points within ~half a pixel of the model's.
+* **Looks** (`preview/m1_zigzag_passes.png`: columns, then 1, 2, 3 passes): the shapes hold, with a
+  fine crosshatch texture instead of the herringbone; the 2-pass Scrubbly reads best.
 
 ### A vector dagger (test/dagger.asm, tools/dagger.py)
 
