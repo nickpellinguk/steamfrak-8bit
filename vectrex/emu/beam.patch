@@ -1,0 +1,475 @@
+diff --git a/e6809.c b/e6809.c
+index 18e49ef..c3cc33c 100644
+--- a/e6809.c
++++ b/e6809.c
+@@ -41,7 +41,7 @@ static unsigned reg_s;
+ 
+ /* program counter */
+ 
+-static unsigned reg_pc;
++unsigned reg_pc;           /* (beam) not static: beamshot -p watches it */
+ 
+ /* accumulators */
+ 
+@@ -74,7 +74,7 @@ void (*e6809_write8) (unsigned address, unsigned char data);
+ 
+ /* obtain a particular condition code. returns 0 or 1. */
+ 
+-static einline unsigned get_cc (unsigned flag)
++einline unsigned get_cc (unsigned flag)
+ {
+ 	return (reg_cc / flag) & 1;
+ }
+@@ -83,7 +83,7 @@ static einline unsigned get_cc (unsigned flag)
+  * value parameter must be either 0 or 1.
+  */
+ 
+-static einline void set_cc (unsigned flag, unsigned value)
++einline void set_cc (unsigned flag, unsigned value)
+ {
+ 	reg_cc &= ~flag;
+ 	reg_cc |= value * flag;
+@@ -91,7 +91,7 @@ static einline void set_cc (unsigned flag, unsigned value)
+ 
+ /* test carry */
+ 
+-static einline unsigned test_c (unsigned i0, unsigned i1,
++einline unsigned test_c (unsigned i0, unsigned i1,
+ 								unsigned r, unsigned sub)
+ {
+ 	unsigned flag;
+@@ -106,14 +106,14 @@ static einline unsigned test_c (unsigned i0, unsigned i1,
+ 
+ /* test negative */
+ 
+-static einline unsigned test_n (unsigned r)
++einline unsigned test_n (unsigned r)
+ {
+ 	return (r >> 7) & 1;
+ }
+ 
+ /* test for zero in lower 8 bits */
+ 
+-static einline unsigned test_z8 (unsigned r)
++einline unsigned test_z8 (unsigned r)
+ {
+ 	unsigned flag;
+ 
+@@ -127,7 +127,7 @@ static einline unsigned test_z8 (unsigned r)
+ 
+ /* test for zero in lower 16 bits */
+ 
+-static einline unsigned test_z16 (unsigned r)
++einline unsigned test_z16 (unsigned r)
+ {
+ 	unsigned flag;
+ 
+@@ -145,7 +145,7 @@ static einline unsigned test_z16 (unsigned r)
+  * inputs.
+  */
+ 
+-static einline unsigned test_v (unsigned i0, unsigned i1, unsigned r)
++einline unsigned test_v (unsigned i0, unsigned i1, unsigned r)
+ {
+ 	unsigned flag;
+ 
+@@ -156,12 +156,12 @@ static einline unsigned test_v (unsigned i0, unsigned i1, unsigned r)
+ 	return flag;
+ }
+ 
+-static einline unsigned get_reg_d (void)
++einline unsigned get_reg_d (void)
+ {
+ 	return (reg_a << 8) | (reg_b & 0xff);
+ }
+ 
+-static einline void set_reg_d (unsigned value)
++einline void set_reg_d (unsigned value)
+ {
+ 	reg_a = value >> 8;
+ 	reg_b = value;
+@@ -171,7 +171,7 @@ static einline void set_reg_d (unsigned value)
+  * while the upper bits are all zero.
+  */
+ 
+-static einline unsigned read8 (unsigned address)
++einline unsigned read8 (unsigned address)
+ {
+ 	return (*e6809_read8) (address & 0xffff);
+ }
+@@ -180,12 +180,12 @@ static einline unsigned read8 (unsigned address)
+  * is written. the upper bits are ignored.
+  */
+ 
+-static einline void write8 (unsigned address, unsigned data)
++einline void write8 (unsigned address, unsigned data)
+ {
+ 	(*e6809_write8) (address & 0xffff, (unsigned char) data);
+ }
+ 
+-static einline unsigned read16 (unsigned address)
++einline unsigned read16 (unsigned address)
+ {
+ 	unsigned datahi, datalo;
+ 
+@@ -195,19 +195,19 @@ static einline unsigned read16 (unsigned address)
+ 	return (datahi << 8) | datalo;
+ }
+ 
+-static einline void write16 (unsigned address, unsigned data)
++einline void write16 (unsigned address, unsigned data)
+ {
+ 	write8 (address, data >> 8);
+ 	write8 (address + 1, data);
+ }
+ 
+-static einline void push8 (unsigned *sp, unsigned data)
++einline void push8 (unsigned *sp, unsigned data)
+ {
+ 	(*sp)--;
+ 	write8 (*sp, data);
+ }
+ 
+-static einline unsigned pull8 (unsigned *sp)
++einline unsigned pull8 (unsigned *sp)
+ {
+ 	unsigned data;
+ 
+@@ -217,13 +217,13 @@ static einline unsigned pull8 (unsigned *sp)
+ 	return data;
+ }
+ 
+-static einline void push16 (unsigned *sp, unsigned data)
++einline void push16 (unsigned *sp, unsigned data)
+ {
+ 	push8 (sp, data);
+ 	push8 (sp, data >> 8);
+ }
+ 
+-static einline unsigned pull16 (unsigned *sp)
++einline unsigned pull16 (unsigned *sp)
+ {
+ 	unsigned datahi, datalo;
+ 
+@@ -235,7 +235,7 @@ static einline unsigned pull16 (unsigned *sp)
+ 
+ /* read a byte from the address pointed to by the pc */
+ 
+-static einline unsigned pc_read8 (void)
++einline unsigned pc_read8 (void)
+ {
+ 	unsigned data;
+ 
+@@ -247,7 +247,7 @@ static einline unsigned pc_read8 (void)
+ 
+ /* read a word from the address pointed to by the pc */
+ 
+-static einline unsigned pc_read16 (void)
++einline unsigned pc_read16 (void)
+ {
+ 	unsigned data;
+ 
+@@ -259,7 +259,7 @@ static einline unsigned pc_read16 (void)
+ 
+ /* sign extend an 8-bit quantity into a 16-bit quantity */
+ 
+-static einline unsigned sign_extend (unsigned data)
++einline unsigned sign_extend (unsigned data)
+ {
+ 	return (~(data & 0x80) + 1) | (data & 0xff);
+ }
+@@ -269,7 +269,7 @@ static einline unsigned sign_extend (unsigned data)
+  * instruction itself.
+  */
+ 
+-static einline unsigned ea_direct (void)
++einline unsigned ea_direct (void)
+ {
+ 	return (reg_dp << 8) | pc_read8 ();
+ }
+@@ -278,14 +278,14 @@ static einline unsigned ea_direct (void)
+  * the instruction.
+  */
+ 
+-static einline unsigned ea_extended (void)
++einline unsigned ea_extended (void)
+ {
+ 	return pc_read16 ();
+ }
+ 
+ /* indexed addressing */
+ 
+-static einline unsigned ea_indexed (unsigned *cycles)
++einline unsigned ea_indexed (unsigned *cycles)
+ {
+ 	unsigned r, op, ea;
+ 
+diff --git a/vecx.c b/vecx.c
+index 36cd857..48414ce 100644
+--- a/vecx.c
++++ b/vecx.c
+@@ -8,7 +8,7 @@
+ 
+ unsigned char rom[8192];
+ unsigned char cart[32768];
+-static unsigned char ram[1024];
++unsigned char ram[1024];          /* (beam) not static: beamshot -m reads it */
+ 
+ /* the sound chip registers */
+ 
+@@ -35,6 +35,8 @@ static unsigned via_sr;
+ static unsigned via_srb;   /* number of bits shifted so far */
+ static unsigned via_src;   /* shift counter */
+ static unsigned via_srclk;
++static unsigned via_o2phase; /* (beam) cycles since the last bit, shifting under the system clock */
++int via_o2_div = 2;           /* (beam) cycles a bit in that mode: 2 (as a 6522 and MAME), 1 (vecx as was) */
+ static unsigned via_acr;
+ static unsigned via_pcr;
+ static unsigned via_ifr;
+@@ -87,6 +89,9 @@ static long alg_vector_y1;
+ static long alg_vector_dx;
+ static long alg_vector_dy;
+ static unsigned char alg_vector_color;
++static long alg_vector_cycles;
++unsigned long long alg_cycles; /* (beam) cycles since reset */
++void (*beam_watch) (unsigned long long cycles);   /* (beam) called after each instruction, if set */ /* (beam) cycles the current vector has been drawing for */
+ 
+ long vector_draw_cnt;
+ long vector_erse_cnt;
+@@ -100,7 +105,7 @@ static long fcycles;
+ 
+ /* update the snd chips internal registers when via_ora/via_orb changes */
+ 
+-static einline void snd_update (void)
++einline void snd_update (void)
+ {
+ 	switch (via_orb & 0x18) {
+ 	case 0x00:
+@@ -131,7 +136,7 @@ static einline void snd_update (void)
+ 
+ /* update the various analog values when orb is written. */
+ 
+-static einline void alg_update (void)
++einline void alg_update (void)
+ {
+ 	switch (via_orb & 0x06) {
+ 	case 0x00:
+@@ -190,7 +195,7 @@ static einline void alg_update (void)
+  * ifr.
+  */
+ 
+-static einline void int_update (void)
++einline void int_update (void)
+ {
+ 	if ((via_ifr & 0x7f) & (via_ier & 0x7f)) {
+ 		via_ifr |= 0x80;
+@@ -312,6 +317,7 @@ unsigned char read8 (unsigned address)
+ 				via_ifr &= 0xfb; /* remove shift register interrupt flag */
+ 				via_srb = 0;
+ 				via_srclk = 1;
++				via_o2phase = 0;
+ 
+ 				int_update ();
+ 
+@@ -459,6 +465,7 @@ void write8 (unsigned address, unsigned char data)
+ 				via_ifr &= 0xfb; /* remove shift register interrupt flag */
+ 				via_srb = 0;
+ 				via_srclk = 1;
++				via_o2phase = 0;
+ 
+ 				int_update ();
+ 
+@@ -605,7 +612,7 @@ void vecx_reset (void)
+  * via_sstep0 is the first postion of the emulation.
+  */
+ 
+-static einline void via_sstep0 (void)
++einline void via_sstep0 (void)
+ {
+ 	unsigned t2shift;
+ 
+@@ -722,11 +729,16 @@ static einline void via_sstep0 (void)
+ 		case 0x18:
+ 			/* shift out under system clock control */
+ 
+-			via_cb2s = (via_sr >> 7) & 1;
++			/* (beam) a 6522 shifts on CB1's falling edges, and CB1 toggles every cycle: a bit
++			 * every 2 cycles, the first 2 cycles after the shift register is written */
++			if (++via_o2phase >= (unsigned) via_o2_div) {
++				via_o2phase = 0;
++				via_cb2s = (via_sr >> 7) & 1;
+ 
+-			via_sr <<= 1;
+-			via_sr |= via_cb2s;
+-			via_srb++;
++				via_sr <<= 1;
++				via_sr |= via_cb2s;
++				via_srb++;
++			}
+ 
+ 			break;
+ 		case 0x1c:
+@@ -743,7 +755,7 @@ static einline void via_sstep0 (void)
+ 
+ /* perform the second part of the via emulation */
+ 
+-static einline void via_sstep1 (void)
++einline void via_sstep1 (void)
+ {
+ 	if ((via_pcr & 0x0e) == 0x0a) {
+ 		/* if ca2 is in pulse mode, then make sure
+@@ -762,11 +774,13 @@ static einline void via_sstep1 (void)
+ 	}
+ }
+ 
+-static einline void alg_addline (long x0, long y0, long x1, long y1, unsigned char color)
++einline void alg_addline (long x0, long y0, long x1, long y1, unsigned char color)
+ {
+ 	unsigned long key;
+ 	long index;
+ 
++	beam_line (x0, y0, x1, y1, color, alg_vector_cycles);
++
+ 	key = (unsigned long) x0;
+ 	key = key * 31 + (unsigned long) y0;
+ 	key = key * 31 + (unsigned long) x1;
+@@ -810,11 +824,23 @@ static einline void alg_addline (long x0, long y0, long x1, long y1, unsigned ch
+ 
+ /* perform a single cycle worth of analog emulation */
+ 
+-static einline void alg_sstep (void)
++/* (beam) the analogue side lags the VIA: the ramp, the integrators' zeroing, the DAC's values
++ * and the intensity reach the integrators alg_delay cycles late, but the blanking (spot on/off)
++ * doesn't, as MAME models it (ANALOG_DELAY, 8.5 us). 0 = vecx's original behaviour. */
++#define ALG_DELAY_MAX 64
++int alg_delay = 0;
++static struct {
++	unsigned zero, ramp, zsh;
++	long dx, dy;
++} alg_lag[ALG_DELAY_MAX];
++static unsigned alg_lag_pos;
++
++einline void alg_sstep (void)
+ {
+ 	long sig_dx, sig_dy;
+ 	unsigned sig_ramp;
+ 	unsigned sig_blank;
++	unsigned lag_now, lag_then;
+ 
+ 	if ((via_acr & 0x10) == 0x10) {
+ 		sig_blank = via_cb2s;
+@@ -822,7 +848,17 @@ static einline void alg_sstep (void)
+ 		sig_blank = via_cb2h;
+ 	}
+ 
+-	if (via_ca2 == 0) {
++	/* (beam) the analogue state now goes in the delay line; what comes out is what the
++	 * integrators see */
++	lag_now = alg_lag_pos++ % ALG_DELAY_MAX;
++	lag_then = (lag_now + ALG_DELAY_MAX - (unsigned) alg_delay) % ALG_DELAY_MAX;
++	alg_lag[lag_now].zero = via_ca2 == 0;
++	alg_lag[lag_now].ramp = (via_acr & 0x80) ? via_t1pb7 : (via_orb & 0x80);
++	alg_lag[lag_now].zsh = alg_zsh;
++	alg_lag[lag_now].dx = alg_dx;
++	alg_lag[lag_now].dy = alg_dy;
++
++	if (alg_lag[lag_then].zero) {
+ 		/* need to force the current point to the 'orgin' so just
+ 		 * calculate distance to origin and use that as dx,dy.
+ 		 */
+@@ -830,15 +866,11 @@ static einline void alg_sstep (void)
+ 		sig_dx = ALG_MAX_X / 2 - alg_curr_x;
+ 		sig_dy = ALG_MAX_Y / 2 - alg_curr_y;
+ 	} else {
+-		if (via_acr & 0x80) {
+-			sig_ramp = via_t1pb7;
+-		} else {
+-			sig_ramp = via_orb & 0x80;
+-		}
++		sig_ramp = alg_lag[lag_then].ramp;
+ 
+ 		if (sig_ramp == 0) {
+-			sig_dx = alg_dx;
+-			sig_dy = alg_dy;
++			sig_dx = alg_lag[lag_then].dx;
++			sig_dy = alg_lag[lag_then].dy;
+ 		} else {
+ 			sig_dx = 0;
+ 			sig_dy = 0;
+@@ -859,7 +891,8 @@ static einline void alg_sstep (void)
+ 			alg_vector_y1 = alg_curr_y;
+ 			alg_vector_dx = sig_dx;
+ 			alg_vector_dy = sig_dy;
+-			alg_vector_color = (unsigned char) alg_zsh;
++			alg_vector_color = (unsigned char) alg_lag[lag_then].zsh;
++			alg_vector_cycles = 0;
+ 		}
+ 	} else {
+ 		/* already drawing a vector ... check if we need to turn it off */
+@@ -876,7 +909,7 @@ static einline void alg_sstep (void)
+ 						 alg_vector_color);
+ 		} else if (sig_dx != alg_vector_dx ||
+ 				   sig_dy != alg_vector_dy ||
+-				   (unsigned char) alg_zsh != alg_vector_color) {
++				   (unsigned char) alg_lag[lag_then].zsh != alg_vector_color) {
+ 
+ 			/* the parameters of the vectoring processing has changed.
+ 			 * so end the current line.
+@@ -898,7 +931,8 @@ static einline void alg_sstep (void)
+ 				alg_vector_y1 = alg_curr_y;
+ 				alg_vector_dx = sig_dx;
+ 				alg_vector_dy = sig_dy;
+-				alg_vector_color = (unsigned char) alg_zsh;
++				alg_vector_color = (unsigned char) alg_lag[lag_then].zsh;
++				alg_vector_cycles = 0;
+ 			} else {
+ 				alg_vectoring = 0;
+ 			}
+@@ -919,6 +953,10 @@ static einline void alg_sstep (void)
+ 		alg_vector_x1 = alg_curr_x;
+ 		alg_vector_y1 = alg_curr_y;
+ 	}
++
++	if (alg_vectoring == 1)
++		alg_vector_cycles++;
++	alg_cycles++;
+ }
+ 
+ void vecx_emu (long cycles)
+@@ -927,6 +965,8 @@ void vecx_emu (long cycles)
+ 
+ 	while (cycles > 0) {
+ 		icycles = e6809_sstep (via_ifr & 0x80, 0);
++		if (beam_watch)
++			beam_watch (alg_cycles);		/* (beam) after each instruction */
+ 
+ 		for (c = 0; c < icycles; c++) {
+ 			via_sstep0 ();
+diff --git a/vecx.h b/vecx.h
+index 729591d..591f256 100644
+--- a/vecx.h
++++ b/vecx.h
+@@ -21,6 +21,7 @@ typedef struct vector_type {
+ 
+ extern unsigned char rom[8192];
+ extern unsigned char cart[32768];
++extern unsigned char ram[1024];     /* (beam) */
+ 
+ extern unsigned snd_regs[16];
+ extern unsigned alg_jch0;
+@@ -33,6 +34,15 @@ extern long vector_erse_cnt;
+ extern vector_t *vectors_draw;
+ extern vector_t *vectors_erse;
+ 
++/* (beam) called for every line the beam draws: its end points, intensity (0-127) and how many
++ * cycles it took, so a front end can work out its brightness from the beam's speed */
++extern int via_o2_div;             /* (beam) shift register: cycles a bit under the system clock */
++extern int alg_delay;              /* (beam) analogue lag, cycles (< 64) */
++extern unsigned long long alg_cycles;
++extern void (*beam_watch) (unsigned long long cycles);  /* (beam) */
++extern unsigned reg_pc;             /* (beam) the 6809's PC */ /* (beam) cycles since reset */
++void beam_line (long x0, long y0, long x1, long y1, unsigned char color, long cycles);
++
+ void vecx_reset (void);
+ void vecx_emu (long cycles);
+ 

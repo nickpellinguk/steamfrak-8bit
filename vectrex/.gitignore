@@ -1,0 +1,5 @@
+emu/vecx/
+build/
+__pycache__/
+test/*.bin
+test/*.lst
