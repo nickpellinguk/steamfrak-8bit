@@ -35,6 +35,7 @@ At 50 Hz a frame is 30000 cycles of the 1.5 MHz 6809.
 | `tools/ledge_lines_preview.py` | Ledges as a top line and steep parallel lines, previewed in Python (`preview/ledge_lines.png`). |
 | `test/m1ll_test.asm`, `tools/m1_ledgel_gen.py` | The same as 6809 code, beside the 8-row strip (`preview/m1_ledge_lines.png`; `M1_CHAIN=1`). |
 | `test/m1zp_test.asm`, `tools/m1_zigp_gen.py` | Multi-pass zigzags (2 or 3 constant-Y zigzags, phase-shifted) beside columns and one pass (`preview/m1_zigzag_passes.png`; `M1_CHAIN=1`). |
+| `tools/resample.py`, `tools/resample_preview.py` | Pixel art upsampled 8x (Scale2x, three times) and sampled at a renderer's own dots (`preview/resample.png`, `preview/resample_zigzag.png`). |
 | `tools/budget.py` | For every level, slides a 320x256 and a 256x256 window across it, and estimates the drawing cost of the busiest window position (platforms as one line, ladders as two, the line art's real vector counts, standing meanies, gems and keys, and moving things whose range is in view). |
 | `tools/beam.py` | A model of the beam: renders lines (end points, intensity, time) with brightness from intensity x time / length, a brighter dot at each end where the beam dwells, a Gaussian spot, phosphor saturation and a little bloom. Its constants aren't measured: they're for comparing lines with each other. |
 | `art/shapes.py` | The line art, as polylines over the BBC sprites' pixels: Trogg standing (37 vectors), the Scrubbly (52), a gem and a key. |
@@ -558,6 +559,19 @@ ramp off, ~50 cycles); one stream of bits for all the passes.
   Hooter 1,981 / 1,341 / 1,208 / 1,379. vecx's lit points within ~half a pixel of the model's.
 * **Looks** (`preview/m1_zigzag_passes.png`: columns, then 1, 2, 3 passes): the shapes hold, with a
   fine crosshatch texture instead of the herringbone; the 2-pass Scrubbly reads best.
+
+### Upsampling before resampling (tools/resample.py)
+
+A zigzag's dots fall between the original pixels, so lighting the bit nearest each lit pixel snaps
+the art's 1-pixel steps onto whichever row is near. Instead: the sprite upsampled 8x by Scale2x
+(three times: thin lines kept, diagonal steps rounded into slopes; `preview/resample.png`), and
+each bit lit if at least 30% of its patch (a pixel along its row, the rows' spacing across) is lit
+there. In tools/m1_zigp_gen.py as `method='scale2x'`.
+
+* **Looks** (`preview/m1_zigzag_resample.png`, vecx: columns; 1 pass nearest, 1 pass Scale2x;
+  2 passes nearest, 2 passes Scale2x): outlines more continuous and curves rounder (the Scrubbly's
+  eyes, Trogg's head), lines a little bolder (more bits lit at 30%); fine detail still breaks into
+  dashes along the rows. The same cycles (the same paths).
 
 ### A vector dagger (test/dagger.asm, tools/dagger.py)
 

@@ -22,6 +22,9 @@ TEST = os.path.join(HERE, '..', 'test')
 sys.path.insert(0, HERE)
 import m1_gen as g  # noqa: E402
 import m1_zig_gen as z  # noqa: E402
+import resample  # noqa: E402
+
+THRESH = 0.3                # (scale2x) a bit is lit if this much of its patch is lit
 
 
 def extents_of(grid, lit):
@@ -61,7 +64,7 @@ def coverage(grid, lit, dots):
     return tot / max(1, n)
 
 
-def plan_sprite(grid, drift, passes, lit='#', regular=False):
+def plan_sprite(grid, drift, passes, lit='#', regular=False, method='nearest', spacing=1.0):
     """regular: the sprite padded to a whole number of bytes wide and every row its full width,
     so every row is a whole number of 16-cycle beats, every flip on time and the passes in step;
     the drift then set for rows SPACING apart over all the passes."""
@@ -93,15 +96,24 @@ def plan_sprite(grid, drift, passes, lit='#', regular=False):
         _, p, sl = best
         out.append(p)
         x, y = p["end"]
-    # the bits: each lit pixel lights the nearest dot of any pass
-    flat = [(pi, i) for pi, p in enumerate(out) for i in range(len(p['dots']))]
     bits = [[0] * (8 * p['loads']) for p in out]
-    for r in range(h):
-        for c in range(w):
-            if grid[r][c] in lit:
-                pi, i = min(flat, key=lambda q: (out[q[0]]['dots'][q[1]][0] - c - 0.5) ** 2 +
-                            (out[q[0]]['dots'][q[1]][1] - r - 0.5) ** 2)
-                bits[pi][i] = 1
+    if method == 'scale2x':
+        # the sprite upsampled 8x (Scale2x), each bit lit if enough of its patch (a pixel along
+        # its row, the rows' spacing across) is lit there
+        up = resample.upsample(grid, lit)
+        for pi, p in enumerate(out):
+            for i, (x, y) in enumerate(p['dots']):
+                if resample.coverage(up, x, y, 1.0, spacing) >= THRESH:
+                    bits[pi][i] = 1
+    else:
+        # each lit pixel lights the nearest dot of any pass
+        flat = [(pi, i) for pi, p in enumerate(out) for i in range(len(p['dots']))]
+        for r in range(h):
+            for c in range(w):
+                if grid[r][c] in lit:
+                    pi, i = min(flat, key=lambda q: (out[q[0]]['dots'][q[1]][0] - c - 0.5) ** 2 +
+                                (out[q[0]]['dots'][q[1]][1] - r - 0.5) ** 2)
+                    bits[pi][i] = 1
     data = []
     for b in bits:
         data += [int(''.join(map(str, b[i:i + 8])), 2) for i in range(0, len(b), 8)]
@@ -151,10 +163,12 @@ def emit_sprite(name, passes):
 
 SPRITES = [('trogg', 'sTrogg_wr_Beeb', 4), ('scrubbly', 'sScrubbly_Beeb', 1), ('poglet', 'sPoglet_Beeb', 1),
            ('hooter', 'sHooter_Beeb', 1)]
-MODES = [('columns', 0, 0), ('1 pass', None, 1), ('2 passes', None, 2), ('3 passes', None, 3)]
+MODES = [('columns', 0, 0, None), ('1 pass, nearest', None, 1, 'nearest'), ('1 pass, scale2x', None, 1, 'scale2x'),
+         ('2 passes, nearest', None, 2, 'nearest'), ('2 passes, scale2x', None, 2, 'scale2x')]
 SPACING = 1.0               # pixels between rows, over all the passes (regular rows)
 LAYOUT = {'trogg': (-100, -104), 'scrubbly': (-100, -60), 'poglet': (-100, -10), 'hooter': (-100, 34)}
-STEP = {'trogg': 34, 'scrubbly': 44, 'poglet': 28, 'hooter': 26}
+STEP = {'trogg': 34, 'scrubbly': 40, 'poglet': 28, 'hooter': 26}
+LAYOUT['scrubbly'] = (-104, -60)
 
 
 def main():
@@ -171,7 +185,7 @@ def main():
         data.append('%s_cols' % label)
         data += ['                fcb     ' + ','.join('$%02X' % v for v in col) for col in cols]
         x0, y0 = LAYOUT[label]
-        for mi, (mname, drift, npass) in enumerate(MODES):
+        for mi, (mname, drift, npass, method) in enumerate(MODES):
             x = x0 + mi * STEP[label]
             if npass == 0:
                 hs = 8 * nb
@@ -185,9 +199,9 @@ def main():
             else:
                 wp = -(-len(grid[0]) // 8) * 8
                 drift = max(1, round(npass * SPACING * g.UNIT / (2 * wp)))
-                passes, d, _ = plan_sprite(grid, drift, npass, regular=True)
+                passes, d, _ = plan_sprite(grid, drift, npass, regular=True, method=method)
                 x -= (wp - len(grid[0])) // 2           # (the padding: the sprite where it was)
-                rname = 'zp_%s_%d' % (label, npass)
+                rname = 'zp_%s_%d_%s' % (label, npass, method)
                 eng += emit_sprite(rname, passes) + ['']
                 data.append('%s_d' % rname)
                 data += ['                fcb     ' + ','.join('$%02X' % v for v in d[k:k + 16]) for k in range(0, len(d), 16)]

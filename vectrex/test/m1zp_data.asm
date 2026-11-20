@@ -15,117 +15,145 @@ dc_0_start
                 sta     $C880
                 jsr     col5_down
 dc_0_end
-; trogg: 1 pass
+; trogg: 1 pass, nearest
                 ldx     #move_m1
                 jsr     vlist_d
 dc_1_start
-                ldx     #zp_trogg_1_d
-                jsr     zp_trogg_1
+                ldx     #zp_trogg_1_nearest_d
+                jsr     zp_trogg_1_nearest
 dc_1_end
-; trogg: 2 passes
+; trogg: 1 pass, scale2x
                 ldx     #move_m2
                 jsr     vlist_d
 dc_2_start
-                ldx     #zp_trogg_2_d
-                jsr     zp_trogg_2
+                ldx     #zp_trogg_1_scale2x_d
+                jsr     zp_trogg_1_scale2x
 dc_2_end
-; trogg: 3 passes
+; trogg: 2 passes, nearest
                 ldx     #move_m3
                 jsr     vlist_d
 dc_3_start
-                ldx     #zp_trogg_3_d
-                jsr     zp_trogg_3
+                ldx     #zp_trogg_2_nearest_d
+                jsr     zp_trogg_2_nearest
 dc_3_end
-; scrubbly: columns
+; trogg: 2 passes, scale2x
                 ldx     #move_m4
                 jsr     vlist_d
 dc_4_start
+                ldx     #zp_trogg_2_scale2x_d
+                jsr     zp_trogg_2_scale2x
+dc_4_end
+; scrubbly: columns
+                ldx     #move_m5
+                jsr     vlist_d
+dc_5_start
                 ldx     #scrubbly_cols
                 lda     #34
                 sta     $C880
                 jsr     col6_down
-dc_4_end
-; scrubbly: 1 pass
-                ldx     #move_m5
-                jsr     vlist_d
-dc_5_start
-                ldx     #zp_scrubbly_1_d
-                jsr     zp_scrubbly_1
 dc_5_end
-; scrubbly: 2 passes
+; scrubbly: 1 pass, nearest
                 ldx     #move_m6
                 jsr     vlist_d
 dc_6_start
-                ldx     #zp_scrubbly_2_d
-                jsr     zp_scrubbly_2
+                ldx     #zp_scrubbly_1_nearest_d
+                jsr     zp_scrubbly_1_nearest
 dc_6_end
-; scrubbly: 3 passes
+; scrubbly: 1 pass, scale2x
                 ldx     #move_m7
                 jsr     vlist_d
 dc_7_start
-                ldx     #zp_scrubbly_3_d
-                jsr     zp_scrubbly_3
+                ldx     #zp_scrubbly_1_scale2x_d
+                jsr     zp_scrubbly_1_scale2x
 dc_7_end
-; poglet: columns
+; scrubbly: 2 passes, nearest
                 ldx     #move_m8
                 jsr     vlist_d
 dc_8_start
+                ldx     #zp_scrubbly_2_nearest_d
+                jsr     zp_scrubbly_2_nearest
+dc_8_end
+; scrubbly: 2 passes, scale2x
+                ldx     #move_m9
+                jsr     vlist_d
+dc_9_start
+                ldx     #zp_scrubbly_2_scale2x_d
+                jsr     zp_scrubbly_2_scale2x
+dc_9_end
+; poglet: columns
+                ldx     #move_m10
+                jsr     vlist_d
+dc_10_start
                 ldx     #poglet_cols
                 lda     #24
                 sta     $C880
                 jsr     col5_down
-dc_8_end
-; poglet: 1 pass
-                ldx     #move_m9
-                jsr     vlist_d
-dc_9_start
-                ldx     #zp_poglet_1_d
-                jsr     zp_poglet_1
-dc_9_end
-; poglet: 2 passes
-                ldx     #move_m10
-                jsr     vlist_d
-dc_10_start
-                ldx     #zp_poglet_2_d
-                jsr     zp_poglet_2
 dc_10_end
-; poglet: 3 passes
+; poglet: 1 pass, nearest
                 ldx     #move_m11
                 jsr     vlist_d
 dc_11_start
-                ldx     #zp_poglet_3_d
-                jsr     zp_poglet_3
+                ldx     #zp_poglet_1_nearest_d
+                jsr     zp_poglet_1_nearest
 dc_11_end
-; hooter: columns
+; poglet: 1 pass, scale2x
                 ldx     #move_m12
                 jsr     vlist_d
 dc_12_start
+                ldx     #zp_poglet_1_scale2x_d
+                jsr     zp_poglet_1_scale2x
+dc_12_end
+; poglet: 2 passes, nearest
+                ldx     #move_m13
+                jsr     vlist_d
+dc_13_start
+                ldx     #zp_poglet_2_nearest_d
+                jsr     zp_poglet_2_nearest
+dc_13_end
+; poglet: 2 passes, scale2x
+                ldx     #move_m14
+                jsr     vlist_d
+dc_14_start
+                ldx     #zp_poglet_2_scale2x_d
+                jsr     zp_poglet_2_scale2x
+dc_14_end
+; hooter: columns
+                ldx     #move_m15
+                jsr     vlist_d
+dc_15_start
                 ldx     #hooter_cols
                 lda     #20
                 sta     $C880
                 jsr     col4_down
-dc_12_end
-; hooter: 1 pass
-                ldx     #move_m13
-                jsr     vlist_d
-dc_13_start
-                ldx     #zp_hooter_1_d
-                jsr     zp_hooter_1
-dc_13_end
-; hooter: 2 passes
-                ldx     #move_m14
-                jsr     vlist_d
-dc_14_start
-                ldx     #zp_hooter_2_d
-                jsr     zp_hooter_2
-dc_14_end
-; hooter: 3 passes
-                ldx     #move_m15
-                jsr     vlist_d
-dc_15_start
-                ldx     #zp_hooter_3_d
-                jsr     zp_hooter_3
 dc_15_end
+; hooter: 1 pass, nearest
+                ldx     #move_m16
+                jsr     vlist_d
+dc_16_start
+                ldx     #zp_hooter_1_nearest_d
+                jsr     zp_hooter_1_nearest
+dc_16_end
+; hooter: 1 pass, scale2x
+                ldx     #move_m17
+                jsr     vlist_d
+dc_17_start
+                ldx     #zp_hooter_1_scale2x_d
+                jsr     zp_hooter_1_scale2x
+dc_17_end
+; hooter: 2 passes, nearest
+                ldx     #move_m18
+                jsr     vlist_d
+dc_18_start
+                ldx     #zp_hooter_2_nearest_d
+                jsr     zp_hooter_2_nearest
+dc_18_end
+; hooter: 2 passes, scale2x
+                ldx     #move_m19
+                jsr     vlist_d
+dc_19_start
+                ldx     #zp_hooter_2_scale2x_d
+                jsr     zp_hooter_2_scale2x
+dc_19_end
                 rts
 
 move_m0
@@ -138,45 +166,57 @@ move_m2
                 fcb     44,127,2,$00
                 fcb     0,0
 move_m3
-                fcb     3,0,108,$00
+                fcb     44,127,2,$00
                 fcb     0,0
 move_m4
-                fcb     124,-7,-127,$00
-                fcb     1,53,52,$00
+                fcb     3,0,108,$00
                 fcb     0,0
 move_m5
-                fcb     59,125,23,$00
+                fcb     220,-31,-123,$00
+                fcb     1,93,-81,$00
                 fcb     0,0
 move_m6
-                fcb     55,125,7,$00
+                fcb     59,125,12,$00
                 fcb     0,0
 move_m7
-                fcb     6,-11,108,$00
+                fcb     55,125,-4,$00
                 fcb     0,0
 move_m8
-                fcb     216,-4,-127,$00
-                fcb     1,11,52,$00
+                fcb     55,125,-4,$00
                 fcb     0,0
 move_m9
-                fcb     48,127,18,$00
+                fcb     1,-64,6,$00
                 fcb     0,0
 move_m10
-                fcb     43,124,9,$00
+                fcb     251,-31,-123,$00
+                fcb     1,30,-111,$00
                 fcb     0,0
 move_m11
-                fcb     6,-19,107,$00
+                fcb     48,127,18,$00
                 fcb     0,0
 move_m12
-                fcb     105,-12,-127,$00
-                fcb     1,3,42,$00
+                fcb     43,124,9,$00
                 fcb     0,0
 move_m13
-                fcb     38,126,23,$00
+                fcb     43,124,9,$00
                 fcb     0,0
 move_m14
-                fcb     46,82,96,$00
+                fcb     6,-19,107,$00
                 fcb     0,0
 move_m15
+                fcb     180,-38,-121,$00
+                fcb     1,1,-78,$00
+                fcb     0,0
+move_m16
+                fcb     38,126,23,$00
+                fcb     0,0
+move_m17
+                fcb     46,82,96,$00
+                fcb     0,0
+move_m18
+                fcb     46,82,96,$00
+                fcb     0,0
+move_m19
                 fcb     33,-7,126,$00
                 fcb     0,0
 
@@ -207,7 +247,7 @@ trogg_cols
                 fcb     $00,$00,$00,$00,$A0
                 fcb     $05,$00,$00,$00,$00
                 fcb     $00,$00,$00,$00,$E0
-zp_trogg_1_d
+zp_trogg_1_nearest_d
                 fcb     $00,$00,$3E,$00,$00,$FF,$00,$00,$00,$07,$F2,$F8,$10,$47,$F8,$00
                 fcb     $00,$3F,$E1,$F8,$01,$ED,$F8,$00,$00,$3A,$D9,$00,$00,$76,$87,$80
                 fcb     $03,$01,$A6,$00,$00,$4D,$E0,$40,$02,$3D,$92,$00,$00,$59,$84,$60
@@ -216,7 +256,16 @@ zp_trogg_1_d
                 fcb     $1F,$F0,$60,$00,$00,$04,$19,$F0,$00,$1E,$30,$00,$00,$08,$88,$00
                 fcb     $00,$33,$10,$00,$00,$69,$C4,$00,$00,$67,$9A,$00,$00,$7F,$FE,$00
                 fcb     $00,$00,$00,$00,$00
-zp_trogg_2_d
+zp_trogg_1_scale2x_d
+                fcb     $00,$00,$7F,$00,$00,$FF,$80,$00,$00,$07,$F2,$F8,$1F,$47,$F8,$00
+                fcb     $00,$3F,$E1,$F8,$0B,$ED,$F8,$00,$00,$3A,$DF,$00,$00,$76,$83,$80
+                fcb     $03,$81,$A6,$00,$00,$6D,$E0,$40,$02,$3D,$9A,$00,$00,$59,$86,$60
+                fcb     $04,$63,$0E,$00,$00,$70,$FF,$30,$0C,$E0,$02,$00,$00,$40,$01,$98
+                fcb     $18,$80,$06,$00,$00,$70,$07,$98,$1B,$F0,$38,$00,$00,$0F,$FF,$F8
+                fcb     $1F,$F0,$60,$00,$00,$0C,$38,$E0,$00,$0E,$30,$00,$00,$08,$98,$00
+                fcb     $00,$33,$10,$00,$00,$69,$E6,$00,$00,$67,$9A,$00,$00,$6F,$FE,$00
+                fcb     $00,$7F,$80,$00,$00
+zp_trogg_2_nearest_d
                 fcb     $00,$00,$FF,$00,$01,$0F,$E0,$00,$00,$1F,$E1,$F8,$01,$EF,$DC,$00
                 fcb     $00,$E1,$64,$00,$00,$65,$E0,$40,$02,$3D,$9A,$00,$00,$50,$C2,$20
                 fcb     $04,$FE,$02,$00,$00,$40,$01,$08,$17,$C0,$0C,$00,$00,$1F,$FF,$F8
@@ -226,16 +275,16 @@ zp_trogg_2_d
                 fcb     $F4,$06,$30,$01,$80,$00,$20,$00,$CC,$03,$20,$01,$80,$00,$38,$03
                 fcb     $10,$01,$90,$04,$80,$00,$26,$00,$60,$00,$60,$0B,$80,$00,$4C,$0E
                 fcb     $00,$00,$0E,$08,$82,$0F,$A2,$00,$00,$00,$00,$0F,$80,$00
-zp_trogg_3_d
-                fcb     $00,$00,$FC,$80,$1F,$47,$FC,$00,$00,$3B,$EE,$00,$00,$65,$E0,$40
-                fcb     $06,$21,$0A,$00,$00,$60,$00,$98,$17,$C0,$0C,$00,$00,$07,$8F,$F0
-                fcb     $00,$0E,$10,$00,$00,$09,$C4,$00,$00,$7F,$80,$F8,$00,$00,$38,$00
-                fcb     $00,$00,$06,$0C,$00,$00,$03,$1E,$1A,$06,$30,$03,$00,$00,$20,$00
-                fcb     $10,$03,$38,$00,$00,$00,$36,$00,$00,$00,$B8,$16,$00,$07,$C3,$1C
-                fcb     $00,$00,$00,$0F,$80,$00,$00,$0F,$E0,$00,$00,$1F,$B7,$80,$00,$24
-                fcb     $81,$C0,$02,$3D,$9A,$00,$00,$70,$FF,$30,$00,$80,$02,$00,$00,$1C
-                fcb     $0F,$F8,$1F,$98,$20,$00,$00,$08,$CC,$00,$00,$67,$92,$00,$00,$00
-                fcb     $00,$00,$00
+zp_trogg_2_scale2x_d
+                fcb     $00,$00,$7F,$00,$01,$8F,$E0,$00,$00,$3F,$E1,$F8,$03,$ED,$FC,$00
+                fcb     $00,$E1,$6C,$00,$00,$6D,$E0,$40,$02,$3D,$9A,$00,$00,$50,$C2,$20
+                fcb     $04,$FE,$06,$00,$00,$40,$01,$08,$17,$C0,$0C,$00,$00,$1F,$FF,$F8
+                fcb     $1F,$F0,$60,$00,$00,$0C,$78,$00,$00,$31,$10,$00,$00,$79,$E6,$00
+                fcb     $00,$43,$FE,$00,$00,$00,$00,$00,$00,$00,$1F,$F1,$80,$00,$3E,$F3
+                fcb     $00,$00,$0C,$CC,$00,$00,$06,$1C,$00,$03,$EC,$18,$00,$00,$03,$FF
+                fcb     $F6,$0E,$70,$03,$00,$00,$30,$00,$EC,$06,$63,$03,$80,$00,$3C,$61
+                fcb     $18,$03,$1E,$ED,$80,$00,$33,$F0,$60,$00,$E0,$DB,$80,$00,$66,$FE
+                fcb     $00,$00,$1F,$F9,$86,$0F,$B3,$F0,$00,$00,$00,$3F,$80,$00
 scrubbly_cols
                 fcb     $00,$00,$03,$F0,$FC,$00
                 fcb     $00,$4F,$C2,$F0,$00,$00
@@ -270,7 +319,7 @@ scrubbly_cols
                 fcb     $00,$01,$1C,$C7,$20,$00
                 fcb     $00,$4F,$C2,$F0,$00,$00
                 fcb     $00,$00,$03,$F0,$FC,$00
-zp_scrubbly_1_d
+zp_scrubbly_1_nearest_d
                 fcb     $00,$00,$FB,$F0,$00,$00,$18,$F3,$F0,$00,$00,$18,$6C,$48,$00,$00
                 fcb     $17,$80,$CC,$00,$00,$2D,$C3,$38,$00,$00,$00,$63,$0C,$00,$00,$01
                 fcb     $C7,$00,$00,$00,$03,$80,$E0,$00,$00,$1C,$00,$70,$00,$00,$3C,$00
@@ -285,7 +334,22 @@ zp_scrubbly_1_d
                 fcb     $80,$00,$00,$88,$09,$80,$00,$03,$20,$00,$60,$00,$07,$00,$00,$7E
                 fcb     $00,$FC,$00,$00,$23,$FF,$E2,$00,$00,$61,$83,$0C,$00,$00,$1F,$80
                 fcb     $FC,$00,$00,$00,$00,$00,$00,$00
-zp_scrubbly_2_d
+zp_scrubbly_1_scale2x_d
+                fcb     $00,$00,$FB,$F8,$00,$00,$1D,$FB,$F8,$00,$00,$1C,$EC,$C8,$00,$00
+                fcb     $17,$81,$EC,$00,$00,$2D,$C3,$38,$00,$00,$00,$63,$0C,$00,$00,$01
+                fcb     $C7,$80,$00,$00,$03,$C0,$F0,$00,$00,$1E,$00,$78,$00,$00,$3C,$00
+                fcb     $1F,$00,$00,$F0,$00,$0F,$00,$00,$E0,$00,$07,$C0,$03,$F0,$00,$1F
+                fcb     $C0,$03,$F8,$00,$06,$60,$00,$E0,$00,$07,$00,$00,$E3,$E3,$E1,$C0
+                fcb     $03,$8E,$EC,$61,$C0,$03,$8C,$14,$18,$F0,$0F,$19,$AB,$10,$E0,$07
+                fcb     $09,$F7,$C8,$38,$1C,$13,$EF,$B0,$30,$0D,$0D,$E3,$D8,$58,$16,$1F
+                fcb     $83,$E0,$F0,$0F,$00,$00,$00,$78,$1E,$00,$00,$00,$90,$09,$17,$55
+                fcb     $74,$48,$12,$3B,$D7,$18,$C0,$03,$18,$C1,$88,$70,$0E,$11,$01,$B0
+                fcb     $60,$06,$0D,$80,$D8,$38,$1C,$1B,$00,$A0,$30,$0D,$05,$00,$50,$78
+                fcb     $1E,$0E,$00,$E1,$F0,$0F,$87,$00,$20,$D8,$1B,$04,$00,$41,$90,$09
+                fcb     $80,$00,$01,$98,$19,$80,$00,$07,$20,$00,$E0,$00,$0F,$00,$00,$FE
+                fcb     $00,$FC,$00,$00,$37,$FF,$E2,$00,$00,$61,$C3,$1C,$00,$00,$3F,$80
+                fcb     $FC,$00,$00,$00,$00,$00,$00,$00
+zp_scrubbly_2_nearest_d
                 fcb     $00,$03,$FF,$18,$00,$00,$13,$B0,$CC,$00,$00,$2D,$C6,$00,$00,$00
                 fcb     $01,$E0,$E0,$00,$00,$1C,$00,$3C,$00,$00,$70,$00,$03,$80,$03,$F0
                 fcb     $00,$0C,$C0,$00,$61,$E3,$E1,$80,$03,$0C,$68,$31,$C0,$07,$09,$F7
@@ -300,21 +364,21 @@ zp_scrubbly_2_d
                 fcb     $00,$61,$00,$01,$80,$03,$30,$00,$07,$E0,$00,$70,$00,$03,$80,$00
                 fcb     $3C,$00,$1C,$00,$00,$01,$01,$C0,$00,$00,$18,$00,$CE,$00,$00,$0B
                 fcb     $03,$0C,$00,$00,$06,$02,$FC,$00,$00
-zp_scrubbly_3_d
-                fcb     $00,$07,$CF,$48,$00,$00,$17,$C3,$0C,$00,$00,$07,$81,$70,$00,$00
-                fcb     $3C,$00,$03,$80,$03,$F0,$00,$06,$00,$00,$C3,$B6,$18,$E0,$0E,$13
-                fcb     $EF,$90,$30,$0D,$0F,$C1,$00,$78,$12,$06,$AA,$18,$80,$03,$08,$80
-                fcb     $D8,$30,$18,$0A,$00,$E0,$F0,$0D,$82,$00,$00,$88,$09,$80,$00,$FC
-                fcb     $00,$00,$23,$C1,$FC,$00,$00,$00,$00,$00,$00,$00,$00,$18,$1F,$F1
-                fcb     $00,$00,$38,$00,$00,$04,$02,$C0,$00,$10,$0E,$06,$82,$00,$28,$18
-                fcb     $01,$04,$00,$44,$00,$04,$8A,$00,$00,$1C,$03,$82,$19,$EC,$06,$03
-                fcb     $04,$0A,$C4,$10,$00,$C2,$19,$F0,$00,$01,$98,$00,$07,$00,$00,$38
-                fcb     $00,$0F,$00,$00,$00,$11,$C0,$00,$00,$0E,$00,$66,$00,$00,$02,$1E
-                fcb     $FC,$00,$00,$00,$18,$36,$18,$00,$00,$2D,$C6,$00,$00,$00,$03,$00
-                fcb     $38,$00,$00,$E0,$00,$07,$80,$03,$30,$00,$03,$80,$03,$0C,$28,$31
-                fcb     $E0,$06,$09,$F7,$C8,$58,$16,$0F,$00,$00,$90,$09,$17,$EB,$8C,$60
-                fcb     $0C,$11,$01,$B0,$30,$0D,$05,$00,$70,$D8,$13,$04,$00,$03,$20,$00
-                fcb     $60,$00,$7E,$00,$00,$61,$01,$F8,$00,$00
+zp_scrubbly_2_scale2x_d
+                fcb     $00,$01,$FF,$B8,$00,$00,$13,$20,$CC,$00,$00,$3D,$C6,$00,$00,$00
+                fcb     $01,$E1,$E0,$00,$00,$1C,$00,$7C,$00,$00,$70,$00,$03,$80,$03,$F0
+                fcb     $00,$1C,$C0,$00,$60,$43,$E1,$80,$03,$8C,$6C,$71,$E0,$07,$09,$F7
+                fcb     $C8,$38,$1C,$1B,$EF,$B0,$B0,$0B,$07,$C0,$00,$78,$1E,$00,$0A,$E8
+                fcb     $90,$01,$18,$E9,$88,$70,$0E,$1B,$01,$B0,$70,$0E,$05,$00,$50,$78
+                fcb     $1E,$0E,$00,$E1,$B0,$0D,$82,$00,$00,$98,$19,$80,$00,$06,$00,$00
+                fcb     $7F,$FF,$F2,$00,$00,$61,$83,$F8,$00,$00,$00,$00,$00,$00,$00,$00
+                fcb     $1F,$C1,$C3,$00,$00,$1F,$E0,$3F,$80,$00,$70,$00,$00,$CC,$06,$60
+                fcb     $00,$18,$76,$0F,$83,$00,$78,$7C,$07,$83,$C0,$3C,$0C,$07,$0C,$C0
+                fcb     $CC,$30,$00,$C6,$7F,$FF,$30,$0D,$83,$00,$00,$7C,$07,$C1,$F0,$FC
+                fcb     $36,$0D,$0D,$F3,$EC,$18,$03,$86,$7F,$66,$38,$03,$C6,$1F,$30,$C0
+                fcb     $00,$30,$80,$01,$90,$03,$F8,$00,$07,$C0,$00,$38,$00,$03,$80,$00
+                fcb     $1E,$00,$38,$00,$00,$00,$F0,$E2,$00,$00,$1E,$71,$DE,$00,$00,$0D
+                fcb     $8B,$9C,$00,$00,$03,$FF,$F8,$00,$00
 poglet_cols
                 fcb     $00,$00,$00,$1E,$E0
                 fcb     $05,$CC,$00,$00,$00
@@ -339,7 +403,7 @@ poglet_cols
                 fcb     $00,$00,$00,$20,$A0
                 fcb     $05,$CC,$00,$00,$00
                 fcb     $00,$00,$00,$1E,$E0
-zp_poglet_1_d
+zp_poglet_1_nearest_d
                 fcb     $00,$3F,$00,$00,$87,$00,$01,$C1,$00,$00,$FC,$C0,$00,$00,$00,$00
                 fcb     $06,$40,$06,$C0,$00,$00,$01,$20,$0F,$81,$E0,$04,$C1,$30,$1C,$7E
                 fcb     $20,$04,$42,$28,$34,$66,$20,$06,$BD,$64,$00,$00,$00,$01,$BD,$E4
@@ -347,21 +411,28 @@ zp_poglet_1_d
                 fcb     $24,$C8,$19,$E7,$80,$03,$00,$F0,$00,$00,$00,$05,$00,$40,$0E,$01
                 fcb     $A0,$3C,$80,$5E,$C2,$01,$26,$4C,$80,$F9,$91,$81,$32,$6C,$FF,$DB
                 fcb     $5E,$67,$34,$76,$3C,$37,$00,$00,$00,$47,$84,$71,$FB,$FF,$3E,$00
-zp_poglet_2_d
+zp_poglet_1_scale2x_d
+                fcb     $00,$3F,$00,$00,$CF,$00,$01,$C1,$00,$00,$FD,$C0,$03,$7E,$00,$00
+                fcb     $07,$60,$06,$C0,$00,$00,$01,$F0,$0F,$83,$E0,$07,$C3,$38,$1C,$FE
+                fcb     $20,$04,$62,$2C,$34,$66,$60,$06,$BD,$64,$27,$BD,$C0,$01,$BD,$E4
+                fcb     $24,$99,$00,$00,$BD,$24,$24,$A5,$00,$00,$BD,$6C,$36,$C2,$00,$00
+                fcb     $24,$D8,$1B,$E7,$80,$03,$C1,$F0,$0F,$00,$E0,$05,$80,$70,$0E,$01
+                fcb     $BC,$3C,$80,$4F,$E2,$01,$26,$6C,$80,$F9,$9F,$83,$36,$6C,$FF,$DB
+                fcb     $DF,$FF,$34,$2E,$7E,$37,$EC,$39,$E2,$4F,$FF,$FF,$FB,$FE,$1C,$00
+zp_poglet_2_nearest_d
                 fcb     $00,$F1,$00,$00,$FC,$C0,$02,$C0,$00,$01,$81,$F0,$0C,$FE,$20,$04
                 fcb     $67,$6C,$07,$BD,$80,$00,$BD,$24,$36,$BF,$00,$00,$27,$98,$0F,$00
                 fcb     $A0,$05,$80,$5E,$C3,$01,$32,$4C,$FF,$DB,$5E,$3C,$6E,$7F,$80,$FF
                 fcb     $FC,$3E,$19,$DA,$36,$00,$C4,$AF,$00,$9F,$00,$00,$38,$00,$00,$E0
                 fcb     $00,$00,$F4,$00,$01,$40,$00,$06,$52,$08,$0F,$58,$02,$10,$94,$06
                 fcb     $00,$D0,$03,$00,$90,$03,$08,$00,$00,$01,$C0,$00,$07,$80,$00
-zp_poglet_3_d
-                fcb     $00,$E1,$00,$00,$86,$60,$05,$81,$20,$04,$42,$2C,$27,$BD,$00,$00
-                fcb     $A5,$6C,$13,$24,$80,$03,$00,$70,$7A,$01,$32,$4C,$FF,$7A,$EC,$21
-                fcb     $3E,$00,$00,$00,$3C,$27,$0E,$0E,$16,$00,$1C,$B1,$00,$08,$02,$00
-                fcb     $04,$05,$11,$00,$00,$0E,$0A,$0B,$0E,$08,$02,$1F,$0C,$07,$00,$00
-                fcb     $00,$1E,$00,$00,$0F,$80,$00,$00,$83,$C0,$02,$C0,$00,$07,$C1,$38
-                fcb     $14,$67,$60,$01,$99,$24,$24,$BD,$00,$00,$E7,$F0,$02,$01,$BC,$64
-                fcb     $81,$89,$DB,$67,$6E,$47,$FF,$C0,$00
+zp_poglet_2_scale2x_d
+                fcb     $00,$7F,$00,$00,$FC,$C0,$06,$E0,$00,$03,$01,$F0,$1C,$FE,$20,$04
+                fcb     $6F,$6C,$27,$BD,$80,$00,$BD,$24,$36,$BB,$00,$00,$67,$98,$1F,$00
+                fcb     $A0,$0D,$80,$5F,$E7,$01,$32,$4C,$FF,$FA,$5E,$7C,$E6,$6F,$80,$FF
+                fcb     $E6,$7F,$1B,$9F,$17,$70,$FE,$E7,$80,$DF,$0F,$60,$38,$03,$C1,$E0
+                fcb     $00,$19,$36,$0D,$FF,$C0,$00,$6E,$DB,$1B,$FF,$F0,$03,$31,$9E,$07
+                fcb     $39,$F8,$01,$C0,$D8,$01,$B8,$00,$00,$61,$C0,$00,$1F,$80,$00
 hooter_cols
                 fcb     $18,$1F,$81,$80
                 fcb     $01,$81,$0E,$1C
@@ -382,21 +453,27 @@ hooter_cols
                 fcb     $20,$E1,$F2,$80
                 fcb     $01,$81,$1C,$1C
                 fcb     $18,$0F,$81,$80
-zp_hooter_1_d
+zp_hooter_1_nearest_d
                 fcb     $1C,$00,$70,$1A,$F7,$AC,$33,$39,$98,$01,$77,$40,$00,$00,$00,$03
                 fcb     $77,$60,$07,$39,$C0,$06,$F7,$B0,$18,$28,$20,$0D,$22,$48,$32,$44
                 fcb     $90,$1B,$5D,$64,$24,$C6,$48,$12,$41,$24,$00,$00,$00,$14,$63,$14
                 fcb     $38,$7C,$38,$04,$00,$10,$08,$00,$20,$06,$00,$30,$06,$00,$C0,$01
                 fcb     $FF,$C0,$0C,$44,$60,$19,$14,$4C,$00,$00,$00,$1F,$F7,$FC,$00
-zp_hooter_2_d
+zp_hooter_1_scale2x_d
+                fcb     $1C,$00,$78,$1E,$F7,$AC,$35,$FD,$D8,$19,$BF,$40,$06,$EE,$C0,$03
+                fcb     $7E,$E0,$0F,$FF,$E0,$06,$F7,$B8,$18,$28,$30,$0D,$32,$4C,$32,$4E
+                fcb     $D8,$1B,$7F,$64,$26,$EE,$C8,$12,$61,$24,$2C,$C6,$68,$14,$7F,$1C
+                fcb     $38,$7C,$30,$0C,$00,$10,$08,$00,$60,$06,$00,$70,$0E,$01,$C0,$01
+                fcb     $FF,$C0,$0D,$EE,$70,$0F,$34,$4C,$3F,$EF,$F8,$1F,$F3,$E0,$00
+zp_hooter_2_nearest_d
                 fcb     $1C,$2F,$58,$19,$FF,$40,$07,$F9,$C0,$06,$F4,$10,$32,$44,$80,$1B
                 fcb     $63,$24,$28,$C6,$38,$04,$00,$10,$0C,$00,$C0,$01,$FF,$30,$3F,$EF
                 fcb     $80,$E0,$0D,$88,$00,$01,$80,$18,$01,$00,$04,$0E,$1E,$0A,$04,$A0
                 fcb     $0A,$09,$BD,$04,$06,$90,$04,$03,$F4,$00,$01,$B8,$00,$0D,$F0,$00
                 fcb     $07,$00,$00,$00
-zp_hooter_3_d
-                fcb     $3D,$EF,$98,$03,$77,$E0,$1D,$E8,$B0,$1B,$7D,$24,$2C,$C6,$38,$04
-                fcb     $00,$30,$07,$FF,$60,$1F,$F7,$00,$00,$00,$00,$00,$00,$00,$00,$00
-                fcb     $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-                fcb     $00,$00,$70,$1A,$9F,$CC,$06,$3F,$E0,$04,$22,$4C,$26,$C6,$48,$14
-                fcb     $3E,$1C,$08,$00,$E0,$01,$26,$7C,$3F,$00,$00,$00
+zp_hooter_2_scale2x_d
+                fcb     $1C,$4F,$58,$19,$BF,$60,$06,$79,$E0,$06,$74,$18,$32,$4E,$D8,$1B
+                fcb     $73,$24,$2C,$CE,$38,$0C,$00,$10,$0C,$00,$C0,$01,$FF,$38,$33,$6F
+                fcb     $80,$F0,$07,$99,$C8,$01,$C0,$30,$03,$00,$0C,$0E,$3F,$1E,$0D,$B0
+                fcb     $DB,$1B,$7F,$6C,$06,$C9,$0C,$07,$FE,$F0,$00,$FF,$B2,$09,$FF,$BC
+                fcb     $07,$00,$00,$00
