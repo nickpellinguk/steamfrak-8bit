@@ -11,12 +11,11 @@ Kernel
     player-1 copy positions on the even and odd lines). One routine per block:
         Bk:     ldx #rows-1
         BkRow:  sta WSYNC
-                ...even line...      (scheduled; includes DEC Rows, the yoyo and Trogg reads)
+                ...even line...      (scheduled; includes the yoyo and Trogg reads)
                 sta WSYNC
                 ...odd line...       (scheduled; includes the balloon read)
-                lda Rows             ; rows left on the screen (DEC'd on the even line)
+                dey                  ; Y: screen rows left (96..1), counting down
                 beq BkEx             ; the screen is finished, wherever we are
-                iny
                 dex                  ; rows left in this block; X also indexes the block's
                 bpl BkRow            ;   per-row tables (colours, graphics): lda Table,x
                 jmp <next block>     ; directly, or through a bank-switch stub
@@ -63,6 +62,7 @@ STRIP_OFFSETS = (0, 65, 130, 195)
 TROGG_X, TROGG_TOP_ROW = 48, 75                  # standing on the F's floor
 YOYO_X, YOYO_TOP_ROW, YOYO_ROWS = 72, 79, 4
 BALLOON_X, BALLOON_TOP_ROW, BALLOON_ROWS = 118, 120, 4
+BALLOON_LINE = os.environ.get('BALLOON_LINE', 'odd')      # which line of a row reads its enable
 
 RAM = {'Rows': 0x80, 'Scroll': 0x81, 'Dir': 0x82, 'EntryX': 0x83, 'EntryPtr': 0x84,
        'YoPtr': 0x86, 'BalPtr': 0x88, 'TrogPtr': 0x8A, 'Tick': 0x8C}
@@ -311,14 +311,19 @@ def flat(code):
 
 
 # ---- building the ROM -------------------------------------------------------------------------
-def strip_pages(rows_data):
-    pages = []
-    for off in STRIP_OFFSETS:
-        p = [0] * 256
-        for i, v in enumerate(rows_data):
-            p[off + i] = v
-        pages.append(p)
-    return pages
+def strip_page(rows_data, top):
+    """One page: Y counts screen rows down (96..1), so row j of the screen reads offset
+    L + 96 - j, where L = K + top - 96 - scroll is the pointer's low byte. The strip is stored
+    upside down ending at offset K, which is chosen so L stays 0-159 (no page crossing, and the
+    96-byte window stays in the page) for every scroll 0-96. Returns (page, K)."""
+    H = len(rows_data)
+    for K in range(H - 1, 256):
+        if K + top - 96 - 96 >= 0 and K + top - 96 <= 159:
+            p = [0] * 256
+            for i, v in enumerate(rows_data):
+                p[K - i] = v
+            return p, K
+    raise ValueError('no layout for a strip at row %d' % top)
 
 
 def pointer(name, top_row):
@@ -377,8 +382,9 @@ def build(base, scroll, auto):
             e_cols.append(None)
         e_xs = [o_objs[-1][0] if o_objs else None] + ([prev_odd['x']] if prev_odd else [])
         e_had = bool(o_objs) or bool(prev_odd and prev_odd['had'])
-        even_extra = [(0, 72, ('dec Rows', 5), None),
-                      (0, 72, ('lda (YoPtr),y', 5), 'ENAM0')]
+        even_extra = [(0, 72, ('lda (YoPtr),y', 5), 'ENAM0')]
+        if BALLOON_LINE == 'even':
+            even_extra.append((0, 72, ('lda (BalPtr),y', 5), 'ENABL'))
         trogg = ('lda (TrogPtr),y', 5)
         res = {}
         try:
@@ -389,11 +395,12 @@ def build(base, scroll, auto):
         e_last_col = e_objs[-1][2] if e_objs else None
         switch_after = None                          # filled in after bank packing (worst case here)
         for exit_cost in (7, 10, 17):                # fall through / jmp / bank switch after
-            odd_limit = 75 - 9 - exit_cost
+            odd_limit = 75 - 6 - exit_cost           # dey, beq, dex; then bpl or the exit
             try:
                 res[(1, exit_cost)] = schedule(o_pf, [e_pf], o_objs, [e_last_col], bool(e_objs),
                                                [e_objs[-1][0] if e_objs else None], odd_limit,
-                                               [(0, odd_limit, ('lda (BalPtr),y', 5), 'ENABL')], None, o_pcol)
+                                               [(0, odd_limit, ('lda (BalPtr),y', 5), 'ENABL')]
+                                               if BALLOON_LINE == 'odd' else [], None, o_pcol)
             except ValueError as e:
                 res[(1, exit_cost)] = None
         sched.append(dict(r0=r0, n=n, even=res[0], odd7=res[(1, 7)], odd10=res[(1, 10)],
@@ -479,8 +486,9 @@ def build(base, scroll, auto):
           'RESM0    = $12', 'ENAM0    = $1D', 'HotBase  = $%04X' % hot]
     o += ['%-8s = $%02X' % (k, v) for k, v in RAM.items()]
     trogg_rows = [bits(r) for r in TROGG]
-    pages = {'Trog': strip_pages(trogg_rows), 'YoEn': strip_pages([2] * YOYO_ROWS),
-             'BaEn': strip_pages([2] * BALLOON_ROWS)}
+    pages = {'Trog': strip_page(trogg_rows, TROGG_TOP_ROW),
+             'YoEn': strip_page([2] * YOYO_ROWS, YOYO_TOP_ROW - 1),
+             'BaEn': strip_page([2] * BALLOON_ROWS, BALLOON_TOP_ROW - 1)}
 
     # entry table (bank 0): for each scroll row, the block, its X and bank
     ent = []
@@ -532,8 +540,9 @@ Frame:  lda #2
         sta NUSIZ1        ; two copies close: each RESP1 strobe gives one copy''' % (scroll, fr.BG, fr.MAGENTA)]
         for nm, ptr, top in (('Trog', 'TrogPtr', TROGG_TOP_ROW), ('YoEn', 'YoPtr', YOYO_TOP_ROW - 1),
                              ('BaEn', 'BalPtr', BALLOON_TOP_ROW - 1)):
-            ex = pointer(nm, top)
-            out.append('        lda #<(%s)\n        sta %s\n        lda #>(%s)\n        sta %s+1' % (ex, ptr, ex, ptr))
+            K = pages[nm][1]
+            out.append('        lda #%d\n        sec\n        sbc Scroll        ; low byte = K + top - 96 - scroll\n'
+                       '        sta %s\n        lda #>%sPage\n        sta %s+1' % (K + top - 96, ptr, nm, ptr))
         for reg, xx, k in (('RESP0', TROGG_X, 63), ('RESM0', YOYO_X, 68), ('RESBL', BALLOON_X, 68)):
             out.append('        sta WSYNC\n        ' + pad((xx + k) // 3 - 3).replace('\n', '\n        ')
                        + '\n        sta %s' % reg)
@@ -550,10 +559,9 @@ VB:     sta WSYNC
         sta EntryX
         lda EntCol,y
         sta COLUP1
-        lda #%d
-        sta Rows
         lda EntBank,y
         tax
+        ldy #%d           ; Y: screen rows left, counting down
         sta WSYNC
         lda #0
         sta VBLANK
@@ -611,7 +619,7 @@ OS:     sta WSYNC
             out.append('B%dEx = %s' % (k, sched[k - 1]['own_ex']))   # the previous block's stub, right here
         out += ['B%d:     ldx #%d' % (k, b['n'] - 1), 'B%dRow:  sta WSYNC' % k]
         if b['even'] is None:
-            out += ['        dec Rows', '        lda #0', '        sta GRP1', '        sta PF0',
+            out += ['        lda #0', '        sta GRP1', '        sta PF0',
                     '        sta PF1', '        sta PF2']
         else:
             out += ['        ' + i for i in flat(b['even'][0])]
@@ -620,8 +628,8 @@ OS:     sta WSYNC
             out += ['        lda #0', '        sta GRP1']
         else:
             out += ['        ' + i for i in flat(b['odd'][0])]
-        out += ['        lda Rows', '        beq %s' % (b['ex_label'] if b['exit'] == 'fall' or not b['stub_before'] else 'B%dEx' % k),
-                '        iny', '        dex',
+        out += ['        dey                ; screen rows left', '        beq %s' % (b['ex_label'] if b['exit'] == 'fall' or not b['stub_before'] else 'B%dEx' % k),
+                '        dex',
                 '        bpl B%dRow' % k]
         if b['exit'] != 'fall':
             out.append('        jmp %s' % (next_jump.get(k, exit_jump[bank_of[k]])))
@@ -668,17 +676,14 @@ OS:     sta WSYNC
             if bank_of[k] == bk:
                 o += block_code(k)
         o.append('        org $%04X\n        rorg $F700' % (org + 0x700))
-        for nm in ('Trog', 'YoEn'):
-            for j, pg in enumerate(pages[nm]):
-                o.append('%s%d%s:' % (nm, j, '' if bk == 0 else '_%d' % bk))
-                for q in range(0, 256, 32):
-                    o.append('        .byte ' + ','.join('$%02X' % v for v in pg[q:q + 32]))
+        for nm in ('Trog', 'YoEn', 'BaEn'):
+            o.append('%sPage%s:' % (nm, '' if bk == 0 else '_%d' % bk))
+            pg = pages[nm][0]
+            for q in range(0, 256, 32):
+                o.append('        .byte ' + ','.join('$%02X' % v for v in pg[q:q + 32]))
         o.append('        org $%04X\n        rorg $FF00' % (org + 0xF00))
         o.append('        org $%04X\n        rorg $FFFC\n        .word $F000\n        .word $F000' % (org + 0xFFC))
     asm = '\n'.join(o) + '\n'
-    # the balloon uses the same strip pages as the yoyo (same height)
-    assert BALLOON_ROWS == YOYO_ROWS
-    asm = asm.replace('BaEn', 'YoEn')
     open(base + '.asm', 'w').write(asm)
     r = subprocess.run(['dasm', base + '.asm', '-f3', '-o' + base + '.bin', '-l' + base + '.lst'],
                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
