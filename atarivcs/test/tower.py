@@ -62,6 +62,12 @@ STRIP_OFFSETS = (0, 65, 130, 195)
 TROGG_X, TROGG_TOP_ROW = 48, 75                  # standing on the F's floor
 YOYO_X, YOYO_TOP_ROW, YOYO_ROWS = 72, 79, 4
 BALLOON_X, BALLOON_TOP_ROW, BALLOON_ROWS = 118, 120, 4
+# Row loop split: DEY / BNE at the start of the even line (its code starts at cycle 5); DEX / BPL at
+# the end of the odd line. The odd line's last store must leave room for: dex, bpl taken (+1 page),
+# STA WSYNC (9), or dex, bpl not taken, then falling into the next block (ldx, STA WSYNC: 9),
+# a JMP to it (12), or a bank switch (JMP stub, LDA hotspot, JMP: 19).
+EVEN_T0 = 5
+ODD_LIMIT = {7: 75 - 9, 10: 75 - 12, 17: 75 - 19}
 BALLOON_LINE = os.environ.get('BALLOON_LINE', 'odd')      # which line of a row reads its enable
 
 RAM = {'Rows': 0x80, 'Scroll': 0x81, 'Dir': 0x82, 'EntryX': 0x83, 'EntryPtr': 0x84,
@@ -148,7 +154,7 @@ def load(src):
 
 
 def schedule(pf, prevs_pf, objs, start_cols, prev_had_objs, prev_xs, end_limit, extra,
-             trogg, pcol):
+             trogg, pcol, t0=0):
     """Like fr_screen.schedule, but: values come from immediates or X-indexed block tables;
     only A is used (X is the block counter); `prevs_pf`, `start_cols` and `prev_xs` list what the
     line before may have left (several, because a block can be reached from more than one place);
@@ -274,7 +280,7 @@ def schedule(pf, prevs_pf, objs, start_cols, prev_had_objs, prev_xs, end_limit, 
         fail.add(key)
         return None
 
-    res = search(0, frozenset(range(len(T))), 0, None)
+    res = search(t0, frozenset(range(len(T))), 0, None)
     if res is None:
         raise ValueError('no schedule fits: %s' % ([(lo, hi, ins, reg) for lo, hi, ins, ln, reg in T],))
     out, t = res
@@ -407,14 +413,15 @@ def build(base, scroll, auto, removed=()):
         trogg = ('lda (TrogPtr),y', 5)
         res = {}
         try:
-            res[0] = schedule(e_pf, e_prevs, e_objs, e_cols, e_had, e_xs, 72, even_extra, trogg, e_pcol)
+            res[0] = schedule(e_pf, e_prevs, e_objs, e_cols, e_had, e_xs, 72, even_extra, trogg, e_pcol,
+                              t0=EVEN_T0)
         except ValueError as e:
             failures.append((r0, n, 'even', str(e)[:150]))
             res[0] = None
         e_last_col = e_objs[-1][2] if e_objs else None
         switch_after = None                          # filled in after bank packing (worst case here)
         for exit_cost in (7, 10, 17):                # fall through / jmp / bank switch after
-            odd_limit = 75 - 6 - exit_cost           # dey, beq, dex; then bpl or the exit
+            odd_limit = ODD_LIMIT[exit_cost]
             try:
                 res[(1, exit_cost)] = schedule(o_pf, [e_pf], o_objs, [e_last_col], bool(e_objs),
                                                [e_objs[-1][0] if e_objs else None], odd_limit,
@@ -447,34 +454,14 @@ def build(base, scroll, auto, removed=()):
     total_banks = 4 if scheme == 'F6' else 8
     assert nbanks <= total_banks, nbanks
 
-    # choose each block's exit and odd-line version. Blocks that fall through to the next form a
-    # chain sharing one exit stub (JMP <overscan>) just before the chain's first block; a block can
-    # join a chain only while every BEQ in it can still reach that stub (backwards, < 128 bytes).
-    # Otherwise the block exits with a JMP (its own exit stub after it, which also serves as the
-    # next chain's stub) or a bank switch.
-    def est(b, odd):
-        return sum(nbytes(i) for i in flat((b['even'] or [[]])[0]) + flat((odd or [[]])[0])) + 12
-    chain_bytes = 0
+    # each block's exit: fall through to the next block in the same bank, or a bank switch
     for k, b in enumerate(sched):
-        if k == 0 or sched[k - 1]['exit'] != 'fall' or bank_of[k] != bank_of[k - 1]:
-            b['ex_label'] = 'B%dEx' % k                 # a new chain: its stub goes before it
-            b['stub_before'] = True
-            chain_bytes = 3
-        else:
-            b['ex_label'] = sched[k - 1]['ex_label']
-            b['stub_before'] = False
-        switching = k + 1 < nb and bank_of[k + 1] != bank_of[k]
-        if switching:
+        if k + 1 < nb and bank_of[k + 1] != bank_of[k]:
             b['exit'], b['odd'] = 'switch', b['odd17']
+        elif k + 1 < nb:
+            b['exit'], b['odd'] = 'fall', b['odd7']
         else:
-            mine = est(b, b['odd7'])
-            nxt_size = max(est(sched[k + 1], v) for v in (sched[k + 1]['odd7'], sched[k + 1]['odd10'],
-                                                          sched[k + 1]['odd17'])) if k + 1 < nb else 999
-            if k + 1 < nb and b['odd7'] is not None and chain_bytes + mine + nxt_size < 118:
-                b['exit'], b['odd'] = 'fall', b['odd7']
-            else:
-                b['exit'], b['odd'] = 'jmp', b['odd10']
-        chain_bytes += est(b, b['odd'])
+            b['exit'], b['odd'] = 'jmp', b['odd10']
         if b['odd'] is None:
             failures.append((b['r0'], b['n'], 'odd (%s after)' % b['exit'], 'no schedule fits'))
 
@@ -586,7 +573,7 @@ VB:     sta WSYNC
         sta COLUP1
         lda EntBank,y
         tax
-        ldy #%d           ; Y: screen rows left, counting down
+        ldy #%d+1         ; Y: screen rows left, counting down (each row starts with DEY)
         sta WSYNC
         lda #0
         sta VBLANK
@@ -636,16 +623,24 @@ OS:     sta WSYNC
         return out
 
     def block_code(k):
+        """
+        Bk:     ldx #rows-1
+        BkRow:  sta WSYNC          ; also the scroll entry point (with Y one more)
+                dey                ; 2   screen rows left
+                bne BkEven         ; 3   -> the even line's code starts at cycle 5
+                jmp <overscan>
+        BkEven: ...even line...
+                sta WSYNC
+                ...odd line...
+                dex                ; rows left in this block (also the table index)
+                bpl BkRow
+                (falls into the next block, or JMPs through a bank-switch stub)
+        """
         b = sched[k]
-        out = []
-        if b['stub_before'] and not (k > 0 and bank_of[k - 1] == bank_of[k] and sched[k - 1]['exit'] == 'jmp'):
-            out.append('B%dEx:   jmp %s' % (k, exit_jump[bank_of[k]]))
-        elif b['stub_before']:
-            out.append('B%dEx = %s' % (k, sched[k - 1]['own_ex']))   # the previous block's stub, right here
-        out += ['B%d:     ldx #%d' % (k, b['n'] - 1), 'B%dRow:  sta WSYNC' % k]
+        out = ['B%d:     ldx #%d' % (k, b['n'] - 1), 'B%dRow:  sta WSYNC' % k, '        dey',
+               '        bne B%dEven' % k, '        jmp %s' % exit_jump[bank_of[k]], 'B%dEven:' % k]
         if b['even'] is None:
-            out += ['        lda #0', '        sta GRP1', '        sta PF0',
-                    '        sta PF1', '        sta PF2']
+            out += ['        lda #0', '        sta GRP1', '        sta PF0', '        sta PF1', '        sta PF2']
         else:
             out += ['        ' + i for i in flat(b['even'][0])]
         out.append('        sta WSYNC')
@@ -653,15 +648,9 @@ OS:     sta WSYNC
             out += ['        lda #0', '        sta GRP1']
         else:
             out += ['        ' + i for i in flat(b['odd'][0])]
-        out += ['        dey                ; screen rows left', '        beq %s' % (b['ex_label'] if b['exit'] == 'fall' or not b['stub_before'] else 'B%dEx' % k),
-                '        dex',
-                '        bpl B%dRow' % k]
+        out += ['        dex', '        bpl B%dRow' % k]
         if b['exit'] != 'fall':
-            out.append('        jmp %s' % (next_jump.get(k, exit_jump[bank_of[k]])))
-            # this block's own exit stub (and the next chain's, if it follows in this bank)
-            lbl = 'B%dEx' % k if not b['stub_before'] else 'B%dExA' % k
-            out.append('%s:  jmp %s' % (lbl, exit_jump[bank_of[k]]))
-            b['own_ex'] = lbl
+            out.append('        jmp %s' % next_jump.get(k, exit_jump[bank_of[k]]))
         return out
 
     def table_area(bk):
@@ -720,7 +709,7 @@ OS:     sta WSYNC
     for k, b in enumerate(sched):
         for nm in ('even', 'odd'):
             if b[nm]:
-                n = sum(cycles(i) for i in flat(b[nm][0]))
+                n = sum(cycles(i) for i in flat(b[nm][0])) + (EVEN_T0 if nm == 'even' else 0)
                 assert n == b[nm][1], (k, nm, n, b[nm][1])
                 worst[nm] = max(worst.get(nm, 0), n)
     return lines, sched, failures, nbanks, scheme, worst
