@@ -70,6 +70,8 @@ RAM = {'Rows': 0x80, 'Scroll': 0x81, 'Dir': 0x82, 'EntryX': 0x83, 'EntryPtr': 0x
 
 # ---- the level model --------------------------------------------------------------------------
 _LEVEL = []
+ITEM_COLOURS = {}                 # RAM colour byte name -> (visible colour, kind, screen, x, top)
+ITEM_RAM = 0x90                   # Item0, Item1, ... from here
 
 
 def level_lines():
@@ -92,16 +94,28 @@ def _level_lines():
     import ak_screen  # noqa: F401  (sets fr's layout to the A/K screen)
     screens.append((fr.PLATFORMS, fr.STEPS, fr.LADDERS,
                     [('gem', 40, 16), ('gem', 112, 80), ('gem', 148, 168)]))
-    for plats, steps, ladders, items in screens:
+    ITEM_COLOURS.clear()
+    for si, (plats, steps, ladders, items) in enumerate(screens):
         fr.PLATFORMS, fr.STEPS, fr.LADDERS, fr.ITEMS = plats, steps, ladders, items
         fr.GEM, fr.KEY = gem8, key6
         lines, t = fr.model()
+        # removable objects (gems, the key): their colour comes from a RAM byte each
+        spans = []
+        for kind, ix, top in items:
+            name = 'Item%d' % len(ITEM_COLOURS)
+            rows = len(gem8) if kind == 'gem' else len(key6)
+            ITEM_COLOURS[name] = (fr.BLACK if kind == 'gem' else fr.YELLOW, kind, si, ix, top)
+            spans.append((ix, top, top + rows, name))
         for y, ln in enumerate(lines):
             objs = []
             for x, g, c in ln['objs']:
                 gv = g[1] if g[0] == 'imm' else t[g[1]][y]
                 cv = c[1] if c[0] == 'imm' else t[c[1]][y]
-                objs.append((x, gv, cv))
+                for ix, a, b, name in spans:
+                    if x == ix and a <= y < b:
+                        cv = name
+                out_x = (x, gv, cv)
+                objs.append(out_x)
             out.append({'pf': ln['pf'], 'pcol': t['PCol'][y], 'objs': objs})
     fr.PLATFORMS, fr.STEPS, fr.LADDERS, fr.ITEMS, fr.GEM, fr.KEY = saved
     return out
@@ -128,6 +142,8 @@ def load(src):
     kind, v = src
     if kind == 'imm':
         return ('lda #$%02X' % v, 2)
+    if kind == 'ram':
+        return ('lda %s' % v, 3)                     # a removable object's colour byte
     return ('lda %s,x' % v, 4)                      # a block table indexed by X
 
 
@@ -334,7 +350,7 @@ def pointer(name, top_row):
     raise ValueError(top_row)
 
 
-def build(base, scroll, auto):
+def build(base, scroll, auto, removed=()):
     lines = level_lines()
     blks = blocks_of(lines)
     nb = len(blks)
@@ -350,6 +366,9 @@ def build(base, scroll, auto):
         tables = {}
 
         def src(name, vals):
+            if any(isinstance(v, str) for v in vals):
+                assert all(v == vals[0] for v in vals), vals
+                return ('ram', vals[0])              # a removable object's colour byte
             if all(v == vals[0] for v in vals):
                 return ('imm', vals[0])
             # X counts down: X = n-1-i for row i of the block
@@ -485,6 +504,7 @@ def build(base, scroll, auto):
     o += ['GRP0     = $1B', 'COLUPF   = $08', 'PF0      = $0D', 'PF1      = $0E', 'PF2      = $0F',
           'RESM0    = $12', 'ENAM0    = $1D', 'HotBase  = $%04X' % hot]
     o += ['%-8s = $%02X' % (k, v) for k, v in RAM.items()]
+    o += ['%-8s = $%02X' % (nm, ITEM_RAM + i) for i, nm in enumerate(ITEM_COLOURS)]
     trogg_rows = [bits(r) for r in TROGG]
     pages = {'Trog': strip_page(trogg_rows, TROGG_TOP_ROW),
              'YoEn': strip_page([2] * YOYO_ROWS, YOYO_TOP_ROW - 1),
@@ -496,7 +516,8 @@ def build(base, scroll, auto):
         k = max(i for i, b in enumerate(sched) if b['r0'] <= s)
         b = sched[k]
         e0 = lines[2 * s]['objs']
-        ent.append((k, b['n'] - 1 - (s - b['r0']), bank_of[k], e0[0][2] if e0 else 0))
+        c0 = e0[0][2] if e0 else 0
+        ent.append((k, b['n'] - 1 - (s - b['r0']), bank_of[k], c0 if isinstance(c0, int) else 0))
 
     def frame_code():
         out = ['''Init:   sei
@@ -538,6 +559,10 @@ Frame:  lda #2
         sta NUSIZ0        ; Trogg double width, missile 0 (the yoyo) 8 px
         lda #$01
         sta NUSIZ1        ; two copies close: each RESP1 strobe gives one copy''' % (scroll, fr.BG, fr.MAGENTA)]
+        # removable objects' colour bytes (set once; a removed object has the background colour)
+        init = ''.join('\n        lda #$%02X\n        sta %s' % (fr.BG if nm in removed else c[0], nm)
+                       for nm, c in ITEM_COLOURS.items())
+        out[0] = out[0].replace('        sta Dir\n', '        sta Dir' + init + '\n', 1)
         for nm, ptr, top in (('Trog', 'TrogPtr', TROGG_TOP_ROW), ('YoEn', 'YoPtr', YOYO_TOP_ROW - 1),
                              ('BaEn', 'BalPtr', BALLOON_TOP_ROW - 1)):
             K = pages[nm][1]
@@ -701,7 +726,7 @@ OS:     sta WSYNC
     return lines, sched, failures, nbanks, scheme, worst
 
 
-def compare(png, lines, scroll):
+def compare(png, lines, scroll, removed=()):
     im = Image.open(png).convert('RGB')
     sx = im.width / 160
     bg = im.getpixel((im.width - 2, im.height // 2))
@@ -715,6 +740,8 @@ def compare(png, lines, scroll):
             if all(x in ln['pf'] for x in range(4 * b, 4 * b + 4)):
                 want |= set(range(4 * b, 4 * b + 4))
         for x, gv, cv in ln['objs']:
+            if cv in removed:
+                continue                             # drawn in the background colour: gone
             want |= {x + i for i in range(8) if gv & (0x80 >> i)}
         got = {x for x in range(160) if im.getpixel((int((x + 0.5) * sx), first + j)) != bg}
         skip = set()
@@ -741,21 +768,26 @@ if __name__ == '__main__':
         i = args.index('--scroll')
         scrolls.append(int(args[i + 1]))
         del args[i:i + 2]
+    removed = ()
+    if '--remove' in args:
+        i = args.index('--remove')
+        removed = tuple(args[i + 1].split(','))
+        del args[i:i + 2]
     args = [a for a in args if a != '--auto']
     outdir = os.path.abspath(args[0] if args else os.path.join(HERE, 'out'))
     os.makedirs(outdir, exist_ok=True)
     if not scrolls:
         scrolls = [0, 1, 24, 48, 73, 96]
     for s in scrolls:
-        base = os.path.join(outdir, 'tower_%d' % s)
-        lines, sched, failures, nbanks, scheme, worst = build(base, s, False)
+        base = os.path.join(outdir, 'tower_%d%s' % (s, '_rm' if removed else ''))
+        lines, sched, failures, nbanks, scheme, worst = build(base, s, False, removed)
         png = tiatest.snapshot(base + '.bin', outdir)
         if not png:
             sys.exit('no snapshot')
         os.replace(png, base + '.png')
         im = Image.open(base + '.png')
         im.resize((im.width * 2, im.height * 3), Image.NEAREST).save(base + '_big.png')
-        bad, detail = compare(base + '.png', lines, s)
+        bad, detail = compare(base + '.png', lines, s, removed)
         print('scroll %3d: %d blocks in %d banks (%s), busiest even line %d, odd %d; '
               '%d of 192 lines differ' % (s, len(sched), nbanks, scheme, worst.get('even', 0),
                                           worst.get('odd', 0), bad))
@@ -765,7 +797,10 @@ if __name__ == '__main__':
         print('%d block line versions could not be scheduled:' % len(failures))
         for r0, n, what, e in failures:
             print('  rows %d-%d %s: %s' % (r0, r0 + n - 1, what, e))
+    print('removable objects: ' + ', '.join('%s (%s, %s screen, x=%d, line %d)%s' % (
+        nm, c[1], 'FR' if c[2] == 0 else 'A/K', c[3], c[4], ' REMOVED' if nm in removed else '')
+        for nm, c in ITEM_COLOURS.items()))
     if auto:
         base = os.path.join(outdir, 'tower_auto')
-        build(base, 0, True)
+        build(base, 0, True, removed)
         print('auto-scrolling ROM:', base + '.bin')
