@@ -108,8 +108,10 @@ def load(src):
     return ('lda #$%02X' % v, 2) if kind == 'imm' else ('lda %s,y' % v, 4)
 
 
-def schedule(pf, prev_pf, objs, prev_last_colour, prev_had_objs, prev_last_x=None):
-    """Returns (instructions, end cycle) or raises ValueError. pf = (L0,L1,L2),(R0,R1,R2)."""
+def schedule(pf, prev_pf, objs, prev_last_colour, prev_had_objs, prev_last_x=None, t0=0, end_limit=65,
+             extra=()):
+    """Returns (instructions, end cycle) or raises ValueError. pf = (L0,L1,L2),(R0,R1,R2).
+    t0: the cycle the scheduled code starts at; end_limit: the cycle its last store must end by."""
     (L, R), (pL, pR) = pf, prev_pf
     tasks = []                                   # (lo, hi, load, store-register, note)
     tasks.append((0, (68 + TROGG_X) // 3 - 1, ('lda Trogg,y', 4), 'GRP0'))
@@ -171,10 +173,11 @@ def schedule(pf, prev_pf, objs, prev_last_colour, prev_had_objs, prev_last_x=Non
         prev_end = -(-(68 + x + 8) // 3)             # cycle by which this copy is finished
         prev_col = col if col[0] != 'none' else prev_col
     if len(objs) == 1:
-        tasks.append((prev_end, 65, ('lda #0', 2), 'GRP1'))
+        tasks.append((prev_end, end_limit, ('lda #0', 2), 'GRP1'))
         tasks.append(('spare', prev_end + 3))
     if not objs and prev_had_objs:
-        tasks.append((0, 65, ('lda #0', 2), 'GRP1'))
+        tasks.append((0, end_limit, ('lda #0', 2), 'GRP1'))
+    tasks += list(extra)            # e.g. enable reads: (lo, hi, (load, cycles), register)
     spare = [tk for tk in tasks if tk[0] == 'spare']
     tasks = [tk for tk in tasks if tk[0] != 'spare']
 
@@ -194,7 +197,7 @@ def schedule(pf, prev_pf, objs, prev_last_colour, prev_had_objs, prev_last_x=Non
         if not rem and si == len(strobes):
             return [], t
         nxt = strobes[si] if si < len(strobes) else None
-        limit = nxt - 3 if nxt is not None else 65
+        limit = nxt - 3 if nxt is not None else end_limit
         for i in rem:                                # prune: a store that can no longer make it
             lo, hi, ins, ln, reg = T[i]
             need = 3 if ins in (ha, hx) else ln + 3
@@ -207,7 +210,7 @@ def schedule(pf, prev_pf, objs, prev_last_colour, prev_had_objs, prev_last_x=Non
         loads = set()
         for i in rem:
             lo, hi, ins, ln, reg = T[i]
-            for r in ('a', 'x'):
+            for r in (('a',) if '(' in ins else ('a', 'x')):   # no LDX (zp),y
                 held = ha if r == 'a' else hx
                 if held == ins:                      # store it from this register
                     for st in (3, 4):
@@ -242,7 +245,7 @@ def schedule(pf, prev_pf, objs, prev_last_colour, prev_had_objs, prev_last_x=Non
         fail.add(key)
         return None
 
-    res = search(0, frozenset(range(len(T))), 0, None, None)
+    res = search(t0, frozenset(range(len(T))), 0, None, None)
     if res is None:
         raise ValueError('no schedule fits (tasks %s, strobes %s)' % (T, strobes))
     out, t = res
@@ -256,8 +259,8 @@ def schedule(pf, prev_pf, objs, prev_last_colour, prev_had_objs, prev_last_x=Non
         emit_pad(max(0, at - 3 - t) if max(0, at - 3 - t) != 1 else 2)
         out.append('sta RESP1')
         t += 3
-    if t > 65:
-        raise ValueError('line ends at cycle %d (> 65)' % t)
+    if t > end_limit:
+        raise ValueError('line ends at cycle %d (> %d)' % (t, end_limit))
     return out, t
 
 
