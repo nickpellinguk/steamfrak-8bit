@@ -25,7 +25,8 @@ come from tables indexed by Y) from timing rules measured in Stella:
   * playfield writes, by the cycle the STA ends: left PF0 <= 22, PF1 <= 27, PF2 <= 38;
     right PF0 29-49, PF1 39-54, PF2 50-65; COLUPF <= 22;
   * a line's last store must end by cycle 65 (then iny/cpy/bne and the next STA WSYNC);
-  * with only one copy on a line, GRP1 is cleared after it and RESP1 strobed again far right.
+  * with only one copy on a line, GRP1 is cleared after it and RESP1 strobed again far right;
+    if the copy is too far right for that, an invisible copy (GRP1 = 0) at x=19 is added first.
 After the snapshot it compares every line with the model (Trogg's columns excluded).
 """
 import os
@@ -107,7 +108,7 @@ def load(src):
     return ('lda #$%02X' % v, 2) if kind == 'imm' else ('lda %s,y' % v, 4)
 
 
-def schedule(pf, prev_pf, objs, prev_last_colour, prev_had_objs):
+def schedule(pf, prev_pf, objs, prev_last_colour, prev_had_objs, prev_last_x=None):
     """Returns (instructions, end cycle) or raises ValueError. pf = (L0,L1,L2),(R0,R1,R2)."""
     (L, R), (pL, pR) = pf, prev_pf
     tasks = []                                   # (lo, hi, load, store-register, note)
@@ -124,20 +125,43 @@ def schedule(pf, prev_pf, objs, prev_last_colour, prev_had_objs):
             if R[i] != L[i]:
                 lo, hi = right_win[i]
                 tasks.append((lo, hi, ('lda #$%02X' % R[i], 2), names[i]))
+    if len(objs) == 1 and -(-(68 + objs[0][0] + 8) // 3) > 62:
+        # One copy, too far right to clear GRP1 after it and strobe again: add an invisible copy
+        # at x=19 first, so the line has two and the next line's first strobe resets P1 before
+        # its main copy comes round.
+        objs = [(19, ('imm', 0), ('none', 0))] + list(objs)
+    # P1's main copy from the line before waits 16 px left of that line's last copy. On a run's
+    # first line, the line before belongs to the previous run; unless this line's first strobe
+    # comes well before it (21 px: a strobe 5 px before it was not enough), keep GRP1 at 0 while
+    # it's drawn and write this line's graphics only after it.
+    after_main = 0
+    if prev_last_x is not None and objs:
+        main = prev_last_x - 16
+        c0 = 3 if objs[0][2][0] == 'none' else (objs[0][0] + 47) // 3
+        if 3 * c0 - 68 > main - 21:
+            tasks.append((0, (68 + main) // 3, ('lda #0', 2), 'GRP1'))
+            after_main = -(-(68 + main + 8) // 3)
     strobes = []
     prev_end, prev_col = 0, None
     for k, (x, gfx, col) in enumerate(objs):
         assert x >= 19 and (x + 47) % 3 == 0, x
         c = (x + 47) // 3
+        if col[0] == 'none':
+            c = 3              # any strobe in the blank gives a copy at x=19: do it first
         start = (68 + x) / 3                         # the copy starts being drawn
         hi = int(start)                              # stores must END by then (start is not whole)
         if hi == start:
             hi -= 1
         strobes.append(c)
-        tasks.append((prev_end, hi, load(gfx), 'GRP1'))
+        lo = prev_end
+        if after_main and (68 + x) / 3 > after_main - 1:
+            lo = max(lo, after_main)                 # only after the old main copy is drawn
+        tasks.append((lo, hi, load(gfx), 'GRP1'))
         # colour at the start of a line: the last object's colour on the line before (this run's
         # last object, or for the run's first line the previous run's); skip if it's already right
-        if k == 0:
+        if col[0] == 'none':
+            need = False                             # the invisible copy: colour doesn't matter
+        elif k == 0 or prev_col == ('none', 0):
             start_col = objs[-1][2]
             need = (col[0] == 'tbl' or col != start_col or col != prev_last_colour)
         else:
@@ -145,7 +169,7 @@ def schedule(pf, prev_pf, objs, prev_last_colour, prev_had_objs):
         if need:
             tasks.append((prev_end, hi, load(col), 'COLUP1'))
         prev_end = -(-(68 + x + 8) // 3)             # cycle by which this copy is finished
-        prev_col = col
+        prev_col = col if col[0] != 'none' else prev_col
     if len(objs) == 1:
         tasks.append((prev_end, 65, ('lda #0', 2), 'GRP1'))
         tasks.append(('spare', prev_end + 3))
@@ -163,6 +187,7 @@ def schedule(pf, prev_pf, objs, prev_last_colour, prev_had_objs):
     fail = set()
 
     def search(t, rem, si, ha, hx):
+        # ha, hx: the load instruction whose value A / X holds (so equal values are reused)
         key = (t, rem, si, ha, hx)
         if key in fail:
             return None
@@ -172,37 +197,38 @@ def schedule(pf, prev_pf, objs, prev_last_colour, prev_had_objs):
         limit = nxt - 3 if nxt is not None else 65
         for i in rem:                                # prune: a store that can no longer make it
             lo, hi, ins, ln, reg = T[i]
-            need = 3 if i in (ha, hx) else ln + 3
+            need = 3 if ins in (ha, hx) else ln + 3
             if max(t + need, lo) > hi:
                 fail.add(key)
                 return None
         def ok(end):                                 # can we still reach the next strobe exactly?
             return end <= limit and (nxt is None or limit - end != 1)
         opts = []
+        loads = set()
         for i in rem:
             lo, hi, ins, ln, reg = T[i]
             for r in ('a', 'x'):
                 held = ha if r == 'a' else hx
-                if held == i:                        # store it
+                if held == ins:                      # store it from this register
                     for st in (3, 4):
                         land = max(t + st, lo)
                         if land - st - t == 1 or land > hi or not ok(land):
                             continue
                         opts.append((hi, 0, land, st, i, r, 'store'))
-                elif i not in (ha, hx):              # load it (into a free-or-reused register)
-                    if ok(t + ln):
-                        opts.append((hi, 1, t + ln, 0, i, r, 'load'))
+                elif ins not in (ha, hx) and (ins, r) not in loads and ok(t + ln):
+                    loads.add((ins, r))
+                    opts.append((hi, 1, t + ln, 0, i, r, 'load'))
         for hi, _, end, st, i, r, what in sorted(opts):
             lo, _, ins, ln, reg = T[i]
             if what == 'store':
                 gap = end - st - t
-                ins_s = ('st%s%s %s' % (r, '.w' if st == 4 else '', reg))
-                res = search(end, rem - {i}, si, None if r == 'a' else ha, None if r == 'x' else hx)
+                ins_s = 'st%s%s %s' % (r, '.w' if st == 4 else '', reg)
+                res = search(end, rem - {i}, si, ha, hx)
                 if res is not None:
                     return ([pad(gap)] if gap else []) + [ins_s] + res[0], res[1]
             else:
                 ins_l = ins if r == 'a' else ins.replace('lda', 'ldx')
-                res = search(end, rem, si, i if r == 'a' else ha, i if r == 'x' else hx)
+                res = search(end, rem, si, ins if r == 'a' else ha, ins if r == 'x' else hx)
                 if res is not None:
                     return [ins_l] + res[0], res[1]
         if nxt is not None and nxt - 3 - t >= 0:
@@ -297,12 +323,12 @@ VB:     sta WSYNC
         sta WSYNC
         lda #0
         sta VBLANK''')
-    prev_pf, prev_col, prev_objs = ((0, 0, 0), (0, 0, 0)), None, False
+    prev_pf, prev_col, prev_objs, prev_x = ((0, 0, 0), (0, 0, 0)), None, False, None
     worst = 0
     rs = runs(lines)
     for i, (a, b, (pf, objs)) in enumerate(rs):
         try:
-            code, end = schedule(pf, prev_pf, list(objs), prev_col, prev_objs)
+            code, end = schedule(pf, prev_pf, list(objs), prev_col, prev_objs, prev_x)
         except ValueError as e:
             sys.exit('lines %d-%d: %s\n  objects %s' % (a, b - 1, e, objs))
         n = sum(4 if i.startswith(('sta.w', 'stx.w')) else cycles(i) for chunk in code
@@ -314,6 +340,7 @@ VB:     sta WSYNC
         o += ['        ' + s for chunk in code for s in chunk.split('\n') if s.strip()]
         o.append('        iny\n        cpy #%d\n        bne R%d' % (b % 256, i))
         prev_pf, prev_objs = pf, bool(objs)
+        prev_x = objs[-1][0] if objs else None
         if objs:
             prev_col = objs[-1][2]
     o.append('''        sta WSYNC
