@@ -67,6 +67,8 @@ BALLOON_X, BALLOON_TOP_ROW, BALLOON_ROWS = 118, 120, 4
 # STA WSYNC (9), or dex, bpl not taken, then falling into the next block (ldx, STA WSYNC: 9),
 # a JMP to it (12), or a bank switch (JMP stub, LDA hotspot, JMP: 19).
 EVEN_T0 = 5
+T0_OVERRIDE = {}      # block index -> 6 where the row's BNE crosses a page (found from the listing)
+_SCHED_CACHE = {}
 ODD_LIMIT = {7: 75 - 9, 10: 75 - 12, 17: 75 - 19}
 BALLOON_LINE = os.environ.get('BALLOON_LINE', 'odd')      # which line of a row reads its enable
 
@@ -153,8 +155,21 @@ def load(src):
     return ('lda %s,x' % v, 4)                      # a block table indexed by X
 
 
-def schedule(pf, prevs_pf, objs, start_cols, prev_had_objs, prev_xs, end_limit, extra,
-             trogg, pcol, t0=0):
+def schedule(*args, **kw):
+    key = repr((args, sorted(kw.items())))
+    if key not in _SCHED_CACHE:
+        try:
+            _SCHED_CACHE[key] = ('ok', _schedule(*args, **kw))
+        except ValueError as e:
+            _SCHED_CACHE[key] = ('err', e)
+    kind, v = _SCHED_CACHE[key]
+    if kind == 'err':
+        raise v
+    return v
+
+
+def _schedule(pf, prevs_pf, objs, start_cols, prev_had_objs, prev_xs, end_limit, extra,
+              trogg, pcol, t0=0):
     """Like fr_screen.schedule, but: values come from immediates or X-indexed block tables;
     only A is used (X is the block counter); `prevs_pf`, `start_cols` and `prev_xs` list what the
     line before may have left (several, because a block can be reached from more than one place);
@@ -357,6 +372,36 @@ def pointer(name, top_row):
 
 
 def build(base, scroll, auto, removed=()):
+    """Builds, then checks the listing for blocks whose row-start BNE crosses a page (4 cycles,
+    so the even line starts at cycle 6); reschedules those and rebuilds until there are none."""
+    for _ in range(8):
+        result = _build(base, scroll, auto, removed)
+        crossing = set()
+        for line in open(base + '.lst'):
+            f = line.split()
+            for k in range(len(result[1])):
+                if len(f) > 2 and ('B%dEven' % k) in f[2:4] and not line.strip().endswith(':'):
+                    pass
+        # labels appear as 'B12Even' with the address in the second column
+        for line in open(base + '.lst'):
+            f = line.split()
+            if len(f) >= 3 and f[2].startswith('B') and f[2].endswith('Even'):
+                k = int(f[2][1:-4])
+                even = int(f[1], 16)
+                if ((even - 3) >> 8) != (even >> 8):     # BNE's next instruction vs its target
+                    crossing.add(k)
+        new = {k for k in crossing if T0_OVERRIDE.get(k) != 6}
+        gone = {k for k, v in T0_OVERRIDE.items() if v == 6 and k not in crossing}
+        if not new and not gone:
+            return result
+        for k in new:
+            T0_OVERRIDE[k] = 6
+        for k in gone:
+            del T0_OVERRIDE[k]
+    raise RuntimeError('page-crossing layout did not settle')
+
+
+def _build(base, scroll, auto, removed=()):
     lines = level_lines()
     blks = blocks_of(lines)
     nb = len(blks)
@@ -414,7 +459,7 @@ def build(base, scroll, auto, removed=()):
         res = {}
         try:
             res[0] = schedule(e_pf, e_prevs, e_objs, e_cols, e_had, e_xs, 72, even_extra, trogg, e_pcol,
-                              t0=EVEN_T0)
+                              t0=T0_OVERRIDE.get(k, EVEN_T0))
         except ValueError as e:
             failures.append((r0, n, 'even', str(e)[:150]))
             res[0] = None
@@ -709,7 +754,7 @@ OS:     sta WSYNC
     for k, b in enumerate(sched):
         for nm in ('even', 'odd'):
             if b[nm]:
-                n = sum(cycles(i) for i in flat(b[nm][0])) + (EVEN_T0 if nm == 'even' else 0)
+                n = sum(cycles(i) for i in flat(b[nm][0])) + (T0_OVERRIDE.get(k, EVEN_T0) if nm == 'even' else 0)
                 assert n == b[nm][1], (k, nm, n, b[nm][1])
                 worst[nm] = max(worst.get(nm, 0), n)
     return lines, sched, failures, nbanks, scheme, worst
