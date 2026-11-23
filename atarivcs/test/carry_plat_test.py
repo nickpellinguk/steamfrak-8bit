@@ -48,8 +48,23 @@ TROGG_X, YOYO_X = 100, 112
 CARRY_SAFE = ('ldy', 'sty', 'sta', 'lda', 'nop', 'bit', 'ldx', 'stx')
 
 
+LADDER = True
+
+
 def shared_block():
-    return ['lda #$%02X' % BG, 'sta COLUPF', 'ldy PCol,x', pad(25), 'sty COLUPF']
+    if not LADDER:
+        return ['lda #$%02X' % BG, 'sta COLUPF', 'ldy PCol,x', pad(25), 'sty COLUPF']
+    # with a left ladder (P1, strobed in the blank so its copy is at x = 19, drawn cycles 29-32):
+    # P1's main copy from the previous line's strobe is drawn at x = 3 (cycles 24-26) with whatever
+    # GRP1 holds, so GRP1 is cleared late in each line (after the ladder is drawn) and the ladder's
+    # graphics are written between the main copy and the copy (landing at cycle 27)
+    return ['lda #$%02X' % BG, 'sta COLUPF',     # 17   left half invisible
+            'sta RESP1',                          # 20   left ladder: copy at x = 19
+            'lda Ladder', 'sta GRP1',             # 27   after the main copy (x 3), before the copy
+            'ldy PCol,x',                         # 31   this line's stripe colour
+            'lda #0', 'sta GRP1',                 # 36   blank again, for the next line's main copy
+            pad(10),                              # 46
+            'sty COLUPF']                         # 49   the right half appears
 
 
 def build(base):
@@ -84,6 +99,10 @@ Frame:  lda #2
         sta COLUP0
         lda #0
         sta CTRLPF           ; repeat mode
+        sta COLUP1           ; the ladder is black
+        sta GRP1
+        lda #1
+        sta NUSIZ1           ; two copies close: the strobe's copy is the ladder
         lda #$30
         sta NUSIZ0
         lda #>TroggStrip
@@ -142,7 +161,8 @@ SectionEnd:
         sta ENAM0
         sta PF0
         sta PF1
-        sta PF2''')
+        sta PF2
+        sta GRP1''')
     used = 1 + 2 * ROWS + 1
     o.append('        ldy #%d\nRest:   sta WSYNC\n        dey\n        bne Rest' % (192 - used))
     o.append('''        lda #2
@@ -156,6 +176,7 @@ OS:     sta WSYNC
 TroggStrip:''')
     o.append('        .byte ' + ','.join('$%02X' % v for v in TROGG + [0] * 4))
     o.append('PCol:   .byte ' + ','.join('$%02X' % v for v in STRIPES))
+    o.append('Ladder: .byte $81')
     o.append('        org $FFFC\n        .word Start\n        .word Start')
     open(base + '.asm', 'w').write('\n'.join(o) + '\n')
     subprocess.run(['dasm', base + '.asm', '-f3', '-o' + base + '.bin', '-l' + base + '.lst'],
