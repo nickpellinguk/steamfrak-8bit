@@ -21,6 +21,8 @@ Odd line:
     asl / sta ENAM0          ; 5    row skeleton: the yoyo, from Trogg's front pixel
     (the same block, with its own sleds P1o / P2o)
     dec Count / beq out / jmp <row>     (a BNE can't reach back over the inline sleds)
+Variant N (both ladders, NOP sleds: 0-6 cycles in 2-cycle steps, total 6) is the same as A but
+with plain NOP sleds, whose minimum wait is 0 rather than 2.
 Variant A (both ladders) has the sled total D = 6 (the even line is then full); variant B (no right
 ladder: one sled) can use a long sled.
 """
@@ -64,8 +66,18 @@ def entry(n, d):
     raise ValueError(d)
 
 
+NOP_LEN = 3                              # NOP sled: waits 0, 2, 4 or 6 cycles
+
+
+def nop_entry(d):
+    assert d % 2 == 0 and 0 <= d <= 2 * NOP_LEN, d
+    return NOP_LEN - d // 2
+
+
 def sections():
     out = []
+    for d1 in (0, 2, 4, 6):                  # variant N: both ladders, NOP sleds, total 6 cycles
+        out.append(('N', d1, 6 - d1))
     D = 6
     for d1 in (2, 3, 4):
         out.append(('A', d1, D - d1))
@@ -137,7 +149,7 @@ VB:     sta WSYNC
                           ('P2e', 'S2e_%d' % i, d2), ('P2o', 'S2o_%d' % i, d2)):
             if d is None:
                 continue
-            e = entry(SLED_LEN, d)
+            e = nop_entry(d) if var == 'N' else entry(SLED_LEN, d)
             o.append('        lda #<(%s+%d)\n        sta %s\n        lda #>(%s+%d)\n        sta %s+1' % (sl, e, nm, sl, e, nm))
         o.append('        lda #<(TroggStrip-1)\n        sta TrogPtr\n        lda #%d\n        sta Count\n        ldx #0\n        lda #0' % ROWS)
         o.append('        jmp R%d\n        align 128' % i)
@@ -148,10 +160,10 @@ VB:     sta WSYNC
                  '        lda MidCol', '        ldy Middle,x', '        jmp (%s)' % P1,
                  'C1%s_%d:' % (line, i),
                  '        sta RESP1', '        sta COLUP1', '        sty GRP1']
-            if var == 'A':
+            if var in ('A', 'N'):
                 b += ['        jmp (%s)' % P2, 'C2%s_%d:' % (line, i)]
             b += ['        lda #0', '        sta COLUP1']
-            if var == 'A':
+            if var in ('A', 'N'):
                 b += ['        ldy Ladder,x', '        sty GRP1', '        sta RESP1']
             return b
         o.append('R%d:     sta WSYNC          ; even line' % i)
@@ -182,11 +194,11 @@ OS:     sta WSYNC
     o.append('        org $FFFC\n        .word Start\n        .word Start')
     src = '\n'.join(o) + '\n'
     # put each sled directly before its continuation label, so the sled falls through into it
-    sb = ','.join('$%02X' % v for v in sled(SLED_LEN))
     for i, (var, d1, d2) in enumerate(secs):
+        sb = ','.join('$%02X' % v for v in ([0xEA] * NOP_LEN if var == 'N' else sled(SLED_LEN)))
         for line in 'eo':
             src = src.replace('C1%s_%d:' % (line, i), 'S1%s_%d: .byte %s\nC1%s_%d:' % (line, i, sb, line, i))
-            if var == 'A':
+            if var in ('A', 'N'):
                 src = src.replace('C2%s_%d:' % (line, i), 'S2%s_%d: .byte %s\nC2%s_%d:' % (line, i, sb, line, i))
     src = src.replace('        lda #>Sleds\n        sta P1e+1\n        sta P2e+1\n        sta P1o+1\n        sta P2o+1\n', '')
     open(base + '.asm', 'w').write(src)
@@ -201,8 +213,8 @@ OS:     sta WSYNC
 def even_cycles(var, d1, d2):
     pre = 3 + 5 + 10 + 7 + 5          # STA WSYNC... (from 0) INC, left ladder, loads, JMP
     mid = 9
-    second = (5 + d2) if var == 'A' else 0
-    tail = 5 + (10 if var == 'A' else 0) + 10 + 3
+    second = (5 + d2) if var in ('A', 'N') else 0
+    tail = 5 + (10 if var in ('A', 'N') else 0) + 10 + 3
     return pre - 3 + d1 + mid + second + tail
 
 
