@@ -3,6 +3,81 @@
 Status: **planning only.** Nothing is built yet. This is a design for a new game in the spirit of
 Frak!, made for the 2600's strengths. It is not a port of the Steam levels.
 
+## Current direction (revised)
+
+The experiments in `test/` (see the scripts' docstrings) showed that vertical scrolling, compiled
+per-row code, retriggered multi-object rows and per-line pointer reads all together run about 30%
+past what the 2600 can do, and only work as a one- or two-screen demo: the tower test
+(`test/tower.py`) needed 16K for two screens and still had unschedulable rows. So the design is
+being scaled back:
+
+* **Single-screen rooms, no vertical scrolling.** Everything below about towers, scrolling, tiles
+  and the 256-row level format is the earlier design, kept for reference until this plan is
+  rewritten.
+* **A screen is a list of calls to reusable sections** (band routines), each customised by a
+  parameter and small tables, e.g.
+      LDX #0 : JSR Section1
+      LDX #0 : JSR Section2
+      LDX #4 : JSR Section3
+      LDX #4 : JSR Section3
+  so a room costs a few bytes of calls and a level type (sections, graphics, rooms, game logic)
+  fits in a 4K bank.
+* Sections place objects with **sleds** (`JMP (ptr)` into runs of `CMP #$C9`, ending `$C5 $EA`,
+  one cycle per entry byte, using no registers) and one-sided platform rows by switching `COLUPF`
+  at the centre of the line (`test/halfpf_test.py`).
+* The dagger is dropped (missile 1 follows NUSIZ1's copies, so it would be doubled).
+
+## Row skeleton
+
+Every row is two scanlines, with the same fixed frame in every section. Trogg is player 0, read
+through a pointer that is advanced once per row; the yoyo is missile 0, switched on by the front
+pixel (bit 0) of Trogg's row, so it needs no table of its own.
+
+    ; even line
+            sta WSYNC
+            inc TrogPtr          ; 5   next row of Trogg (in the horizontal blank)
+            ...section...
+            ldy #0               ; 2   (only if the section used Y)
+            lda (TrogPtr),y      ; 5
+            sta GRP0             ; 3   Trogg's graphics, shown from the odd line on
+    ; odd line
+            sta WSYNC            ;     (doesn't change A)
+            asl                  ; 2   bit 0 (front pixel) -> bit 1
+            sta ENAM0            ; 3   yoyo enable, in the horizontal blank
+            ...section...
+            ...right-hand side free: the section's loop, or RTS / LDX #n / JSR to the next section
+
+What it costs and gives:
+
+* **About 20 cycles per row** for Trogg and the yoyo: 5 at the start of the even line, 8-10 at
+  its end, 5 at the start of the odd line.
+* **X and Y are free for sections** (Y is reset to 0 before the even line's Trogg read if the
+  section used it). A is only held across the odd line's `STA WSYNC`, so the section must not use
+  A between the Trogg read and that `WSYNC`.
+* **The odd line's right-hand side is free** for flow control: the section's loop branch, or the
+  transition to the next section (`RTS` 6 + `LDX #n` 2 + `JSR` 6 = 14 cycles, plus the next
+  section's entry setup).
+* **The yoyo enable lands in the horizontal blank,** so the yoyo's row is never cut partway across
+  wherever it is horizontally. Missile 0 is positioned once per frame; when the yoyo isn't out,
+  `RESMP0` parks it inside Trogg (in his colour).
+
+Rules that follow:
+
+* **Trogg's graphics change between the even and odd lines,** so each of his 2-line rows is drawn
+  on an odd line and the following even line: a consistent one-line offset.
+* **The even line's `GRP0` store comes late,** so it must land after Trogg has been drawn on that
+  line; otherwise his row splits partway across. That is fine unless he is at the far right (about
+  x > 120 for a double-width Trogg), where a section has to make the store earlier or accept a
+  one-line split.
+* **The `INC` uses 5 cycles of the even line's horizontal blank,** competing with left-half
+  playfield writes (left `PF0` by cycle 22, `PF1` by 27, `PF2` by 38) and early strobes.
+* **Trogg's pointer must not wrap:** `INC` only changes the low byte, so his strip is laid out in
+  one page with the pointer's low byte starting low enough (0-159) that 96 rows never pass $FF.
+* **Only the walking frame's hand row may have its front pixel (bit 0) lit;** the climbing frame
+  keeps bit 0 clear on every row (no yoyo on ladders).
+* **Any other per-row pointer object** (a balloon enable, a vertical mover) needs its own advance,
+  5 cycles per row each, so they are kept few.
+
 ## The idea
 
 The 2600 can't hold Frak!'s levels: 128 bytes of RAM, no frame buffer, a 20-bit background
