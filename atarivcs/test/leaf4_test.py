@@ -43,14 +43,24 @@ TROGG = [0x18, 0x3C, 0x7F, 0x3C, 0x24, 0x66]       # original placeholder; row 2
 TROGG_X, YOYO_X = 100, 112
 J = 51                                             # the join cycle
 # leaf: (entry cycle after the branches, chosen strobe-end cycle, falls through?)
-LEAVES = [(31, 34, False), (32, 37, False), (32, 39, False), (33, 42, True)]   # JMP leaves strobe by 39, the last by 42
+LEAVES = [(31, 34, False), (32, 36, False), (32, 38, False), (33, 40, True)]   # 2-cycle (6 px) steps; JMP leaves by 39, the last by 42
 
 
 def leaf_code(entry, strobe, last, name):
     a = strobe - 3 - entry
     b = J - strobe - 9 - (0 if last else 3)
-    assert a >= 0 and a != 1 and b >= 0 and b != 1, (name, a, b)
-    out = ['%s:' % name] + ([pad(a)] if a else []) + ['sta RESP1', 'stx COLUP1', 'sta GRP1'] + ([pad(b)] if b else [])
+    assert a >= 0 and b >= 0, (name, a, b)
+    # an odd pad of 1 is made with a 4-cycle absolute store (STA.W / STX.W) instead of a NOP;
+    # odd pads of 3 or more use pad()'s 3-cycle BIT (the flags aren't needed after the decision)
+    strobe_ins, writes = 'sta RESP1', ['stx COLUP1', 'sta GRP1']
+    if a == 1:
+        strobe_ins, a = 'sta.w RESP1', 0
+    if b == 1:
+        # GRP1 first (it must land well before the copy starts, 7 cycles after the strobe), then the
+        # colour as a 4-cycle store landing exactly as the copy's first pixel is drawn. (With the
+        # colour first, GRP1 landed as the copy started and its first pixel used the old graphics.)
+        writes, b = ['sta GRP1', 'stx.w COLUP1'], 0
+    out = ['%s:' % name] + ([pad(a)] if a else []) + [strobe_ins] + writes + ([pad(b)] if b else [])
     if not last:
         out.append('jmp J_%s' % name.split('_', 1)[1])
     return out
