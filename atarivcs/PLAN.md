@@ -78,6 +78,62 @@ Rules that follow:
 * **Any other per-row pointer object** (a balloon enable, a vertical mover) needs its own advance,
   5 cycles per row each, so they are kept few.
 
+## Renderers: bespoke and line-sharing first
+
+**Banking.** The kernel can't reach another 4K bank mid-line at speed, so everything a level type's
+kernel touches (its sections, Trogg's graphics page, colour and graphics tables, bank-switch stubs)
+lives in that type's bank; the shared fourth bank only holds what runs outside the kernel (game
+logic, sound, frame setup). Section code per bank therefore has to be small.
+
+**Plan.** Start with **bespoke sections**: each variant has its objects at fixed positions baked
+into its code (no selector, no pointers, no per-row setup), and variation between levels comes
+from which sections a level calls, which of the type's ladder columns are lit, and the graphics and
+colours passed in. **Sleds** (`JMP (ptr)` into `NOP` or `CMP #$C9` runs) and **`BIT` leaves**
+(`BIT Pos` and branches choosing one of several code paths, each with its own `STA RESP1`) are
+tested and kept as later options for particular sections (moving meanies), where a line has room.
+
+**Line sharing.** Each section's line code is stored once and run for both lines of a row; the
+carry flag says which line it is:
+
+    Row:    sta WSYNC
+            inc TrogPtr          ; even prefix
+            sec
+            jmp Shared           ; 3: balances the odd path
+    Odd:    sta WSYNC
+            asl                  ; odd prefix: the yoyo enable (ASL changes carry...)
+            sta ENAM0
+            clc                  ; ...so carry is set after it
+            bit $80              ; 3: pad, so both paths reach Shared at cycle 10
+    Shared: ...the section's line...
+            bcc OddEnd           ; 2 on the even line, 3 on the odd
+            ldy #0               ; even tail: Trogg's read
+            lda (TrogPtr),y
+            sta GRP0
+            jmp Odd
+    OddEnd: dec Count            ; odd tail: the loop or the transition
+            bne Row
+
+* **Cost:** about 6-10 cycles per row (`SEC`/`CLC`, the end branch, a `JMP`, padding), for
+  roughly half the ROM per section. The tightest sections can still keep separate even and odd
+  copies.
+* **Nothing in the shared block may change carry:** no `CMP` (so no `CMP #$C9` sleds; `NOP` sleds
+  are fine), `ADC`/`SBC`, shifts or rotates. `BIT`, loads, stores, `INC`/`DEC`, `NOP` and branches
+  are fine; `BIT $80` is a carry-safe 3-cycle pad.
+* **Both paths enter the shared block at the same cycle** (the shorter prefix is padded).
+* **Per-line differences** (e.g. the platform stripe colours, a gem's two lines per row) come from
+  an index that differs per line (the odd prefix does `INX`, tables interleaved even/odd: 2
+  cycles) or from a carry branch at the point of difference (2-3 cycles, plus padding to
+  rebalance).
+
+**Conventions on entry and exit of a section (and every line):**
+
+* Carry is the line flag inside a row (set: even line, clear: odd line).
+* `COLUP1` is black at the start of every line; a section that leaves it coloured restores it in
+  the next line's horizontal blank, or before its next black object on the same line.
+* X holds the section's table index; Y is free in the section but is reset to 0 for Trogg's read
+  at the end of the even line; A is held from Trogg's read across the odd line's `STA WSYNC`.
+* Taken branches must not cross a page (the generator checks every branch from the listing).
+
 ## The idea
 
 The 2600 can't hold Frak!'s levels: 128 bytes of RAM, no frame buffer, a 20-bit background
