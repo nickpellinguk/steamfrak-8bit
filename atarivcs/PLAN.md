@@ -88,9 +88,21 @@ logic, sound, frame setup). Section code per bank therefore has to be small.
 **Plan.** Start with **bespoke sections**: each variant has its objects at fixed positions baked
 into its code (no selector, no pointers, no per-row setup), and variation between levels comes
 from which sections a level calls, which of the type's ladder columns are lit, and the graphics and
-colours passed in. **Sleds** (`JMP (ptr)` into `NOP` or `CMP #$C9` runs) and **`BIT` leaves**
-(`BIT Pos` and branches choosing one of several code paths, each with its own `STA RESP1`) are
-tested and kept as later options for particular sections (moving meanies), where a line has room.
+colours passed in. Where an object's position has to vary (a level choosing where a ladder goes, a
+moving meanie), use **leaves**:
+
+* **Leaves are the default positioning method.** `BIT Pos` and two branches choose one of four
+  code paths ('leaves'), selected by bits 7 and 6 of one RAM byte (no pointers, no setup). Each leaf
+  has its own `STA RESP1` at a freely chosen cycle and schedules its own writes before or after it
+  (`GRP1` at least one cycle before the copy starts, strobe + 7; the colour by strobe + 7), and does
+  any fixed-time work itself (e.g. the centre colour switch on cycle 49), so nothing has to be
+  undone with a mirrored delay. Odd pads use 4-cycle `.W` stores. Leaves jump to a shared join
+  (the last falls through). Cost: about 10-15 bytes per leaf. Tested: `test/leaf4_test.py`
+  (coloured object between two ladders), `test/leafplat_test.py` (platform section with a
+  movable left ladder).
+* **`BIT` ladders** (delay, object, mirrored delay) and **sleds** (`JMP (ptr)` into `NOP` or
+  `CMP #$C9` runs) are fallbacks: when ROM is tight, or for many evenly spaced positions (a sled
+  costs about 1 byte per position).
 
 **Line sharing.** Each section's line code is stored once and run for both lines of a row; the
 carry flag says which line it is:
@@ -130,6 +142,9 @@ carry flag says which line it is:
 * Carry is the line flag inside a row (set: even line, clear: odd line).
 * `COLUP1` is black at the start of every line; a section that leaves it coloured restores it in
   the next line's horizontal blank, or before its next black object on the same line.
+* **On exit, a section leaves `COLUPF` at the background colour** (a one-sided platform section
+  otherwise leaves its last stripe colour, and the repeated half of its pattern shows on the
+  following lines) and `GRP1` at 0.
 * X holds the section's table index; Y is free in the section but is reset to 0 for Trogg's read
   at the end of the even line; A is held from Trogg's read across the odd line's `STA WSYNC`.
 * Taken branches must not cross a page (the generator checks every branch from the listing).
