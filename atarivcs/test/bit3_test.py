@@ -15,21 +15,21 @@ A = $20), with the mirrored branches after it so the right ladder is at a fixed 
     lda #$20            ; 18  mask for bit 5
     <pad>
     bit Pos             ;     N = bit 7, V = bit 6, Z = bit 5 clear
-    bvs *+2             ; +1 if bit 6 set
-    bmi *+4             ; +2 if bit 7 set   (skips BIT Pos when clear)
+    bpl *+5             ; +4 if bit 7 set   (skips BIT Pos / NOP when clear)
     bit Pos
-    beq *+4             ; +3 if bit 5 set   (skips NOP NOP when clear)
     nop
-    nop
-    sta RESP1           ; the middle object
+    bvc *+4             ; +2 if bit 6 set   (skips BIT Pos when clear)
+    bit Pos
+    bne *+2             ; +1 if bit 5 set   (to the next instruction)
+    sta RESP1           ; the middle object: delay = Pos >> 5
     nop
     stx GRP1
-    bvc *+2             ; the mirror: +1 if bit 6 clear
-    bpl *+4             ; +2 if bit 7 clear
+    bmi *+5             ; the mirror: +4 if bit 7 clear
     bit Pos
-    bne *+4             ; +3 if bit 5 clear
     nop
-    nop
+    bvs *+4             ; +2 if bit 6 clear
+    bit Pos
+    beq *+2             ; +1 if bit 5 clear
     sta RESP1           ; right ladder: the same cycle for every Pos
     sty GRP1
     dec Count
@@ -50,18 +50,18 @@ from PIL import Image  # noqa: E402
 pad = tiatest.pad
 BG = 0xAA
 LINES = 4
-PAD = 4                              # (with LDX #0 and TAX) middle object at x = 61 + 3d
+PAD = 4                              # (with LDX #0 and TAX) middle object at x = 67 + 3d
 LADDER, MIDDLE = 0x81, 0x3C
 
 
 def delay_of(pos):
-    # BVS taken (+1) if bit 6 set; BMI taken skips BIT Pos, so +2 if bit 7 CLEAR; BEQ not taken
-    # (Z clear: bit 5 set) runs NOP NOP, +3
-    return (pos >> 6 & 1) + 2 * (1 - (pos >> 7 & 1)) + 3 * (pos >> 5 & 1)
+    # binary weights: bit 7 = 4 (BPL over BIT Pos / NOP), bit 6 = 2 (BVC over BIT Pos),
+    # bit 5 = 1 (BNE to the next instruction; Z is clear when bit 5 is set): delay = Pos >> 5
+    return pos >> 5
 
 
 def build(base):
-    pats = [0x00, 0x40, 0x80, 0xC0, 0x20, 0x60, 0xA0, 0xE0]
+    pats = [d << 5 for d in range(8)]
     o = ['        processor 6502']
     o += ['%-8s = $%02X' % (k, v) for k, v in tiatest.EQU.items()]
     o += ['Pos      = $80', 'Count    = $81']
@@ -112,21 +112,21 @@ VB:     sta WSYNC
         lda #$20''')
         o.append('        ' + pad(PAD).replace('\n', '\n        '))
         o.append('''        bit Pos
-        bvs *+2
-        bmi *+4
+        bpl *+5            ; +4 if bit 7 set
         bit Pos
-        beq *+4
         nop
-        nop
+        bvc *+4            ; +2 if bit 6 set
+        bit Pos
+        bne *+2            ; +1 if bit 5 set
         sta RESP1
         nop
         stx GRP1
-        bvc *+2
-        bpl *+4
+        bmi *+5            ; the mirror: +4 if bit 7 clear
         bit Pos
-        bne *+4
         nop
-        nop
+        bvs *+4            ; +2 if bit 6 clear
+        bit Pos
+        beq *+2            ; +1 if bit 5 clear
         sta RESP1
         sty GRP1
         dec Count
