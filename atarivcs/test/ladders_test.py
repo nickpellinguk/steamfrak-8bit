@@ -127,7 +127,10 @@ CopyF:  lda TroggFrame-1,y
     for reg, xx in (('RESP0', TX), ('RESM0', TX + 16)):
         c = (xx + 68) // 3 if reg == 'RESM0' else (xx + 63) // 3
         o.append('        sta WSYNC\n        ' + pad(c - 3).replace('\n', '\n        ') + '\n        sta %s' % reg)
-    o.append('''        ldx #33
+    # park P1 in vertical blank: a strobe later than any renderer's first strobe, so the frame's
+    # first renderer cancels its main copy (the ghost rule from park_test.py)
+    o.append('        sta WSYNC\n        ' + pad(57).replace('\n', '\n        ') + '\n        sta RESP1')
+    o.append('''        ldx #32
 VB:     sta WSYNC
         dex
         bne VB
