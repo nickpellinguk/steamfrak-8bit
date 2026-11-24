@@ -55,6 +55,10 @@ BASS_NOTE_WEIGHT = {10: 4, 12: 4, 17: 4, 19: 4}   # notes heard as out of tune (
 LEAD_WAVES = (4, 12)
 BASS_OCTAVES = (0,)                 # both channels stay in the original's register
 LEAD_OCTAVES = (0,)
+# the lead's parts an octave up where they lie low (the slides work better higher) and tune better
+# there; the high parts stay put (an octave up they fall where the TIA's steps are coarse)
+TRACK_OCTAVE = {2: 12, 3: 12, 4: 0, 5: 0, 6: 0}   # slide guitar, ukulele, male voice, violin, female voice
+FIXED_TRANSPOSE = 4.625            # pinned: the bass at this transposition was judged acceptable
 FLAT_WEIGHT, BASS_WEIGHT = 1.5, 1.5
 SLIDE_ENVS = (1, 2, 3)
 SLIDE_BASE = 48
@@ -85,8 +89,8 @@ def env_frames(t, e, frames):
     return [seq[min(len(seq) - 1, f * 50 // 60)] / 8.0 for f in range(frames)]
 
 
-def grid(track, n):
-    """Per quarter beat: (semitone or None, onset)."""
+def grid(track, n, shift=0):
+    """Per quarter beat: (semitone or None, onset, slide envelope)."""
     out, cur = [], None
     for s, d, e in track['notes']:
         for k in range(d):
@@ -95,7 +99,7 @@ def grid(track, n):
             elif s == frakmusic.EXTEND:
                 out.append((cur, False, 0))
             else:
-                cur = s; out.append((s, k == 0, e if k == 0 and e in SLIDE_ENVS else 0))
+                cur = s + shift; out.append((cur, k == 0, e if k == 0 and e in SLIDE_ENVS else 0))
     return out[:n]
 
 
@@ -140,7 +144,7 @@ def main():
     tr = T['tracks']
     bass_steps = grid(tr[0], n)
     assert all(bass_steps[i] == bass_steps[i % 128] for i in range(n)), 'bass does not loop every 128 beats'
-    lead_steps = merge([grid(x, n) for x in tr[2:7]], n)
+    lead_steps = merge([grid(x, n, TRACK_OCTAVE.get(x['index'], 0)) for x in tr[2:7]], n)
     bass_blocks = blocks(bass_steps, 128)
     lead_blocks = blocks(lead_steps, n)
 
@@ -171,7 +175,7 @@ def main():
         return tot
     best_cfg = None
     for bw in BASS_WAVE_SETS:
-        for tp8 in range(-96, 97):
+        for tp8 in ([round(FIXED_TRANSPOSE * 8)] if FIXED_TRANSPOSE is not None else range(-96, 97)):
             tp = tp8 / 8.0
             for bo in BASS_OCTAVES:
                 eb = err(bu, tp + bo, bw, BASS_WEIGHT)
