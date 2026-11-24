@@ -45,9 +45,13 @@ TIE, END, REST = 61, 62, 63
 WAVES = {                           # AUDC: (divisor, name)
     4: (2, 'square, high'), 12: (6, 'square, low'), 6: (31, 'div 31 (buzzy square)'), 1: (15, '4-bit poly (buzz)'),
 }
-BASS_WAVE_SETS = ((12,),)          # one timbre all through: the low square (the buzzy 4-bit poly, AUDC 1,
-                                   # made C and B flat stand out, and its pitch sounded off)
-BASS_NOTE_WEIGHT = {10: 4, 12: 4, 19: 4}   # notes heard as out of tune (B flat, C, G): extra weight
+BASS_WAVE_SETS = ((12, 4),)        # one timbre all through: the two square waves (the buzzy 4-bit poly,
+                                   # AUDC 1, made C and B flat stand out, and its pitch sounded off)
+DITHER = next((float(a.split('=')[1]) for a in sys.argv if a.startswith('--dither=')), None)
+DITHER_LEN = 8                     # a dithered note: a repeating pattern of this many frames
+COLLIDE_CENTS = 100                # two different notes on one pitch: counted as this error, for as
+                                   # long as the rarer of the two plays
+BASS_NOTE_WEIGHT = {10: 4, 12: 4, 17: 4, 19: 4}   # notes heard as out of tune (B flat, C, F, G): extra weight
 LEAD_WAVES = (4, 12)
 BASS_OCTAVES = (0,)                 # both channels stay in the original's register
 LEAD_OCTAVES = (0,)
@@ -153,12 +157,17 @@ def main():
     cache = {}
 
     def err(u, shift, waves, weight):
-        tot = 0.0
+        tot, used = 0.0, {}
         for s, w in u.items():
             k = (s + shift, waves)
             if k not in cache:
-                cache[k] = best(note_hz(s + shift), waves)[2]
-            tot += weight * w * cost(cache[k]) * (BASS_NOTE_WEIGHT.get(s, 1) if weight == BASS_WEIGHT else 1)
+                cache[k] = best(note_hz(s + shift), waves)
+            pick = cache[k]
+            tot += weight * w * cost(pick[2]) * (BASS_NOTE_WEIGHT.get(s, 1) if weight == BASS_WEIGHT else 1)
+            used.setdefault(pick[:2], []).append(w)
+        for ws in used.values():           # notes that share a pitch
+            if len(ws) > 1:
+                tot += weight * COLLIDE_CENTS * sum(sorted(ws)[:-1])
         return tot
     best_cfg = None
     for bw in BASS_WAVE_SETS:
@@ -173,7 +182,7 @@ def main():
     _, tp, bo, lo, BASS_WAVES = best_cfg
 
     # pitch tables: every (AUDC, AUDF) a channel uses, for its notes and its slides' frames
-    def build_channel(bl, shift, waves):  # noqa: C901
+    def build_channel(bl, shift, waves, dither=None):  # noqa: C901
         points, slides = [], []
 
         def point(hz):
@@ -186,6 +195,30 @@ def main():
             for s, d, a, e in b:
                 if s is not None and s not in note_pt:
                     note_pt[s] = point(note_hz(s + shift))
+        # pitch alternation: a held note further than `dither` cents from any TIA pitch alternates
+        # between the two around it, frame by frame, in proportion (a looping pitch sequence)
+        dith = {}
+        if dither is not None:
+            for s in sorted(note_pt):
+                hz = note_hz(s + shift)
+                if abs(best(hz, waves)[2]) <= dither:
+                    continue
+                lo_c = max(((w, f) for w in waves for f in range(32) if freq(w, f) <= hz), key=lambda p: freq(*p), default=None)
+                hi_c = min(((w, f) for w in waves for f in range(32) if freq(w, f) >= hz), key=lambda p: freq(*p), default=None)
+                if lo_c is None or hi_c is None:
+                    continue
+                a = math.log(hz / freq(*lo_c)) / math.log(freq(*hi_c) / freq(*lo_c))
+                seq, acc = [], 0.0
+                for _ in range(DITHER_LEN):
+                    acc += a
+                    if acc >= 0.5:
+                        acc -= 1.0; seq.append(point(freq(*hi_c)))
+                    else:
+                        seq.append(point(freq(*lo_c)))
+                seq.append('loop')
+                if seq not in slides:
+                    slides.append(seq)
+                dith[s] = slides.index(seq)
         slide_id = {}
         for b in bl:
             for s, d, a, e in b:
@@ -217,13 +250,13 @@ def main():
                             slides.append(seq)
                         slide_id[(s, e, d)] = slides.index(seq)
         assert len(points) <= SLIDE_BASE and len(slides) <= 61 - SLIDE_BASE, (len(points), len(slides))
-        assert sum(len(x) + 1 for x in slides) < 256, 'slides must fit in one indexed table'
-        return points, note_pt, slides, slide_id
+        assert sum(len(x) + 2 for x in slides) < 256, 'slides must fit in one indexed table'
+        return points, note_pt, slides, slide_id, dith
 
-    bpoints, bnote, bslides, bslide = build_channel(bass_blocks, tp + bo, BASS_WAVES)
-    lpoints, lnote, lslides, lslide = build_channel(lead_blocks, tp + lo, LEAD_WAVES)
+    bpoints, bnote, bslides, bslide, bdith = build_channel(bass_blocks, tp + bo, BASS_WAVES, DITHER)
+    lpoints, lnote, lslides, lslide, ldith = build_channel(lead_blocks, tp + lo, LEAD_WAVES)
 
-    def encode(b, note_pt, slide_id):
+    def encode(b, note_pt, slide_id, dith):
         out = []
         for s, d, attack, e in b:
             if s is None:
@@ -232,6 +265,8 @@ def main():
                 code = TIE
             elif e and slide_id.get((s, e, d)) is not None:
                 code = SLIDE_BASE + slide_id[(s, e, d)]
+            elif s in dith:
+                code = SLIDE_BASE + dith[s]
             else:
                 code = note_pt[s]
             fr = d * FRAMES_PER_Q
@@ -243,16 +278,16 @@ def main():
                     code = TIE
         return out + [END]
 
-    def patterns(bl, note_pt, slide_id):
+    def patterns(bl, note_pt, slide_id, dith):
         pats, order = [], []
         for b in bl:
-            e = encode(b, note_pt, slide_id)
+            e = encode(b, note_pt, slide_id, dith)
             if e not in pats:
                 pats.append(e)
             order.append(pats.index(e))
         return pats, order
-    bpats, border = patterns(bass_blocks, bnote, bslide)
-    lpats, lorder = patterns(lead_blocks, lnote, lslide)
+    bpats, border = patterns(bass_blocks, bnote, bslide, bdith)
+    lpats, lorder = patterns(lead_blocks, lnote, lslide, ldith)
     lloop = intro // BLOCK
 
     o = ['; GENERATED by atarivcs/music/build_music.py from src/gen/music.asm: the Frak theme',
@@ -265,7 +300,10 @@ def main():
                                                           ['%sSl%d' % (name, i) for i in range(len(slides))])))
             o.append('%sSlides:' % name)
             for i, sq in enumerate(slides):
-                o.append('%sSl%d: .byte %s,$FF' % (name, i, ','.join(map(str, sq))))
+                if sq[-1] == 'loop':           # $FE, then where to go back to
+                    o.append('%sSl%d: .byte %s,$FE,%sSl%d-%sSlides' % (name, i, ','.join(map(str, sq[:-1])), name, i, name))
+                else:
+                    o.append('%sSl%d: .byte %s,$FF' % (name, i, ','.join(map(str, sq))))
         else:
             o.append('%sSlide:\n%sSlides: .byte $FF' % (name, name))
     for name, pats, order, loop in (('Bass', bpats, border, 0), ('Lead', lpats, lorder, lloop)):
@@ -279,6 +317,8 @@ def main():
 
     size = sum(len(p) for p in bpats + lpats) + len(border) + len(lorder) + 2 + 2 * (len(bpats) + len(lpats)) + \
         2 * (len(bpoints) + len(lpoints)) + sum(len(x) + 2 for x in bslides + lslides)
+    if bdith:
+        print('bass notes played by pitch alternation (further than %g cents from a TIA pitch): %s' % (DITHER, sorted(bdith)))
     print('transposition %+.3f semitones, bass octave %+d, lead octave %+d, bass waveforms %s' % (tp, bo // 12, lo // 12, BASS_WAVES))
     print('bass: %d patterns, %d pitches; lead: %d patterns (order %s, loops to %d), %d pitches, %d slides' % (
         len(bpats), len(bpoints), len(lpats), lorder, lloop, len(lpoints), len(lslides)))

@@ -7,7 +7,7 @@
 ; A pattern is a list of 2-byte notes: code, length in frames. Codes: 0-47 a note (index into
 ; the channel's AUDC/AUDF tables), 48-60 a pitch slide (code - 48 indexes {Bass,Lead}Slide, an
 ; offset into {Bass,Lead}Slides: one pitch index per frame, ended by $FF, after which the last
-; pitch is held), 61 tie (carry on with no new attack), 62 end of pattern, 63 rest.
+; pitch is held, or by $FE and an offset to go back to, for a repeating pattern), 61 tie (carry on with no new attack), 62 end of pattern, 63 rest.
 ; Each channel has an order list of patterns, ended by $FF, and a loop position.
 ; The envelope: a new note starts at the channel's top volume and falls by one every 4 frames
 ; to its floor; a rest is silent.
@@ -105,11 +105,16 @@ MusEnd: .byte 62            ; an empty pattern: the first tick moves to each cha
 .env:   ldx MusSl+{1}       ; a slide in progress: this frame's pitch
         cpx #$FF
         beq .dec
-        lda {2}Slides,x
-        cmp #$FF
-        bne .step
-        sta MusSl+{1}       ; its end: hold the last pitch
+.rd:    lda {2}Slides,x
+        cmp #$FE
+        bcc .step
+        beq .loop
+        sta MusSl+{1}       ; $FF, its end: hold the last pitch
         bne .dec
+.loop:  lda {2}Slides+1,x   ; $FE: go back (a repeating pattern, for pitch alternation)
+        sta MusSl+{1}
+        tax
+        jmp .rd
 .step:  tax
         lda {2}C,x
         sta AUDC0+{1}
