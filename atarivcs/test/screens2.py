@@ -51,6 +51,7 @@ ROW_STRIPES = [BLACK, MAGENTA, DARK, DARK]
 MAXX = 112                         # a strobe ending at 53
 CHANGES = []
 DROPPED = []
+GUARDS = []
 
 SCREENS = {
     'fr': dict(
@@ -72,6 +73,9 @@ SCREENS = {
 # ---- the scheduler, adapted from fr_screen.schedule -------------------------------------------
 _src = inspect.getsource(fr.schedule)
 for a, b in [
+        # ghost rule measured in park_test.py: the old main copy is cancelled if this line's first
+        # strobe ends at least one cycle before the strobe that made it
+        ("        if 3 * c0 - 68 > main - 21:", "        if c0 >= (prev_last_x + 47) // 3:"),
         ("    tasks.append((0, (68 + TROGG_X) // 3 - 1, ('lda Trogg,y', 4), 'GRP0'))\n", ""),
         ("('lda PCol,y', 4)", "load(('stripe', 0))"),
         ("            c = 3              # any strobe", "            c = t0 + 3         # any strobe"),
@@ -197,6 +201,15 @@ def body_code(name, code, uses_y, end=None):
     return out
 
 
+def strobe_cycles(code, t0):
+    t, out = t0, []
+    for i in (x.strip() for c in code for x in c.split('\n') if x.strip()):
+        t += ncycles([i])
+        if 'RESP1' in i:
+            out.append(t)
+    return out
+
+
 def ncycles(code):
     return sum(2 if len(i.split()) == 1 else 5 if '),y' in i else 4 if i.startswith(('sta.w', 'stx.w', 'sty.w')) or i.endswith(',x') else cycles(i)
                for chunk in code for i in (x.strip() for x in chunk.split('\n')) if i)
@@ -233,9 +246,13 @@ def build(which, base):
             code, end = res
             assert ncycles(code) == end - t0, (a, ncycles(code), end)
             name = 'R%d' % len(bodies)
-            bodies[key] = (name, body_code(name, code, uses_y, end), end + 2)
+            strobes = strobe_cycles(code, t0)
+            bodies[key] = (name, body_code(name, code, uses_y, end), end + 2, strobes, keep)
             report.append((name, a, b, len(objs), end + 2))
-        name = bodies[key][0]
+        name, _, _, strobes, keep = bodies[key]
+        if prev_x is not None and strobes:
+            cprev = 22 if prev_x == 19 else (prev_x + 47) // 3
+            GUARDS.append((a, name, strobes[0], cprev, strobes[0] >= cprev))
         calls.append('ldx #%d' % (2 * a if LINES else a))
         if EXACT is not None:            # every return path takes 4 call-list cycles
             calls.append('nop')
@@ -244,7 +261,11 @@ def build(which, base):
             calls.append('PADNEXT')
         else:
             calls += ['jsr %s' % name] * (b - a)
-        prev = (pf, (objs[-1][2] if objs else prev_col), bool(objs), objs[-1][0] if objs else None)
+        last_x = None
+        if strobes:                      # the body's real last strobe (a spare one included)
+            last_x = 19 if strobes[-1] <= 22 else 3 * strobes[-1] - 47
+        prev = (pf, (keep[-1][2] if keep else prev_col), bool(keep),
+                last_x if strobes else prev_x)
 
     trogg_strip = [0] * 96
     top = 176 // 2 - len(TROGG)
@@ -343,7 +364,7 @@ OS:     sta WSYNC
         bne OS
         jmp Frame''')
         o.append('Bodies:')
-        for key, (name, code, _) in bodies.items():
+        for key, (name, code, *_) in bodies.items():
             if name in aligned:
                 o.append('        align 256')
             for c in code:
@@ -420,6 +441,9 @@ if __name__ == '__main__':
     rows, t, runs, bodies, report, calls, labels = build(which, base)
     print('%s: %d runs, %d bodies' % (which, len(runs), len(bodies)))
     print('layout changes:', '; '.join(CHANGES))
+    g = [x for x in GUARDS if x[4]]
+    print('renderer changes with a P1 predecessor: %d; first strobe not earlier than the previous last (GRP1 held at 0 past the ghost): %d %s' % (
+        len(GUARDS), len(g), ['row %d %s (first %d, previous last %d)' % x[:4] for x in g]))
     for a, b, o in DROPPED:
         print('  dropped on rows %d-%d (lines %d-%d): %s at x %d' % (a, b, 2 * a, 2 * b + 1, o[1][1] if o[1][0] == 'tbl' else 'step', o[0]))
     over = [r for r in report if r[4] > 55]
