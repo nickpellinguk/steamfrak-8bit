@@ -237,8 +237,14 @@ with `test/screens2.py`, `test/limits.py`, `test/ghost_test.py` and `test/leftpf
 * **A single copy leaves a ghost** 16 px to its left on every following line (P1's main copy); the
   next line's strobe at the same cycle doesn't cancel it. Fix: clear GRP1 after the copy has been
   drawn, and write the graphic 5 cycles after the strobe (GRP1 = 0 while the old main copy is
-  drawn). About 5 cycles, which is why one-object rows fit worse than two-object rows. A strobe
-  about 21 px or more before an old main copy does cancel it.
+  drawn). About 5 cycles, which is why one-object rows fit worse than two-object rows.
+* **Ghost cancelling (`test/park_test.py`):** a line's first strobe cancels the old main copy if it
+  ends at least one cycle earlier than the strobe that made it; at the same cycle it doesn't. So
+  rows with two or more strobes never ghost (their first strobe is earlier than their last), a
+  one-strobe row always does (same cycle every line), and at a renderer change the next
+  renderer's first strobe must be earlier than the previous renderer's last strobe, or that
+  renderer must keep GRP1 = 0 until the old main copy (16 px left of the last copy) has passed.
+  A renderer with no P1 objects that follows one with them must clear GRP1.
 * **Nothing to the right of a ladder at x 85 or beyond:** the next object's graphics write can't land
   until that ladder has been drawn, after the budget. In practice P1 objects stop at about x 112,
   and coloured items on rows with ladders at about x 100.
