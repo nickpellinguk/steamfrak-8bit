@@ -45,7 +45,9 @@ TIE, END, REST = 61, 62, 63
 WAVES = {                           # AUDC: (divisor, name)
     4: (2, 'square, high'), 12: (6, 'square, low'), 6: (31, 'div 31 (buzzy square)'), 1: (15, '4-bit poly (buzz)'),
 }
-BASS_WAVE_SETS = ((1, 12), (1,), (6, 12), (12, 6, 4))   # the search picks one (1 = buzzy 4-bit poly bass)
+BASS_WAVE_SETS = ((12,),)          # one timbre all through: the low square (the buzzy 4-bit poly, AUDC 1,
+                                   # made C and B flat stand out, and its pitch sounded off)
+BASS_NOTE_WEIGHT = {10: 4, 12: 4, 19: 4}   # notes heard as out of tune (B flat, C, G): extra weight
 LEAD_WAVES = (4, 12)
 BASS_OCTAVES = (0,)                 # both channels stay in the original's register
 LEAD_OCTAVES = (0,)
@@ -156,7 +158,7 @@ def main():
             k = (s + shift, waves)
             if k not in cache:
                 cache[k] = best(note_hz(s + shift), waves)[2]
-            tot += weight * w * cost(cache[k])
+            tot += weight * w * cost(cache[k]) * (BASS_NOTE_WEIGHT.get(s, 1) if weight == BASS_WEIGHT else 1)
         return tot
     best_cfg = None
     for bw in BASS_WAVE_SETS:
