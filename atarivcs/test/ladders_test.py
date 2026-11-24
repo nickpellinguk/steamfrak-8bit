@@ -27,7 +27,7 @@ from PIL import Image  # noqa: E402
 
 pad = tiatest.pad
 BG, MAG, DARK, BLACK, TROGG_COL = 0xAA, 0x58, 0xA4, 0x00, 0x1E
-PAIRS = [(31, 58, 85, 112), (19, 40, 61, 82, 103), (19, 40, 61, 82), (112,), (58, 82, 103), (46, 100), (61,), (19, 43, 64), (19, 40), (19,)]   # strobes >= 21 px apart
+PAIRS = [(31, 52, 73, 94, 115), (34, 61, 88, 115), (118,), (31, 58, 85, 112), (19, 40, 61, 82, 103), (19, 40, 61, 82), (112,), (58, 82, 103), (46, 100), (61,), (19, 43, 64), (19, 40), (19,)]   # strobes >= 21 px apart
 ROWS = 4
 TX = 130                     # Trogg (double width) at x 130-145, right of every ladder
 
@@ -58,15 +58,16 @@ def body(name, xs):
     extra = []
     objs = [(x, ('tbl', 'Lad'), ('imm', BLACK)) for x in xs]
     code, end = schedule(((0, 0, 0), (0, 0, 0)), ((0, 0, 0), (0, 0, 0)), objs, ('imm', BLACK), True,
-                         xs[-1], t0=10, end_limit=53, extra=extra)
+                         xs[-1], t0=10, end_limit=55, extra=extra)
     flat = [i.strip() for c in code for i in c.split('\n') if i.strip()]
     tail = ['ldy #0', 'lda (TrogPtr),y', 'tay', 'lda Buffer,y', 'sta GRP0', 'inx']
     n = 76 - (end + 3 + s2.ncycles(tail))
-    assert n >= 0 and end + 2 <= 55, (name, end, n)
+    assert n >= 0 and end + 2 <= 57, (name, end, n)
     if n == 1:
         tail[4] = 'sta.w GRP0'
-    out = ['%s:' % name, 'sta WSYNC', 'inc TrogPtr', 'sec', 'bit $80', '%s_s:' % name] + flat
-    out += ['bcs %s_e' % name, 'inx', 'rts', '%s_e:' % name] + tail
+    # two entry points: 'name_i: inx' falls into 'name:'; the body ends 'bcs even / rts'
+    out = ['%s_i:' % name, 'inx', '%s:' % name, 'sta WSYNC', 'inc TrogPtr', 'sec', 'bit $80', '%s_s:' % name] + flat
+    out += ['bcs %s_e' % name, 'rts', '%s_e:' % name] + tail
     if n > 1:
         out += pad(n).split('\n')
     out += ['asl', 'sta ENAM0', 'clc', 'jmp %s_s' % name]
@@ -143,7 +144,7 @@ VB:     sta WSYNC
         code, end, flat = body(name, xs)
         bodies.append((name, xs, code, end, flat))
         o.append('        ldx #%d' % (16 * sec))
-        o += ['        jsr %s' % name] * ROWS
+        o += ['        jsr %s' % name] + ['        jsr %s_i' % name] * (ROWS - 1)
         o += ['        sta WSYNC', '        lda #0', '        sta PF1', '        sta GRP1', '        sta GRP0',
               '        sta ENAM0', '        lda #$%02X' % BG, '        sta COLUPF']
         o += ['        sta WSYNC'] * 3

@@ -48,7 +48,14 @@ if BUFFER:
 LINES = '--lines' in sys.argv               # X counts lines: tables per line, INX in the even tail
 ROWSTRIPES = '--rowstripes' in sys.argv or LINES     # one stripe colour per row (from a row table)
 ROW_STRIPES = [BLACK, MAGENTA, DARK, DARK]
-MAXX = 112                         # a strobe ending at 53
+# Two entry points (the current kernel): 'name_i: inx' falls into 'name:'; a run's first row is
+# 'ldx #line / jsr name', its other rows 'jsr name_i', and bodies end 'bcs even / rts'. The INX is
+# then off the odd line's path at a renderer change, so the odd line may fall through by 57
+# (LDX zp) and the last store end by 55; the even line agrees (Trogg tail 18, no mid-row WSYNC).
+TWOENTRY = LINES and BUFFER and NOMIDSYNC and EXACT is None and '--oneentry' not in sys.argv
+if TWOENTRY:
+    LIMIT = 55
+MAXX = 3 * LIMIT - 47                # the furthest-right copy: a strobe ending at LIMIT
 CHANGES = []
 DROPPED = []
 MIDSYNC = []
@@ -184,13 +191,13 @@ def body_code(name, code, uses_y, end=None):
     # jumps back to the shared block (the JMP replaces the odd prefix's 3-cycle pad)
     look = ['tay', 'lda Buffer,y'] if BUFFER else []
     odd = ODDINX and LINES
-    out = ['%s:' % name] + ([] if EXACT is not None else ['sta WSYNC']) + ['inc TrogPtr'] + ld + ['sec', 'bit $80'] + (['nop'] if odd else [])
+    out = (['%s_i:' % name, 'inx'] if TWOENTRY else []) + ['%s:' % name] + ([] if EXACT is not None else ['sta WSYNC']) + ['inc TrogPtr'] + ld + ['sec', 'bit $80'] + (['nop'] if odd else [])
     oddpad = []
     if EXACT is not None:
         k = EXACT - (end + 2)
         assert k >= 0 and k != 1, ('odd line', name, k)
         oddpad = [pad(k)] if k else []
-    out += ['%s_s:' % name] + code + ['bcs %s_e' % name] + oddpad + ['inx', 'rts']
+    out += ['%s_s:' % name] + code + ['bcs %s_e' % name] + oddpad + ([] if TWOENTRY else ['inx']) + ['rts']
     out += ['%s_e:' % name, 'ldy #0', 'lda (TrogPtr),y'] + look + ['sta GRP0'] + (['inx'] if LINES and not odd else [])
     tail = out[out.index('%s_e:' % name) + 1:]
     # STA WSYNC between the row's lines wherever it still writes by cycle 75 (2 bytes, resyncs the
@@ -269,7 +276,7 @@ def build(which, base):
             calls = calls[:-2]
             calls.append('PADNEXT')
         else:
-            calls += ['jsr %s' % name] * (b - a)
+            calls += ['jsr %s' % name] + ['jsr %s_i' % name] * (b - a - 1) if TWOENTRY else ['jsr %s' % name] * (b - a)
         last_x = None
         if strobes:                      # the body's real last strobe (a spare one included)
             last_x = 19 if strobes[-1] <= 22 else 3 * strobes[-1] - 47
