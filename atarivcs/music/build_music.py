@@ -59,7 +59,8 @@ LEAD_OCTAVES = (0,)
 # there; the high parts stay put (an octave up they fall where the TIA's steps are coarse)
 TRACK_OCTAVE = {2: 0, 3: 12, 4: 0, 5: 0, 6: 0}    # slide guitar, ukulele, male voice, violin, female voice
 GRACE_TRACKS = {2}                 # the slide guitar: a slide becomes a short note a semitone below
-GRACE_FRAMES = 4                   # (about 1/15 s), then the note
+GRACE_FRAMES = 16                  # (a quaver: 2 quarter beats of 8 frames), then the note; never more
+                                   # than half the note
 FIXED_TRANSPOSE = 4.625            # pinned: the bass at this transposition was judged acceptable
 FLAT_WEIGHT, BASS_WEIGHT = 1.5, 1.5
 SLIDE_ENVS = (1, 2, 3)
@@ -230,7 +231,8 @@ def main():
         for b in bl:
             for s, d, a, e in b:
                 if s is not None and a and e == 'grace' and (s, e, d) not in slide_id:
-                    seq = [point(note_hz(s + shift - 1))] * GRACE_FRAMES + [point(note_hz(s + shift))]
+                    g = min(GRACE_FRAMES, d * FRAMES_PER_Q // 2)
+                    seq = [point(note_hz(s + shift - 1))] * g + [point(note_hz(s + shift))]
                     if seq not in slides:
                         slides.append(seq)
                     slide_id[(s, e, d)] = slides.index(seq)

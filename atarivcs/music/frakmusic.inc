@@ -8,9 +8,9 @@ LeadC: .byte 12,12,4,4,12,12,12,4,4,4,4,4,4,4,4,4,4,4,12,12,4,4,4
 LeadF: .byte 15,11,31,29,10,12,13,24,23,19,26,18,17,14,22,16,15,12,14,16,25,20,21
 LeadSlide: .byte LeadSl0-LeadSlides,LeadSl1-LeadSlides,LeadSl2-LeadSlides,LeadSl3-LeadSlides,LeadSl4-LeadSlides,LeadSl5-LeadSlides,LeadSl6-LeadSlides,LeadSl7-LeadSlides,LeadSl8-LeadSlides
 LeadSlides:
-LeadSl0: .byte 19,19,19,19,0,$FF
-LeadSl1: .byte 5,5,5,5,1,$FF
-LeadSl2: .byte 4,4,4,4,2,$FF
+LeadSl0: .byte 19,19,19,19,19,19,19,19,0,$FF
+LeadSl1: .byte 5,5,5,5,5,5,5,5,1,$FF
+LeadSl2: .byte 4,4,4,4,4,4,4,4,2,$FF
 LeadSl3: .byte 7,20,7,7,7,20,7,7,7,7,7,7,7,8,7,8,7,8,$FF
 LeadSl4: .byte 10,10,20,10,10,10,20,10,10,20,10,20,20,20,20,20,20,7,20,20,7,$FF
 LeadSl5: .byte 7,20,7,7,8,7,8,$FF
