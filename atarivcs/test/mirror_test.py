@@ -218,7 +218,16 @@ def main():
         ('single ladder x106', (106,), set()),
         ('+ then ladder x118', (118,), set()),
         ('+ then ladders x61, x106', (61, 106), set()),
+        # a left platform and a single far-right object: the platform's writes leave no room for the
+        # x 19 copy's early GRP1 clear, so the invisible copy is strobed further right (x 34)
+        ('left x16-47, single ladder x100', (100,), rng(16, 47)),
+        ('+ then ladder x118', (118,), rng(16, 47)),
+        ('+ then ladders x70, x100', (70, 100), rng(16, 47)),
     ])
+    # too many sections for one 4K ROM: --from=N / --to=N test a slice (start on an unchained one)
+    lo = int(next((a[7:] for a in sys.argv if a.startswith('--from=')), 0))
+    hi = int(next((a[5:] for a in sys.argv if a.startswith('--to=')), len(SECTIONS)))
+    SECTIONS[:] = SECTIONS[lo:hi]
     base = os.path.join(outdir, 'mirror')
     tabs, bodies = build(base)
     for name, v, xs, code, end, flat in bodies:  # noqa

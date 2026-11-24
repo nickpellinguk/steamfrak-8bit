@@ -47,11 +47,15 @@ def _setup():
     import screens2 as s2
     # the spare strobe stays: a single-object row parks P1 after its copy (GRP1 is already 0), so
     # its last strobe is late and the next renderer's first strobe cancels the ghost
+    # a 'fake' object: an invisible copy (GRP1 = 0) strobed at its own x, colour left alone
+    src = s2._src.replace("        if col[0] == 'none':\n            need = False",
+                          "        if col[0] in ('none', 'fake'):\n            need = False")
+    assert src != s2._src
     ns = dict(s2._ns)
-    exec(s2._src, ns)
+    exec(src, ns)
     ns['FREEY'] = True
     ns2 = dict(s2._ns)
-    exec(s2._src.replace("        tasks.append(('spare', prev_end + 3))\n", ""), ns2)
+    exec(src.replace("        tasks.append(('spare', prev_end + 3))\n", ""), ns2)
     ns2['FREEY'] = True
     parked, unparked = ns['schedule'], ns2['schedule']
 
@@ -60,7 +64,23 @@ def _setup():
         try:
             return parked(*a, **k)
         except ValueError:
+            pass
+        try:
             return unparked(*a, **k)
+        except ValueError:
+            objs = a[2]
+            if len(objs) != 1:
+                raise
+        # a single object that still doesn't fit (e.g. a far-right one beside a left platform,
+        # whose writes leave no room for the x 19 copy's early GRP1 clear): an invisible copy
+        # strobed further right, at the first x (19 up to the object's x - 21) that fits
+        x = objs[0][0]
+        for fx in range(19, x - 20, 3):
+            try:
+                return unparked(a[0], a[1], [(fx, ('imm', 0), ('fake', 0))] + list(objs), *a[3:], **k)
+            except ValueError:
+                pass
+        raise ValueError('no fit')
     strobe_cycles = s2.strobe_cycles
 
 

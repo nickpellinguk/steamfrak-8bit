@@ -14,7 +14,7 @@
   const load = src => src[0] === 'imm' ? ['lda #$' + (src[1] & 255).toString(16).toUpperCase().padStart(2, '0'), 2] : ['lda ' + src[1] + ',x', 4];
   const ceilDiv3 = a => Math.ceil(a / 3);
 
-  function schedule(objs, prevLastColour, prevHadObjs, prevLastX, t0, endLimit, extra) {
+  function schedule1(objs, prevLastColour, prevHadObjs, prevLastX, t0, endLimit, extra, park) {
     const tasks = [];                               // [lo, hi, ins, len, reg]
     objs = objs.slice();
     // a single object with no room to clear GRP1 and park P1 after it: an invisible copy at x 19
@@ -45,14 +45,14 @@
         const [ins, len] = load(o.gfx); tasks.push([lo, hi, ins, len, 'GRP1']);
       }
       let need;
-      if (o.col[0] === 'none') need = false;
+      if (o.col[0] === 'none' || o.col[0] === 'fake') need = false;
       else if (k === 0 || (prevCol && prevCol[0] === 'none')) {
         const startCol = objs[objs.length - 1].col;
         need = o.col[0] === 'tbl' || !same(o.col, startCol) || !prevLastColour || !same(o.col, prevLastColour);
       } else need = o.col[0] === 'tbl' || prevCol === null || !same(o.col, prevCol);
       if (need) { const [ins, len] = load(o.col); tasks.push([prevEnd, hi, ins, len, 'COLUP1']); }
       prevEnd = ceilDiv3(68 + o.x + 8);
-      prevCol = o.col[0] !== 'none' ? o.col : prevCol;
+      prevCol = o.col[0] !== 'none' && o.col[0] !== 'fake' ? o.col : prevCol;
     });
     if (objs.length === 1) tasks.push([prevEnd, endLimit, 'lda #0', 2, 'GRP1']);
     if (!objs.length && prevHadObjs) tasks.push([0, endLimit, 'lda #0', 2, 'GRP1']);
@@ -110,7 +110,7 @@
     // is invisible); the row's last strobe is then late, and the next renderer's first strobe
     // cancels the ghost (the Python scheduler's 'spare' strobe)
     let parked = false;
-    if (objs.length === 1) {
+    if (objs.length === 1 && park) {
       let gap = Math.max(0, prevEnd + 3 - 3 - end);
       if (gap === 1) gap = 2;
       if (end + gap + 3 <= endLimit) { end += gap + 3; strobes.push(end); parked = true; }
@@ -119,6 +119,18 @@
     }
     if (end > endLimit) return null;
     return { end, strobes, parked };
+  }
+  // parked where there's room, else unparked; a single object that still doesn't fit gets an
+  // invisible copy (GRP1 = 0, 'fake') strobed at the first x from 19 to its x - 21 that fits
+  function schedule(objs, prevLastColour, prevHadObjs, prevLastX, t0, endLimit, extra) {
+    const a = [prevLastColour, prevHadObjs, prevLastX, t0, endLimit, extra];
+    let r = schedule1(objs, ...a, true);
+    if (r || objs.length !== 1) return r;
+    for (let fx = 19; fx <= objs[0].x - 21; fx += 3) {
+      r = schedule1([{ x: fx, gfx: ['imm', 0], col: ['fake', 0] }, objs[0]], ...a, false);
+      if (r) return { ...r, fakeAt: fx };
+    }
+    return null;
   }
   if (typeof module !== 'undefined') module.exports = { schedule };
   else root.FrakScheduler = { schedule };
