@@ -4,7 +4,9 @@ Listen to the music driver without a 2600: run the assembled test ROM's MusicIni
 (once per frame) on a 6502 emulator (py65), log its writes to the TIA's audio registers, and
 synthesise the sound from them with a model of the TIA's two sound generators.
 
-    python3 atarivcs/music/render.py [SECONDS] [OUT.wav]
+    python3 atarivcs/music/render.py [SECONDS] [OUT.wav] [--only=0|1]
+
+--only=0 plays the bass channel alone, --only=1 the lead alone.
 
 Needs musictest.bin and musictest.sym (dasm musictest.asm -f3 -omusictest.bin -smusictest.sym).
 
@@ -77,7 +79,7 @@ def run(frames):
     return log, worst
 
 
-def synth(log):
+def synth(log, only=None):
     out = array('h')
     phase, div = [0, 0], [0, 0]
     hp, last = 0.0, 0.0
@@ -91,7 +93,8 @@ def synth(log):
                 if div[ch] > F[ch]:
                     div[ch] = 0
                     phase[ch] = (phase[ch] + 1) % len(w)
-                s += w[phase[ch] % len(w)] * V[ch] / 15.0
+                if only is None or ch == only:
+                    s += w[phase[ch] % len(w)] * V[ch] / 15.0
             hp = 0.995 * (hp + s - last)           # remove the DC level
             last = s
             out.append(int(max(-1, min(1, hp * 0.45)) * 32767))
@@ -99,8 +102,10 @@ def synth(log):
 
 
 if __name__ == '__main__':
-    secs = float(sys.argv[1]) if len(sys.argv) > 1 else 95
-    path = sys.argv[2] if len(sys.argv) > 2 else os.path.join(HERE, 'out', 'frak_theme_2600.wav')
+    args = [a for a in sys.argv[1:] if not a.startswith('--')]
+    only = next((int(a.split('=')[1]) for a in sys.argv if a.startswith('--only=')), None)
+    secs = float(args[0]) if args else 95
+    path = args[1] if len(args) > 1 else os.path.join(HERE, 'out', 'frak_theme_2600.wav')
     frames = int(secs * 60)
     log, worst = run(frames)
     notes = [sum(1 for i in range(1, len(log)) if log[i][2 + ch] != log[i - 1][2 + ch] or
@@ -112,5 +117,5 @@ if __name__ == '__main__':
         w.setnchannels(1)
         w.setsampwidth(2)
         w.setframerate(int(round(TIA_HZ)))
-        w.writeframes(synth(log).tobytes())
+        w.writeframes(synth(log, only).tobytes())
     print('wrote', path)
