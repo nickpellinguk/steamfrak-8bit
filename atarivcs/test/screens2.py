@@ -36,6 +36,10 @@ LADDER_POLE, LADDER_RUNG = 0x18, 0x7E
 GEM = ['...XX...', '..X..X..', '.X....X.', 'X......X', '.X....X.', '..X..X..', '...XX...']
 KEY = ['.XX.....', 'X..X....', 'X..XXXXX', 'X..X.X.X', '.XX.....']
 T0, LIMIT = 14, 53
+BUFFER = '--buffer' in sys.argv             # Trogg: index strip in ROM + frame copied to a RAM buffer
+ODDINX = '--oddinx' in sys.argv             # the line INX in the odd prefix (shared block from 12)
+if BUFFER:
+    LIMIT = 53 if ODDINX else 51                                # odd line falls through by 53: the longer even tail
 LINES = '--lines' in sys.argv               # X counts lines: tables per line, INX in the even tail
 ROWSTRIPES = '--rowstripes' in sys.argv or LINES     # one stripe colour per row (from a row table)
 ROW_STRIPES = [BLACK, MAGENTA, DARK, DARK]
@@ -162,10 +166,14 @@ def model(scr):
 def body_code(name, code, uses_y):
     ld = ['ldy EvenCol,x'] if uses_y else []
     lo = ['ldy OddCol,x'] if uses_y else []
-    out = ['%s:' % name, 'sta WSYNC', 'inc TrogPtr'] + ld + ['sec', 'jmp %s_s' % name]
-    out += ['%s_o:' % name, 'sta WSYNC', 'asl', 'sta ENAM0'] + lo + ['clc', 'bit $80']
+    # even prefix falls into the shared block; the even tail falls into the odd line, whose prefix
+    # jumps back to the shared block (the JMP replaces the odd prefix's 3-cycle pad)
+    look = ['tay', 'lda Buffer,y'] if BUFFER else []
+    odd = ODDINX and LINES
+    out = ['%s:' % name, 'sta WSYNC', 'inc TrogPtr'] + ld + ['sec', 'bit $80'] + (['nop'] if odd else [])
     out += ['%s_s:' % name] + code + ['bcs %s_e' % name, 'inx', 'rts']
-    out += ['%s_e:' % name, 'ldy #0', 'lda (TrogPtr),y', 'sta GRP0'] + (['inx'] if LINES else []) + ['jmp %s_o' % name]
+    out += ['%s_e:' % name, 'ldy #0', 'lda (TrogPtr),y'] + look + ['sta GRP0'] + (['inx'] if LINES and not odd else [])
+    out += ['sta WSYNC', 'asl', 'sta ENAM0'] + lo + (['inx'] if odd else []) + ['clc', 'jmp %s_s' % name]
     return out
 
 
@@ -193,7 +201,7 @@ def build(which, base):
         if key not in bodies:
             res, keep = None, list(objs)
             uses_y = not ROWSTRIPES and (any(pf[0]) or any(pf[1]) or any(o[2][0] == 'stripe' for o in objs))
-            t0 = T0 if uses_y else T0 - 4
+            t0 = (T0 if uses_y else T0 - 4) + (2 if ODDINX and LINES else 0)
             while res is None:
                 _ns['FREEY'] = not uses_y        # Y is a second working register unless it holds the stripe
                 try:
@@ -215,7 +223,7 @@ def build(which, base):
     trogg_strip = [0] * 96
     top = 176 // 2 - len(TROGG)
     for i, s in enumerate(TROGG):
-        trogg_strip[top + i] = bits(s)
+        trogg_strip[top + i] = (i + 1) if BUFFER else bits(s)
     tx = scr['trogg_x']
     yoyo_x = tx + 16
 
@@ -223,7 +231,7 @@ def build(which, base):
         o = ['        processor 6502']
         o += ['%-8s = $%02X' % (k, v) for k, v in tiatest.EQU.items()]
         o += ['GRP0 = $1B', 'COLUP0 = $06', 'RESM0 = $12', 'ENAM0 = $1D', 'COLUPF = $08',
-              'PF0 = $0D', 'PF1 = $0E', 'PF2 = $0F', 'TrogPtr = $80']
+              'PF0 = $0D', 'PF1 = $0E', 'PF2 = $0F', 'TrogPtr = $80', 'Buffer = $82']
         o.append('''        seg code
         org $F000
 Start:  sei
@@ -264,6 +272,12 @@ Frame:  lda #2
         sta TrogPtr+1
         lda #<(TroggStrip-1)
         sta TrogPtr''' % (BG, TROGG_COL))
+        if BUFFER:                       # copy the current frame into the RAM buffer (Buffer+0 stays 0)
+            o.append('''        ldy #%d
+CopyF:  lda TroggFrame-1,y
+        sta Buffer,y
+        dey
+        bne CopyF''' % len(TROGG))
         for reg, xx in (('RESP0', tx), ('RESM0', yoyo_x)):
             c = (xx + 68) // 3 if reg == 'RESM0' else (xx + 63) // 3
             o.append('        sta WSYNC\n        ' + pad(c - 3).replace('\n', '\n        ') + '\n        sta %s' % reg)
@@ -304,7 +318,11 @@ OS:     sta WSYNC
             o.append('%s:' % n)
             for k in range(0, len(t[n]), 16):
                 o.append('        .byte ' + ','.join('$%02X' % v for v in t[n][k:k + 16]))
-        o.append('        align 256\nTroggStrip: .byte ' + ','.join('$%02X' % v for v in trogg_strip))
+        o.append('        align 256\nTroggStrip:')
+        for k in range(0, 96, 16):
+            o.append('        .byte ' + ','.join('$%02X' % v for v in trogg_strip[k:k + 16]))
+        if BUFFER:
+            o.append('TroggFrame: .byte ' + ','.join('$%02X' % bits(r) for r in TROGG))
         o.append('        org $FFFC\n        .word Start\n        .word Start')
         open(base + '.asm', 'w').write('\n'.join(o) + '\n')
         r = subprocess.run(['dasm', base + '.asm', '-f3', '-o' + base + '.bin', '-l' + base + '.lst'],
@@ -359,7 +377,7 @@ if __name__ == '__main__':
     which = args[0] if args else 'fr'
     outdir = os.path.abspath(args[1] if len(args) > 1 else os.path.join(HERE, 'out', 'screens2'))
     os.makedirs(outdir, exist_ok=True)
-    base = os.path.join(outdir, which + ('_lines' if LINES else '_rows' if ROWSTRIPES else ''))
+    base = os.path.join(outdir, which + ('_lines' if LINES else '_rows' if ROWSTRIPES else '') + ('_buf' if BUFFER else '') + ('_oddinx' if ODDINX else ''))
     rows, t, runs, bodies, report, calls, labels = build(which, base)
     print('%s: %d runs, %d bodies' % (which, len(runs), len(bodies)))
     print('layout changes:', '; '.join(CHANGES))
