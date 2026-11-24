@@ -4,19 +4,22 @@
 ;   jsr MusicInit       ; once
 ;   jsr MusicTick       ; every frame
 ;
-; A pattern is a list of 2-byte notes: code, length in frames. Codes: 0-60 a note (index into
-; the channel's AUDC/AUDF tables), 61 tie (carry on with no new attack), 62 end of pattern,
-; 63 rest. Each channel has an order list of patterns, ended by $FF, and a loop position.
+; A pattern is a list of 2-byte notes: code, length in frames. Codes: 0-47 a note (index into
+; the channel's AUDC/AUDF tables), 48-60 a pitch slide (code - 48 indexes {Bass,Lead}Slide, an
+; offset into {Bass,Lead}Slides: one pitch index per frame, ended by $FF, after which the last
+; pitch is held), 61 tie (carry on with no new attack), 62 end of pattern, 63 rest.
+; Each channel has an order list of patterns, ended by $FF, and a loop position.
 ; The envelope: a new note starts at the channel's top volume and falls by one every 4 frames
 ; to its floor; a rest is silent.
 ;
-; RAM (MUSRAM must be defined by the includer, 11 bytes):
+; RAM (MUSRAM must be defined by the includer, 13 bytes):
 MusFrame = MUSRAM           ; frame counter (for the envelope)
 MusOrd   = MUSRAM + 1       ; 2: position in each channel's order list
 MusTim   = MUSRAM + 3       ; 2: frames left of each channel's note
 MusVol   = MUSRAM + 5       ; 2: each channel's volume
 MusPtr0  = MUSRAM + 7       ; 2: bass pattern pointer
 MusPtr1  = MUSRAM + 9       ; 2: lead pattern pointer
+MusSl    = MUSRAM + 11      ; 2: each channel's position in its slide table ($FF: none)
 
 BASS_TOP = 10
 BASS_FLOOR = 6
@@ -31,6 +34,8 @@ MusicInit:
         lda #$FF
         sta MusOrd
         sta MusOrd+1
+        sta MusSl
+        sta MusSl+1
         lda #1
         sta MusTim
         sta MusTim+1
@@ -78,17 +83,40 @@ MusEnd: .byte 62            ; an empty pattern: the first tick moves to each cha
 .nc:    cpx #63
         beq .rest
         cpx #61
-        beq .env            ; a tie: no new attack
+        beq .env            ; a tie: no new attack (a slide carries on)
+        lda #$FF
+        sta MusSl+{1}
+        lda #{3}
+        sta MusVol+{1}
+        cpx #48
+        bcc .plain
+        lda {2}Slide-48,x   ; a slide: its first step is taken below, this frame
+        sta MusSl+{1}
+        bcs .env            ; (carry is set)
+.plain: lda {2}C,x
+        sta AUDC0+{1}
+        lda {2}F,x
+        sta AUDF0+{1}
+        jmp .env
+.rest:  lda #0
+        sta MusVol+{1}
+        lda #$FF
+        sta MusSl+{1}
+.env:   ldx MusSl+{1}       ; a slide in progress: this frame's pitch
+        cpx #$FF
+        beq .dec
+        lda {2}Slides,x
+        cmp #$FF
+        bne .step
+        sta MusSl+{1}       ; its end: hold the last pitch
+        bne .dec
+.step:  tax
         lda {2}C,x
         sta AUDC0+{1}
         lda {2}F,x
         sta AUDF0+{1}
-        lda #{3}
-        sta MusVol+{1}
-        bne .env
-.rest:  lda #0
-        sta MusVol+{1}
-.env:   lda MusFrame
+        inc MusSl+{1}
+.dec:   lda MusFrame
         and #3
         bne .out
         lda MusVol+{1}
