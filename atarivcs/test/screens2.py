@@ -36,7 +36,8 @@ LADDER_POLE, LADDER_RUNG = 0x18, 0x7E
 GEM = ['...XX...', '..X..X..', '.X....X.', 'X......X', '.X....X.', '..X..X..', '...XX...']
 KEY = ['.XX.....', 'X..X....', 'X..XXXXX', 'X..X.X.X', '.XX.....']
 T0, LIMIT = 14, 53
-ROWSTRIPES = '--rowstripes' in sys.argv     # one stripe colour per row (from a row table)
+LINES = '--lines' in sys.argv               # X counts lines: tables per line, INX in the even tail
+ROWSTRIPES = '--rowstripes' in sys.argv or LINES     # one stripe colour per row (from a row table)
 ROW_STRIPES = [BLACK, MAGENTA, DARK, DARK]
 MAXX = 112                         # a strobe ending at 53
 CHANGES = []
@@ -87,7 +88,7 @@ def _load(src):
     if kind == 'imm':
         return ('lda #$%02X' % v, 2)
     if kind == 'stripe':
-        return ('lda Stripe,x', 4) if ROWSTRIPES else ('Y', 0)
+        return ('lda Stripe,x', 4) if ROWSTRIPES else ('Y', 0)   # (in LINES mode Stripe is per line)
     return ('lda %s,x' % v, 4)
 
 
@@ -101,6 +102,7 @@ schedule = _ns['schedule']
 def model(scr):
     rows = [{'pf': set(), 'objs': []} for _ in range(96)]
     t = {n: [0] * 96 for n in ('EvenCol', 'OddCol', 'Ladder', 'Item', 'Stripe')}
+    L = {n: [0] * 192 for n in ('Ladder', 'Item', 'Stripe')}
     phase = [None] * 96
 
     def stripe(r, top):
@@ -110,6 +112,7 @@ def model(scr):
         phase[r] = p
         t['EvenCol'][r], t['OddCol'][r] = p
         t['Stripe'][r] = ROW_STRIPES[k // 2]
+        L['Stripe'][2 * r], L['Stripe'][2 * r + 1] = p
     for top, a, b in scr['platforms']:
         for r in range(top // 2, top // 2 + 4):
             rows[r]['pf'] |= set(range(a, b + 1))
@@ -130,17 +133,29 @@ def model(scr):
                 continue
             rows[r]['objs'].append((x, ('tbl', 'Ladder'), ('imm', BLACK)))
             t['Ladder'][r] = LADDER_RUNG if (2 * r) % 8 == 4 else LADDER_POLE
+            for y in (2 * r, 2 * r + 1):
+                L['Ladder'][y] = LADDER_RUNG if y % 8 == 4 else LADDER_POLE
     for kind, x, bottom in scr['items']:
         if x > MAXX:
             CHANGES.append('%s x %d -> %d' % (kind, x, MAXX))
             x = MAXX
         g = GEM if kind == 'gem' else KEY
+        if LINES:                       # single-line pixel rows, bottom on the given line
+            for i, s in enumerate(g):
+                y = bottom - len(g) + i
+                o = (x, ('tbl', 'Item'), ('imm', BLACK if kind == 'gem' else YELLOW))
+                if o not in rows[y // 2]['objs']:
+                    rows[y // 2]['objs'].append(o)
+                L['Item'][y] = bits(s)
+            continue
         for i, s in enumerate(g):
             r = bottom // 2 - len(g) + i
             rows[r]['objs'].append((x, ('tbl', 'Item'), ('imm', BLACK if kind == 'gem' else YELLOW)))
             t['Item'][r] = bits(s)
     for r in rows:
         r['objs'].sort()
+    if LINES:
+        t = L
     return rows, t
 
 
@@ -150,7 +165,7 @@ def body_code(name, code, uses_y):
     out = ['%s:' % name, 'sta WSYNC', 'inc TrogPtr'] + ld + ['sec', 'jmp %s_s' % name]
     out += ['%s_o:' % name, 'sta WSYNC', 'asl', 'sta ENAM0'] + lo + ['clc', 'bit $80']
     out += ['%s_s:' % name] + code + ['bcs %s_e' % name, 'inx', 'rts']
-    out += ['%s_e:' % name, 'ldy #0', 'lda (TrogPtr),y', 'sta GRP0', 'jmp %s_o' % name]
+    out += ['%s_e:' % name, 'ldy #0', 'lda (TrogPtr),y', 'sta GRP0'] + (['inx'] if LINES else []) + ['jmp %s_o' % name]
     return out
 
 
@@ -193,7 +208,7 @@ def build(which, base):
             bodies[key] = (name, body_code(name, code, uses_y), end + 2)
             report.append((name, a, b, len(objs), end + 2))
         name = bodies[key][0]
-        calls.append('ldx #%d' % a)
+        calls.append('ldx #%d' % (2 * a if LINES else a))
         calls += ['jsr %s' % name] * (b - a)
         prev = (pf, (objs[-1][2] if objs else prev_col), bool(objs), objs[-1][0] if objs else None)
 
@@ -284,9 +299,11 @@ OS:     sta WSYNC
                 else:
                     o += ['        ' + s for s in c.split('\n') if s.strip()]
         o.append('BodiesEnd:\n        align 256')
-        for n in ('EvenCol', 'OddCol', 'Ladder', 'Item', 'Stripe'):
-            o.append('        align 128      ; 96-byte row tables never cross a page (a crossing costs a cycle)')
-            o.append('%s: .byte %s' % (n, ','.join('$%02X' % v for v in t[n])))
+        for n in t:
+            o.append('        align %d      ; tables never cross a page (a crossing costs a cycle)' % (256 if LINES else 128))
+            o.append('%s:' % n)
+            for k in range(0, len(t[n]), 16):
+                o.append('        .byte ' + ','.join('$%02X' % v for v in t[n][k:k + 16]))
         o.append('        align 256\nTroggStrip: .byte ' + ','.join('$%02X' % v for v in trogg_strip))
         o.append('        org $FFFC\n        .word Start\n        .word Start')
         open(base + '.asm', 'w').write('\n'.join(o) + '\n')
@@ -328,10 +345,10 @@ def compare(png, rows, t, tx):
             if all(x in row['pf'] for x in range(4 * b, 4 * b + 4)):
                 want |= set(range(4 * b, 4 * b + 4))
         for x, g, c in row['objs']:
-            v = g[1] if g[0] == 'imm' else t[g[1]][y // 2]
+            v = g[1] if g[0] == 'imm' else t[g[1]][y if LINES else y // 2]
             want |= {x + i for i in range(8) if v & (0x80 >> i)}
         got = {x for x in range(160) if im.getpixel((int((x + 0.5) * sx), first + y)) != bg}
-        skip = set(range(tx - 1, tx + 22))           # Trogg and the yoyo
+        skip = set(range(tx - 1, tx + 24))           # Trogg and the yoyo
         if (want - skip) != (got - skip):
             bad.append((y, sorted(want - got - skip)[:10], sorted(got - want - skip)[:10]))
     return bad
@@ -342,7 +359,7 @@ if __name__ == '__main__':
     which = args[0] if args else 'fr'
     outdir = os.path.abspath(args[1] if len(args) > 1 else os.path.join(HERE, 'out', 'screens2'))
     os.makedirs(outdir, exist_ok=True)
-    base = os.path.join(outdir, which + ('_rows' if ROWSTRIPES else ''))
+    base = os.path.join(outdir, which + ('_lines' if LINES else '_rows' if ROWSTRIPES else ''))
     rows, t, runs, bodies, report, calls, labels = build(which, base)
     print('%s: %d runs, %d bodies' % (which, len(runs), len(bodies)))
     print('layout changes:', '; '.join(CHANGES))
@@ -353,8 +370,8 @@ if __name__ == '__main__':
         print('  %-4s rows %2d-%2d  %d objects  odd falls through at %d%s' % (
             name, a, b - 1, n, fall, '' if fall <= 55 else '   <-- over the 55 budget'))
     calls_bytes = sum(2 if c.startswith('ldx') else 3 for c in calls)
-    print('bodies %d bytes, call list %d bytes, row tables %d bytes, Trogg strip 96' % (
-        labels['BodiesEnd'] - labels['Bodies'], calls_bytes, 5 * 96))
+    print('bodies %d bytes, call list %d bytes, tables %d bytes, Trogg strip 96' % (
+        labels['BodiesEnd'] - labels['Bodies'], calls_bytes, sum(len(v) for v in t.values())))
     png = tiatest.snapshot(base + '.bin', outdir)
     os.replace(png, base + '.png')
     im = Image.open(base + '.png')
