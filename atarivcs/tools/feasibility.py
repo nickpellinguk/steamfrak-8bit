@@ -82,6 +82,26 @@ def variants():
                 win = (39, 53) if r == 'PF1' else (50, 53)
                 e.append(T('R' + r, win[0], win[1], r) if r in rr else IMM(0, win[0], win[1], r))
             v['B%s_%s' % (lk, rk)] = e
+    # the right half's PF0 (x 80-95): written after the left half's PF0 area has been drawn (29-49)
+    # and cleared again by a store ending at exactly 55 (just after pixel 95), so the next line
+    # starts with PF0 = 0 and nothing shows at the left edge; nothing in the horizontal blank
+    pf0 = [T('RPF0', 29, 49, 'PF0'), IMM(0, 55, 55, 'PF0')]
+    for rk, rr in (('', []), ('1', ['PF1']), ('2', ['PF2']), ('12', ['PF1', 'PF2'])):
+        e = list(pf0) + [T('R' + r, 0, 53, r) for r in rr]
+        if rr:                             # the left copies of PF1/PF2 hidden by the background colour
+            e.append(IMM(BG, 0, min(DEAD[r] for r in rr), 'COLUPF'))
+            e.append(T('Stripe', 49 if 'PF2' in rr else 39, 49, 'COLUPF'))
+        else:                              # PF0 alone: nothing shows on the left, the stripe any time
+            e.append(T('Stripe', 0, 49, 'COLUPF'))
+        v['R0' + rk] = e
+        for lk, lr in sides.items():
+            used = sorted(set(lr) | set(rr))
+            e = [T('Stripe', 0, min(DEAD[r] for r in lr), 'COLUPF')] + list(pf0)
+            for r in used:
+                e.append(T('L' + r, 0, DEAD[r], r) if r in lr else IMM(0, 0, DEAD[r], r))
+                win = (39, 53) if r == 'PF1' else (50, 53)
+                e.append(T('R' + r, win[0], win[1], r) if r in rr else IMM(0, win[0], win[1], r))
+            v['B%s_0%s' % (lk, rk)] = e
     return v
 
 
