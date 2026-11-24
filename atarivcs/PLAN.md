@@ -329,6 +329,36 @@ costs. Aim: three levels per 4K bank.
 * **Not worth it:** sharing the identical Trogg tail and odd prefix between bodies (needs an
   indirect jump back into the body, in the busiest part of the line).
 
+## Music (`music/`)
+
+The main Frak theme on the TIA's two channels: the bass (looping all through) on channel 0, the
+other parts merged onto channel 1, no drums. Judged by ear (via the WAV renders) as acceptable.
+
+* **Source:** the tune as converted for the BBC version (`src/gen/music.asm`, from the Steam
+  version's `js/audio.js` by `tools/music.py`), read by `music/frakmusic.py`.
+* **Builder** (`music/build_music.py` -> `music/frakmusic.inc`): the lead merges tracks 2-6 (a new
+  note in a later track wins; when a note ends a still-sounding track takes over); patterns of 32
+  quarter beats and an order list per channel; a quarter beat is 8 frames at 60 Hz. Decisions made
+  by ear, all in the builder: transposition pinned at +4.625 semitones (searched in 1/8 steps;
+  nothing else on the 2600 fixes the key); bass on the two square waves only (AUDC 12 and 4; the
+  buzzy 4-bit poly stood out and sounded off), tuned with extra weight on B flat, C, F and G;
+  ukulele an octave up, the slide guitar's C B-flat A A-flat G F-sharp G phrase (pattern 13) an
+  octave up; the slide guitar's slides played as a quaver grace note a semitone below; the other
+  parts' scoops played frame by frame between the nearest TIA pitches. Two different notes on one
+  pitch count as an error in the tuning search.
+* **Rejected:** pitch alternation (dithering held notes between two TIA pitches) sounded horrible;
+  the vibratos (1/8-1/4 semitone) are finer than any TIA step and are left out.
+* **Limits:** the TIA's pitch steps exceed a semitone above about F (AUDC 12) and around 400-490 Hz
+  neither square wave has a pitch, so some notes are 30-50 cents out and the bass can't give every
+  semitone its own pitch.
+* **Driver** (`music/musicdrv.asm`): `MusicInit` once, `MusicTick` once per frame (at most about
+  340 cycles, outside the kernel, so it can live in the shared bank); 13 bytes of RAM; about 1K
+  of data before optimisation. Notes are 2 bytes (code, frames); codes 48-60 start a per-frame
+  pitch sequence (slides, grace notes), which can end by holding its last pitch or loop.
+* **Checking it:** `music/render.py` runs the real 6502 code (py65), logs the audio registers and
+  synthesises a WAV through a model of the TIA's sound generators (`--only=0|1` for one channel);
+  `music/musictest.asm` is a test ROM.
+
 ## The idea
 
 The 2600 can't hold Frak!'s levels: 128 bytes of RAM, no frame buffer, a 20-bit background
