@@ -202,8 +202,9 @@ const FAMILY = {
   L01: 'Left platform (PF0 a line ahead + PF1)', R1: 'Right platform (PF1)', R2: 'Right platform (PF2)',
   R12: 'Right platform (PF1+PF2)'
 };
-const familyName = v => FAMILY[v] || (v.startsWith('B') ? 'Both halves (left ' + regName(v.slice(1).split('_')[0]) + ', right ' + regName(v.split('_')[1]) + ')' : v);
-const regName = c => c === '1' ? 'PF1' : c === '2' ? 'PF2' : 'PF1+PF2';
+const familyName = v => FAMILY[v] || (v.startsWith('B') ? 'Both halves (left ' + regName(v.slice(1).split('_')[0]) + ', right ' + regName(v.split('_')[1]) + ')' :
+  v.startsWith('R0') ? 'Right platform (' + regName(v.slice(1)) + ')' : v);
+const regName = c => [c.startsWith('0') ? 'PF0' : null, c.includes('1') ? 'PF1' : null, c.includes('2') ? 'PF2' : null].filter(Boolean).join('+');
 const BODY_BYTES = 60, KERNEL_BYTES = 360, BANK = 4096;
 
 // ---------------------------------------------------------------- sample project --------------
@@ -353,12 +354,12 @@ function variantOf(L, R) {
     }
     return { v: 'L' + code(L) };
   }
-  if (!L.length) {
-    if (has(R, 'PF0')) return { err: 'A right platform can\'t touch x 80-95 (PF0): the stripe colour has to switch on exactly at pixel 80, and nothing fits around it.' };
-    return { v: 'R' + code(R) };
-  }
-  if (has(L, 'PF0') || has(R, 'PF0')) return { err: 'With platforms on both halves, neither may touch PF0 (x 0-15 or x 80-95): the horizontal blank is already full.' };
-  return { v: 'B' + code(L) + '_' + code(R) };
+  // the right half's PF0 (x 80-95) is written mid-line and cleared at exactly cycle 55: '0' in the key
+  const rest = R.filter(r => r !== 'PF0'), r0 = has(R, 'PF0') ? '0' : '';
+  const rcode = r0 + (rest.length ? code(rest) : '');
+  if (!L.length) return { v: 'R' + rcode };
+  if (has(L, 'PF0')) return { err: 'With platforms on both halves, the left one can\'t touch x 0-15 (PF0): it would have to be written in the horizontal blank, which is already full.' };
+  return { v: 'B' + code(L) + '_' + rcode };
 }
 
 function rowObjects(s, r, blocks) {
