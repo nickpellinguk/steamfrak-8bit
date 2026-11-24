@@ -228,10 +228,18 @@ def main():
                     slides.append(seq)
                 dith[s] = slides.index(seq)
         slide_id = {}
+        flat = [ev for b in bl for ev in b]
+        held = {}                          # an attack's full length, its ties (also across blocks) included
+        for i, (s, d, a, e) in enumerate(flat):
+            if a and s is not None:
+                tot, j = d, i + 1
+                while j < len(flat) and not flat[j][2] and flat[j][0] == s:
+                    tot += flat[j][1]; j += 1
+                held.setdefault((s, e, d), []).append(tot)
         for b in bl:
             for s, d, a, e in b:
                 if s is not None and a and e == 'grace' and (s, e, d) not in slide_id:
-                    g = min(GRACE_FRAMES, d * FRAMES_PER_Q // 2)
+                    g = min(GRACE_FRAMES, min(held[(s, e, d)]) * FRAMES_PER_Q // 2)
                     seq = [point(note_hz(s + shift - 1))] * g + [point(note_hz(s + shift))]
                     if seq not in slides:
                         slides.append(seq)
