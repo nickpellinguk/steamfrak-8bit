@@ -187,7 +187,7 @@ textarea { width: 100%; min-height: 220px; background: var(--panel2); border: 1p
 const PAL = [__PALETTE__].map(h => '#' + h);              // Stella's NTSC palette, colour value >> 1
 const col = v => PAL[(v >> 1) & 127];
 const W = 160, LINES = 192, ROWS = 96, S = 3, GUT = 20;
-const P1MIN = 19, P1MAX = 112, SPACING = 21;
+const P1MIN = 19, P1MAX = 118, SPACING = 21;
 const REG_BLOCKS = { L: { PF0: [0, 3], PF1: [4, 11], PF2: [12, 19] }, R: { PF0: [20, 23], PF1: [24, 31], PF2: [32, 39] } };
 const FAMILY = {
   none: 'Ladders only', L1: 'Left platform (PF1)', L2: 'Left platform (PF2)', L12: 'Left platform (PF1+PF2)',
@@ -355,7 +355,7 @@ function analyzeRow(s, r) {
   if (vr.err) A.errors.push(vr.err);
   for (const o of objs) {
     if (!onGrid(o.x)) A.errors.push((o.t === 'L' ? 'Ladder' : 'Item') + ' at x ' + o.x + ' is off the P1 grid: x must be 19, 22, 25 ... (3-pixel steps).');
-    else if (o.x > P1MAX) A.errors.push((o.t === 'L' ? 'Ladder' : 'Item') + ' at x ' + o.x + ' is too far right: P1 objects stop at x 112 (the last strobe must end by cycle 53).');
+    else if (o.x > P1MAX) A.errors.push((o.t === 'L' ? 'Ladder' : 'Item') + ' at x ' + o.x + ' is too far right: P1 objects stop at x 118 (the last strobe must end by cycle 55).');
   }
   for (let i = 1; i < objs.length; i++) if (objs[i].x - objs[i - 1].x < SPACING)
     A.errors.push('Objects at x ' + objs[i - 1].x + ' and ' + objs[i].x + ' are closer than 21 px: P1 strobes must be at least 7 cycles apart.');
@@ -371,7 +371,7 @@ function analyzeRow(s, r) {
   }
   const hit = table.get(A.xs);
   if (!hit) {
-    A.errors.push('This layout doesn\'t fit in the line budget (shared block from cycle 10, last store by 53).');
+    A.errors.push('This layout doesn\'t fit in the line budget (shared block from cycle 10, last store by 55).');
     A.suggest = suggest(A, table);
     return A;
   }

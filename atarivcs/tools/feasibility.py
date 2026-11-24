@@ -8,9 +8,9 @@ For every playfield variant (which half or halves carry a platform, and in which
 every mix of up to three P1 objects (L = black ladder, rungs from a per-line table; O = coloured
 item, graphics and colour from per-line tables), plus up to five ladders on rows without
 platforms, it runs the same scheduler the Stella-verified tests use (test/screens2.py: shared
-block from cycle 10, last store ending by 53, A and Y as working registers, X the line index;
+block from cycle 10, last store ending by 55 (two entry points per renderer), A and Y as working registers, X the line index;
 strobes at least 21 px apart; the ghost rule; one GRP1 write for consecutive same-graphic
-objects) over every position x = 19, 22, ..., 112 and records the layouts that fit, each with its
+objects) over every position x = 19, 22, ..., 118 and records the layouts that fit, each with its
 first and last strobe cycle (for the ghost rule at renderer changes).
 
 Playfield deadlines (repeat mode, PF0 = 0 except where noted):
@@ -36,9 +36,9 @@ sys.path.insert(0, TEST)
 sys.argv = sys.argv[:1] + ['--lines', '--buffer', '--nomidsync'] + sys.argv[1:]
 
 BG = 0xAA
-X = [x for x in range(19, 113) if (x + 47) % 3 == 0]
+X = [x for x in range(19, 119) if (x + 47) % 3 == 0]          # to x 118: a strobe ending at 55
 SPACING = 21
-T0, LIMIT = 10, 53
+T0, LIMIT = 10, 55                # two entry points: the last store may end by 55
 
 
 def _setup():

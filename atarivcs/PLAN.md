@@ -188,6 +188,9 @@ path is `INX` 2 + `RTS` 6 + [`LDX`] + `JSR` 6 + `STA WSYNC` 3, so:
 | a new run with `LDX #` | cycle 56 |
 | a new run with `LDX zp` | cycle 55 |
 
+(Superseded by two entry points per renderer, below: the `INX` moves to the `inx_renderer` entry,
+so a new run pays no `INX` and the limits become 58 / 58 / 57.)
+
 Design every renderer to the 55 limit so any renderer can follow any other. Tested: B (platform +
 left ladder) falls through at 51; A (ladder x 19 - object x 64 - ladder x 112) at 55, after its
 right ladder was pulled in from x 118 to save the 2 cycles that A -> B with `LDX zp` needed.
@@ -220,15 +223,22 @@ with `test/screens2.py`, `test/limits.py`, `test/ghost_test.py` and `test/leftpf
   and tied up Y for the whole line.
 * **`WSYNC` between a row's two lines only where it fits.** The even tail (18 cycles) starts 3 cycles
   after the shared block's last store; if its `STA WSYNC` still writes by cycle 75 (last store ending
-  by 51) the body uses it (2 bytes, and the line resyncs). Bodies whose shared block ends at 52-53
+  by 51) the body uses it (2 bytes, and the line resyncs). Bodies whose shared block ends at 52-55
   instead pad the even line to exactly 76 cycles and fall into the odd line. The row boundary always
   keeps its `WSYNC`. (FR: 17 of 18 bodies use `WSYNC`; AK: 20 of 22.) The odd prefix ends with the `JMP` to the
   shared block (in place of its 3-cycle pad), and the even prefix falls into it.
 * **Trogg:** `TrogPtr` points into a ROM strip of row indices (0 = blank), and the current frame is
   copied once per frame into a RAM buffer (Buffer+0 = 0): `ldy #0 / lda (TrogPtr),y / tay /
   lda Buffer,y / sta GRP0` in the even tail. RAM: 2 + (frame height + 1) bytes.
-* **Budget:** the shared block starts at cycle 10 and its last store must end by 53, so the odd line
-  falls through by 55. A fixed-cycle row boundary (no `WSYNC` at all) only slides this window; it
+* **Two entry points per renderer:** `name_i: inx` falls into `name:`. A run's first row is
+  `ldx #line / jsr name`, its other rows `jsr name_i`, and a body ends `bcs even / rts`. The `INX`
+  runs before the next line's `STA WSYNC` (in time the line was waiting anyway), and a renderer
+  change no longer pays for an `INX` it throws away.
+* **Budget:** the shared block starts at cycle 10 and its last store must end by 55, so the odd line
+  falls through by 57 (`LDX zp` at a renderer change: `RTS` 6 + `LDX` 3 + `JSR` 6 + `STA WSYNC` 3; with
+  `LDX #` or within a run, 58). The even line agrees: the 18-cycle Trogg tail fits by 76 with no
+  mid-row `WSYNC`. P1 objects reach x 118 (`test/ladders_test.py`: bodies ending at 54 and 55, then a
+  renderer change, all correct). A fixed-cycle row boundary (no `WSYNC` at all) only slides this window; it
   doesn't widen it, so it isn't used.
 * **A and Y are both working registers** in the shared block (X is the line index). A second
   register roughly doubles the layouts that fit.
@@ -249,8 +259,8 @@ with `test/screens2.py`, `test/limits.py`, `test/ghost_test.py` and `test/leftpf
   renderer must keep GRP1 = 0 until the old main copy (16 px left of the last copy) has passed.
   A renderer with no P1 objects that follows one with them must clear GRP1.
 * **Nothing to the right of a ladder at x 85 or beyond:** the next object's graphics write can't land
-  until that ladder has been drawn, after the budget. In practice P1 objects stop at about x 112,
-  and coloured items on rows with ladders at about x 100.
+  until that ladder has been drawn, after the budget. In practice P1 objects stop at x 118 (a strobe
+  ending at 55), and coloured items on rows with ladders at about x 100.
 * **Per row:** at most two coloured objects, or one coloured object and two black ladders, or three
   ladders. Four independent objects (17 cycles each) can't fit.
 
