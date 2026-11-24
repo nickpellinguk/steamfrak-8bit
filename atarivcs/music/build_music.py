@@ -60,6 +60,9 @@ LEAD_OCTAVES = (0,)
 TRACK_OCTAVE = {2: 0, 3: 12, 4: 0, 5: 0, 6: 0}    # slide guitar, ukulele, male voice, violin, female voice
 PATTERN_OCTAVE = {(2, 13): 12}     # (track, pattern): extra shift for its plain notes (not its slides):
                                    # the slide guitar's C B flat A A flat G F sharp G phrase, an octave up
+CUT_SHORT = {2: (8, 4)}            # track: (long note, cut): the slide guitar's held notes of 8+ quarter
+                                   # beats stop 4 quarter beats (one beat) sooner (they were too loud
+                                   # for too long)
 GRACE_TRACKS = {2}                 # the slide guitar: a slide becomes a short note a semitone below
 GRACE_FRAMES = 16                  # (a quaver: 2 quarter beats of 8 frames), then the note; never more
                                    # than half the note
@@ -107,7 +110,22 @@ def grid(track, n, shift=0, grace=False):
             else:
                 env = e if k == 0 and e in SLIDE_ENVS else 0
                 cur = s + shift + extra; out.append((cur, k == 0, 'grace' if env and grace else env))
-    return out[:n]
+    out = out[:n]
+    if track['index'] in CUT_SHORT:
+        long_, cut = CUT_SHORT[track['index']]
+        i = 0
+        while i < len(out):
+            if out[i][1]:                       # an attack: how long is the note, ties included?
+                j = i + 1
+                while j < len(out) and not out[j][1] and out[j][0] == out[i][0]:
+                    j += 1
+                if j - i >= long_:
+                    for k in range(j - cut, j):
+                        out[k] = (None, False, 0)
+                i = j
+            else:
+                i += 1
+    return out
 
 
 def merge(grids, n):
