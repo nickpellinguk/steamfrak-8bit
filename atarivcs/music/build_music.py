@@ -57,7 +57,9 @@ BASS_OCTAVES = (0,)                 # both channels stay in the original's regis
 LEAD_OCTAVES = (0,)
 # the lead's parts an octave up where they lie low (the slides work better higher) and tune better
 # there; the high parts stay put (an octave up they fall where the TIA's steps are coarse)
-TRACK_OCTAVE = {2: 12, 3: 12, 4: 0, 5: 0, 6: 0}   # slide guitar, ukulele, male voice, violin, female voice
+TRACK_OCTAVE = {2: 0, 3: 12, 4: 0, 5: 0, 6: 0}    # slide guitar, ukulele, male voice, violin, female voice
+GRACE_TRACKS = {2}                 # the slide guitar: a slide becomes a short note a semitone below
+GRACE_FRAMES = 4                   # (about 1/15 s), then the note
 FIXED_TRANSPOSE = 4.625            # pinned: the bass at this transposition was judged acceptable
 FLAT_WEIGHT, BASS_WEIGHT = 1.5, 1.5
 SLIDE_ENVS = (1, 2, 3)
@@ -89,7 +91,7 @@ def env_frames(t, e, frames):
     return [seq[min(len(seq) - 1, f * 50 // 60)] / 8.0 for f in range(frames)]
 
 
-def grid(track, n, shift=0):
+def grid(track, n, shift=0, grace=False):
     """Per quarter beat: (semitone or None, onset, slide envelope)."""
     out, cur = [], None
     for s, d, e in track['notes']:
@@ -99,7 +101,8 @@ def grid(track, n, shift=0):
             elif s == frakmusic.EXTEND:
                 out.append((cur, False, 0))
             else:
-                cur = s + shift; out.append((cur, k == 0, e if k == 0 and e in SLIDE_ENVS else 0))
+                env = e if k == 0 and e in SLIDE_ENVS else 0
+                cur = s + shift; out.append((cur, k == 0, 'grace' if env and grace else env))
     return out[:n]
 
 
@@ -144,7 +147,7 @@ def main():
     tr = T['tracks']
     bass_steps = grid(tr[0], n)
     assert all(bass_steps[i] == bass_steps[i % 128] for i in range(n)), 'bass does not loop every 128 beats'
-    lead_steps = merge([grid(x, n, TRACK_OCTAVE.get(x['index'], 0)) for x in tr[2:7]], n)
+    lead_steps = merge([grid(x, n, TRACK_OCTAVE.get(x['index'], 0), x['index'] in GRACE_TRACKS) for x in tr[2:7]], n)
     bass_blocks = blocks(bass_steps, 128)
     lead_blocks = blocks(lead_steps, n)
 
@@ -226,7 +229,12 @@ def main():
         slide_id = {}
         for b in bl:
             for s, d, a, e in b:
-                if s is not None and a and e and (s, e, d) not in slide_id:
+                if s is not None and a and e == 'grace' and (s, e, d) not in slide_id:
+                    seq = [point(note_hz(s + shift - 1))] * GRACE_FRAMES + [point(note_hz(s + shift))]
+                    if seq not in slides:
+                        slides.append(seq)
+                    slide_id[(s, e, d)] = slides.index(seq)
+                elif s is not None and a and e and (s, e, d) not in slide_id:
                     frames = min(d * FRAMES_PER_Q, 30)
                     seq, acc = [], 0.0
                     for o in env_frames(t, e, frames):
