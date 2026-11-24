@@ -1,37 +1,21 @@
 #!/usr/bin/env python3
 """
-Renderers with the LDX/JSR-chain interface. A level's call list is just
+Two-line renderers whose bodies end INX / RTS; a level's call list is LDX then one JSR per row:
 
-        ldx #index      (or ldx zp_index, e.g. a gem's state: its rows or the empty rows)
-        jsr R_8         (8 lines = 4 rows)
+        ldx #PLAT   (or ldx zp)
+        jsr B_2     ; row 1
+        jsr B_2     ; row 2 ...
 
-and each renderer is a chain of JSRs into its two-line body, with the row index stepped between
-rows (so no INX in the line code, no row counter):
-
-    R_8:    jsr R_2
-            inx
-    R_6:    jsr R_2
-            inx
-    R_4:    jsr R_2
-            inx
-    R_2:    <body: even line and odd line, one shared block chosen by carry; ends with RTS>
-
-Per-line values that differ between a row's two lines come from separate even and odd tables,
-loaded in the two prefixes; values the same on both lines are read in the shared block. Both
-prefixes reach the shared block at the same cycle. The shared block ends with BCS to the even tail
-(Trogg's read, then JMP to the odd line), so the odd line falls through to RTS one cycle earlier.
+Odd-line budget: the body falls through BCS at cycle c, then INX 2 + RTS 6 [+ LDX 2/3] + JSR 6 and
+the next body's STA WSYNC must write by cycle 75: c <= 58 between rows, c <= 55 into a new renderer
+with LDX zp (56 with LDX #).
 
     python3 atarivcs/test/chain_test.py [OUT_DIR]
 
-Renderer B: right-side platform (x 96-135, so the right half's PF0 is 0) with a fixed left ladder
-(x 19); stripe colour per line from EvenCol/OddCol; the right half's PF1/PF2 written each line while
-COLUPF is the background colour, the centre switch on cycle 49. Its odd line ends at 51, leaving
-room for a transition into a multi-row renderer.
-Renderer A: black ladder (x 19) - coloured object (x 64) - black ladder (x 118); the object's
-graphics and colour per row from Mid/MidCol, indexed by X; COLUPF set to the background colour
-at the start of each line (so a platform pattern left in the registers can't show). Its odd line
-ends at 56: it can be followed only by a one-row renderer (no chain JSR) or the end of the screen.
-Call list: B_8, A_8 (gem), B_2, A_8 (gem removed: LDX from a zero-page byte holding the empty rows).
+B: right platform x 96-135 + left ladder x 19; odd line falls through at 51.
+A: ladder x 19 - object x 64 (Mid/MidCol,x) - ladder x 112; odd line falls through at 55.
+Row index ranges: platform 0-3, gem 4-7, empty 8-11. Call list: B x4, A x4 (gem), LDX zp B x1,
+A x4 (gem removed), LDX zp B x2 - so A -> B with LDX zp is tested twice.
 """
 import os
 import subprocess
@@ -47,7 +31,7 @@ BG, MAG, DARK, TROGG_COL, KEYCOL = 0xAA, 0x58, 0xA4, 0x1C, 0x58
 PLATFORM = set(range(96, 136))
 TROGG = [0x18, 0x3C, 0x7F, 0x3C, 0x24, 0x66, 0x00, 0x00, 0x18, 0x3C, 0x7F, 0x3C, 0x24]   # placeholder
 TROGG_X, YOYO_X = 140, 150
-CARRY_SAFE = {'ldy', 'sty', 'sta', 'lda', 'nop', 'bit', 'ldx', 'stx', 'jmp', 'bcs'}
+CARRY_SAFE = {'ldy', 'sty', 'sta', 'lda', 'nop', 'bit', 'ldx', 'stx', 'jmp', 'bcs', 'inx'}
 
 
 def chain(name, rows):
@@ -63,7 +47,7 @@ def build(base):
     o = ['        processor 6502']
     o += ['%-8s = $%02X' % (k, v) for k, v in tiatest.EQU.items()]
     o += ['GRP0 = $1B', 'COLUP0 = $06', 'RESM0 = $12', 'ENAM0 = $1D', 'NUSIZ0 = $04', 'COLUPF = $08',
-          'PF0 = $0D', 'PF1 = $0E', 'PF2 = $0F', 'TrogPtr = $80', 'GemState = $82', 'PLAT = 0', 'GEM = 4', 'EMPTY = 8']
+          'PF0 = $0D', 'PF1 = $0E', 'PF2 = $0F', 'TrogPtr = $80', 'GemState = $82', 'PlatIdx = $83', 'PLAT = 0', 'GEM = 4', 'EMPTY = 8']
     o.append('''        seg code
         org $F000
 Start:  sei
@@ -100,7 +84,9 @@ Frame:  lda #2
         lda #$30
         sta NUSIZ0
         lda #EMPTY
-        sta GemState          ; the second gem has been collected: its rows are the empty ones
+        sta GemState
+        lda #PLAT
+        sta PlatIdx          ; the second gem has been collected: its rows are the empty ones
         lda #>TroggStrip
         sta TrogPtr+1
         lda #<(TroggStrip-1)
@@ -116,13 +102,25 @@ VB:     sta WSYNC
         sta VBLANK
         ; ---- the level's call list ----
         ldx #PLAT
-        jsr B_8
+        jsr B_2
+        jsr B_2
+        jsr B_2
+        jsr B_2
         ldx #GEM
-        jsr A_8
-        ldx #PLAT
+        jsr A_2
+        jsr A_2
+        jsr A_2
+        jsr A_2
+        ldx PlatIdx      ; A -> B with LDX zp
         jsr B_2
         ldx GemState
-        jsr A_8
+        jsr A_2
+        jsr A_2
+        jsr A_2
+        jsr A_2
+        ldx PlatIdx      ; A -> B, two rows
+        jsr B_2
+        jsr B_2
         sta WSYNC
         lda #0
         sta GRP0
@@ -145,8 +143,7 @@ OS:     sta WSYNC
         jmp Frame
 
 ; ===== renderer B: right-side platform with a left ladder =====
-        align 256''' % (BG, 192 - (8 + 8 + 2 + 8) - 1))
-    o += chain('B', 4)
+        align 256''' % (BG, 192 - (8 + 8 + 2 + 8 + 4) - 1))
     o.append('''B_2:    sta WSYNC          ; even line
         inc TrogPtr        ; 5
         ldy EvenCol,x      ; 9    this line's stripe colour
@@ -173,6 +170,7 @@ B_sh:   sta RESP1          ; 17   left ladder (in the blank: x = 19)
         nop                ; 46
         sty COLUPF         ; 49   the right half appears
         bcs B_even         ; 51 (odd: falls through) / 52 (even)
+        inx                ; 53   next row
         rts                ; odd: back to the chain (INX, JSR) or the call list
 B_even: ldy #0
         lda (TrogPtr),y
@@ -182,7 +180,6 @@ B_end:
 
 ; ===== renderer A: black ladder - coloured object - black ladder =====
         align 256''' % (BG, r1, r2))
-    o += chain('A', 4)
     o.append('''A_2:    sta WSYNC          ; even line
         inc TrogPtr        ; 5
         sec                ; 7
@@ -202,18 +199,18 @@ A_sh:   lda #$%02X
         sta COLUP1         ; 34   after the left ladder's copy
         sta RESP1          ; 37   the object: x = 64
         sty GRP1           ; 40
-        lda #0
-        nop                ; 44
+        lda #0             ; 42
+        ldy #$81           ; 44
         sta COLUP1         ; 47   black again, after the object's copy
-        ldy #$81
-        sty GRP1           ; 52
-        sta RESP1          ; 55   right ladder: x = 118
-        bcs A_even         ; 57 (odd: falls through) / 58
+        sty GRP1           ; 50   the ladder graphic (the object is drawn by 47)
+        sta RESP1          ; 53   right ladder: x = 112
+        bcs A_even         ; 55 (odd: falls through) / 56
+        inx                ; 57   next row
         rts
 A_even: ldy #0
         lda (TrogPtr),y
-        sta GRP0           ; 68
-        jmp A_odd          ; 71
+        sta GRP0           ; 66
+        jmp A_odd          ; 69
 A_end:
 
         align 256
@@ -261,9 +258,7 @@ if __name__ == '__main__':
     os.makedirs(outdir, exist_ok=True)
     base = os.path.join(outdir, 'chain')
     lab = build(base)
-    print('B: %d bytes (chain %d + body %d); A: %d bytes (chain %d + body %d)' % (
-        lab['B_end'] - lab['B_8'], lab['B_2'] - lab['B_8'], lab['B_end'] - lab['B_2'],
-        lab['A_end'] - lab['A_8'], lab['A_2'] - lab['A_8'], lab['A_end'] - lab['A_2']))
+    print('B body %d bytes, A body %d bytes' % (lab['B_end'] - lab['B_2'], lab['A_end'] - lab['A_2']))
     png = tiatest.snapshot(base + '.bin', outdir)
     os.replace(png, base + '.png')
     im = Image.open(base + '.png').convert('RGB')
@@ -272,7 +267,7 @@ if __name__ == '__main__':
     bg = (90, 176, 212)
     names = {(0, 0, 0): 'k', (192, 78, 170): 'M', (36, 98, 141): 'D', (230, 230, 62): 'T'}
     start = next(r for r in range(im.height) if im.getpixel((im.width - 2, r)) == bg)
-    for j in range(28):
+    for j in range(32):
         row = [im.getpixel((int((x + 0.5) * sx), start + j)) for x in range(160)]
         runs, x = [], 0
         while x < 160:
