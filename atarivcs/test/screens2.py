@@ -76,6 +76,10 @@ for a, b in [
         # ghost rule measured in park_test.py: the old main copy is cancelled if this line's first
         # strobe ends at least one cycle before the strobe that made it
         ("        if 3 * c0 - 68 > main - 21:", "        if c0 >= (prev_last_x + 47) // 3:"),
+        # consecutive objects with the same graphics need no GRP1 rewrite (GRP1 keeps its value)
+        ("        tasks.append((lo, hi, load(gfx), 'GRP1'))\n",
+         "        if k == 0 or gfx != objs[k - 1][1] or objs[k - 1][2][0] == 'none':\n"
+         "            tasks.append((lo, hi, load(gfx), 'GRP1'))\n"),
         ("    tasks.append((0, (68 + TROGG_X) // 3 - 1, ('lda Trogg,y', 4), 'GRP0'))\n", ""),
         ("('lda PCol,y', 4)", "load(('stripe', 0))"),
         ("            c = 3              # any strobe", "            c = t0 + 3         # any strobe"),

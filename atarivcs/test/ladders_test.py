@@ -11,7 +11,7 @@ Sections are ordered so each one's first strobe is earlier than the previous one
 ghost rule from park_test.py); single-ladder bodies clear GRP1 after the copy and write the rung
 pattern after the old main copy has passed. The shared block is scheduled by the adapted search
 (screens2), from cycle 10, its last store ending by 53, with the ghost rule for the ladders.
-Sections (4 rows each): 112 | 58 82 103 | 46 100 | 61 | 19 43 64 | 19 40 | 19; Trogg at x 130.
+Sections (4 rows each): 31 58 85 112 | 19 40 61 82 103 | 19 40 61 82 | 112 | 58 82 103 | 46 100 | 61 | 19 43 64 | 19 40 | 19; Trogg at x 130.
 """
 import os
 import subprocess
@@ -27,7 +27,7 @@ from PIL import Image  # noqa: E402
 
 pad = tiatest.pad
 BG, MAG, DARK, BLACK, TROGG_COL = 0xAA, 0x58, 0xA4, 0x00, 0x1E
-PAIRS = [(112,), (58, 82, 103), (46, 100), (61,), (19, 43, 64), (19, 40), (19,)]   # strobes >= 21 px apart
+PAIRS = [(31, 58, 85, 112), (19, 40, 61, 82, 103), (19, 40, 61, 82), (112,), (58, 82, 103), (46, 100), (61,), (19, 43, 64), (19, 40), (19,)]   # strobes >= 21 px apart
 ROWS = 4
 TX = 130                     # Trogg (double width) at x 130-145, right of every ladder
 
@@ -47,7 +47,7 @@ def tables():
     t = {'PCol': [0] * 256, 'PF1T': [0] * 256, 'Lad': [0] * 256}
     for sec in range(len(PAIRS)):
         for k in range(2 * ROWS):
-            y = 32 * sec + k
+            y = 16 * sec + k
             t['PCol'][y] = STRIPES[k % 8]
             t['PF1T'][y] = SHAPES[k]
             t['Lad'][y] = 0x7E if k % 4 == 0 else 0x42
@@ -139,7 +139,7 @@ VB:     sta WSYNC
         name = 'L%d' % sec
         code, end, flat = body(name, xs)
         bodies.append((name, xs, code, end, flat))
-        o.append('        ldx #%d' % (32 * sec))
+        o.append('        ldx #%d' % (16 * sec))
         o += ['        jsr %s' % name] * ROWS
         o += ['        sta WSYNC', '        lda #0', '        sta PF1', '        sta GRP1', '        sta GRP0',
               '        sta ENAM0', '        lda #$%02X' % BG, '        sta COLUPF']
@@ -201,7 +201,7 @@ if __name__ == '__main__':
     bad, y0 = 0, 0
     for sec, xs in enumerate(PAIRS):
         for k in range(2 * ROWS):
-            yv = 32 * sec + k
+            yv = 16 * sec + k
             want = {}
             for x in xs:
                 for b in range(8):
