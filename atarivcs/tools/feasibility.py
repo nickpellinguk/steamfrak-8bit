@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Feasibility table for the level editor: which rows the reusable renderer families can draw.
+Feasibility table (REPEAT-MODE playfield; superseded: the game now uses the mirrored playfield and
+the editor runs the scheduler live, see PLAN.md): which rows the reusable renderer families can draw.
 
     python3 atarivcs/tools/feasibility.py [OUT_JSON]
 
@@ -138,7 +139,7 @@ def job(args):
 
 if __name__ == '__main__':
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
-    out_path = args[0] if args else os.path.join(HERE, '..', 'editor', 'feasibility.json')
+    out_path = args[0] if args else os.path.join(HERE, 'feasibility_repeatmode.json')
     vs = variants()
     jobs = [(k, e, p) for k, e in vs.items() for p in patterns(k)]
     with Pool(initializer=_setup) as pool:

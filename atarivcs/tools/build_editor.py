@@ -15,10 +15,12 @@ ED = os.path.join(HERE, '..', 'editor')
 pal = json.load(open(os.path.join(ED, 'palette.json')))
 src = open(os.path.join(ED, 'index.src.html')).read()
 out = src.replace('__PALETTE__', ','.join("'%s'" % c[1:] for c in pal))
+for ph, f in (('__SCHEDULER__', 'scheduler.js'), ('__MIRROR__', 'mirrorrows.js')):
+    out = out.replace(ph, open(os.path.join(ED, f)).read())
 # artifact.html: the fragment the Claude artifact host wraps in its own document skeleton
 open(os.path.join(ED, 'artifact.html'), 'w').write(out)
-# index.html: a complete page for GitHub Pages or any web server (it fetches feasibility.json from
-# the same folder, so it must be served over HTTP, not opened as a file)
+# index.html: a complete page for GitHub Pages or any web server (self-contained: the scheduler and
+# the row model are built in)
 head, sep, body = out.partition('</style>')
 page = ('<!doctype html>\n<html lang="en">\n<head>\n<meta name="viewport" content="width=device-width, '
         'initial-scale=1, viewport-fit=cover">\n' + head + sep + '\n</head>\n<body>\n' + body + '\n</body>\n</html>\n')

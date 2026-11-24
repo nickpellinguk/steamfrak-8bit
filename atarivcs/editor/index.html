@@ -197,15 +197,6 @@ const PAL = ['000000','3f3f3e','646463','848483','a2a2a1','babab9','d2d2d1','eae
 const col = v => PAL[(v >> 1) & 127];
 const W = 160, LINES = 192, ROWS = 96, S = 3, GUT = 20;
 const P1MIN = 19, P1MAX = 118, SPACING = 21;
-const REG_BLOCKS = { L: { PF0: [0, 3], PF1: [4, 11], PF2: [12, 19] }, R: { PF0: [20, 23], PF1: [24, 31], PF2: [32, 39] } };
-const FAMILY = {
-  none: 'Ladders only', L1: 'Left platform (PF1)', L2: 'Left platform (PF2)', L12: 'Left platform (PF1+PF2)',
-  L01: 'Left platform (PF0 a line ahead + PF1)', R1: 'Right platform (PF1)', R2: 'Right platform (PF2)',
-  R12: 'Right platform (PF1+PF2)'
-};
-const familyName = v => FAMILY[v] || (v.startsWith('B') ? 'Both halves (left ' + regName(v.slice(1).split('_')[0]) + ', right ' + regName(v.split('_')[1]) + ')' :
-  v.startsWith('R0') ? 'Right platform (' + regName(v.slice(1)) + ')' : v);
-const regName = c => [c.startsWith('0') ? 'PF0' : null, c.includes('1') ? 'PF1' : null, c.includes('2') ? 'PF2' : null].filter(Boolean).join('+');
 const BODY_BYTES = 60, KERNEL_BYTES = 360, BANK = 4096;
 
 // ---------------------------------------------------------------- sample project --------------
@@ -241,11 +232,10 @@ function sampleProject() {
     name: 'Starter (within the rules)',
     platforms: [
       { b0: 4, b1: 11, top: 20, rows: 4 },        // left ledge in PF1, x 16-47
-      { b0: 24, b1: 39, top: 28, rows: 4 },       // right ledge in PF1+PF2, x 96-159
-      { b0: 32, b1: 39, top: 44, rows: 4 },       // right ledge in PF2, x 128-159
+      { b0: 24, b1: 35, top: 28, rows: 4 },       // right ledge, x 96-143
+      { b0: 28, b1: 35, top: 44, rows: 4 },       // right ledge, x 112-143
       { b0: 4, b1: 11, top: 60, rows: 4 },        // left ledge in PF1 (ladder 31 passes behind it)
-      { b0: 12, b1: 19, top: 84, rows: 4 },       // floor: PF2 on both halves
-      { b0: 32, b1: 39, top: 84, rows: 4 }
+      { b0: 12, b1: 27, top: 84, rows: 4 }        // floor across the centre, x 48-111
     ],
     ladders: [lad(31, 48, 168), lad(61, 48, 120), lad(58, 128, 168)],
     items: [item('gem', 34, 40), item('gem', 88, 120), item('key', 103, 168)],
@@ -276,7 +266,7 @@ function blankScreen(name) { return { name, platforms: [], ladders: [], items: [
 // ---------------------------------------------------------------- state -----------------------
 let P = load() || normalise(sampleProject());
 let ghost = null;                         // where a placing tool would put its object (snapped)
-let typeI = 0, scrI = 0, tool = 'select', kind = 'gem', sel = null, rowSel = null, FEAS = null, drag = null, hoverRow = null;
+let typeI = 0, scrI = 0, tool = 'select', kind = 'gem', sel = null, rowSel = null, drag = null, hoverRow = null;
 const scr = () => P.types[typeI].screens[scrI];
 function load() { try { const s = localStorage.getItem('frak-vcs-editor'); return s ? normalise(JSON.parse(s)) : null; } catch (e) { return null; } }
 // items carry a colour per row (a per-line colour table, like the platform stripes)
@@ -301,27 +291,229 @@ function normalise(d) {
 function save() { try { localStorage.setItem('frak-vcs-editor', JSON.stringify(P)); } catch (e) { /* storage blocked: work stays in this tab */ } }
 
 // ---------------------------------------------------------------- rules -----------------------
-fetch('feasibility.json').then(r => r.json()).then(d => {
-  const fits = {};
-  for (const [v, pats] of Object.entries(d.fits)) {
-    fits[v] = {};
-    for (const [p, list] of Object.entries(pats)) {
-      const m = new Map();
-      for (const s of list) { const [xs, f, l] = s.split(':'); m.set(xs, [+f, +l]); }
-      fits[v][p] = m;
+// The live scheduler and the mirrored-row model (ported from atarivcs/tools and cross-checked by
+// tools/checkScheduler.py): each row's exact timed writes come from its actual platform blocks and
+// the row above, and the scheduler is run for that row, for each way of drawing it.
+// The renderer scheduler, ported from the Python one the Stella-verified tests use
+// (atarivcs/test/fr_screen.py's schedule, as adapted in screens2.py and tools/feasibility.py:
+// A and Y as working registers, X the line index, the ghost rule, one GRP1 write for consecutive
+// objects with the same graphics, no spare strobe). checkScheduler.js compares the two.
+//
+// schedule(objs, prevLastColour, prevHadObjs, prevLastX, t0, endLimit, extra)
+//   objs: [{x, gfx, col}] in x order; gfx/col are ['imm', value] or ['tbl', name] (col also ['none', 0])
+//   extra: [[lo, hi, [load, cycles], register]]: stores that must END within [lo, hi]
+// Returns {end, strobes} (strobe end cycles) or null if nothing fits.
+(function (root) {
+  'use strict';
+  const same = (a, b) => a[0] === b[0] && a[1] === b[1];
+  const load = src => src[0] === 'imm' ? ['lda #$' + (src[1] & 255).toString(16).toUpperCase().padStart(2, '0'), 2] : ['lda ' + src[1] + ',x', 4];
+  const ceilDiv3 = a => Math.ceil(a / 3);
+
+  function schedule(objs, prevLastColour, prevHadObjs, prevLastX, t0, endLimit, extra) {
+    const tasks = [];                               // [lo, hi, ins, len, reg]
+    objs = objs.slice();
+    if (objs.length === 1 && ceilDiv3(68 + objs[0].x + 8) > 62)
+      objs.unshift({ x: 19, gfx: ['imm', 0], col: ['none', 0] });
+    let afterMain = 0;
+    if (prevLastX !== null && prevLastX !== undefined && objs.length) {
+      const main = prevLastX - 16;
+      const c0 = objs[0].col[0] === 'none' ? 3 : Math.floor((objs[0].x + 47) / 3);
+      if (c0 >= Math.floor((prevLastX + 47) / 3)) {
+        tasks.push([0, Math.floor((68 + main) / 3), 'lda #0', 2, 'GRP1']);
+        afterMain = ceilDiv3(68 + main + 8);
+      }
     }
+    const strobes = [];
+    let prevEnd = 0, prevCol = null;
+    objs.forEach((o, k) => {
+      let c = Math.floor((o.x + 47) / 3);
+      if (o.col[0] === 'none') c = t0 + 3;
+      const start = (68 + o.x) / 3;
+      let hi = Math.floor(start);
+      if (hi === start) hi -= 1;
+      strobes.push(c);
+      let lo = prevEnd;
+      if (afterMain && (68 + o.x) / 3 > afterMain - 1) lo = Math.max(lo, afterMain);
+      if (k === 0 || !same(o.gfx, objs[k - 1].gfx) || objs[k - 1].col[0] === 'none') {
+        const [ins, len] = load(o.gfx); tasks.push([lo, hi, ins, len, 'GRP1']);
+      }
+      let need;
+      if (o.col[0] === 'none') need = false;
+      else if (k === 0 || (prevCol && prevCol[0] === 'none')) {
+        const startCol = objs[objs.length - 1].col;
+        need = o.col[0] === 'tbl' || !same(o.col, startCol) || !prevLastColour || !same(o.col, prevLastColour);
+      } else need = o.col[0] === 'tbl' || prevCol === null || !same(o.col, prevCol);
+      if (need) { const [ins, len] = load(o.col); tasks.push([prevEnd, hi, ins, len, 'COLUP1']); }
+      prevEnd = ceilDiv3(68 + o.x + 8);
+      prevCol = o.col[0] !== 'none' ? o.col : prevCol;
+    });
+    if (objs.length === 1) tasks.push([prevEnd, endLimit, 'lda #0', 2, 'GRP1']);
+    if (!objs.length && prevHadObjs) tasks.push([0, endLimit, 'lda #0', 2, 'GRP1']);
+    for (const [lo, hi, [ins, len], reg] of extra) tasks.push([lo, hi, ins, len, reg]);
+
+    const n = tasks.length, fail = new Set();
+    function search(t, rem, si, ha, hx) {
+      const key = t + '|' + rem + '|' + si + '|' + ha + '|' + hx;
+      if (fail.has(key)) return null;
+      if (rem === 0 && si === strobes.length) return t;
+      const nxt = si < strobes.length ? strobes[si] : null;
+      const limit = nxt !== null ? nxt - 3 : endLimit;
+      for (let i = 0; i < n; i++) if (rem & (1 << i)) {
+        const [lo, hi, ins, len] = tasks[i];
+        const need = (ins === ha || ins === hx) ? 3 : len + 3;
+        if (Math.max(t + need, lo) > hi) { fail.add(key); return null; }
+      }
+      const ok = end => end <= limit && (nxt === null || limit - end !== 1);
+      const opts = [], loads = new Set();
+      for (let i = 0; i < n; i++) if (rem & (1 << i)) {
+        const [lo, hi, ins, len] = tasks[i];
+        for (const r of ['a', 'x']) {
+          const held = r === 'a' ? ha : hx;
+          if (held === ins) {
+            for (const st of [3, 4]) {
+              const land = Math.max(t + st, lo);
+              if (land - st - t === 1 || land > hi || !ok(land)) continue;
+              opts.push([hi, 0, land, st, i, r, 'store']);
+            }
+          } else if (ins !== ha && ins !== hx && !loads.has(ins + r) && ok(t + len)) {
+            loads.add(ins + r);
+            opts.push([hi, 1, t + len, 0, i, r, 'load']);
+          }
+        }
+      }
+      opts.sort((p, q) => { for (let j = 0; j < 6; j++) { if (p[j] < q[j]) return -1; if (p[j] > q[j]) return 1; } return 0; });
+      for (const [, , end, , i, r, what] of opts) {
+        const ins = tasks[i][2];
+        let res;
+        if (what === 'store') res = search(end, rem & ~(1 << i), si, ha, hx);
+        else res = search(end, rem, si, r === 'a' ? ins : ha, r === 'x' ? ins : hx);
+        if (res !== null) return res;
+      }
+      if (nxt !== null && nxt - 3 - t >= 0) {
+        const res = search(nxt, rem, si + 1, ha, hx);
+        if (res !== null) return res;
+      }
+      fail.add(key);
+      return null;
+    }
+    if (n > 30) return null;
+    const end = search(t0, n ? (2 ** n - 1) : 0, 0, null, null);
+    if (end === null || end > endLimit) return null;
+    return { end, strobes };
   }
-  FEAS = { grid: d.grid, fits };
-  const n = Object.values(fits).reduce((a, p) => a + Object.values(p).reduce((b, m) => b + m.size, 0), 0);
-  const chip = document.getElementById('rules-state');
-  chip.textContent = n.toLocaleString() + ' layouts known'; chip.className = 'chip ok';
-  refresh();
-}).catch(() => {
-  const chip = document.getElementById('rules-state');
-  chip.textContent = 'Rules file missing'; chip.className = 'chip err';
-  chip.title = 'feasibility.json could not be loaded; run atarivcs/tools/feasibility.py and serve this folder over HTTP';
-  refresh();
-});
+  if (typeof module !== 'undefined') module.exports = { schedule };
+  else root.FrakScheduler = { schedule };
+})(this);
+
+// Mirrored-playfield rows: the timed writes a row's platforms need, from its actual lit blocks.
+// A port of atarivcs/tools/mirrorrows.py (see there for the measured rules); checkScheduler.py
+// compares the two.
+(function (root) {
+  'use strict';
+  const BG = 0xAA, REGS = ['PF1', 'PF2'];
+  function blocksOf(reg, side) {
+    const out = [];
+    for (let i = 0; i < 8; i++) {
+      if (reg === 'PF1') out.push(side === 'L' ? [4 + i, 7 - i] : [28 + i, i]);
+      else out.push(side === 'L' ? [12 + i, i] : [20 + i, 7 - i]);
+    }
+    return out;
+  }
+  const value = (lit, reg, side) => blocksOf(reg, side).reduce((v, [k, b]) => lit.has(k) ? v | (1 << b) : v, 0);
+  const blockOf = (reg, side, bit) => blocksOf(reg, side).find(([, b]) => b === bit)[0];
+  const pfNewBy = x => Math.floor((x + 66) / 3), pfOldUntil = x => Math.floor((x + 66) / 3) + 1;
+  const colNewBy = x => Math.floor((x + 68) / 3), colOldUntil = x => Math.floor((x + 68) / 3) + 1;
+  const hex = v => '$' + (v & 255).toString(16).toUpperCase().padStart(2, '0');
+  const T = (name, lo, hi, reg) => [lo, hi, ['lda ' + name + ',x', 4], reg];
+  const IMM = (v, lo, hi, reg) => [lo, hi, ['lda #' + hex(v), 2], reg];
+  const bits = d => { const o = []; for (let b = 0; b < 8; b++) if (d >> b & 1) o.push(b); return o; };
+  function dedupe(tk) {
+    const m = new Map();
+    for (const [lo, hi, ld, reg] of tk) {
+      const k = ld[0] + '|' + reg;
+      if (m.has(k)) { const e = m.get(k); e[0] = Math.max(e[0], lo); e[1] = Math.min(e[1], hi); }
+      else m.set(k, [lo, hi, ld, reg]);
+    }
+    return [...m.values()];
+  }
+  // lit: Set of lit blocks; prev: {col: 'bg'|'stripe', PF1, PF2} or null. Returns [[way, tasks, endState]].
+  function tasks(lit, prev) {
+    if (!prev) prev = { col: 'bg', PF1: 0, PF2: 0 };
+    for (const k of lit) if (k < 4 || k > 35) return [];
+    const L = {}, R = {};
+    for (const r of REGS) { L[r] = value(lit, r, 'L'); R[r] = value(lit, r, 'R'); }
+    const out = [], litX = [...lit].map(k => 4 * k).sort((a, b) => a - b);
+    const regsOf = o => ({ PF1: o.PF1, PF2: o.PF2 });
+    if (!lit.size) {
+      const vis = [];
+      for (const r of REGS) for (const side of 'LR') for (const [k, b] of blocksOf(r, side)) if (prev[r] >> b & 1) vis.push(4 * k);
+      if (prev.col === 'stripe' && vis.length) out.push(['blank', [IMM(BG, 0, colNewBy(Math.min(...vis)), 'COLUPF')], { col: 'bg', ...regsOf(prev) }]);
+      else out.push(['blank', [], { col: prev.col, ...regsOf(prev) }]);
+      return out;
+    }
+    const first = litX[0];
+    let tk = [T('Stripe', 0, colNewBy(first), 'COLUPF')], ok = true;
+    for (const r of REGS) {
+      for (const P of new Set([prev[r], R[r]])) {
+        const diff = L[r] ^ P;
+        if (diff) {
+          const xs = bits(diff).map(b => 4 * blockOf(r, 'L', b));
+          tk.push(L[r] ? T('L' + r, 0, pfNewBy(Math.min(...xs)), r) : IMM(0, 0, pfNewBy(Math.min(...xs)), r));
+        }
+      }
+      if (L[r] !== R[r]) {
+        const d = bits(L[r] ^ R[r]);
+        const lo = Math.max(...d.map(b => pfOldUntil(4 * blockOf(r, 'L', b))));
+        const hi = Math.min(...d.map(b => pfNewBy(4 * blockOf(r, 'R', b))));
+        if (lo > hi) ok = false;
+        tk.push(R[r] ? T('R' + r, lo, hi, r) : IMM(0, lo, hi, r));
+      }
+    }
+    if (ok) out.push(['rewrite', dedupe(tk), { col: 'stripe', ...R }]);
+    if (!R.PF1 && !R.PF2) {
+      const last = litX[litX.length - 1] + 3, mirrorFirst = Math.min(...[...lit].map(k => 4 * (39 - k)));
+      tk = [T('Stripe', 0, colNewBy(first), 'COLUPF'), IMM(BG, colOldUntil(last), colNewBy(mirrorFirst), 'COLUPF')];
+      for (const r of REGS) if (L[r] !== prev[r]) {
+        const xs = bits(L[r] ^ prev[r]).map(b => 4 * blockOf(r, 'L', b));
+        tk.push(L[r] ? T('L' + r, 0, pfNewBy(Math.min(...xs)), r) : IMM(0, 0, pfNewBy(Math.min(...xs)), r));
+      }
+      out.push(['hide', dedupe(tk), { col: 'bg', ...L }]);
+    }
+    if (!L.PF1 && !L.PF2) {
+      const copy = [...lit].map(k => 4 * (39 - k)).sort((a, b) => a - b), rfirst = litX[0];
+      tk = [IMM(BG, 0, colNewBy(copy[0]), 'COLUPF'), T('Stripe', colOldUntil(copy[copy.length - 1] + 3), colNewBy(rfirst), 'COLUPF')];
+      for (const r of REGS) if (R[r] !== prev[r]) {
+        const xs = bits(R[r] ^ prev[r]).map(b => 4 * blockOf(r, 'R', b));
+        tk.push(R[r] ? T('R' + r, 0, pfNewBy(Math.min(...xs)), r) : IMM(0, 0, pfNewBy(Math.min(...xs)), r));
+      }
+      out.push(['hide', dedupe(tk), { col: 'stripe', ...R }]);
+    }
+    return out;
+  }
+  const api = { tasks, value, REGS };
+  if (typeof module !== 'undefined') module.exports = api; else root.FrakMirror = api;
+})(this);
+
+(function () { const chip = document.getElementById('rules-state'); chip.textContent = 'Live scheduler'; chip.className = 'chip ok'; })();
+const SCHED_CACHE = new Map();
+function schedRow(objs, tasks) {
+  const key = JSON.stringify([objs.map(o => [o.x, o.t]), tasks]);
+  if (SCHED_CACHE.has(key)) return SCHED_CACHE.get(key);
+  let oi = 0;
+  const so = objs.map(o => o.t === 'L' ? { x: o.x, gfx: ['tbl', 'Lad'], col: ['imm', 0] }
+    : (k => ({ x: o.x, gfx: ['tbl', 'G' + k], col: ['tbl', 'C' + k] }))(oi++));
+  const r = FrakScheduler.schedule(so, ['imm', 0], true, objs.length ? objs[objs.length - 1].x : null, 10, 55, tasks);
+  if (SCHED_CACHE.size > 20000) SCHED_CACHE.clear();
+  SCHED_CACHE.set(key, r);
+  return r;
+}
+// describe a row's platforms: contiguous runs of lit blocks as x ranges
+function describe(lit) {
+  if (!lit.size) return 'No platforms';
+  const ks = [...lit].sort((a, b) => a - b), segs = [];
+  for (const k of ks) { const l = segs[segs.length - 1]; if (l && l[1] === k - 1) l[1] = k; else segs.push([k, k]); }
+  return 'Platforms ' + segs.map(([a, b]) => 'x ' + 4 * a + '-' + (4 * b + 3)).join(', ');
+}
 
 const snapX = x => Math.max(P1MIN, Math.min(154, P1MIN + Math.round((x - P1MIN) / 3) * 3));
 const snapTX = x => Math.max(0, Math.min(141, 3 * Math.round(x / 3)));   // Trogg (player 0): x a multiple of 3
@@ -342,30 +534,6 @@ function rowBlocks(s, r) {
   for (const p of s.platforms) if (r >= p.top && r < p.top + p.rows) for (let k = p.b0; k <= p.b1; k++) b.add(k);
   return b;
 }
-function regsUsed(blocks, side) {
-  const out = [];
-  for (const [reg, [a, z]] of Object.entries(REG_BLOCKS[side])) { for (let k = a; k <= z; k++) if (blocks.has(k)) { out.push(reg); break; } }
-  return out;
-}
-function variantOf(L, R) {
-  const has = (a, r) => a.includes(r);
-  const code = a => a.length === 2 ? '12' : a[0] === 'PF1' ? '1' : '2';
-  if (!L.length && !R.length) return { v: 'none' };
-  if (!R.length) {
-    if (has(L, 'PF0')) {
-      if (has(L, 'PF2')) return { err: 'A left platform can use PF0 (x 0-15) only together with PF1 (x 16-47), not PF2 (x 48-79): COLUPF and PF0 are both due by cycle 22.' };
-      return { v: 'L01' };
-    }
-    return { v: 'L' + code(L) };
-  }
-  // the right half's PF0 (x 80-95) is written mid-line and cleared at exactly cycle 55: '0' in the key
-  const rest = R.filter(r => r !== 'PF0'), r0 = has(R, 'PF0') ? '0' : '';
-  const rcode = r0 + (rest.length ? code(rest) : '');
-  if (!L.length) return { v: 'R' + rcode };
-  if (has(L, 'PF0')) return { err: 'With platforms on both halves, the left one can\'t touch x 0-15 (PF0): it would have to be written in the horizontal blank, which is already full.' };
-  return { v: 'B' + code(L) + '_' + rcode };
-}
-
 function rowObjects(s, r, blocks) {
   const objs = [];
   const lines = [2 * r, 2 * r + 1];
@@ -388,18 +556,21 @@ function rowObjects(s, r, blocks) {
   return objs;
 }
 
-function analyzeRow(s, r) {
-  const blocks = rowBlocks(s, r);
-  const L = regsUsed(blocks, 'L'), R = regsUsed(blocks, 'R');
-  const vr = variantOf(L, R);
-  const objs = rowObjects(s, r, blocks);
-  const A = { r, L, R, v: vr.v || 'unsupported', objs, errors: [], warnings: [], infos: [], first: null, last: null };
+function analyzeRow(s, r, prev) {
+  const lit = rowBlocks(s, r);
+  const objs = rowObjects(s, r, lit);
+  const A = { r, lit, objs, errors: [], warnings: [], infos: [], first: null, last: null, way: null, end: null };
+  A.L = FrakMirror.REGS.filter(g => FrakMirror.value(lit, g, 'L'));
+  A.R = FrakMirror.REGS.filter(g => FrakMirror.value(lit, g, 'R'));
+  A.v = lit.size ? 'platform' : 'none';
+  A.desc = describe(lit);
   A.pattern = objs.map(o => o.t).join('');
   A.xs = objs.map(o => o.x).join(',');
-  A.key = A.v + '|' + A.pattern + '|' + A.xs;
-  A.empty = !blocks.size && !objs.length;
-  A.mixed = objs.some(o => o.mixed);
-  if (vr.err) A.errors.push(vr.err);
+  A.key = [...lit].sort((a, b) => a - b).join(',') + '|' + A.pattern + '|' + A.xs;
+  A.empty = !lit.size && !objs.length;
+  A.fallbackEnd = { col: lit.size ? 'stripe' : (prev ? prev.col : 'bg'), PF1: FrakMirror.value(lit, 'PF1', 'R'), PF2: FrakMirror.value(lit, 'PF2', 'R') };
+  if ([...lit].some(k => k < 4 || k > 35))
+    A.errors.push('Platforms can\'t use x 0-15 or x 144-159: in mirrored mode those are PF0, which is never written (the screen edges).');
   for (const p of s.platforms) if (r >= p.top && r < p.top + p.rows && (p.b0 % 2 || !(p.b1 % 2)))
     A.errors.push('Platform at x ' + p.b0 * 4 + '-' + ((p.b1 + 1) * 4 - 1) + ' isn\'t on 8-pixel boundaries: select it and move or resize it, and it snaps.');
   for (const o of objs) {
@@ -408,37 +579,33 @@ function analyzeRow(s, r) {
   }
   for (let i = 1; i < objs.length; i++) if (objs[i].x - objs[i - 1].x < SPACING)
     A.errors.push('Objects at x ' + objs[i - 1].x + ' and ' + objs[i].x + ' are closer than 21 px: P1 strobes must be at least 7 cycles apart.');
-  if (A.errors.length || !FEAS) return A;
-  if (!objs.length && A.v === 'none') return A;      // a blank row: the empty renderer
-  const table = FEAS.fits[A.v] && FEAS.fits[A.v][A.pattern];
-  if (!table) {
-    const nO = objs.filter(o => o.t === 'O').length;
-    if (A.mixed) A.errors.push('Ladders here show different graphics on the same line, so each needs its own GRP1 write; checked as separate objects (as coloured items), this row doesn\'t fit. Line their sections up, or use one kind per row.');
-    else if (nO && A.v !== 'none') A.errors.push('Coloured items can\'t share a row with a platform: no layout fits in the line budget.');
-    else if (nO > 2) A.errors.push('At most two coloured items fit on a row.');
-    else A.errors.push('Too many objects for this family (' + familyName(A.v) + ').');
+  if (objs.filter(o => o.t === 'O').length > 2) A.errors.push('At most two coloured items fit on a row.');
+  if (A.errors.length) return A;
+  const ways = FrakMirror.tasks(lit, prev);
+  for (const [way, tk, end] of ways) {
+    const res = schedRow(objs, tk);
+    if (res) { A.way = way; A.end = end; A.tasks = tk; if (objs.length) { A.first = res.strobes[0]; A.last = res.strobes[res.strobes.length - 1]; } break; }
+  }
+  if (!A.way) {
+    A.errors.push('This row doesn\'t fit in the line budget (shared block from cycle 10, last store by 55)' +
+      (lit.size && objs.length ? ': the platforms\' timed writes leave no room for these objects.' : '.'));
+    A.suggest = suggest(A, ways);
     return A;
   }
-  const hit = table.get(A.xs);
-  if (!hit) {
-    A.errors.push('This layout doesn\'t fit in the line budget (shared block from cycle 10, last store by 55).');
-    A.suggest = suggest(A, table);
-    return A;
-  }
-  [A.first, A.last] = hit;
-  if (A.mixed) A.warnings.push('Ladders here show different graphics on the same line (different kinds, or sections that don\'t line up), so each needs its own GRP1 write. They are checked as if they were coloured items, which is stricter than needed: this row fits.');
-  if (A.v === 'L01') A.warnings.push('PF0 is written one line ahead, late in the line: the row above must already have set this row\'s left-edge pattern.');
   if (objs.length === 1) A.infos.push('One object: GRP1 is cleared after it every line to stop its ghost (about 5 cycles, already counted).');
+  if (A.way === 'hide') A.infos.push('Drawn with the colour switch: the platform\'s mirror copy is hidden by switching COLUPF, rather than by rewriting the register.');
   return A;
 }
-function suggest(A, table) {
-  const out = [];
+function suggest(A, ways) {
+  const out = [], G = [];
+  for (let x = P1MIN; x <= P1MAX; x += 3) G.push(x);
   A.objs.forEach((o, k) => {
     let best = null;
-    for (const g of FEAS.grid) {
-      const xs = A.objs.map((p, j) => j === k ? g : p.x);
-      if (xs.some((x, j) => j && x <= xs[j - 1])) continue;
-      if (table.has(xs.join(',')) && (best === null || Math.abs(g - o.x) < Math.abs(best - o.x))) best = g;
+    for (const g of G) {
+      if (best !== null && Math.abs(g - o.x) >= Math.abs(best - o.x)) continue;
+      const objs = A.objs.map((p, j) => j === k ? { ...p, x: g } : p).sort((a, b) => a.x - b.x);
+      if (objs.some((p, j) => j && p.x - objs[j - 1].x < SPACING)) continue;
+      if (ways.some(([, tk]) => schedRow(objs, tk))) best = g;
     }
     if (best !== null) out.push((o.t === 'L' ? 'ladder' : 'item') + ' at ' + o.x + ' → ' + best);
   });
@@ -447,19 +614,25 @@ function suggest(A, table) {
 
 function analyzeScreen(s) {
   const rows = [];
-  for (let r = 0; r < ROWS; r++) rows.push(analyzeRow(s, r));
-  // renderer changes: consecutive rows with the same key are one run of one body
+  let prev = null;                         // the state the row above leaves (registers, colour)
+  for (let r = 0; r < ROWS; r++) {
+    let A;
+    const key = (() => { const lit = rowBlocks(s, r); const o = rowObjects(s, r, lit); return [...lit].sort((a, b) => a - b).join(',') + '|' + o.map(q => q.t).join('') + '|' + o.map(q => q.x).join(','); })();
+    if (r && rows[r - 1].key === key) {   // the same renderer as the row above: its first row decides
+      const B = rows[r - 1];
+      A = { ...B, r, errors: B.errors.slice(), warnings: [], infos: B.infos.slice() };
+    } else A = analyzeRow(s, r, prev);
+    rows.push(A);
+    prev = A.end || A.fallbackEnd;
+  }
+  // renderer changes: the ghost rule
   let prevP1 = null;
   for (let r = 0; r < ROWS; r++) {
     const A = rows[r], B = r ? rows[r - 1] : null;
-    if (B && B.key !== A.key && !A.errors.length) {
-      if (prevP1 && A.first !== null && A.objs.length && A.first >= prevP1.last)
-        A.warnings.push('Renderer change: its first strobe (cycle ' + A.first + ') is not earlier than the last strobe above (cycle ' + prevP1.last + ', row ' + prevP1.r + '), so that ghost survives unless GRP1 stays 0 until it has passed (16 px left of x ' + (3 * prevP1.last - 47) + '). That may not fit.');
-      if (A.v === 'L01' && B.v !== 'L01') A.warnings.push('First row of a PF0-ahead run: the renderer above must leave PF0 holding this row\'s left-edge pattern.');
-    }
+    if (B && B.key !== A.key && !A.errors.length && prevP1 && A.first !== null && A.objs.length && A.first >= prevP1.last)
+      A.warnings.push('Renderer change: its first strobe (cycle ' + A.first + ') is not earlier than the last strobe above (cycle ' + prevP1.last + ', row ' + prevP1.r + '), so that ghost survives unless GRP1 stays 0 until it has passed (16 px left of x ' + (3 * prevP1.last - 47) + '). That may not fit.');
     if (A.objs.length && A.last !== null) prevP1 = A;
   }
-  // Trogg
   const t = s.trogg;
   if (t && t.x > 120) rows[Math.min(ROWS - 1, t.row)].warnings.push('Trogg at x ' + t.x + ': his graphics are written late in the even line, so this far right his rows can split by a line.');
   return rows;
@@ -567,9 +740,10 @@ function draw() {
   if (t) f.rows.forEach((v, i) => { for (const y of [2 * (t.row - f.rows.length + 1 + i), 2 * (t.row - f.rows.length + 1 + i) + 1]) drawByte(v, t.x, y, col(g.trogg.colour), 2); });
   // overlays
   if (document.getElementById('chk-regs').checked) {     // both copies of PF0, PF1, PF2
-    const bands = [[0, 16, 'PF0'], [16, 48, 'PF1'], [48, 80, 'PF2'], [80, 96, 'PF0'], [96, 128, 'PF1'], [128, 160, 'PF2']];
+    // mirrored: the right half runs PF2, PF1, PF0, so the PF0 areas are the screen edges (never drawn)
+    const bands = [[0, 16, 'PF0'], [16, 48, 'PF1'], [48, 80, 'PF2'], [80, 112, 'PF2'], [112, 144, 'PF1'], [144, 160, 'PF0']];
     bands.forEach(([a, z, n], i) => {
-      cx.fillStyle = i % 2 ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.07)';
+      cx.fillStyle = n === 'PF0' ? 'rgba(236,91,82,0.16)' : i % 2 ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.07)';
       cx.fillRect(a * S, 0, (z - a) * S, LINES * S);
       cx.fillStyle = 'rgba(0,0,0,0.55)'; cx.font = '10px IBM Plex Mono, monospace'; cx.textBaseline = 'top';
       cx.fillText((i < 3 ? 'L ' : 'R ') + n, a * S + 3, 2);
@@ -628,7 +802,7 @@ function verdictChip(A) {
   if (A.errors.length) return '<span class="chip err">Can\'t be drawn</span>';
   if (A.warnings.length) return '<span class="chip warn">Fits, with a caveat</span>';
   if (A.empty) return '<span class="chip info">Empty</span>';
-  return FEAS ? '<span class="chip ok">Fits</span>' : '<span class="chip info">Rules loading</span>';
+  return '<span class="chip ok">Fits</span>';
 }
 function showRow() {
   const box = document.getElementById('row-info');
@@ -636,7 +810,7 @@ function showRow() {
   const A = ROWS_A[rowSel];
   const objs = A.objs.map(o => (o.t === 'L' ? 'ladder ' : 'item ') + o.x).join(', ') || 'none';
   let h = '<div class="row-inline">' + verdictChip(A) + '<span class="mono muted">row ' + A.r + ' · lines ' + (2 * A.r) + '-' + (2 * A.r + 1) + '</span></div>';
-  h += '<dl class="kv"><dt>Family</dt><dd>' + esc(A.v === 'unsupported' ? 'none that can draw it' : familyName(A.v)) + '</dd>';
+  h += '<dl class="kv"><dt>Row</dt><dd>' + esc(A.desc) + (A.way === 'hide' ? ' (colour switch)' : A.way === 'rewrite' && A.lit.size ? ' (register rewrite)' : '') + '</dd>';
   h += '<dt>Playfield</dt><dd class="mono">left ' + (A.L.join('+') || '–') + ' · right ' + (A.R.join('+') || '–') + '</dd>';
   h += '<dt>P1 objects</dt><dd class="mono">' + esc(objs) + '</dd>';
   if (A.first !== null && A.objs.length) h += '<dt>Strobes</dt><dd class="mono">first cycle ' + A.first + ', last ' + A.last + '</dd>';
@@ -769,7 +943,7 @@ cv.addEventListener('pointermove', ev => {
     tool === 'trogg' ? (() => { const h = P.graphics.trogg.frames[0].rows.length, x = snapTX(p.x - 8); return [x, 2 * (row - h + 1), x + 16, 2 * row + 2]; })() : null) : null;
   if (JSON.stringify(g2) !== JSON.stringify(ghost)) { ghost = g2; if (!drag) draw(); }
   const A = ROWS_A[row];
-  document.getElementById('status').textContent = 'x ' + Math.floor(Math.min(p.x, W - 1)) + ' · line ' + Math.floor(p.y) + ' · row ' + row + (A ? ' · ' + (A.v === 'unsupported' ? 'unsupported' : familyName(A.v)) + (A.errors.length ? ' · can\'t be drawn' : '') : '');
+  document.getElementById('status').textContent = 'x ' + Math.floor(Math.min(p.x, W - 1)) + ' · line ' + Math.floor(p.y) + ' · row ' + row + (A ? ' · ' + A.desc + (A.errors.length ? ' · can\'t be drawn' : '') : '');
   if (!drag) return;
   if (drag.mode === 'platform') { drag.u1 = unitOf(p.x); drag.r1 = row; const a = Math.min(drag.u0, drag.u1), z = Math.max(drag.u0, drag.u1); drag.preview = [a * 8, Math.min(drag.r0, drag.r1) * 2, (z + 1) * 8, (Math.max(drag.r0, drag.r1) + 1) * 2]; draw(); }
   else if (drag.mode === 'ladder') { drag.r1 = row; drag.preview = [drag.x, Math.min(drag.r0, drag.r1) * 2, drag.x + 8, (Math.max(drag.r0, drag.r1) + 1) * 2]; draw(); }
