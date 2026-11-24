@@ -51,6 +51,7 @@ ROW_STRIPES = [BLACK, MAGENTA, DARK, DARK]
 MAXX = 112                         # a strobe ending at 53
 CHANGES = []
 DROPPED = []
+MIDSYNC = []
 GUARDS = []
 
 SCREENS = {
@@ -191,8 +192,11 @@ def body_code(name, code, uses_y, end=None):
         oddpad = [pad(k)] if k else []
     out += ['%s_s:' % name] + code + ['bcs %s_e' % name] + oddpad + ['inx', 'rts']
     out += ['%s_e:' % name, 'ldy #0', 'lda (TrogPtr),y'] + look + ['sta GRP0'] + (['inx'] if LINES and not odd else [])
-    if NOMIDSYNC:                    # pad the even line to exactly 76 cycles instead of STA WSYNC
-        tail = out[out.index('%s_e:' % name) + 1:]
+    tail = out[out.index('%s_e:' % name) + 1:]
+    # STA WSYNC between the row's lines wherever it still writes by cycle 75 (2 bytes, resyncs the
+    # line); only bodies whose shared block ends too late pad the even line to exactly 76 instead
+    if NOMIDSYNC and (EXACT is not None or end + 3 + ncycles(tail) + 3 > 75):
+        MIDSYNC.append((name, 'padded'))
         n = 76 + S0 - (end + 3 + ncycles(tail))
         assert n >= 0, ('even line too long', name, n)
         if n == 1:
@@ -201,6 +205,7 @@ def body_code(name, code, uses_y, end=None):
             out.append(pad(n))
         out += ['asl', 'sta ENAM0'] + lo + (['inx'] if odd else []) + ['clc', 'jmp %s_s' % name]
         return out
+    MIDSYNC.append((name, 'wsync'))
     out += ['sta WSYNC', 'asl', 'sta ENAM0'] + lo + (['inx'] if odd else []) + ['clc', 'jmp %s_s' % name]
     return out
 
@@ -445,6 +450,8 @@ if __name__ == '__main__':
     rows, t, runs, bodies, report, calls, labels = build(which, base)
     print('%s: %d runs, %d bodies' % (which, len(runs), len(bodies)))
     print('layout changes:', '; '.join(CHANGES))
+    print('between a row\'s lines: %d bodies use STA WSYNC, %d are padded to 76 cycles' % (
+        sum(1 for b in MIDSYNC if b[1] == 'wsync'), sum(1 for b in MIDSYNC if b[1] == 'padded')))
     g = [x for x in GUARDS if x[4]]
     print('renderer changes with a P1 predecessor: %d; first strobe not earlier than the previous last (GRP1 held at 0 past the ghost): %d %s' % (
         len(GUARDS), len(g), ['row %d %s (first %d, previous last %d)' % x[:4] for x in g]))

@@ -218,8 +218,11 @@ with `test/screens2.py`, `test/limits.py`, `test/ghost_test.py` and `test/leftpf
   and the body's exit does `INX` again. Values that differ between a row's two lines are then plain
   loads in the shared block; loading them into Y in the prefixes cost 4 cycles of horizontal blank
   and tied up Y for the whole line.
-* **No `WSYNC` between a row's two lines.** The even line is padded to exactly 76 cycles and falls
-  into the odd line; the row boundary keeps its `WSYNC`. The odd prefix ends with the `JMP` to the
+* **`WSYNC` between a row's two lines only where it fits.** The even tail (18 cycles) starts 3 cycles
+  after the shared block's last store; if its `STA WSYNC` still writes by cycle 75 (last store ending
+  by 51) the body uses it (2 bytes, and the line resyncs). Bodies whose shared block ends at 52-53
+  instead pad the even line to exactly 76 cycles and fall into the odd line. The row boundary always
+  keeps its `WSYNC`. (FR: 17 of 18 bodies use `WSYNC`; AK: 20 of 22.) The odd prefix ends with the `JMP` to the
   shared block (in place of its 3-cycle pad), and the even prefix falls into it.
 * **Trogg:** `TrogPtr` points into a ROM strip of row indices (0 = blank), and the current frame is
   copied once per frame into a RAM buffer (Buffer+0 = 0): `ldy #0 / lda (TrogPtr),y / tay /
