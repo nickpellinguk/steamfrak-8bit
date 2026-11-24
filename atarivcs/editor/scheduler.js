@@ -1,7 +1,8 @@
 // The renderer scheduler, ported from the Python one the Stella-verified tests use
 // (atarivcs/test/fr_screen.py's schedule, as adapted in screens2.py and tools/feasibility.py:
 // A and Y as working registers, X the line index, the ghost rule, one GRP1 write for consecutive
-// objects with the same graphics, no spare strobe). checkScheduler.js compares the two.
+// objects with the same graphics, the spare (parking) strobe after a single object).
+// tools/checkScheduler.py compares the two.
 //
 // schedule(objs, prevLastColour, prevHadObjs, prevLastX, t0, endLimit, extra)
 //   objs: [{x, gfx, col}] in x order; gfx/col are ['imm', value] or ['tbl', name] (col also ['none', 0])
@@ -101,9 +102,21 @@
       return null;
     }
     if (n > 30) return null;
-    const end = search(t0, n ? (2 ** n - 1) : 0, 0, null, null);
-    if (end === null || end > endLimit) return null;
-    return { end, strobes };
+    let end = search(t0, n ? (2 ** n - 1) : 0, 0, null, null);
+    if (end === null) return null;
+    // a single object: park P1 after its copy with one more strobe (GRP1 is already 0, so its copy
+    // is invisible); the row's last strobe is then late, and the next renderer's first strobe
+    // cancels the ghost (the Python scheduler's 'spare' strobe)
+    let parked = false;
+    if (objs.length === 1) {
+      let gap = Math.max(0, prevEnd + 3 - 3 - end);
+      if (gap === 1) gap = 2;
+      if (end + gap + 3 <= endLimit) { end += gap + 3; strobes.push(end); parked = true; }
+      // (no room after a far-right object: the row still fits, unparked; the ghost rule then
+      // applies at the next renderer change)
+    }
+    if (end > endLimit) return null;
+    return { end, strobes, parked };
   }
   if (typeof module !== 'undefined') module.exports = { schedule };
   else root.FrakScheduler = { schedule };

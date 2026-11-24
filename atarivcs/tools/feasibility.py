@@ -45,11 +45,22 @@ T0, LIMIT = 10, 55                # two entry points: the last store may end by 
 def _setup():
     global schedule, strobe_cycles
     import screens2 as s2
-    src = s2._src.replace("        tasks.append(('spare', prev_end + 3))\n", "")
+    # the spare strobe stays: a single-object row parks P1 after its copy (GRP1 is already 0), so
+    # its last strobe is late and the next renderer's first strobe cancels the ghost
     ns = dict(s2._ns)
-    exec(src, ns)
+    exec(s2._src, ns)
     ns['FREEY'] = True
-    schedule = ns['schedule']
+    ns2 = dict(s2._ns)
+    exec(s2._src.replace("        tasks.append(('spare', prev_end + 3))\n", ""), ns2)
+    ns2['FREEY'] = True
+    parked, unparked = ns['schedule'], ns2['schedule']
+
+    def schedule(*a, **k):
+        # park a single object (the spare strobe) where there is room; otherwise unparked
+        try:
+            return parked(*a, **k)
+        except ValueError:
+            return unparked(*a, **k)
     strobe_cycles = s2.strobe_cycles
 
 
