@@ -292,6 +292,33 @@ table, strobes 21 px apart):
   left PF2 by 38, from cycle 10. Mirroring (reflect mode) doesn't help; it only removes right-half
   writes, which weren't the problem.
 
+## Optimisation pass (backlog)
+
+Parked until the design is settled; none of these change what a screen can show, only what it
+costs. Aim: three levels per 4K bank.
+
+* **Shared family renderers.** With patterns and colours from tables, one renderer covers each
+  family without ladders: both halves (PF1 + PF2 written on both sides, zeros where unused), left
+  platform (PF1/PF2), right platform (PF1/PF2), blank rows. Renderers with ladders share by fixing a
+  set of ladder columns per level type.
+* **Optional ladders** (`test/optladder_test.py`, verified): `ldy LadEn,x` (0 shown, $1C hidden)
+  and `sta RESP1,y` (5 cycles, constant; $11 + $1C = $2D, no TIA register). Safe while at least two
+  strobes always remain on the row; a row left with one strobe ghosts. Costs 6 cycles and Y.
+  Coloured items need no trick: all-zero graphics rows already hide them.
+* **Call lists** (the largest cost at three levels per bank: about 3 bytes per row per screen):
+  run-length chains in the bodies (`R_8: jsr R_1 ...`, one call per power-of-two piece of a run;
+  entering a chain costs the previous odd line 6 cycles, so fall through by 49), and call-list
+  subroutines for sequences repeated across screens (at run boundaries with spare cycles).
+* **Table packing.** One copy of the stripe sequence, the rung pattern and each item's rows; runs
+  that read different tables overlap in the line index; long periodic runs called as repeated
+  chunks (2 bytes per extra `LDX`); conventions that help (platform tops on the stripe phase,
+  ladders starting on a rung line).
+* **Trogg strip:** its long zero runs can overlap zero areas of other tables in the same page.
+* **Padding:** long `nop` runs could `jsr` into a shared `nop ... rts` sled (12+ cycles in 3 bytes);
+  mostly moot now that bodies use `STA WSYNC` between a row's lines where it fits.
+* **Not worth it:** sharing the identical Trogg tail and odd prefix between bodies (needs an
+  indirect jump back into the body, in the busiest part of the line).
+
 ## The idea
 
 The 2600 can't hold Frak!'s levels: 128 bytes of RAM, no frame buffer, a 20-bit background
