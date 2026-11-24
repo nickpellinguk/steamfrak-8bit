@@ -67,6 +67,7 @@ canvas.screen { display: block; image-rendering: pixelated; cursor: crosshair; b
 .pix .c { width: 22px; height: 18px; background: var(--panel2); border: 1px solid var(--line); cursor: pointer; }
 .pix .c.y { box-shadow: inset 0 0 0 2px var(--warn); }
 .pix .hx { font: 11px var(--mono); color: var(--muted); padding-left: 6px; align-self: center; }
+.pix .rowcol { width: 22px; height: 16px; padding: 0; margin-left: 6px; border-radius: 3px; align-self: center; }
 .swatches { display: grid; grid-template-columns: repeat(16, 1fr); gap: 2px; max-width: 360px; }
 .swatches button { aspect-ratio: 1; padding: 0; border-radius: 3px; border: 1px solid transparent; min-width: 0; }
 .swatches button.on { border: 2px solid var(--fg); }
@@ -121,7 +122,7 @@ textarea { width: 100%; min-height: 220px; background: var(--panel2); border: 1p
       <label class="row-inline"><input type="checkbox" id="chk-blocks"> Playfield blocks</label>
       <label class="row-inline"><input type="checkbox" id="chk-bands" checked> Shade problem rows</label>
       <h2>Keys</h2>
-      <p class="note">Click an object to select it. Arrow keys nudge it (3 px for ladders and items, a 4 px block for platforms, a row up or down). Delete removes it. Click the gutter to inspect a row.</p>
+      <p class="note">Clicking an existing object selects it, whatever the tool; the drawing tools only create on empty space. Arrow keys move the selection (3 px for ladders and items, a 4 px block for platforms, a row up or down). Shift + arrows resize it: a platform's rows (up/down) and width (left/right), a ladder's length. Delete removes it. Click the gutter to inspect a row.</p>
     </aside>
 
     <div class="screenbox">
@@ -136,13 +137,13 @@ textarea { width: 100%; min-height: 220px; background: var(--panel2); border: 1p
     </div>
 
     <aside style="display:flex;flex-direction:column;gap:16px;min-width:0">
+      <div class="panel">
+        <div class="row-inline"><h2>Selection</h2></div>
+        <div id="sel-info" class="note">Nothing selected. Click a platform, ladder or item to select it (with any tool).</div>
+      </div>
       <div class="panel" id="inspector">
         <h2>Row</h2>
         <div id="row-info" class="note">Click the gutter beside the screen, or any object, to inspect its row.</div>
-      </div>
-      <div class="panel">
-        <div class="row-inline"><h2>Selection</h2></div>
-        <div id="sel-info" class="note">Nothing selected.</div>
       </div>
       <div class="panel">
         <div class="row-inline" style="justify-content:space-between"><h2>Problems on this screen</h2><span id="issue-count"></span></div>
@@ -262,10 +263,19 @@ function sampleProject() {
 function blankScreen(name) { return { name, platforms: [], ladders: [], items: [], trogg: { x: 72, row: 75 } }; }
 
 // ---------------------------------------------------------------- state -----------------------
-let P = load() || sampleProject();
+let P = load() || normalise(sampleProject());
 let typeI = 0, scrI = 0, tool = 'select', kind = 'gem', sel = null, rowSel = null, FEAS = null, drag = null, hoverRow = null;
 const scr = () => P.types[typeI].screens[scrI];
-function load() { try { const s = localStorage.getItem('frak-vcs-editor'); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
+function load() { try { const s = localStorage.getItem('frak-vcs-editor'); return s ? normalise(JSON.parse(s)) : null; } catch (e) { return null; } }
+// items carry a colour per row (a per-line colour table, like the platform stripes)
+function normalise(d) {
+  for (const it of d.graphics.items) {
+    if (!Array.isArray(it.colours)) it.colours = it.rows.map(() => it.colour);
+    while (it.colours.length < it.rows.length) it.colours.push(it.colours[it.colours.length - 1] ?? it.colour);
+    it.colours.length = it.rows.length;
+  }
+  return d;
+}
 function save() { try { localStorage.setItem('frak-vcs-editor', JSON.stringify(P)); } catch (e) { /* storage blocked: work stays in this tab */ } }
 
 // ---------------------------------------------------------------- rules -----------------------
@@ -513,7 +523,7 @@ function draw() {
       }
     }
   });
-  s.items.forEach(it => { const d = itemDef(it.kind); const a = it.bottom - d.rows.length; d.rows.forEach((v, i) => drawByte(v, it.x, a + i, col(d.colour), 1)); });
+  s.items.forEach(it => { const d = itemDef(it.kind); const a = it.bottom - d.rows.length; d.rows.forEach((v, i) => drawByte(v, it.x, a + i, col(d.colours[i] ?? d.colour), 1)); });
   // Trogg: double width, each row two lines, first frame
   const t = s.trogg, f = g.trogg.frames[0];
   if (t) f.rows.forEach((v, i) => { for (const y of [2 * (t.row - f.rows.length + 1 + i), 2 * (t.row - f.rows.length + 1 + i) + 1]) drawByte(v, t.x, y, col(g.trogg.colour), 2); });
@@ -594,7 +604,9 @@ function showSel() {
   if (sel.type === 'platform') {
     const p = s.platforms[sel.i];
     h = '<h3>Platform</h3><p class="mono note" style="margin:0">x ' + p.b0 * 4 + '-' + ((p.b1 + 1) * 4 - 1) + ', rows ' + p.top + '-' + (p.top + p.rows - 1) + '</p>' +
-      '<div class="row-inline"><label>Rows tall <input type="number" id="in-prows" min="1" max="16" value="' + p.rows + '"></label></div>';
+      '<div class="row-inline"><label>Rows tall <input type="number" id="in-prows" min="1" max="16" value="' + p.rows + '"></label>' +
+      '<label>Left x <input type="number" id="in-pl" step="4" min="0" max="156" value="' + p.b0 * 4 + '"></label>' +
+      '<label>Right x <input type="number" id="in-pr" step="4" min="3" max="159" value="' + ((p.b1 + 1) * 4 - 1) + '"></label></div>';
   } else if (sel.type === 'ladder') {
     const l = s.ladders[sel.i];
     h = '<h3>Ladder</h3><div class="row-inline"><label>x <input type="number" id="in-lx" step="3" min="19" max="154" value="' + l.x + '"></label>' +
@@ -611,6 +623,8 @@ function showSel() {
   box.innerHTML = h + '<div class="row-inline"><button id="btn-del-sel">Delete</button></div>';
   const bind = (id, fn) => { const e = document.getElementById(id); if (e) e.addEventListener('change', () => { fn(e); commit(); }); };
   bind('in-prows', e => s.platforms[sel.i].rows = clampI(e.value, 1, 16));
+  bind('in-pl', e => { const q = s.platforms[sel.i]; q.b0 = Math.min(q.b1, clampI(e.value / 4, 0, 39)); });
+  bind('in-pr', e => { const q = s.platforms[sel.i]; q.b1 = Math.max(q.b0, clampI((+e.value + 1) / 4 - 1, 0, 39)); });
   bind('in-lx', e => s.ladders[sel.i].x = snapX(+e.value));
   bind('in-lt', e => s.ladders[sel.i].top = clampI(e.value, 0, s.ladders[sel.i].bottom - 1));
   bind('in-lb', e => s.ladders[sel.i].bottom = clampI(+e.value + 1, s.ladders[sel.i].top + 1, 96));
@@ -683,6 +697,12 @@ cv.addEventListener('pointerdown', ev => {
     if (h) drag = { mode: 'move', start: p, orig: JSON.parse(JSON.stringify(objOf(h))) };
     refresh(false); return;
   }
+  const h0 = hit(p.x, p.y);
+  if (h0 && tool !== 'trogg') {           // clicking an existing object selects it (and starts a move)
+    sel = h0; rowSel = row;
+    drag = { mode: 'move', start: p, orig: JSON.parse(JSON.stringify(objOf(h0))) };
+    refresh(false); return;
+  }
   if (tool === 'platform') drag = { mode: 'platform', b0: Math.floor(p.x / 4), r0: row, b1: Math.floor(p.x / 4), r1: row };
   else if (tool === 'ladder') drag = { mode: 'ladder', x: snapX(p.x - 4), r0: row, r1: row };
   else if (tool === 'item') { s.items.push({ kind, x: snapX(p.x - 4), bottom: 2 * row + 2, removable: kind !== 'key' }); sel = { type: 'item', i: s.items.length - 1 }; rowSel = row; commit(); }
@@ -729,7 +749,13 @@ cv.addEventListener('keydown', ev => {
   const o = objOf(sel); if (!o) return;
   const k = ev.key; let done = true;
   if (k === 'Delete' || k === 'Backspace') delSel();
-  else if (k === 'ArrowLeft' || k === 'ArrowRight') {
+  else if (ev.shiftKey && (k.startsWith('Arrow'))) {
+    const up = k === 'ArrowUp' || k === 'ArrowLeft' ? -1 : 1;
+    if (sel.type === 'platform' && (k === 'ArrowUp' || k === 'ArrowDown')) o.rows = Math.max(1, Math.min(ROWS - o.top, o.rows + up));
+    else if (sel.type === 'platform') o.b1 = Math.max(o.b0, Math.min(39, o.b1 + up));
+    else if (sel.type === 'ladder') o.bottom = Math.max(o.top + 1, Math.min(ROWS, o.bottom + up));
+    else done = false;
+  } else if (k === 'ArrowLeft' || k === 'ArrowRight') {
     const d = k === 'ArrowLeft' ? -1 : 1;
     if (sel.type === 'platform') { const w = o.b1 - o.b0; o.b0 = Math.max(0, Math.min(39 - w, o.b0 + d)); o.b1 = o.b0 + w; }
     else if (sel.type === 'trogg') o.x = clampI(o.x + d, 0, 144);
@@ -791,9 +817,13 @@ function swatches(cur, onPick, id) {
 }
 function pixelEditor(rows, colour, opts) {
   const g = document.createElement('div'); g.className = 'pix';
+  if (opts.rowColour) g.style.gridTemplateColumns = 'repeat(8, 22px) auto auto';
   let paint = null;
   rows.forEach((v, r) => {
+    if (opts.rowColour) colour = opts.rowColour(r);
+    const rc = colour;
     for (let b = 0; b < 8; b++) {
+      const colour = rc;
       const c = document.createElement('div'); c.className = 'c' + (b === 7 && opts.yoyo ? ' y' : '');
       if (v & (0x80 >> b)) c.style.background = colour;
       const set = () => { const on = paint; rows[r] = on ? rows[r] | (0x80 >> b) : rows[r] & ~(0x80 >> b); c.style.background = on ? colour : ''; hx.textContent = hexB(rows[r]); };
@@ -802,6 +832,12 @@ function pixelEditor(rows, colour, opts) {
       g.appendChild(c);
     }
     const hx = document.createElement('span'); hx.className = 'hx'; hx.textContent = hexB(v) + (opts.label ? opts.label(r) : ''); g.appendChild(hx);
+    if (opts.onPickRow) {
+      const b = document.createElement('button'); b.className = 'rowcol'; b.style.background = rc;
+      b.title = 'Colour of row ' + (r + 1); b.setAttribute('aria-label', b.title);
+      b.addEventListener('click', () => opts.onPickRow(r, b));
+      g.appendChild(b);
+    }
   });
   g.addEventListener('pointerup', () => { if (paint !== null) { paint = null; commit(); } });
   g.addEventListener('pointerleave', () => { if (paint !== null) { paint = null; commit(); } });
@@ -809,10 +845,15 @@ function pixelEditor(rows, colour, opts) {
 }
 const hexB = v => '$' + (v & 255).toString(16).toUpperCase().padStart(2, '0');
 function card(title, note) { const c = document.createElement('div'); c.className = 'panel'; c.innerHTML = '<h3>' + esc(title) + '</h3>' + (note ? '<p class="note" style="margin:0">' + note + '</p>' : ''); return c; }
-function heightControl(rows, min, max, label) {
+function heightControl(rows, min, max, label, colours) {
   const l = document.createElement('label'); l.className = 'row-inline';
   l.innerHTML = label + ' <input type="number" min="' + min + '" max="' + max + '" value="' + rows.length + '">';
-  l.querySelector('input').addEventListener('change', e => { const n = clampI(e.target.value, min, max); while (rows.length < n) rows.push(0); rows.length = n; commit(); });
+  l.querySelector('input').addEventListener('change', e => {
+    const n = clampI(e.target.value, min, max);
+    while (rows.length < n) rows.push(0); rows.length = n;
+    if (colours) { while (colours.length < n) colours.push(colours[colours.length - 1] ?? 0); colours.length = n; }
+    commit();
+  });
   return l;
 }
 function buildGfx() {
@@ -838,17 +879,27 @@ function buildGfx() {
   tc.appendChild(add); box.appendChild(tc);
   // items
   g.items.forEach((d, di) => {
-    const c = card(d.name, 'Player 1 copy, one row per scanline, with its own colour. Coloured items can\'t share a row with a platform, and at most two fit on a row.');
-    c.appendChild(pixelEditor(d.rows, col(d.colour), {}));
-    const ctl = document.createElement('div'); ctl.className = 'row-inline'; ctl.appendChild(heightControl(d.rows, 1, 32, 'Lines'));
+    const c = card(d.name, 'Player 1 copy, one row per scanline, each row with its own colour (a per-line table). Click a row\'s chip to change its colour, or use the palette below to colour every row. Coloured items can\'t share a row with a platform, and at most two fit on a row.');
+    const pick = document.createElement('div');
+    c.appendChild(pixelEditor(d.rows, col(d.colour), {
+      rowColour: r => col(d.colours[r] ?? d.colour),
+      onPickRow: (r, btn) => {
+        pick.innerHTML = '<p class="note" style="margin:0">Row ' + (r + 1) + ' colour:</p>';
+        pick.appendChild(swatches(d.colours[r], v => { d.colours[r] = v; }, 'sw-row-' + di + '-' + r));
+      }
+    }));
+    c.appendChild(pick);
+    const ctl = document.createElement('div'); ctl.className = 'row-inline'; ctl.appendChild(heightControl(d.rows, 1, 32, 'Lines', d.colours));
     if (g.items.length > 1) { const del = document.createElement('button'); del.textContent = 'Delete'; del.addEventListener('click', () => { g.items.splice(di, 1); commit(); }); ctl.appendChild(del); }
     c.appendChild(ctl);
-    c.appendChild(swatches(d.colour, v => d.colour = v, 'sw-item-' + di));
+    const allL = document.createElement('p'); allL.className = 'note'; allL.style.margin = '0'; allL.textContent = 'Every row:';
+    c.appendChild(allL);
+    c.appendChild(swatches(d.colour, v => { d.colour = v; d.colours = d.rows.map(() => v); }, 'sw-item-' + di));
     box.appendChild(c);
   });
   const ic = card('New item kind', 'Adds a graphic you can place with the Item tool.');
   const ib = document.createElement('button'); ib.textContent = 'Add an item kind';
-  ib.addEventListener('click', () => { const n = g.items.length + 1; g.items.push({ kind: 'item' + Date.now().toString(36), name: 'Item ' + n, colour: 0x1E, rows: [0x3C, 0x7E, 0x7E, 0x3C] }); commit(); });
+  ib.addEventListener('click', () => { const n = g.items.length + 1; g.items.push({ kind: 'item' + Date.now().toString(36), name: 'Item ' + n, colour: 0x1E, rows: [0x3C, 0x7E, 0x7E, 0x3C], colours: [0x1E, 0x1E, 0x1E, 0x1E] }); commit(); });
   ic.appendChild(ib); box.appendChild(ic);
   // ladder
   const lc = card('Ladders', 'Always black (fixed colour). Every ladder shares one graphic, which is why up to five fit on a row with only one GRP1 write.');
@@ -895,7 +946,7 @@ function loadText(t) {
   try {
     const d = JSON.parse(t);
     if (!d.graphics || !Array.isArray(d.types) || !d.types.length) throw new Error('no graphics or level types');
-    P = d; P.budget = P.budget || { logic: 1280, ram: 72 }; typeI = 0; scrI = 0; sel = null; rowSel = null;
+    P = normalise(d); P.budget = P.budget || { logic: 1280, ram: 72 }; typeI = 0; scrI = 0; sel = null; rowSel = null;
     io.hidden = true; commit(); buildTools();
   } catch (e) { ioMsg.textContent = 'That isn\'t a project file (' + e.message + '). Paste the JSON this dialog exports.'; }
 }
