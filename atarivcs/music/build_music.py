@@ -58,6 +58,8 @@ LEAD_OCTAVES = (0,)
 # the lead's parts an octave up where they lie low (the slides work better higher) and tune better
 # there; the high parts stay put (an octave up they fall where the TIA's steps are coarse)
 TRACK_OCTAVE = {2: 0, 3: 12, 4: 0, 5: 0, 6: 0}    # slide guitar, ukulele, male voice, violin, female voice
+PATTERN_OCTAVE = {(2, 13): 12}     # (track, pattern): extra shift for its plain notes (not its slides):
+                                   # the slide guitar's C B flat A A flat G F sharp G phrase, an octave up
 GRACE_TRACKS = {2}                 # the slide guitar: a slide becomes a short note a semitone below
 GRACE_FRAMES = 16                  # (a quaver: 2 quarter beats of 8 frames), then the note; never more
                                    # than half the note
@@ -95,7 +97,8 @@ def env_frames(t, e, frames):
 def grid(track, n, shift=0, grace=False):
     """Per quarter beat: (semitone or None, onset, slide envelope)."""
     out, cur = [], None
-    for s, d, e in track['notes']:
+    for (s, d, e), pat in zip(track['notes'], track['pats']):
+        extra = PATTERN_OCTAVE.get((track['index'], pat), 0) if not e else 0
         for k in range(d):
             if s == frakmusic.REST:
                 cur = None; out.append((None, False, 0))
@@ -103,7 +106,7 @@ def grid(track, n, shift=0, grace=False):
                 out.append((cur, False, 0))
             else:
                 env = e if k == 0 and e in SLIDE_ENVS else 0
-                cur = s + shift; out.append((cur, k == 0, 'grace' if env and grace else env))
+                cur = s + shift + extra; out.append((cur, k == 0, 'grace' if env and grace else env))
     return out[:n]
 
 

@@ -48,11 +48,13 @@ def tune(t, n):
     tracks = []
     for k in range(first, first + ntr):
         order = t['order%d' % k]
-        notes = []
+        notes, pats = [], []
         for p in order:
-            notes += pattern(t, p)
+            pn = pattern(t, p)
+            notes += pn
+            pats += [p] * len(pn)
         tracks.append(dict(index=k, ins=t['trk_ins'][k], chan=t['trk_chan'][k], loop=t['trk_loop'][k],
-                           raised=t['trk_raised'][k], order=order, notes=notes))
+                           raised=t['trk_raised'][k], order=order, notes=notes, pats=pats))
     total = t['tune_total_lo'][n] + 256 * t['tune_total_hi'][n]
     intro = t['tune_intro_lo'][n] + 256 * t['tune_intro_hi'][n]
     k = t['tune_k_lo'][n] + 256 * t['tune_k_hi'][n]
