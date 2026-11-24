@@ -229,17 +229,21 @@ def main():
                 dith[s] = slides.index(seq)
         slide_id = {}
         flat = [ev for b in bl for ev in b]
-        held = {}                          # an attack's full length, its ties (also across blocks) included
-        for i, (s, d, a, e) in enumerate(flat):
-            if a and s is not None:
-                tot, j = d, i + 1
-                while j < len(flat) and not flat[j][2] and flat[j][0] == s:
-                    tot += flat[j][1]; j += 1
-                held.setdefault((s, e, d), []).append(tot)
+        k = 0
+        for b in bl:                       # each grace note's length: from its note's full held length
+            for ev in b:                   # (ties, also across blocks, included)
+                s, d, a, e = ev
+                if a and s is not None and e == 'grace':
+                    tot, j = d, k + 1
+                    while j < len(flat) and not flat[j][2] and flat[j][0] == s:
+                        tot += flat[j][1]; j += 1
+                    g = min(GRACE_FRAMES, tot * FRAMES_PER_Q // 2)
+                    ev[3] = ('grace', g)       # (events are lists: the length travels with the note)
+                k += 1
         for b in bl:
             for s, d, a, e in b:
-                if s is not None and a and e == 'grace' and (s, e, d) not in slide_id:
-                    g = min(GRACE_FRAMES, min(held[(s, e, d)]) * FRAMES_PER_Q // 2)
+                if s is not None and a and isinstance(e, tuple) and (s, e, d) not in slide_id:
+                    g = e[1]
                     seq = [point(note_hz(s + shift - 1))] * g + [point(note_hz(s + shift))]
                     if seq not in slides:
                         slides.append(seq)
