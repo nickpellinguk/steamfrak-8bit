@@ -379,7 +379,7 @@ function analyzeRow(s, r, prev) {
   const ways = FrakMirror.tasks(lit, prev);
   for (const [way, tk, end] of ways) {
     const res = schedRow(objs, tk);
-    if (res) { A.way = way; A.end = end; A.tasks = tk; A.parked = !!res.parked; if (objs.length) { A.first = res.strobes[0]; A.last = res.strobes[res.strobes.length - 1]; } break; }
+    if (res) { A.way = way; A.end = end; A.tasks = tk; A.parked = !!res.parked; A.fakeLeft = objs.length === 1 && res.strobes.length === 2 && !res.parked; if (objs.length) { A.first = res.strobes[0]; A.last = res.strobes[res.strobes.length - 1]; } break; }
   }
   if (!A.way) {
     A.errors.push('This row doesn\'t fit in the line budget (shared block from cycle 10, last store by 55)' +
@@ -389,7 +389,8 @@ function analyzeRow(s, r, prev) {
   }
   if (objs.length === 1) A.infos.push(A.parked
     ? 'One object: GRP1 is cleared after it and P1 is parked with one more strobe, late in the line (its copy is invisible), so its ghost is cancelled here and at the next renderer change (already counted).'
-    : 'One object, too far right to park P1 after it: GRP1 is cleared after it to stop its ghost here, and the ghost rule applies at the next renderer change.');
+    : A.fakeLeft ? 'One object, too far right to park P1 after it: an invisible copy at x 19 comes first (strobed in the horizontal blank, drawn with GRP1 = 0), so the row has two strobes and its ghost is cancelled (already counted).'
+    : 'One object: GRP1 is cleared after it to stop its ghost here, and the ghost rule applies at the next renderer change.');
   if (A.way === 'hide') A.infos.push('Drawn with the colour switch: the platform\'s mirror copy is hidden by switching COLUPF, rather than by rewriting the register.');
   return A;
 }

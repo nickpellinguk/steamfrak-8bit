@@ -56,7 +56,7 @@ def build(base):
     tabs = {}
     for sec, (v, xs, lit) in enumerate(SECTIONS):
         for k in range(2 * ROWS):
-            y = 32 * sec + k
+            y = 16 * sec + k
             tabs.setdefault('Stripe', [0] * 256)[y] = STRIPES[k % 8]
             tabs.setdefault('Lad', [0] * 256)[y] = 0x7E if k % 4 == 0 else 0x42
             for r in M.REGS:
@@ -142,7 +142,7 @@ VB:     sta WSYNC
         code, end, flat, way = res
         print('%s: drawn by %s' % (v, way))
         bodies.append((name, v, xs, code, end, flat))
-        o.append('        ldx #%d' % (32 * sec))
+        o.append('        ldx #%d' % (16 * sec))
         o += ['        jsr %s' % name] + ['        jsr %s_i' % name] * (ROWS - 1)
         if chained:                       # the next section follows straight on: a renderer change
             lines += 2 * ROWS
@@ -214,6 +214,10 @@ def main():
         # the single row parks P1 after its copy, so the next renderer's first strobe cancels the ghost
         ('single ladder x49', (49,), set()),
         ('+ then ladders x49, x118', (49, 118), set()),
+        # single far-right objects: no room to park, so an invisible copy at x 19 comes first
+        ('single ladder x106', (106,), set()),
+        ('+ then ladder x118', (118,), set()),
+        ('+ then ladders x61, x106', (61, 106), set()),
     ])
     base = os.path.join(outdir, 'mirror')
     tabs, bodies = build(base)
@@ -230,7 +234,7 @@ def main():
     skip = set(range(TX - 1, TX + 24))
     for sec, (v, xs, lit) in enumerate(SECTIONS):
         for k in range(2 * ROWS):
-            yv = 32 * sec + k
+            yv = 16 * sec + k
             want = {q: c for q, c in expected(lit, tabs, yv, xs).items() if q not in skip}
             got = {q: im.getpixel((int((q + 0.5) * sx), first + y0 + k)) for q in range(160)}
             got = {q: c for q, c in got.items() if c != bg and q not in skip}

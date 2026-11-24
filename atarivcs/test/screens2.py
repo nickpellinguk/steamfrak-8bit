@@ -84,6 +84,11 @@ for a, b in [
         # ghost rule measured in park_test.py: the old main copy is cancelled if this line's first
         # strobe ends at least one cycle before the strobe that made it
         ("        if 3 * c0 - 68 > main - 21:", "        if c0 >= (prev_last_x + 47) // 3:"),
+        # a single object with no room to clear GRP1 and park P1 after it (its copy finishes after
+        # end_limit - 3): an invisible copy at x 19 first (strobed in the horizontal blank, drawn
+        # with GRP1 = 0), so the row has two strobes and the ghost is cancelled without a clear
+        ("    if len(objs) == 1 and -(-(68 + objs[0][0] + 8) // 3) > 62:",
+         "    if len(objs) == 1 and -(-(68 + objs[0][0] + 8) // 3) + 3 > end_limit:"),
         # consecutive objects with the same graphics need no GRP1 rewrite (GRP1 keeps its value)
         ("        tasks.append((lo, hi, load(gfx), 'GRP1'))\n",
          "        if k == 0 or gfx != objs[k - 1][1] or objs[k - 1][2][0] == 'none':\n"

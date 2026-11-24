@@ -17,7 +17,9 @@
   function schedule(objs, prevLastColour, prevHadObjs, prevLastX, t0, endLimit, extra) {
     const tasks = [];                               // [lo, hi, ins, len, reg]
     objs = objs.slice();
-    if (objs.length === 1 && ceilDiv3(68 + objs[0].x + 8) > 62)
+    // a single object with no room to clear GRP1 and park P1 after it: an invisible copy at x 19
+    // first (strobed in the horizontal blank, drawn with GRP1 = 0), so the row has two strobes
+    if (objs.length === 1 && ceilDiv3(68 + objs[0].x + 8) + 3 > endLimit)
       objs.unshift({ x: 19, gfx: ['imm', 0], col: ['none', 0] });
     let afterMain = 0;
     if (prevLastX !== null && prevLastX !== undefined && objs.length) {
