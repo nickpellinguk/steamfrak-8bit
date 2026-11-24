@@ -36,6 +36,8 @@ LADDER_POLE, LADDER_RUNG = 0x18, 0x7E
 GEM = ['...XX...', '..X..X..', '.X....X.', 'X......X', '.X....X.', '..X..X..', '...XX...']
 KEY = ['.XX.....', 'X..X....', 'X..XXXXX', 'X..X.X.X', '.XX.....']
 T0, LIMIT = 14, 53
+ROWSTRIPES = '--rowstripes' in sys.argv     # one stripe colour per row (from a row table)
+ROW_STRIPES = [BLACK, MAGENTA, DARK, DARK]
 MAXX = 112                         # a strobe ending at 53
 CHANGES = []
 DROPPED = []
@@ -61,14 +63,17 @@ SCREENS = {
 _src = inspect.getsource(fr.schedule)
 for a, b in [
         ("    tasks.append((0, (68 + TROGG_X) // 3 - 1, ('lda Trogg,y', 4), 'GRP0'))\n", ""),
-        ("('lda PCol,y', 4)", "('Y', 0)"),
+        ("('lda PCol,y', 4)", "load(('stripe', 0))"),
         ("            c = 3              # any strobe", "            c = t0 + 3         # any strobe"),
         ("            need = 3 if ins in (ha, hx) else ln + 3",
          "            need = 3 if ins in (ha, hx, 'Y') else ln + 3"),
         ("            for r in (('a',) if '(' in ins else ('a', 'x')):   # no LDX (zp),y\n"
          "                held = ha if r == 'a' else hx\n",
-         "            for r in (('y',) if ins == 'Y' else ('a',)):     # X is the row index\n"
-         "                held = 'Y' if r == 'y' else ha\n"),
+         "            for r in (('y',) if ins == 'Y' else (('a', 'x') if FREEY else ('a',))):   # X is the row index; 'x' here means Y\n"
+         "                held = 'Y' if ins == 'Y' else (ha if r == 'a' else hx)\n"),
+        ("ins_l = ins if r == 'a' else ins.replace('lda', 'ldx')", "ins_l = ins if r == 'a' else ins.replace('lda', 'ldy')"),
+        ("ins_s = 'st%s%s %s' % (r, '.w' if st == 4 else '', reg)",
+         "ins_s = 'st%s%s %s' % ({'a': 'a', 'x': 'y', 'y': 'y'}[r], '.w' if st == 4 else '', reg)"),
         ("                res = search(end, rem - {i}, si, ha, hx)",
          "                res = search(end, rem - {i}, si, ha, hx)"),
 ]:
@@ -82,11 +87,12 @@ def _load(src):
     if kind == 'imm':
         return ('lda #$%02X' % v, 2)
     if kind == 'stripe':
-        return ('Y', 0)
+        return ('lda Stripe,x', 4) if ROWSTRIPES else ('Y', 0)
     return ('lda %s,x' % v, 4)
 
 
 _ns['load'] = _load
+_ns['FREEY'] = False
 exec(_src, _ns)
 schedule = _ns['schedule']
 
@@ -94,7 +100,7 @@ schedule = _ns['schedule']
 # ---- the screen as rows ---------------------------------------------------------------------
 def model(scr):
     rows = [{'pf': set(), 'objs': []} for _ in range(96)]
-    t = {n: [0] * 96 for n in ('EvenCol', 'OddCol', 'Ladder', 'Item')}
+    t = {n: [0] * 96 for n in ('EvenCol', 'OddCol', 'Ladder', 'Item', 'Stripe')}
     phase = [None] * 96
 
     def stripe(r, top):
@@ -103,6 +109,7 @@ def model(scr):
         assert phase[r] in (None, p), ('stripe clash at row', r)
         phase[r] = p
         t['EvenCol'][r], t['OddCol'][r] = p
+        t['Stripe'][r] = ROW_STRIPES[k // 2]
     for top, a, b in scr['platforms']:
         for r in range(top // 2, top // 2 + 4):
             rows[r]['pf'] |= set(range(a, b + 1))
@@ -170,9 +177,10 @@ def build(which, base):
         key = (pf, objs, prev)
         if key not in bodies:
             res, keep = None, list(objs)
-            uses_y = any(pf[0]) or any(pf[1]) or any(o[2][0] == 'stripe' for o in objs)
+            uses_y = not ROWSTRIPES and (any(pf[0]) or any(pf[1]) or any(o[2][0] == 'stripe' for o in objs))
             t0 = T0 if uses_y else T0 - 4
             while res is None:
+                _ns['FREEY'] = not uses_y        # Y is a second working register unless it holds the stripe
                 try:
                     res = schedule(pf, prev_pf, keep, prev_col, prev_objs, prev_x, t0=t0, end_limit=LIMIT)
                 except ValueError:
@@ -276,7 +284,7 @@ OS:     sta WSYNC
                 else:
                     o += ['        ' + s for s in c.split('\n') if s.strip()]
         o.append('BodiesEnd:\n        align 256')
-        for n in ('EvenCol', 'OddCol', 'Ladder', 'Item'):
+        for n in ('EvenCol', 'OddCol', 'Ladder', 'Item', 'Stripe'):
             o.append('        align 128      ; 96-byte row tables never cross a page (a crossing costs a cycle)')
             o.append('%s: .byte %s' % (n, ','.join('$%02X' % v for v in t[n])))
         o.append('        align 256\nTroggStrip: .byte ' + ','.join('$%02X' % v for v in trogg_strip))
@@ -330,10 +338,11 @@ def compare(png, rows, t, tx):
 
 
 if __name__ == '__main__':
-    which = sys.argv[1] if len(sys.argv) > 1 else 'fr'
-    outdir = os.path.abspath(sys.argv[2] if len(sys.argv) > 2 else os.path.join(HERE, 'out', 'screens2'))
+    args = [a for a in sys.argv[1:] if not a.startswith('--')]
+    which = args[0] if args else 'fr'
+    outdir = os.path.abspath(args[1] if len(args) > 1 else os.path.join(HERE, 'out', 'screens2'))
     os.makedirs(outdir, exist_ok=True)
-    base = os.path.join(outdir, which)
+    base = os.path.join(outdir, which + ('_rows' if ROWSTRIPES else ''))
     rows, t, runs, bodies, report, calls, labels = build(which, base)
     print('%s: %d runs, %d bodies' % (which, len(runs), len(bodies)))
     print('layout changes:', '; '.join(CHANGES))
@@ -345,7 +354,7 @@ if __name__ == '__main__':
             name, a, b - 1, n, fall, '' if fall <= 55 else '   <-- over the 55 budget'))
     calls_bytes = sum(2 if c.startswith('ldx') else 3 for c in calls)
     print('bodies %d bytes, call list %d bytes, row tables %d bytes, Trogg strip 96' % (
-        labels['BodiesEnd'] - labels['Bodies'], calls_bytes, 4 * 96))
+        labels['BodiesEnd'] - labels['Bodies'], calls_bytes, 5 * 96))
     png = tiatest.snapshot(base + '.bin', outdir)
     os.replace(png, base + '.png')
     im = Image.open(base + '.png')
