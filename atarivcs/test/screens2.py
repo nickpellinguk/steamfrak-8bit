@@ -38,8 +38,9 @@ KEY = ['.XX.....', 'X..X....', 'X..XXXXX', 'X..X.X.X', '.XX.....']
 T0, LIMIT = 14, 53
 BUFFER = '--buffer' in sys.argv             # Trogg: index strip in ROM + frame copied to a RAM buffer
 ODDINX = '--oddinx' in sys.argv             # the line INX in the odd prefix (shared block from 12)
+NOMIDSYNC = '--nomidsync' in sys.argv       # no STA WSYNC between a row's lines: the even line is padded to 76
 if BUFFER:
-    LIMIT = 53 if ODDINX else 51                                # odd line falls through by 53: the longer even tail
+    LIMIT = 53 if ODDINX or NOMIDSYNC else 51                                # odd line falls through by 53: the longer even tail
 LINES = '--lines' in sys.argv               # X counts lines: tables per line, INX in the even tail
 ROWSTRIPES = '--rowstripes' in sys.argv or LINES     # one stripe colour per row (from a row table)
 ROW_STRIPES = [BLACK, MAGENTA, DARK, DARK]
@@ -163,7 +164,7 @@ def model(scr):
     return rows, t
 
 
-def body_code(name, code, uses_y):
+def body_code(name, code, uses_y, end=None):
     ld = ['ldy EvenCol,x'] if uses_y else []
     lo = ['ldy OddCol,x'] if uses_y else []
     # even prefix falls into the shared block; the even tail falls into the odd line, whose prefix
@@ -173,12 +174,22 @@ def body_code(name, code, uses_y):
     out = ['%s:' % name, 'sta WSYNC', 'inc TrogPtr'] + ld + ['sec', 'bit $80'] + (['nop'] if odd else [])
     out += ['%s_s:' % name] + code + ['bcs %s_e' % name, 'inx', 'rts']
     out += ['%s_e:' % name, 'ldy #0', 'lda (TrogPtr),y'] + look + ['sta GRP0'] + (['inx'] if LINES and not odd else [])
+    if NOMIDSYNC:                    # pad the even line to exactly 76 cycles instead of STA WSYNC
+        tail = out[out.index('%s_e:' % name) + 1:]
+        n = 76 - (end + 3 + ncycles(tail))
+        assert n >= 0, ('even line too long', name, n)
+        if n == 1:
+            out[out.index('sta GRP0')] = 'sta.w GRP0'
+        elif n:
+            out.append(pad(n))
+        out += ['asl', 'sta ENAM0'] + lo + (['inx'] if odd else []) + ['clc', 'jmp %s_s' % name]
+        return out
     out += ['sta WSYNC', 'asl', 'sta ENAM0'] + lo + (['inx'] if odd else []) + ['clc', 'jmp %s_s' % name]
     return out
 
 
 def ncycles(code):
-    return sum(4 if i.startswith(('sta.w', 'stx.w', 'sty.w')) or i.endswith(',x') else cycles(i)
+    return sum(2 if len(i.split()) == 1 else 5 if '),y' in i else 4 if i.startswith(('sta.w', 'stx.w', 'sty.w')) or i.endswith(',x') else cycles(i)
                for chunk in code for i in (x.strip() for x in chunk.split('\n')) if i)
 
 
@@ -213,7 +224,7 @@ def build(which, base):
             code, end = res
             assert ncycles(code) == end - t0, (a, ncycles(code), end)
             name = 'R%d' % len(bodies)
-            bodies[key] = (name, body_code(name, code, uses_y), end + 2)
+            bodies[key] = (name, body_code(name, code, uses_y, end), end + 2)
             report.append((name, a, b, len(objs), end + 2))
         name = bodies[key][0]
         calls.append('ldx #%d' % (2 * a if LINES else a))
@@ -377,7 +388,7 @@ if __name__ == '__main__':
     which = args[0] if args else 'fr'
     outdir = os.path.abspath(args[1] if len(args) > 1 else os.path.join(HERE, 'out', 'screens2'))
     os.makedirs(outdir, exist_ok=True)
-    base = os.path.join(outdir, which + ('_lines' if LINES else '_rows' if ROWSTRIPES else '') + ('_buf' if BUFFER else '') + ('_oddinx' if ODDINX else ''))
+    base = os.path.join(outdir, which + ('_lines' if LINES else '_rows' if ROWSTRIPES else '') + ('_buf' if BUFFER else '') + ('_oddinx' if ODDINX else '') + ('_nms' if NOMIDSYNC else ''))
     rows, t, runs, bodies, report, calls, labels = build(which, base)
     print('%s: %d runs, %d bodies' % (which, len(runs), len(bodies)))
     print('layout changes:', '; '.join(CHANGES))
