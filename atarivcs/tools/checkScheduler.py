@@ -37,7 +37,7 @@ for n in range(N):
             code, end = F.schedule(((0, 0, 0), (0, 0, 0)), ((0, 0, 0), (0, 0, 0)),
                                    [(o['x'], tuple(o['gfx']), tuple(o['col'])) for o in objs], ('imm', 0), True,
                                    xs[-1] if xs else None, t0=10, end_limit=55, extra=list(tk))
-            py = {'end': end}
+            py = {'end': end, 'strobes': F.strobe_cycles(code, 10)}
         except ValueError:
             py = None
         cases.append({'objs': objs, 'extra': [[lo, hi, list(ld), reg] for lo, hi, ld, reg in tk], 'py': py,
@@ -54,7 +54,7 @@ let agree = 0, bad = [];
 for (const c of cases) {
   const xs = c.objs.map(o => o.x);
   const r = schedule(c.objs, ['imm', 0], true, xs.length ? xs[xs.length - 1] : null, 10, 55, c.extra);
-  if ((r === null) === (c.py === null)) agree++; else bad.push({ c, js: r });
+  if ((r === null) === (c.py === null) && (!r || JSON.stringify(r.strobes) === JSON.stringify(c.py.strobes))) agree++; else bad.push({ c, js: r });
   const ways = M.tasks(new Set(c.lit), c.prev);
   const mine = ways.filter(w => w[0] === c.way).map(w => norm(w[1]));
   if (mine.includes(norm(c.extra))) taskAgree++; else if (bad.length < 3) bad.push({ taskMismatch: c, js: ways });

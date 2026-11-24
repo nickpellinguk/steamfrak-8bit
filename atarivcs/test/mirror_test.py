@@ -56,7 +56,7 @@ def build(base):
     tabs = {}
     for sec, (v, xs, lit) in enumerate(SECTIONS):
         for k in range(2 * ROWS):
-            y = 32 * sec + k
+            y = 16 * sec + k
             tabs.setdefault('Stripe', [0] * 256)[y] = STRIPES[k % 8]
             tabs.setdefault('Lad', [0] * 256)[y] = 0x7E if k % 4 == 0 else 0x42
             for r in M.REGS:
@@ -123,15 +123,18 @@ VB:     sta WSYNC
         lda #0
         sta VBLANK''')
     bodies, lines = [], 0
+    prev = None
     for sec, (v, xs, lit) in enumerate(SECTIONS):
         name = 'P%d' % sec
         res = None
-        ways = M.tasks(lit, None)
+        chained = sec + 1 < len(SECTIONS) and SECTIONS[sec + 1][0].startswith('+')
+        ways = M.tasks(lit, prev if v.startswith('+') else None)
         if os.environ.get('PREFER_HIDE'):
             ways = sorted(ways, key=lambda w: w[0] != 'hide')
         for way, tk, endst in ways:
             try:
                 res = body(name, tk, xs) + (way,)
+                prev = endst
                 break
             except (ValueError, AssertionError):
                 continue
@@ -139,8 +142,11 @@ VB:     sta WSYNC
         code, end, flat, way = res
         print('%s: drawn by %s' % (v, way))
         bodies.append((name, v, xs, code, end, flat))
-        o.append('        ldx #%d' % (32 * sec))
+        o.append('        ldx #%d' % (16 * sec))
         o += ['        jsr %s' % name] + ['        jsr %s_i' % name] * (ROWS - 1)
+        if chained:                       # the next section follows straight on: a renderer change
+            lines += 2 * ROWS
+            continue
         o += ['        sta WSYNC', '        lda #0', '        sta PF1', '        sta PF2', '        sta GRP1',
               '        sta GRP0', '        sta ENAM0', '        lda #$%02X' % BG, '        sta COLUPF']
         o += ['        sta WSYNC'] * 3
@@ -204,7 +210,24 @@ def main():
         ('right only x96-111', (19, 52), rng(96, 111)),
         ('both halves, PF1 differs', (61,), rng(16, 39) | rng(112, 135)),
         ('symmetric x56-79 + x80-103', (19, 112), rng(56, 103)),
+        # a single object then, straight on, two objects whose first strobe is at the same cycle:
+        # the single row parks P1 after its copy, so the next renderer's first strobe cancels the ghost
+        ('single ladder x49', (49,), set()),
+        ('+ then ladders x49, x118', (49, 118), set()),
+        # single far-right objects: no room to park, so an invisible copy at x 19 comes first
+        ('single ladder x106', (106,), set()),
+        ('+ then ladder x118', (118,), set()),
+        ('+ then ladders x61, x106', (61, 106), set()),
+        # a left platform and a single far-right object: the platform's writes leave no room for the
+        # x 19 copy's early GRP1 clear, so the invisible copy is strobed further right (x 34)
+        ('left x16-47, single ladder x100', (100,), rng(16, 47)),
+        ('+ then ladder x118', (118,), rng(16, 47)),
+        ('+ then ladders x70, x100', (70, 100), rng(16, 47)),
     ])
+    # too many sections for one 4K ROM: --from=N / --to=N test a slice (start on an unchained one)
+    lo = int(next((a[7:] for a in sys.argv if a.startswith('--from=')), 0))
+    hi = int(next((a[5:] for a in sys.argv if a.startswith('--to=')), len(SECTIONS)))
+    SECTIONS[:] = SECTIONS[lo:hi]
     base = os.path.join(outdir, 'mirror')
     tabs, bodies = build(base)
     for name, v, xs, code, end, flat in bodies:  # noqa
@@ -220,7 +243,7 @@ def main():
     skip = set(range(TX - 1, TX + 24))
     for sec, (v, xs, lit) in enumerate(SECTIONS):
         for k in range(2 * ROWS):
-            yv = 32 * sec + k
+            yv = 16 * sec + k
             want = {q: c for q, c in expected(lit, tabs, yv, xs).items() if q not in skip}
             got = {q: im.getpixel((int((q + 0.5) * sx), first + y0 + k)) for q in range(160)}
             got = {q: c for q, c in got.items() if c != bg and q not in skip}
@@ -228,7 +251,7 @@ def main():
                 bad += 1
                 print('  %s line %2d: wrong/missing %s extra %s' % (v, k, sorted(q for q in want if got.get(q) != want[q])[:10],
                                                                    sorted(q for q in got if q not in want)[:10]))
-        y0 += 2 * ROWS + 4
+        y0 += 2 * ROWS + (0 if sec + 1 < len(SECTIONS) and SECTIONS[sec + 1][0].startswith('+') else 4)
     print('%d of %d lines differ from the model' % (bad, 2 * ROWS * len(SECTIONS)))
 
 
