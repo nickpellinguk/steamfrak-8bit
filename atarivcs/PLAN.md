@@ -302,6 +302,34 @@ table, strobes 21 px apart):
   left PF2 by 38, from cycle 10. Mirroring (reflect mode) doesn't help; it only removes right-half
   writes, which weren't the problem.
 
+## Mirrored playfield (decided)
+
+The game can't use the screen's outer 16 pixels on either side (sprite limits), so the playfield
+runs in **mirrored mode** (CTRLPF bit 0) and **PF0 is never written** (set to 0 once). In mirrored
+mode the right half runs PF2, PF1, PF0, so the PF0 areas are the screen edges (x 0-15, 144-159)
+and the middle of the screen is left PF2 meeting right PF2: platforms cross the centre with no
+special handling, and mirror-symmetric rows need no mid-line rewrite at all. Usable: x 16-143.
+
+* **Timing, measured** (`test/mirror_windows.py`): a playfield write landing at cycle T takes effect
+  from pixel 3T - 66, block by block (each 4-pixel block shows the value the register holds when
+  the block starts); a COLUPF write changes the colour from pixel 3T - 68. So a mid-line rewrite of
+  PF2 for the right half must land between the last left block and the first right block whose bits
+  differ: exactly cycle 48 if they differ at the centre (bit 7), 47-50 for bit 6, 45-51 for bit 5,
+  up to 54 for bit 3, and anywhere for PF1. Colour switches likewise depend on where a platform's
+  lit pixels end and its mirror's begin.
+* **Per-row tasks** (`tools/mirrorrows.py`): from a row's actual lit blocks and the state the row
+  above leaves (register values, colour), two ways to draw it: rewrite each register mid-line, or
+  (one-sided platforms) keep one value and hide the mirror copy with a COLUPF switch. Verified in
+  Stella (`test/mirror_test.py`, both ways: centre-crossing, one-sided left and right with ladders,
+  differing halves, symmetric).
+* **The editor runs the scheduler live** for every row (`editor/scheduler.js`, `editor/mirrorrows.js`,
+  ports cross-checked against the Python ones by `tools/checkScheduler.py`), so the windows
+  follow each row's real platforms instead of a precomputed table. `tools/feasibility.py` (repeat
+  mode) is no longer used by the editor.
+* Measured against repeat mode: the main play areas (x 16-47, 112-143) are as good or better;
+  centre-crossing platforms much better (three ladders: 422 layouts against 47); one-sided platforms
+  that reach the centre slightly worse (the colour switch then lands at exactly cycle 49).
+
 ## Optimisation pass (backlog)
 
 Parked until the design is settled; none of these change what a screen can show, only what it
