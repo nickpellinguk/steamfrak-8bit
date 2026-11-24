@@ -14,14 +14,12 @@ being scaled back:
 * **Single-screen rooms, no vertical scrolling.** Everything below about towers, scrolling, tiles
   and the 256-row level format is the earlier design, kept for reference until this plan is
   rewritten.
-* **A screen is a list of calls to reusable sections** (band routines), each customised by a
-  parameter and small tables, e.g.
-      LDX #0 : JSR Section1
-      LDX #0 : JSR Section2
-      LDX #4 : JSR Section3
-      LDX #4 : JSR Section3
-  so a room costs a few bytes of calls and a level type (sections, graphics, rooms, game logic)
-  fits in a 4K bank.
+* **A screen is a list of calls to two-line renderers** (one row each, ending `INX / RTS`), each
+  customised by a table index in X, e.g.
+      LDX #PLAT : JSR B_2 : JSR B_2 : JSR B_2
+      LDX GemState : JSR A_2 : JSR A_2
+  so a room costs 3 bytes per row plus its `LDX`s, and a level type (renderers, graphics, rooms,
+  game logic) fits in a 4K bank. See "Renderer interface" below.
 * Sections place objects with **sleds** (`JMP (ptr)` into runs of `CMP #$C9`, ending `$C5 $EA`,
   one cycle per entry byte, using no registers) and one-sided platform rows by switching `COLUPF`
   at the centre of the line (`test/halfpf_test.py`).
@@ -55,8 +53,8 @@ What it costs and gives:
   section used it). A is only held across the odd line's `STA WSYNC`, so the section must not use
   A between the Trogg read and that `WSYNC`.
 * **The odd line's right-hand side is free** for flow control: the section's loop branch, or the
-  transition to the next section (`RTS` 6 + `LDX #n` 2 + `JSR` 6 = 14 cycles, plus the next
-  section's entry setup).
+  return to the call list (`INX` 2 + `RTS` 6, then [`LDX`] + `JSR` 6 into the next body);
+  see the budget rule under "Renderer interface".
 * **The yoyo enable lands in the horizontal blank,** so the yoyo's row is never cut partway across
   wherever it is horizontally. Missile 0 is positioned once per frame; when the yoyo isn't out,
   `RESMP0` parks it inside Trogg (in his colour).
@@ -136,6 +134,64 @@ carry flag says which line it is:
   an index that differs per line (the odd prefix does `INX`, tables interleaved even/odd: 2
   cycles) or from a carry branch at the point of difference (2-3 cycles, plus padding to
   rebalance).
+
+**Renderer interface (tested: `test/chain_test.py`).** Every renderer is one row (two lines),
+line-shared by carry, and ends `INX / RTS`; the level's call list sets X once per run and calls
+the body once per row:
+
+            ldx #PLAT        ; or ldx zp (a removable object's state: its rows or the empty rows)
+            jsr B_2          ; row 1
+            jsr B_2          ; row 2 (X has stepped)
+            ldx GemState
+            jsr A_2
+
+    B_2:    sta WSYNC
+            inc TrogPtr
+            ldy EvenCol,x    ; even-line values from even tables
+            sec
+            jmp B_sh
+    B_odd:  sta WSYNC
+            asl
+            sta ENAM0
+            ldy OddCol,x     ; odd-line values from odd tables
+            clc
+            bit $80          ; both prefixes reach B_sh at the same cycle
+    B_sh:   ...shared line...
+            bcs B_even
+            inx              ; next row (carry-safe)
+            rts
+    B_even: ldy #0
+            lda (TrogPtr),y
+            sta GRP0
+            jmp B_odd
+
+* **No row counter and no INX inside the line code.** X steps once per row in the body's exit, so
+  every table has one entry per row; values that differ between a row's two lines use separate
+  even and odd tables loaded in the prefixes. The trailing `INX` on a run's last row is harmless.
+* **Renderers can be mixed row by row** while X keeps counting (`jsr A_2 / jsr B_2`), sharing one
+  set of row indices; tables for all renderers in a bank share index ranges (e.g. platform rows
+  0-3, gem rows 4-7, empty rows 8-11).
+* **Heights are free** (any number of `JSR`s). Where call lists get too long, a chain
+  `R_8: jsr R_2 / R_6: jsr R_2 / R_4: jsr R_2 / R_2: body` still works with these bodies, but costs
+  6 more cycles at entry.
+* **Cost:** 3 bytes of call list per row plus 2-3 per `LDX`; bodies are about 60 bytes.
+* **Removable objects:** X from a zero-page byte pointing at either the object's rows or an
+  all-zero set of rows (nothing drawn, no collision).
+
+**Budget rule.** The next body's `STA WSYNC` must write by cycle 75 (a write on 76 loses a whole
+line). With the odd line falling through its final `BCS` at cycle c (taken by the even line), the
+path is `INX` 2 + `RTS` 6 + [`LDX`] + `JSR` 6 + `STA WSYNC` 3, so:
+
+| Next | Odd line must fall through by |
+|---|---|
+| another row (no `LDX`) | cycle 58 |
+| a new run with `LDX #` | cycle 56 |
+| a new run with `LDX zp` | cycle 55 |
+
+Design every renderer to the 55 limit so any renderer can follow any other. Tested: B (platform +
+left ladder) falls through at 51; A (ladder x 19 - object x 64 - ladder x 112) at 55, after its
+right ladder was pulled in from x 118 to save the 2 cycles that A -> B with `LDX zp` needed.
+The even line has no such limit (its tail is Trogg's read and a `JMP`, ending by about 70).
 
 **Conventions on entry and exit of a section (and every line):**
 
