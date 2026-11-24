@@ -260,7 +260,28 @@ table, strobes 21 px apart):
 | Left only, platform in PF1 (x 16-47) | two: 118 of 325 pairs, first ladder x 46-82; verified in Stella |
 | Left only, PF1 + PF0 written a line ahead (x 0-47) | two: 69 pairs (the run's first line must not need PF0) |
 | Left only, PF0 + PF1 both in the horizontal blank | none: COLUPF and PF0 both due by 22 |
-| Ladders only | three: 385 of 525 sets |
+| Right only, PF1 + PF2 (x 96-159) | two: 115 pairs, first ladder x 19-73; verified in Stella |
+| Right only, PF2 (x 128-159) | three: 131 sets (266 pairs); verified in Stella |
+| Both halves, PF2 per half (x 48-79, 128-159) | two: 212 pairs; verified in Stella |
+| Ladders only | five: x 19, 40, 61, 82, 103 at most (one GRP1 write, then strobes); verified in Stella |
+
+**The four renderer families** (all verified in Stella: `test/ladders_test.py`,
+`test/leftpf1_test.py`, `test/rightpf_test.py`, `test/bothpf_test.py`):
+
+| Family | Platform registers | Ladders |
+|---|---|---|
+| Ladders only | none | 1-5 |
+| Left platform only | PF1 (x 16-47); PF0 only written a line ahead | 2 |
+| Right platform only | PF1 + PF2 (x 96-159), or PF2 alone | 2, or 3 with PF2 alone |
+| Both halves | PF1 + PF2 per half / PF2 per half | 0 / 2 |
+
+* **Same graphics, one GRP1 write:** consecutive objects with the same graphic (ladders) need no
+  GRP1 rewrite; that is what makes four and five ladders fit.
+* **Frame setup parks P1:** a late `RESP1` in vertical blank, later than any renderer's first
+  strobe, so the frame's first renderer cancels the main copy left by the bottom of the screen.
+* **Renderer changes:** the next renderer's first strobe must be earlier than the previous one's
+  last (the generator checks it, and otherwise holds GRP1 at 0 past the old main copy); a body
+  with no P1 objects after one with them clears GRP1.
 
 * **Left-only platforms:** COLUPF is the stripe on the left and switches to the background between
   the platform's last pixel and the right half's repeat (for PF1: cycles 39-49).
