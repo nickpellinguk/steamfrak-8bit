@@ -1,0 +1,918 @@
+<meta charset="utf-8">
+<title>Frak VCS Editor</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a console workbench. Toolbar on top; on the Levels tab a tool rail, the 160x192 screen with a
+   per-row verdict gutter, and an inspector; on the Graphics tab sprite editors in a wrapping grid. */
+:root {
+  --bg: #121418; --panel: #1b1e24; --panel2: #22262e; --line: #2e333d; --fg: #e8e4d8; --muted: #9ba1ab;
+  --accent: #e9a23b; --accent-ink: #1b1306; --ok: #62c06d; --warn: #e2b53c; --err: #ec5b52; --info: #6fa8dc;
+  --display: "Chakra Petch", "Segoe UI", system-ui, sans-serif;
+  --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--fg); font: 14px/1.45 var(--body); margin: 0; }
+.wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 12px 24px; }
+h1, h2, h3 { font-family: var(--display); font-weight: 600; letter-spacing: .02em; margin: 0; text-wrap: balance; }
+h1 { font-size: 20px; }
+h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+h3 { font-size: 14px; }
+button, select, input, textarea { font: inherit; color: var(--fg); }
+button { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+button:hover { border-color: var(--muted); }
+button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible, canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+select, input[type=text], input[type=number] { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+input[type=number] { width: 70px; }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.bar .grow { flex: 1 1 auto; }
+.tabs { display: flex; gap: 4px; }
+.group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.label { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.main { display: grid; grid-template-columns: 190px auto minmax(280px, 1fr); gap: 16px; padding-top: 14px; align-items: start; }
+@media (max-width: 1100px) { .main { grid-template-columns: 1fr; } }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.rail button { width: 100%; text-align: left; }
+.rail .tool-grid { display: grid; grid-template-columns: 1fr; gap: 6px; }
+.rail label.row-inline { flex-wrap: nowrap; gap: 8px; }
+.screenbox { overflow-x: auto; min-width: 0; }
+canvas.screen { display: block; image-rendering: pixelated; cursor: crosshair; border-radius: 4px; touch-action: none; }
+.status { font-family: var(--mono); font-size: 12px; color: var(--muted); min-height: 1.5em; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; border: 1px solid var(--line); }
+.chip.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+.chip.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.chip.err { color: var(--err); border-color: color-mix(in srgb, var(--err) 45%, transparent); }
+.chip.info { color: var(--info); border-color: color-mix(in srgb, var(--info) 45%, transparent); }
+.issues { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 300px; overflow-y: auto; }
+.issues li { display: grid; grid-template-columns: 54px 1fr; gap: 8px; padding: 5px 6px; border-radius: 6px; cursor: pointer; border-left: 3px solid transparent; background: var(--panel2); }
+.issues li.err { border-left-color: var(--err); } .issues li.warn { border-left-color: var(--warn); } .issues li.info { border-left-color: var(--info); }
+.issues li:hover { outline: 1px solid var(--line); }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 3px 10px; font-size: 13px; }
+.kv dt { color: var(--muted); } .kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.meter { display: grid; gap: 3px; }
+.meter .track { height: 8px; background: var(--panel2); border-radius: 999px; overflow: hidden; border: 1px solid var(--line); }
+.meter .fill { height: 100%; background: var(--ok); }
+.meter.warn .fill { background: var(--warn); } .meter.err .fill { background: var(--err); }
+.meter .row { display: flex; justify-content: space-between; font-size: 12px; gap: 8px; }
+.gfx { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; padding-top: 14px; }
+.pix { display: grid; grid-template-columns: repeat(8, 22px) auto; gap: 1px; user-select: none; touch-action: none; }
+.pix .c { width: 22px; height: 18px; background: var(--panel2); border: 1px solid var(--line); cursor: pointer; }
+.pix .c.y { box-shadow: inset 0 0 0 2px var(--warn); }
+.pix .hx { font: 11px var(--mono); color: var(--muted); padding-left: 6px; align-self: center; }
+.swatches { display: grid; grid-template-columns: repeat(16, 1fr); gap: 2px; max-width: 360px; }
+.swatches button { aspect-ratio: 1; padding: 0; border-radius: 3px; border: 1px solid transparent; min-width: 0; }
+.swatches button.on { border: 2px solid var(--fg); }
+.swatch { display: inline-block; width: 18px; height: 18px; border-radius: 4px; border: 1px solid var(--line); vertical-align: middle; }
+.row-inline { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.note { font-size: 12px; color: var(--muted); }
+textarea { width: 100%; min-height: 220px; background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; font: 12px var(--mono); padding: 8px; }
+.overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 20; }
+.dialog { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; width: min(720px, 100%); display: flex; flex-direction: column; gap: 10px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 12px; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <div class="bar">
+    <h1>Frak VCS Editor</h1>
+    <div class="tabs" role="tablist">
+      <button id="tab-levels" class="on" role="tab">Levels</button>
+      <button id="tab-gfx" role="tab">Graphics</button>
+    </div>
+    <div class="group">
+      <span class="label">Level type</span>
+      <select id="sel-type" aria-label="Level type (bank)"></select>
+      <button id="btn-type-ren" title="Rename level type">Rename</button>
+    </div>
+    <div class="group">
+      <span class="label">Screen</span>
+      <select id="sel-screen" aria-label="Screen"></select>
+      <button id="btn-scr-new">New</button>
+      <button id="btn-scr-dup">Duplicate</button>
+      <button id="btn-scr-ren">Rename</button>
+      <button id="btn-scr-del">Delete</button>
+    </div>
+    <span class="grow"></span>
+    <div class="group">
+      <button id="btn-io">Import / export</button>
+      <span id="rules-state" class="chip info">Loading rules</span>
+    </div>
+  </div>
+
+  <section id="view-levels" class="main">
+    <aside class="panel rail">
+      <h2>Tools</h2>
+      <div class="tool-grid" id="tools"></div>
+      <div id="item-kind-box" class="group" hidden>
+        <span class="label">Item</span>
+        <select id="sel-kind" aria-label="Item kind"></select>
+      </div>
+      <h2>View</h2>
+      <label class="row-inline"><input type="checkbox" id="chk-grid" checked> P1 grid</label>
+      <label class="row-inline"><input type="checkbox" id="chk-blocks"> Playfield blocks</label>
+      <label class="row-inline"><input type="checkbox" id="chk-bands" checked> Shade problem rows</label>
+      <h2>Keys</h2>
+      <p class="note">Click an object to select it. Arrow keys nudge it (3 px for ladders and items, a 4 px block for platforms, a row up or down). Delete removes it. Click the gutter to inspect a row.</p>
+    </aside>
+
+    <div class="screenbox">
+      <canvas id="screen" class="screen" width="500" height="576" tabindex="0" aria-label="Screen editor, 160 by 192 pixels"></canvas>
+      <div class="status" id="status">&nbsp;</div>
+      <div class="legend">
+        <span><i style="background:var(--ok)"></i>fits</span>
+        <span><i style="background:var(--warn)"></i>fits, with a caveat</span>
+        <span><i style="background:var(--err)"></i>can't be drawn</span>
+        <span><i style="background:#4b5260"></i>empty row</span>
+      </div>
+    </div>
+
+    <aside style="display:flex;flex-direction:column;gap:16px;min-width:0">
+      <div class="panel" id="inspector">
+        <h2>Row</h2>
+        <div id="row-info" class="note">Click the gutter beside the screen, or any object, to inspect its row.</div>
+      </div>
+      <div class="panel">
+        <div class="row-inline"><h2>Selection</h2></div>
+        <div id="sel-info" class="note">Nothing selected.</div>
+      </div>
+      <div class="panel">
+        <div class="row-inline" style="justify-content:space-between"><h2>Problems on this screen</h2><span id="issue-count"></span></div>
+        <ul class="issues" id="issues"></ul>
+      </div>
+      <div class="panel">
+        <h2>Budgets</h2>
+        <div id="budgets" style="display:flex;flex-direction:column;gap:10px"></div>
+        <div class="row-inline note">
+          <label>Game code in this bank <input type="number" id="num-logic" min="0" max="4096" step="64"> bytes</label>
+          <label>Game RAM <input type="number" id="num-ram" min="0" max="128" step="1"> bytes</label>
+        </div>
+      </div>
+    </aside>
+  </section>
+
+  <section id="view-gfx" hidden>
+    <div class="gfx" id="gfx"></div>
+  </section>
+</div>
+
+<div class="overlay" id="io" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="io-title">
+    <h3 id="io-title">Import / export</h3>
+    <p class="note">This is the whole project as JSON: graphics, level types and screens. Copy it to keep it, or paste a saved project and choose Load. The editor also keeps your work in this browser between visits.</p>
+    <textarea id="io-text" spellcheck="false" aria-label="Project JSON"></textarea>
+    <div class="row-inline">
+      <button id="io-copy">Copy</button>
+      <button id="io-load">Load from text</button>
+      <label class="row-inline"><span class="label">or open a file</span> <input type="file" id="io-file" accept=".json,application/json"></label>
+      <span class="grow"></span>
+      <button id="io-reset">Reset to the sample project</button>
+      <button id="io-close">Close</button>
+    </div>
+    <div id="io-msg" class="note"></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+// ---------------------------------------------------------------- constants -------------------
+const PAL = ['000000','3f3f3e','646463','848483','a2a2a1','babab9','d2d2d1','eaeae9','3d3d00','5e5e0a','7b7b15','999920','b4b42a','cdcd34','e6e63e','fdfd48','712300','863d0b','995718','ad6f26','bd8632','cd9b3e','dcb049','eac254','861500','9a2f0e','ae481e','c0612f','d1773e','e08d4d','efa25b','fdb568','8a0000','9e1312','b12827','c23d3c','d25150','e26463','ef7574','fd8685','790058','8d126e','a02784','b13b98','c04eaa','d061bc','dd71cc','ea82dc','450078','5d128f','7227a4','883bb9','9b4eca','ae61dc','bf71ec','d082fb','0e0085','291399','4328ad','5d3dbf','7451d0','8b64df','a175ee','b586fb','00008a','12139d','2428b0','373dc1','4951d1','5a64e0','6a75ee','7986fb','00157d','123193','244ca7','3767bb','4980cc','5a97dd','6aaeed','79c2fb','002758','124574','24628d','377ea7','4997be','5ab0d4','6ac7e8','79ddfb','003526','125742','24765d','379576','49b18e','5acca5','6ae5bb','79fdcf','003900','135b12','287927','3d973c','51b350','64cd63','75e674','86fd85','0e3200','2b5411','477323','639336','7db048','95cb59','ade569','c2fd78','272e00','454e0f','626b21','7e8833','97a343','b0bc53','c7d462','ddea70','3d2300','5e420d','7b5f1d','997b2d','b4963b','cdaf4a','e6c757','fddd64'].map(h => '#' + h);              // Stella's NTSC palette, colour value >> 1
+const col = v => PAL[(v >> 1) & 127];
+const W = 160, LINES = 192, ROWS = 96, S = 3, GUT = 20;
+const P1MIN = 19, P1MAX = 112, SPACING = 21;
+const REG_BLOCKS = { L: { PF0: [0, 3], PF1: [4, 11], PF2: [12, 19] }, R: { PF0: [20, 23], PF1: [24, 31], PF2: [32, 39] } };
+const FAMILY = {
+  none: 'Ladders only', L1: 'Left platform (PF1)', L2: 'Left platform (PF2)', L12: 'Left platform (PF1+PF2)',
+  L01: 'Left platform (PF0 a line ahead + PF1)', R1: 'Right platform (PF1)', R2: 'Right platform (PF2)',
+  R12: 'Right platform (PF1+PF2)'
+};
+const familyName = v => FAMILY[v] || (v.startsWith('B') ? 'Both halves (left ' + regName(v.slice(1).split('_')[0]) + ', right ' + regName(v.split('_')[1]) + ')' : v);
+const regName = c => c === '1' ? 'PF1' : c === '2' ? 'PF2' : 'PF1+PF2';
+const BODY_BYTES = 60, KERNEL_BYTES = 360, BANK = 4096;
+
+// ---------------------------------------------------------------- sample project --------------
+function bitsOf(s) { return parseInt(s.replace(/X/g, '1').replace(/\./g, '0'), 2); }
+const TROGG = ['...XX...', '..XXXX..', '.XXXXX..', '.XX.XXX.', '.XXXXXX.', '..XXX...', '.XXXXX..',
+  'XXXXXXX.', 'X.XXXX.X', '..XXXX..', '..X..X..', '..X..X..', '.XX..XX.'].map(bitsOf);
+const CLIMB = ['...XX...', '..XXXX..', '..XXXX..', 'X.XXXX..', 'XXXXXXX.', '..XXXX..', '..XXXX..',
+  '.XXXXXX.', '.X.XX.X.', '..XXXX..', '..X..X..', '.XX..XX.', '.X....X.'].map(bitsOf);   // bit 0 clear: no yoyo on ladders
+function sampleProject() {
+  const plat = (top, x0, x1) => ({ b0: Math.floor(x0 / 4), b1: Math.floor((x1 + 1) / 4) - 1, top: top >> 1, rows: 4 });
+  const step = (top, x) => { const b = Math.round(x / 4); return { b0: b, b1: b + 1, top: top >> 1, rows: 4 }; };
+  const lad = (x, a, b) => ({ x, top: a >> 1, bottom: b >> 1 });
+  const item = (kind, x, bottom) => ({ kind, x, bottom, removable: kind !== 'key' });
+  const fr = {
+    name: 'FR (original layout)',
+    platforms: [plat(24, 12, 71), plat(88, 12, 63), plat(176, 8, 67), plat(24, 92, 139), plat(88, 100, 139),
+      plat(176, 88, 127), plat(176, 140, 155), step(36, 145), step(52, 148), step(68, 145), step(104, 130),
+      step(120, 136), step(136, 145), step(152, 148)],
+    ladders: [lad(28, 32, 176), lad(97, 32, 176)],
+    items: [item('gem', 64, 24), item('gem', 55, 88), item('gem', 133, 88), item('key', 118, 176)],
+    trogg: { x: 48, row: 75 }
+  };
+  const ak = {
+    name: 'AK (original layout)',
+    platforms: [plat(24, 24, 59), plat(104, 24, 59), plat(176, 16, 67), plat(24, 84, 103), plat(88, 92, 119),
+      plat(176, 84, 107), plat(176, 140, 155), step(40, 145), step(56, 136), step(72, 127), step(120, 130),
+      step(136, 139), step(152, 148)],
+    ladders: [lad(28, 32, 176), lad(55, 32, 176), lad(88, 32, 176)],
+    items: [item('gem', 40, 24), item('gem', 112, 88), item('gem', 148, 176)],
+    trogg: { x: 32, row: 75 }
+  };
+  const starter = {
+    name: 'Starter (within the rules)',
+    platforms: [
+      { b0: 4, b1: 11, top: 20, rows: 4 },        // left ledge in PF1, x 16-47
+      { b0: 24, b1: 39, top: 28, rows: 4 },       // right ledge in PF1+PF2, x 96-159
+      { b0: 32, b1: 39, top: 44, rows: 4 },       // right ledge in PF2, x 128-159
+      { b0: 4, b1: 11, top: 60, rows: 4 },        // left ledge in PF1 (ladder 31 passes behind it)
+      { b0: 12, b1: 19, top: 84, rows: 4 },       // floor: PF2 on both halves
+      { b0: 32, b1: 39, top: 84, rows: 4 }
+    ],
+    ladders: [lad(31, 48, 168), lad(61, 48, 120), lad(58, 128, 168)],
+    items: [item('gem', 34, 40), item('gem', 88, 120), item('key', 103, 168)],
+    trogg: { x: 56, row: 83 }
+  };
+  return {
+    version: 1,
+    graphics: {
+      background: 0xAA,
+      stripes: [0x00, 0x58, 0x58, 0x00, 0xA4, 0xA4, 0xA4, 0xA4],
+      ladder: { pole: 0x42, rung: 0x7E, every: 4, phase: 0 },
+      trogg: { colour: 0x1E, frames: [{ name: 'Walk', rows: TROGG.slice(), yoyoRow: 8 }, { name: 'Climb', rows: CLIMB.slice(), yoyoRow: -1 }] },
+      items: [
+        { kind: 'gem', name: 'Gem', colour: 0x00, rows: ['...XX...', '..X..X..', '.X....X.', 'X......X', '.X....X.', '..X..X..', '...XX...'].map(bitsOf) },
+        { kind: 'key', name: 'Key', colour: 0x1E, rows: ['.XX.....', 'X..X....', 'X..XXXXX', 'X..X.X.X', '.XX.....'].map(bitsOf) },
+        { kind: 'scrubbly', name: 'Scrubbly', colour: 0x58, rows: ['..XXXX..', '.XXXXXX.', 'XX.XX.XX', 'XXXXXXXX', 'XXXXXXXX', '.XX..XX.', 'XXXXXXXX', 'X.XXXX.X',
+          'XXXXXXXX', 'XXXXXXXX', '.XXXXXX.', '.XXXXXX.', '..X..X..', '..X..X..', '.XX..XX.', 'XXX..XXX'].map(bitsOf) }
+      ]
+    },
+    budget: { logic: 1280, ram: 72 },
+    types: [{ name: 'Letters', screens: [starter, fr, ak] }, { name: 'Type 2', screens: [blankScreen('Screen 1')] }, { name: 'Type 3', screens: [blankScreen('Screen 1')] }]
+  };
+}
+function blankScreen(name) { return { name, platforms: [], ladders: [], items: [], trogg: { x: 72, row: 75 } }; }
+
+// ---------------------------------------------------------------- state -----------------------
+let P = load() || sampleProject();
+let typeI = 0, scrI = 0, tool = 'select', kind = 'gem', sel = null, rowSel = null, FEAS = null, drag = null, hoverRow = null;
+const scr = () => P.types[typeI].screens[scrI];
+function load() { try { const s = localStorage.getItem('frak-vcs-editor'); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
+function save() { try { localStorage.setItem('frak-vcs-editor', JSON.stringify(P)); } catch (e) { /* storage blocked: work stays in this tab */ } }
+
+// ---------------------------------------------------------------- rules -----------------------
+fetch('feasibility.json').then(r => r.json()).then(d => {
+  const fits = {};
+  for (const [v, pats] of Object.entries(d.fits)) {
+    fits[v] = {};
+    for (const [p, list] of Object.entries(pats)) {
+      const m = new Map();
+      for (const s of list) { const [xs, f, l] = s.split(':'); m.set(xs, [+f, +l]); }
+      fits[v][p] = m;
+    }
+  }
+  FEAS = { grid: d.grid, fits };
+  const n = Object.values(fits).reduce((a, p) => a + Object.values(p).reduce((b, m) => b + m.size, 0), 0);
+  const chip = document.getElementById('rules-state');
+  chip.textContent = n.toLocaleString() + ' layouts known'; chip.className = 'chip ok';
+  refresh();
+}).catch(() => {
+  const chip = document.getElementById('rules-state');
+  chip.textContent = 'Rules file missing'; chip.className = 'chip err';
+  chip.title = 'feasibility.json could not be loaded; run atarivcs/tools/feasibility.py and serve this folder over HTTP';
+  refresh();
+});
+
+const snapX = x => Math.max(P1MIN, Math.min(154, P1MIN + Math.round((x - P1MIN) / 3) * 3));
+const onGrid = x => x >= P1MIN && (x - P1MIN) % 3 === 0;
+const itemDef = k => P.graphics.items.find(i => i.kind === k) || P.graphics.items[0];
+const itemLines = it => [it.bottom - itemDef(it.kind).rows.length, it.bottom];   // [first, end)
+
+function rowBlocks(s, r) {
+  const b = new Set();
+  for (const p of s.platforms) if (r >= p.top && r < p.top + p.rows) for (let k = p.b0; k <= p.b1; k++) b.add(k);
+  return b;
+}
+function regsUsed(blocks, side) {
+  const out = [];
+  for (const [reg, [a, z]] of Object.entries(REG_BLOCKS[side])) { for (let k = a; k <= z; k++) if (blocks.has(k)) { out.push(reg); break; } }
+  return out;
+}
+function variantOf(L, R) {
+  const has = (a, r) => a.includes(r);
+  const code = a => a.length === 2 ? '12' : a[0] === 'PF1' ? '1' : '2';
+  if (!L.length && !R.length) return { v: 'none' };
+  if (!R.length) {
+    if (has(L, 'PF0')) {
+      if (has(L, 'PF2')) return { err: 'A left platform can use PF0 (x 0-15) only together with PF1 (x 16-47), not PF2 (x 48-79): COLUPF and PF0 are both due by cycle 22.' };
+      return { v: 'L01' };
+    }
+    return { v: 'L' + code(L) };
+  }
+  if (!L.length) {
+    if (has(R, 'PF0')) return { err: 'A right platform can\'t touch x 80-95 (PF0): the stripe colour has to switch on exactly at pixel 80, and nothing fits around it.' };
+    return { v: 'R' + code(R) };
+  }
+  if (has(L, 'PF0') || has(R, 'PF0')) return { err: 'With platforms on both halves, neither may touch PF0 (x 0-15 or x 80-95): the horizontal blank is already full.' };
+  return { v: 'B' + code(L) + '_' + code(R) };
+}
+
+function rowObjects(s, r, blocks) {
+  const objs = [];
+  const lines = [2 * r, 2 * r + 1];
+  s.ladders.forEach((l, i) => {
+    if (r < l.top || r >= l.bottom) return;
+    let behind = false;
+    for (let x = l.x; x < l.x + 8; x++) if (blocks.has(x >> 2)) behind = true;
+    if (!behind) objs.push({ t: 'L', x: l.x, ref: ['ladder', i] });
+  });
+  s.items.forEach((it, i) => {
+    const [a, z] = itemLines(it);
+    if (lines.some(y => y >= a && y < z)) objs.push({ t: 'O', x: it.x, ref: ['item', i] });
+  });
+  objs.sort((a, b) => a.x - b.x);
+  return objs;
+}
+
+function analyzeRow(s, r) {
+  const blocks = rowBlocks(s, r);
+  const L = regsUsed(blocks, 'L'), R = regsUsed(blocks, 'R');
+  const vr = variantOf(L, R);
+  const objs = rowObjects(s, r, blocks);
+  const A = { r, L, R, v: vr.v || 'unsupported', objs, errors: [], warnings: [], infos: [], first: null, last: null };
+  A.pattern = objs.map(o => o.t).join('');
+  A.xs = objs.map(o => o.x).join(',');
+  A.key = A.v + '|' + A.pattern + '|' + A.xs;
+  A.empty = !blocks.size && !objs.length;
+  if (vr.err) A.errors.push(vr.err);
+  for (const o of objs) {
+    if (!onGrid(o.x)) A.errors.push((o.t === 'L' ? 'Ladder' : 'Item') + ' at x ' + o.x + ' is off the P1 grid: x must be 19, 22, 25 ... (3-pixel steps).');
+    else if (o.x > P1MAX) A.errors.push((o.t === 'L' ? 'Ladder' : 'Item') + ' at x ' + o.x + ' is too far right: P1 objects stop at x 112 (the last strobe must end by cycle 53).');
+  }
+  for (let i = 1; i < objs.length; i++) if (objs[i].x - objs[i - 1].x < SPACING)
+    A.errors.push('Objects at x ' + objs[i - 1].x + ' and ' + objs[i].x + ' are closer than 21 px: P1 strobes must be at least 7 cycles apart.');
+  if (A.errors.length || !FEAS) return A;
+  if (!objs.length && A.v === 'none') return A;      // a blank row: the empty renderer
+  const table = FEAS.fits[A.v] && FEAS.fits[A.v][A.pattern];
+  if (!table) {
+    const nO = objs.filter(o => o.t === 'O').length;
+    if (nO && A.v !== 'none') A.errors.push('Coloured items can\'t share a row with a platform: no layout fits in the line budget.');
+    else if (nO > 2) A.errors.push('At most two coloured items fit on a row.');
+    else A.errors.push('Too many objects for this family (' + familyName(A.v) + ').');
+    return A;
+  }
+  const hit = table.get(A.xs);
+  if (!hit) {
+    A.errors.push('This layout doesn\'t fit in the line budget (shared block from cycle 10, last store by 53).');
+    A.suggest = suggest(A, table);
+    return A;
+  }
+  [A.first, A.last] = hit;
+  if (A.v === 'L01') A.warnings.push('PF0 is written one line ahead, late in the line: the row above must already have set this row\'s left-edge pattern.');
+  if (objs.length === 1) A.infos.push('One object: GRP1 is cleared after it every line to stop its ghost (about 5 cycles, already counted).');
+  return A;
+}
+function suggest(A, table) {
+  const out = [];
+  A.objs.forEach((o, k) => {
+    let best = null;
+    for (const g of FEAS.grid) {
+      const xs = A.objs.map((p, j) => j === k ? g : p.x);
+      if (xs.some((x, j) => j && x <= xs[j - 1])) continue;
+      if (table.has(xs.join(',')) && (best === null || Math.abs(g - o.x) < Math.abs(best - o.x))) best = g;
+    }
+    if (best !== null) out.push((o.t === 'L' ? 'ladder' : 'item') + ' at ' + o.x + ' → ' + best);
+  });
+  return out;
+}
+
+function analyzeScreen(s) {
+  const rows = [];
+  for (let r = 0; r < ROWS; r++) rows.push(analyzeRow(s, r));
+  // renderer changes: consecutive rows with the same key are one run of one body
+  let prevP1 = null;
+  for (let r = 0; r < ROWS; r++) {
+    const A = rows[r], B = r ? rows[r - 1] : null;
+    if (B && B.key !== A.key && !A.errors.length) {
+      if (prevP1 && A.first !== null && A.objs.length && A.first >= prevP1.last)
+        A.warnings.push('Renderer change: its first strobe (cycle ' + A.first + ') is not earlier than the last strobe above (cycle ' + prevP1.last + ', row ' + prevP1.r + '), so that ghost survives unless GRP1 stays 0 until it has passed (16 px left of x ' + (3 * prevP1.last - 47) + '). That may not fit.');
+      if (A.v === 'L01' && B.v !== 'L01') A.warnings.push('First row of a PF0-ahead run: the renderer above must leave PF0 holding this row\'s left-edge pattern.');
+    }
+    if (A.objs.length && A.last !== null) prevP1 = A;
+  }
+  // Trogg
+  const t = s.trogg;
+  if (t && t.x > 120) rows[Math.min(ROWS - 1, t.row)].warnings.push('Trogg at x ' + t.x + ': his graphics are written late in the even line, so this far right his rows can split by a line.');
+  return rows;
+}
+
+function projectChecks() {
+  const out = [];
+  P.graphics.trogg.frames.forEach(f => f.rows.forEach((b, i) => {
+    if ((b & 1) && i !== f.yoyoRow) out.push('Trogg frame "' + f.name + '", row ' + (i + 1) + ': the front pixel (bit 0) switches the yoyo on. Only the hand row of the walking frame may set it.');
+  }));
+  return out;
+}
+
+function budgets() {
+  const T = P.types[typeI];
+  const keys = new Set(), sigs = new Map(), tables = new Set(['Stripe']);
+  let calls = 0, removable = 0;
+  for (const s of T.screens) {
+    const rows = analyzeScreen(s);
+    let runs = 0;
+    removable = Math.max(removable, s.items.filter(i => i.removable).length);
+    for (let r = 0; r < ROWS; r++) {
+      const A = rows[r];
+      keys.add(A.key);
+      if (!r || rows[r - 1].key !== A.key) runs++;
+      for (const reg of A.L) tables.add('L' + reg);
+      for (const reg of A.R) tables.add('R' + reg);
+      if (A.objs.some(o => o.t === 'L')) tables.add('Lad');
+      A.objs.filter(o => o.t === 'O').forEach((o, k) => { tables.add('G' + k); tables.add('C' + k); });
+    }
+    calls += runs * 2 + ROWS * 3;
+    // per-line data of each run: a run whose data repeats every p rows (ladder rungs, say) is
+    // called as repeated chunks of p rows, each with its own LDX of the same index (2 bytes), so
+    // only one chunk needs line-index space; identical chunks are shared across the bank
+    let r = 0;
+    while (r < ROWS) {
+      let e = r; while (e < ROWS && rows[e].key === rows[r].key) e++;
+      const ls = [];
+      for (let y = 2 * r; y < 2 * e; y++) ls.push(lineSig(s, y));
+      const n = e - r;
+      let per = n;
+      for (let q = 1; q < n; q++) { let ok = true; for (let i = 2 * q; i < ls.length && ok; i++) ok = ls[i] === ls[i - 2 * q]; if (ok) { per = q; break; } }
+      calls += 2 * (Math.ceil(n / per) - 1);
+      const k = rows[r].key + ';' + ls.slice(0, 2 * per).join(';');
+      if (!sigs.has(k)) {
+        const A = rows[r], tb = new Set(['Stripe']);
+        A.L.forEach(g => tb.add('L' + g)); A.R.forEach(g => tb.add('R' + g));
+        if (A.objs.some(o => o.t === 'L')) tb.add('Lad');
+        A.objs.filter(o => o.t === 'O').forEach((o, j) => { tb.add('G' + j); tb.add('C' + j); });
+        if (!A.L.length && !A.R.length) tb.delete('Stripe');
+        sigs.set(k, { n: 2 * per, tb });
+      }
+      r = e;
+    }
+  }
+  const lines = [...sigs.values()].reduce((a, b) => a + b.n, 0);
+  // each table holds entries only for the chunks whose renderers read it
+  const perTable = {};
+  for (const c of sigs.values()) for (const t of c.tb) perTable[t] = (perTable[t] || 0) + c.n;
+  const tableBytes = Object.values(perTable).reduce((a, b) => a + b, 0);
+  const frames = P.graphics.trogg.frames.reduce((a, f) => a + f.rows.length, 0);
+  const maxH = Math.max(...P.graphics.trogg.frames.map(f => f.rows.length));
+  const itemsB = P.graphics.items.reduce((a, i) => a + i.rows.length, 0);
+  const rom = { bodies: keys.size * BODY_BYTES, calls, tables: tableBytes, trogg: 128 + frames, items: itemsB, kernel: KERNEL_BYTES, logic: +P.budget.logic || 0 };
+  const romTotal = Object.values(rom).reduce((a, b) => a + b, 0);
+  const ram = { trogg: 2 + maxH + 1, removable, stack: 4, logic: +P.budget.ram || 0 };
+  const ramTotal = Object.values(ram).reduce((a, b) => a + b, 0);
+  return { rom, romTotal, ram, ramTotal, lines, bodies: keys.size, tables: tables.size };
+}
+function lineSig(s, y) {
+  const r = y >> 1, b = rowBlocks(s, r);
+  let pf = ''; for (let k = 0; k < 40; k++) pf += b.has(k) ? '1' : '0';
+  const parts = [pf];
+  for (const p of s.platforms) if (r >= p.top && r < p.top + p.rows) { parts.push('s' + (y - 2 * p.top)); break; }
+  for (const l of s.ladders) if (r >= l.top && r < l.bottom) parts.push('l' + ((y - 2 * l.top) % P.graphics.ladder.every === P.graphics.ladder.phase ? 1 : 0));
+  // (a ladder's rung pattern is part of the line data: rungs every 4 lines make ladder runs periodic)
+  for (const it of s.items) { const [a, z] = itemLines(it); if (y >= a && y < z) parts.push(it.kind + (y - a)); else if ((y >> 1) === ((a >> 1)) || (y >> 1) === ((z - 1) >> 1)) parts.push(it.kind + '-'); }
+  return parts.join(',');
+}
+
+// ---------------------------------------------------------------- drawing ---------------------
+const cv = document.getElementById('screen'), cx = cv.getContext('2d');
+let ROWS_A = [];
+function draw() {
+  const s = scr(), g = P.graphics;
+  cx.fillStyle = col(g.background); cx.fillRect(0, 0, W * S, LINES * S);
+  // platforms (per line stripes)
+  for (const p of s.platforms) for (let k = 0; k < p.rows * 2; k++) {
+    const y = 2 * p.top + k; if (y >= LINES) break;
+    cx.fillStyle = col(g.stripes[Math.min(k, g.stripes.length - 1)]);
+    cx.fillRect(p.b0 * 4 * S, y * S, (p.b1 - p.b0 + 1) * 4 * S, S);
+  }
+  // ladders (not drawn on rows where a platform covers them)
+  s.ladders.forEach(l => {
+    for (let r = l.top; r < l.bottom; r++) {
+      const b = rowBlocks(s, r); let behind = false;
+      for (let x = l.x; x < l.x + 8; x++) if (b.has(x >> 2)) behind = true;
+      if (behind) continue;
+      for (const y of [2 * r, 2 * r + 1]) {
+        const v = (y - 2 * l.top) % g.ladder.every === g.ladder.phase ? g.ladder.rung : g.ladder.pole;
+        drawByte(v, l.x, y, '#000000', 1);
+      }
+    }
+  });
+  s.items.forEach(it => { const d = itemDef(it.kind); const a = it.bottom - d.rows.length; d.rows.forEach((v, i) => drawByte(v, it.x, a + i, col(d.colour), 1)); });
+  // Trogg: double width, each row two lines, first frame
+  const t = s.trogg, f = g.trogg.frames[0];
+  if (t) f.rows.forEach((v, i) => { for (const y of [2 * (t.row - f.rows.length + 1 + i), 2 * (t.row - f.rows.length + 1 + i) + 1]) drawByte(v, t.x, y, col(g.trogg.colour), 2); });
+  // overlays
+  if (document.getElementById('chk-grid').checked) {
+    cx.fillStyle = 'rgba(255,255,255,0.10)';
+    for (let x = P1MIN; x <= 154; x += 3) cx.fillRect(x * S, 0, 1, LINES * S);
+    cx.fillStyle = 'rgba(236,91,82,0.35)'; cx.fillRect((P1MAX + 1) * S, 0, 1, LINES * S);
+  }
+  if (document.getElementById('chk-blocks').checked) {
+    cx.fillStyle = 'rgba(0,0,0,0.18)';
+    for (let x = 0; x <= W; x += 4) cx.fillRect(x * S, 0, 1, LINES * S);
+    cx.fillStyle = 'rgba(233,162,59,0.45)'; for (const x of [16, 48, 80, 96, 128]) cx.fillRect(x * S, 0, 1, LINES * S);
+  }
+  if (document.getElementById('chk-bands').checked) ROWS_A.forEach(A => {
+    if (A.errors.length) { cx.fillStyle = 'rgba(236,91,82,0.18)'; cx.fillRect(0, A.r * 2 * S, W * S, 2 * S); }
+  });
+  // gutter
+  ROWS_A.forEach(A => {
+    cx.fillStyle = A.errors.length ? '#ec5b52' : A.warnings.length ? '#e2b53c' : A.empty ? '#3a404b' : '#62c06d';
+    cx.fillRect(W * S + 4, A.r * 2 * S, GUT - 6, 2 * S - 1);
+  });
+  if (rowSel !== null) { cx.strokeStyle = '#e9a23b'; cx.lineWidth = 2; cx.strokeRect(1, rowSel * 2 * S, W * S + GUT - 2, 2 * S); }
+  const bb = sel && bbox(sel);
+  if (bb) { cx.strokeStyle = '#ffffff'; cx.setLineDash([4, 3]); cx.lineWidth = 1.5; cx.strokeRect(bb[0] * S - 1, bb[1] * S - 1, (bb[2] - bb[0]) * S + 2, (bb[3] - bb[1]) * S + 2); cx.setLineDash([]); }
+  if (drag && drag.preview) { const [x0, y0, x1, y1] = drag.preview; cx.strokeStyle = '#e9a23b'; cx.lineWidth = 1.5; cx.strokeRect(x0 * S, y0 * S, (x1 - x0) * S, (y1 - y0) * S); }
+}
+function drawByte(v, x, y, c, w) {
+  if (y < 0 || y >= LINES) return;
+  cx.fillStyle = c;
+  for (let b = 0; b < 8; b++) if (v & (0x80 >> b)) { const px = x + b * w; if (px < W) cx.fillRect(px * S, y * S, w * S, S); }
+}
+function bbox(o) {
+  const s = scr();
+  if (o.type === 'platform') { const p = s.platforms[o.i]; return p && [p.b0 * 4, p.top * 2, (p.b1 + 1) * 4, (p.top + p.rows) * 2]; }
+  if (o.type === 'ladder') { const l = s.ladders[o.i]; return l && [l.x, l.top * 2, l.x + 8, l.bottom * 2]; }
+  if (o.type === 'item') { const it = s.items[o.i]; if (!it) return null; const [a, z] = itemLines(it); return [it.x, a, it.x + 8, z]; }
+  if (o.type === 'trogg') { const t = s.trogg, h = P.graphics.trogg.frames[0].rows.length; return [t.x, (t.row - h + 1) * 2, t.x + 16, (t.row + 1) * 2]; }
+}
+function hit(x, y) {
+  const s = scr(), inside = b => b && x >= b[0] && x < b[2] && y >= b[1] && y < b[3];
+  if (s.trogg && inside(bbox({ type: 'trogg' }))) return { type: 'trogg' };
+  for (let i = s.items.length - 1; i >= 0; i--) if (inside(bbox({ type: 'item', i }))) return { type: 'item', i };
+  for (let i = s.ladders.length - 1; i >= 0; i--) if (inside(bbox({ type: 'ladder', i }))) return { type: 'ladder', i };
+  for (let i = s.platforms.length - 1; i >= 0; i--) if (inside(bbox({ type: 'platform', i }))) return { type: 'platform', i };
+  return null;
+}
+
+// ---------------------------------------------------------------- panels ----------------------
+function esc(t) { return String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]); }
+function verdictChip(A) {
+  if (A.errors.length) return '<span class="chip err">Can\'t be drawn</span>';
+  if (A.warnings.length) return '<span class="chip warn">Fits, with a caveat</span>';
+  if (A.empty) return '<span class="chip info">Empty</span>';
+  return FEAS ? '<span class="chip ok">Fits</span>' : '<span class="chip info">Rules loading</span>';
+}
+function showRow() {
+  const box = document.getElementById('row-info');
+  if (rowSel === null) { box.innerHTML = 'Click the gutter beside the screen, or any object, to inspect its row.'; return; }
+  const A = ROWS_A[rowSel];
+  const objs = A.objs.map(o => (o.t === 'L' ? 'ladder ' : 'item ') + o.x).join(', ') || 'none';
+  let h = '<div class="row-inline">' + verdictChip(A) + '<span class="mono muted">row ' + A.r + ' · lines ' + (2 * A.r) + '-' + (2 * A.r + 1) + '</span></div>';
+  h += '<dl class="kv"><dt>Family</dt><dd>' + esc(A.v === 'unsupported' ? 'none that can draw it' : familyName(A.v)) + '</dd>';
+  h += '<dt>Playfield</dt><dd class="mono">left ' + (A.L.join('+') || '–') + ' · right ' + (A.R.join('+') || '–') + '</dd>';
+  h += '<dt>P1 objects</dt><dd class="mono">' + esc(objs) + '</dd>';
+  if (A.first !== null && A.objs.length) h += '<dt>Strobes</dt><dd class="mono">first cycle ' + A.first + ', last ' + A.last + '</dd>';
+  h += '</dl>';
+  for (const e of A.errors) h += '<p class="note" style="color:var(--err);margin:0">' + esc(e) + '</p>';
+  if (A.suggest && A.suggest.length) h += '<p class="note" style="margin:0">Nearest positions that fit: <span class="mono">' + esc(A.suggest.join('; ')) + '</span></p>';
+  for (const w of A.warnings) h += '<p class="note" style="color:var(--warn);margin:0">' + esc(w) + '</p>';
+  for (const w of A.infos) h += '<p class="note" style="margin:0">' + esc(w) + '</p>';
+  box.innerHTML = h;
+}
+function showSel() {
+  const box = document.getElementById('sel-info'), s = scr();
+  if (!sel) { box.innerHTML = 'Nothing selected.'; return; }
+  let h = '';
+  if (sel.type === 'platform') {
+    const p = s.platforms[sel.i];
+    h = '<h3>Platform</h3><p class="mono note" style="margin:0">x ' + p.b0 * 4 + '-' + ((p.b1 + 1) * 4 - 1) + ', rows ' + p.top + '-' + (p.top + p.rows - 1) + '</p>' +
+      '<div class="row-inline"><label>Rows tall <input type="number" id="in-prows" min="1" max="16" value="' + p.rows + '"></label></div>';
+  } else if (sel.type === 'ladder') {
+    const l = s.ladders[sel.i];
+    h = '<h3>Ladder</h3><div class="row-inline"><label>x <input type="number" id="in-lx" step="3" min="19" max="154" value="' + l.x + '"></label>' +
+      '<label>Top row <input type="number" id="in-lt" min="0" max="95" value="' + l.top + '"></label><label>Bottom row <input type="number" id="in-lb" min="1" max="96" value="' + (l.bottom - 1) + '"></label></div>';
+  } else if (sel.type === 'item') {
+    const it = s.items[sel.i];
+    h = '<h3>Item</h3><div class="row-inline"><label>Kind <select id="in-ik">' + P.graphics.items.map(d => '<option value="' + d.kind + '"' + (d.kind === it.kind ? ' selected' : '') + '>' + esc(d.name) + '</option>').join('') + '</select></label>' +
+      '<label>x <input type="number" id="in-ix" step="3" min="19" max="154" value="' + it.x + '"></label><label>Bottom line <input type="number" id="in-ib" min="1" max="192" value="' + it.bottom + '"></label>' +
+      '<label class="row-inline"><input type="checkbox" id="in-ir"' + (it.removable ? ' checked' : '') + '> Collectable (1 byte of RAM)</label></div>';
+  } else if (sel.type === 'trogg') {
+    const t = s.trogg;
+    h = '<h3>Trogg\'s start</h3><div class="row-inline"><label>x <input type="number" id="in-tx" min="0" max="144" value="' + t.x + '"></label><label>Feet on row <input type="number" id="in-tr" min="0" max="95" value="' + t.row + '"></label></div>';
+  }
+  box.innerHTML = h + '<div class="row-inline"><button id="btn-del-sel">Delete</button></div>';
+  const bind = (id, fn) => { const e = document.getElementById(id); if (e) e.addEventListener('change', () => { fn(e); commit(); }); };
+  bind('in-prows', e => s.platforms[sel.i].rows = clampI(e.value, 1, 16));
+  bind('in-lx', e => s.ladders[sel.i].x = snapX(+e.value));
+  bind('in-lt', e => s.ladders[sel.i].top = clampI(e.value, 0, s.ladders[sel.i].bottom - 1));
+  bind('in-lb', e => s.ladders[sel.i].bottom = clampI(+e.value + 1, s.ladders[sel.i].top + 1, 96));
+  bind('in-ik', e => s.items[sel.i].kind = e.value);
+  bind('in-ix', e => s.items[sel.i].x = snapX(+e.value));
+  bind('in-ib', e => s.items[sel.i].bottom = clampI(e.value, 1, 192));
+  bind('in-ir', e => s.items[sel.i].removable = e.checked);
+  bind('in-tx', e => s.trogg.x = clampI(e.value, 0, 144));
+  bind('in-tr', e => s.trogg.row = clampI(e.value, 0, 95));
+  document.getElementById('btn-del-sel').addEventListener('click', delSel);
+}
+const clampI = (v, a, z) => Math.max(a, Math.min(z, Math.round(+v || 0)));
+function showIssues() {
+  const ul = document.getElementById('issues'); ul.innerHTML = '';
+  let ne = 0, nw = 0;
+  const add = (cls, where, text, r) => {
+    const li = document.createElement('li'); li.className = cls;
+    li.innerHTML = '<span class="mono muted">' + where + '</span><span>' + esc(text) + '</span>';
+    if (r !== null) li.addEventListener('click', () => { rowSel = r; refresh(false); });
+    ul.appendChild(li);
+  };
+  ROWS_A.forEach(A => {
+    A.errors.forEach(e => { ne++; if (!(ROWS_A[A.r - 1] && ROWS_A[A.r - 1].errors.join() === A.errors.join())) add('err', 'row ' + A.r, e, A.r); });
+    A.warnings.forEach(w => { nw++; add('warn', 'row ' + A.r, w, A.r); });
+  });
+  projectChecks().forEach(t => { nw++; add('warn', 'gfx', t, null); });
+  const rowsBad = ROWS_A.filter(A => A.errors.length).length;
+  document.getElementById('issue-count').innerHTML = rowsBad ? '<span class="chip err">' + rowsBad + ' rows can\'t be drawn</span>' : (nw ? '<span class="chip warn">' + nw + ' caveats</span>' : '<span class="chip ok">All rows fit</span>');
+  if (!ul.children.length) { const li = document.createElement('li'); li.innerHTML = '<span></span><span class="muted">No problems: every row maps onto a renderer family and fits the line budget.</span>'; ul.appendChild(li); }
+}
+function showBudgets() {
+  const B = budgets(), box = document.getElementById('budgets');
+  const meter = (label, used, total, detail) => {
+    const pct = Math.min(100, used / total * 100), cls = used > total ? 'err' : pct > 85 ? 'warn' : '';
+    return '<div class="meter ' + cls + '"><div class="row"><span>' + label + '</span><span class="mono">' + used.toLocaleString() + ' / ' + total.toLocaleString() + '</span></div>' +
+      '<div class="track"><div class="fill" style="width:' + pct + '%"></div></div><div class="note">' + detail + '</div></div>';
+  };
+  const r = B.rom;
+  box.innerHTML =
+    meter('ROM, bank "' + esc(P.types[typeI].name) + '"', B.romTotal, BANK,
+      'bodies ' + r.bodies + ' (' + B.bodies + ' × ~' + BODY_BYTES + ') · call lists ' + r.calls + ' · tables ' + r.tables + ' (' + B.tables + ' tables) · Trogg ' + r.trogg + ' · items ' + r.items + ' · kernel ' + r.kernel + ' · game code ' + r.logic) +
+    meter('Line index (X) for this bank', B.lines, 256, 'per-line data of every renderer run, shared where runs are identical; X counts lines 0-255') +
+    meter('RAM', B.ramTotal, 128, 'Trogg pointer + frame buffer ' + B.ram.trogg + ' · collectables ' + B.ram.removable + ' · stack ' + B.ram.stack + ' · game ' + B.ram.logic);
+}
+
+// ---------------------------------------------------------------- interaction -----------------
+const TOOLS = [['select', 'Select / move'], ['platform', 'Platform'], ['ladder', 'Ladder'], ['item', 'Item'], ['trogg', 'Trogg\'s start'], ['erase', 'Erase']];
+function buildTools() {
+  const box = document.getElementById('tools'); box.innerHTML = '';
+  for (const [k, label] of TOOLS) {
+    const b = document.createElement('button'); b.textContent = label; b.id = 'tool-' + k;
+    if (k === tool) b.className = 'on';
+    b.addEventListener('click', () => { tool = k; buildTools(); document.getElementById('item-kind-box').hidden = tool !== 'item'; });
+    box.appendChild(b);
+  }
+  const sk = document.getElementById('sel-kind');
+  sk.innerHTML = P.graphics.items.map(d => '<option value="' + d.kind + '"' + (d.kind === kind ? ' selected' : '') + '>' + esc(d.name) + '</option>').join('');
+}
+document.getElementById('sel-kind').addEventListener('change', e => kind = e.target.value);
+function pos(ev) { const b = cv.getBoundingClientRect(); return { x: (ev.clientX - b.left) * (cv.width / b.width) / S, y: (ev.clientY - b.top) * (cv.height / b.height) / S }; }
+cv.addEventListener('pointerdown', ev => {
+  const p = pos(ev); cv.setPointerCapture(ev.pointerId); cv.focus();
+  const row = Math.max(0, Math.min(ROWS - 1, Math.floor(p.y / 2)));
+  if (p.x >= W) { rowSel = row; refresh(false); return; }
+  const s = scr();
+  if (tool === 'select' || tool === 'erase') {
+    const h = hit(p.x, p.y);
+    if (tool === 'erase') { if (h) { sel = h; delSel(); } return; }
+    sel = h; rowSel = row;
+    if (h) drag = { mode: 'move', start: p, orig: JSON.parse(JSON.stringify(objOf(h))) };
+    refresh(false); return;
+  }
+  if (tool === 'platform') drag = { mode: 'platform', b0: Math.floor(p.x / 4), r0: row, b1: Math.floor(p.x / 4), r1: row };
+  else if (tool === 'ladder') drag = { mode: 'ladder', x: snapX(p.x - 4), r0: row, r1: row };
+  else if (tool === 'item') { s.items.push({ kind, x: snapX(p.x - 4), bottom: 2 * row + 2, removable: kind !== 'key' }); sel = { type: 'item', i: s.items.length - 1 }; rowSel = row; commit(); }
+  else if (tool === 'trogg') { s.trogg = { x: clampI(p.x - 8, 0, 144), row }; sel = { type: 'trogg' }; rowSel = row; commit(); }
+});
+cv.addEventListener('pointermove', ev => {
+  const p = pos(ev), row = Math.max(0, Math.min(ROWS - 1, Math.floor(p.y / 2)));
+  hoverRow = row;
+  const A = ROWS_A[row];
+  document.getElementById('status').textContent = 'x ' + Math.floor(Math.min(p.x, W - 1)) + ' · line ' + Math.floor(p.y) + ' · row ' + row + (A ? ' · ' + (A.v === 'unsupported' ? 'unsupported' : familyName(A.v)) + (A.errors.length ? ' · can\'t be drawn' : '') : '');
+  if (!drag) return;
+  if (drag.mode === 'platform') { drag.b1 = Math.max(0, Math.min(39, Math.floor(p.x / 4))); drag.r1 = row; const a = Math.min(drag.b0, drag.b1), z = Math.max(drag.b0, drag.b1); drag.preview = [a * 4, Math.min(drag.r0, drag.r1) * 2, (z + 1) * 4, (Math.max(drag.r0, drag.r1) + 1) * 2]; draw(); }
+  else if (drag.mode === 'ladder') { drag.r1 = row; drag.preview = [drag.x, Math.min(drag.r0, drag.r1) * 2, drag.x + 8, (Math.max(drag.r0, drag.r1) + 1) * 2]; draw(); }
+  else if (drag.mode === 'move') {
+    const dx = p.x - drag.start.x, dy = p.y - drag.start.y, o = objOf(sel), O = drag.orig, dr = Math.round(dy / 2);
+    if (sel.type === 'platform') { const db = Math.round(dx / 4), w = O.b1 - O.b0; o.b0 = Math.max(0, Math.min(39 - w, O.b0 + db)); o.b1 = o.b0 + w; o.top = Math.max(0, Math.min(ROWS - o.rows, O.top + dr)); }
+    if (sel.type === 'ladder') { o.x = snapX(O.x + dx); const h = O.bottom - O.top; o.top = Math.max(0, Math.min(ROWS - h, O.top + dr)); o.bottom = o.top + h; }
+    if (sel.type === 'item') { o.x = snapX(O.x + dx); o.bottom = Math.max(1, Math.min(LINES, O.bottom + 2 * dr)); }
+    if (sel.type === 'trogg') { o.x = clampI(O.x + dx, 0, 144); o.row = clampI(O.row + dr, 0, ROWS - 1); }
+    refresh(false);
+  }
+});
+cv.addEventListener('pointerup', () => {
+  if (!drag) return;
+  const s = scr(), d = drag; drag = null;
+  if (d.mode === 'platform') {
+    let a = Math.min(d.b0, d.b1), z = Math.max(d.b0, d.b1), top = Math.min(d.r0, d.r1), rows = Math.abs(d.r1 - d.r0) + 1;
+    if (a === z && rows === 1) { z = Math.min(39, a + 3); rows = 4; }
+    s.platforms.push({ b0: a, b1: z, top, rows: Math.min(rows, ROWS - top) }); sel = { type: 'platform', i: s.platforms.length - 1 }; rowSel = top;
+  } else if (d.mode === 'ladder') {
+    let top = Math.min(d.r0, d.r1), bottom = Math.max(d.r0, d.r1) + 1;
+    if (bottom - top === 1) bottom = Math.min(ROWS, top + 16);
+    s.ladders.push({ x: d.x, top, bottom }); sel = { type: 'ladder', i: s.ladders.length - 1 }; rowSel = top;
+  }
+  commit();
+});
+function objOf(o) { const s = scr(); return o.type === 'trogg' ? s.trogg : s[o.type === 'platform' ? 'platforms' : o.type === 'ladder' ? 'ladders' : 'items'][o.i]; }
+function delSel() {
+  if (!sel || sel.type === 'trogg') return;
+  const s = scr(); s[sel.type === 'platform' ? 'platforms' : sel.type === 'ladder' ? 'ladders' : 'items'].splice(sel.i, 1); sel = null; commit();
+}
+cv.addEventListener('keydown', ev => {
+  if (!sel) return;
+  const o = objOf(sel); if (!o) return;
+  const k = ev.key; let done = true;
+  if (k === 'Delete' || k === 'Backspace') delSel();
+  else if (k === 'ArrowLeft' || k === 'ArrowRight') {
+    const d = k === 'ArrowLeft' ? -1 : 1;
+    if (sel.type === 'platform') { const w = o.b1 - o.b0; o.b0 = Math.max(0, Math.min(39 - w, o.b0 + d)); o.b1 = o.b0 + w; }
+    else if (sel.type === 'trogg') o.x = clampI(o.x + d, 0, 144);
+    else o.x = snapX(o.x + 3 * d);
+  } else if (k === 'ArrowUp' || k === 'ArrowDown') {
+    const d = k === 'ArrowUp' ? -1 : 1;
+    if (sel.type === 'platform') o.top = Math.max(0, Math.min(ROWS - o.rows, o.top + d));
+    else if (sel.type === 'ladder') { const h = o.bottom - o.top; o.top = Math.max(0, Math.min(ROWS - h, o.top + d)); o.bottom = o.top + h; }
+    else if (sel.type === 'item') o.bottom = Math.max(1, Math.min(LINES, o.bottom + 2 * d));
+    else o.row = clampI(o.row + d, 0, ROWS - 1);
+  } else done = false;
+  if (done) { ev.preventDefault(); commit(); }
+});
+['chk-grid', 'chk-blocks', 'chk-bands'].forEach(id => document.getElementById(id).addEventListener('change', draw));
+
+// ---------------------------------------------------------------- level types and screens -----
+function fillSelects() {
+  document.getElementById('sel-type').innerHTML = P.types.map((t, i) => '<option value="' + i + '"' + (i === typeI ? ' selected' : '') + '>' + esc(t.name) + ' (bank ' + (i + 1) + ')</option>').join('');
+  document.getElementById('sel-screen').innerHTML = P.types[typeI].screens.map((s, i) => '<option value="' + i + '"' + (i === scrI ? ' selected' : '') + '>' + esc(s.name) + '</option>').join('');
+}
+document.getElementById('sel-type').addEventListener('change', e => { typeI = +e.target.value; scrI = 0; sel = null; refresh(); });
+document.getElementById('sel-screen').addEventListener('change', e => { scrI = +e.target.value; sel = null; refresh(); });
+// Renaming uses a small inline editor (the viewer blocks prompt()).
+function inlineRename(btnId, get, set) {
+  const btn = document.getElementById(btnId);
+  btn.addEventListener('click', () => {
+    const inp = document.createElement('input'); inp.type = 'text'; inp.value = get(); inp.id = btnId + '-input'; inp.setAttribute('aria-label', 'New name');
+    btn.replaceWith(inp); inp.focus(); inp.select();
+    const done = ok => { if (ok && inp.value.trim()) set(inp.value.trim()); inp.replaceWith(btn); commit(); };
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') done(true); if (e.key === 'Escape') done(false); });
+    inp.addEventListener('blur', () => done(true), { once: true });
+  });
+}
+inlineRename('btn-type-ren', () => P.types[typeI].name, v => P.types[typeI].name = v);
+inlineRename('btn-scr-ren', () => scr().name, v => scr().name = v);
+document.getElementById('btn-scr-new').addEventListener('click', () => { const T = P.types[typeI]; T.screens.push(blankScreen('Screen ' + (T.screens.length + 1))); scrI = T.screens.length - 1; sel = null; commit(); });
+document.getElementById('btn-scr-dup').addEventListener('click', () => { const T = P.types[typeI], c = JSON.parse(JSON.stringify(scr())); c.name += ' copy'; T.screens.splice(scrI + 1, 0, c); scrI++; commit(); });
+let delArmed = false;
+document.getElementById('btn-scr-del').addEventListener('click', e => {
+  const T = P.types[typeI], b = e.currentTarget;
+  if (T.screens.length < 2) { b.textContent = 'Last screen'; setTimeout(() => b.textContent = 'Delete', 1200); return; }
+  if (!delArmed) { delArmed = true; b.textContent = 'Click again to delete'; setTimeout(() => { delArmed = false; b.textContent = 'Delete'; }, 2500); return; }
+  delArmed = false; b.textContent = 'Delete'; T.screens.splice(scrI, 1); scrI = Math.max(0, scrI - 1); sel = null; commit();
+});
+document.getElementById('num-logic').addEventListener('change', e => { P.budget.logic = clampI(e.target.value, 0, 4096); commit(); });
+document.getElementById('num-ram').addEventListener('change', e => { P.budget.ram = clampI(e.target.value, 0, 128); commit(); });
+
+// ---------------------------------------------------------------- graphics tab ----------------
+function swatches(cur, onPick, id) {
+  const wrap = document.createElement('div'); wrap.className = 'swatches'; wrap.id = id;
+  for (let lum = 0; lum < 8; lum++) for (let hue = 0; hue < 16; hue++) {
+    const v = hue * 16 + lum * 2, b = document.createElement('button');
+    b.style.background = col(v); b.title = '$' + v.toString(16).toUpperCase().padStart(2, '0');
+    b.setAttribute('aria-label', 'Colour ' + b.title); if (v === cur) b.className = 'on';
+    b.addEventListener('click', () => { onPick(v); commit(); });
+    wrap.appendChild(b);
+  }
+  return wrap;
+}
+function pixelEditor(rows, colour, opts) {
+  const g = document.createElement('div'); g.className = 'pix';
+  let paint = null;
+  rows.forEach((v, r) => {
+    for (let b = 0; b < 8; b++) {
+      const c = document.createElement('div'); c.className = 'c' + (b === 7 && opts.yoyo ? ' y' : '');
+      if (v & (0x80 >> b)) c.style.background = colour;
+      const set = () => { const on = paint; rows[r] = on ? rows[r] | (0x80 >> b) : rows[r] & ~(0x80 >> b); c.style.background = on ? colour : ''; hx.textContent = hexB(rows[r]); };
+      c.addEventListener('pointerdown', e => { e.preventDefault(); paint = !(rows[r] & (0x80 >> b)); set(); });
+      c.addEventListener('pointerenter', () => { if (paint !== null) set(); });
+      g.appendChild(c);
+    }
+    const hx = document.createElement('span'); hx.className = 'hx'; hx.textContent = hexB(v) + (opts.label ? opts.label(r) : ''); g.appendChild(hx);
+  });
+  g.addEventListener('pointerup', () => { if (paint !== null) { paint = null; commit(); } });
+  g.addEventListener('pointerleave', () => { if (paint !== null) { paint = null; commit(); } });
+  return g;
+}
+const hexB = v => '$' + (v & 255).toString(16).toUpperCase().padStart(2, '0');
+function card(title, note) { const c = document.createElement('div'); c.className = 'panel'; c.innerHTML = '<h3>' + esc(title) + '</h3>' + (note ? '<p class="note" style="margin:0">' + note + '</p>' : ''); return c; }
+function heightControl(rows, min, max, label) {
+  const l = document.createElement('label'); l.className = 'row-inline';
+  l.innerHTML = label + ' <input type="number" min="' + min + '" max="' + max + '" value="' + rows.length + '">';
+  l.querySelector('input').addEventListener('change', e => { const n = clampI(e.target.value, min, max); while (rows.length < n) rows.push(0); rows.length = n; commit(); });
+  return l;
+}
+function buildGfx() {
+  const box = document.getElementById('gfx'), g = P.graphics; box.innerHTML = '';
+  // Trogg
+  g.trogg.frames.forEach((f, fi) => {
+    const c = card('Trogg: ' + f.name, 'Player 0, double width; each row is two scanlines. Bit 0 (the right-hand column, outlined) switches the yoyo on, so only the walking frame\'s hand row may set it. RAM buffer: ' + (f.rows.length + 1) + ' bytes for this frame.');
+    c.appendChild(pixelEditor(f.rows, col(g.trogg.colour), { yoyo: true, label: r => r === f.yoyoRow ? '  hand' : '' }));
+    const ctl = document.createElement('div'); ctl.className = 'row-inline';
+    ctl.appendChild(heightControl(f.rows, 1, 24, 'Rows'));
+    const hl = document.createElement('label'); hl.className = 'row-inline';
+    hl.innerHTML = 'Hand row <input type="number" min="0" max="24" value="' + (f.yoyoRow >= 0 ? f.yoyoRow + 1 : 0) + '">';
+    hl.querySelector('input').addEventListener('change', e => { f.yoyoRow = clampI(e.target.value, 0, 24) - 1; commit(); });
+    ctl.appendChild(hl);
+    if (g.trogg.frames.length > 1) { const d = document.createElement('button'); d.textContent = 'Delete frame'; d.addEventListener('click', () => { g.trogg.frames.splice(fi, 1); commit(); }); ctl.appendChild(d); }
+    c.appendChild(ctl);
+    box.appendChild(c);
+  });
+  const tc = card('Trogg colour and frames', 'All of Trogg\'s frames share one colour (COLUP0).');
+  tc.appendChild(swatches(g.trogg.colour, v => g.trogg.colour = v, 'sw-trogg'));
+  const add = document.createElement('button'); add.textContent = 'Add a frame';
+  add.addEventListener('click', () => { g.trogg.frames.push({ name: 'Frame ' + (g.trogg.frames.length + 1), rows: g.trogg.frames[0].rows.slice(), yoyoRow: -1 }); commit(); });
+  tc.appendChild(add); box.appendChild(tc);
+  // items
+  g.items.forEach((d, di) => {
+    const c = card(d.name, 'Player 1 copy, one row per scanline, with its own colour. Coloured items can\'t share a row with a platform, and at most two fit on a row.');
+    c.appendChild(pixelEditor(d.rows, col(d.colour), {}));
+    const ctl = document.createElement('div'); ctl.className = 'row-inline'; ctl.appendChild(heightControl(d.rows, 1, 32, 'Lines'));
+    if (g.items.length > 1) { const del = document.createElement('button'); del.textContent = 'Delete'; del.addEventListener('click', () => { g.items.splice(di, 1); commit(); }); ctl.appendChild(del); }
+    c.appendChild(ctl);
+    c.appendChild(swatches(d.colour, v => d.colour = v, 'sw-item-' + di));
+    box.appendChild(c);
+  });
+  const ic = card('New item kind', 'Adds a graphic you can place with the Item tool.');
+  const ib = document.createElement('button'); ib.textContent = 'Add an item kind';
+  ib.addEventListener('click', () => { const n = g.items.length + 1; g.items.push({ kind: 'item' + Date.now().toString(36), name: 'Item ' + n, colour: 0x1E, rows: [0x3C, 0x7E, 0x7E, 0x3C] }); commit(); });
+  ic.appendChild(ib); box.appendChild(ic);
+  // ladder
+  const lc = card('Ladders', 'Always black (fixed colour). Every ladder shares one graphic, which is why up to five fit on a row with only one GRP1 write.');
+  const lad = g.ladder;
+  const poleRows = [lad.pole], rungRows = [lad.rung];
+  const pe = pixelEditor(poleRows, '#000000', { label: () => '  pole' }), re = pixelEditor(rungRows, '#000000', { label: () => '  rung' });
+  pe.addEventListener('pointerup', () => { lad.pole = poleRows[0]; commit(); }); re.addEventListener('pointerup', () => { lad.rung = rungRows[0]; commit(); });
+  lc.appendChild(pe); lc.appendChild(re);
+  const le = document.createElement('label'); le.className = 'row-inline';
+  le.innerHTML = 'A rung every <input type="number" min="2" max="16" value="' + lad.every + '"> lines';
+  le.querySelector('input').addEventListener('change', e => { lad.every = clampI(e.target.value, 2, 16); lad.phase = Math.min(lad.phase, lad.every - 1); commit(); });
+  lc.appendChild(le); box.appendChild(lc);
+  // stripes and background
+  const sc = card('Platform stripes', 'Colour of each scanline of a platform, top to bottom, from a per-line table. Platforms taller than this repeat the last colour.');
+  g.stripes.forEach((v, i) => {
+    const row = document.createElement('div'); row.className = 'row-inline';
+    row.innerHTML = '<span class="mono note">line ' + (i + 1) + '</span> <span class="swatch" style="background:' + col(v) + '"></span> <span class="mono note">' + hexB(v) + '</span>';
+    const pick = document.createElement('button'); pick.textContent = 'Change';
+    pick.addEventListener('click', () => { const ex = sc.querySelector('.swatches'); if (ex) ex.remove(); const sw = swatches(v, nv => g.stripes[i] = nv, 'sw-stripe-' + i); row.after(sw); });
+    row.appendChild(pick); sc.appendChild(row);
+  });
+  box.appendChild(sc);
+  const bc = card('Background', 'COLUBK, shared by every screen.');
+  bc.appendChild(swatches(g.background, v => g.background = v, 'sw-bg'));
+  box.appendChild(bc);
+}
+
+// ---------------------------------------------------------------- tabs, import/export ---------
+document.getElementById('tab-levels').addEventListener('click', () => setTab('levels'));
+document.getElementById('tab-gfx').addEventListener('click', () => setTab('gfx'));
+function setTab(t) {
+  document.getElementById('view-levels').hidden = t !== 'levels'; document.getElementById('view-gfx').hidden = t !== 'gfx';
+  document.getElementById('tab-levels').className = t === 'levels' ? 'on' : ''; document.getElementById('tab-gfx').className = t === 'gfx' ? 'on' : '';
+  if (t === 'gfx') buildGfx();
+}
+const io = document.getElementById('io'), ioText = document.getElementById('io-text'), ioMsg = document.getElementById('io-msg');
+document.getElementById('btn-io').addEventListener('click', () => { ioText.value = JSON.stringify(P, null, 1); ioMsg.textContent = ''; io.hidden = false; ioText.focus(); });
+document.getElementById('io-close').addEventListener('click', () => io.hidden = true);
+document.getElementById('io-copy').addEventListener('click', () => {
+  navigator.clipboard.writeText(ioText.value).then(() => ioMsg.textContent = 'Copied the project to the clipboard.',
+    () => { ioText.select(); ioMsg.textContent = 'Copying was blocked here: the text is selected, so press Ctrl+C (or Cmd+C).'; });
+});
+function loadText(t) {
+  try {
+    const d = JSON.parse(t);
+    if (!d.graphics || !Array.isArray(d.types) || !d.types.length) throw new Error('no graphics or level types');
+    P = d; P.budget = P.budget || { logic: 1280, ram: 72 }; typeI = 0; scrI = 0; sel = null; rowSel = null;
+    io.hidden = true; commit(); buildTools();
+  } catch (e) { ioMsg.textContent = 'That isn\'t a project file (' + e.message + '). Paste the JSON this dialog exports.'; }
+}
+document.getElementById('io-load').addEventListener('click', () => loadText(ioText.value));
+document.getElementById('io-file').addEventListener('change', e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => loadText(r.result); r.readAsText(f); });
+let resetArmed = false;
+document.getElementById('io-reset').addEventListener('click', e => {
+  if (!resetArmed) { resetArmed = true; e.target.textContent = 'Click again: this replaces your project'; setTimeout(() => { resetArmed = false; e.target.textContent = 'Reset to the sample project'; }, 3000); return; }
+  resetArmed = false; e.target.textContent = 'Reset to the sample project'; loadText(JSON.stringify(sampleProject()));
+});
+
+// ---------------------------------------------------------------- refresh ---------------------
+function commit() { save(); refresh(); if (!document.getElementById('view-gfx').hidden) buildGfx(); }
+function refresh(full = true) {
+  ROWS_A = analyzeScreen(scr());
+  if (full) { fillSelects(); document.getElementById('num-logic').value = P.budget.logic; document.getElementById('num-ram').value = P.budget.ram; }
+  draw(); showRow(); showSel(); showIssues(); showBudgets();
+}
+buildTools(); refresh();
+</script>
