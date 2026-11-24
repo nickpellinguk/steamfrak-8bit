@@ -38,9 +38,13 @@ KEY = ['.XX.....', 'X..X....', 'X..XXXXX', 'X..X.X.X', '.XX.....']
 T0, LIMIT = 14, 53
 BUFFER = '--buffer' in sys.argv             # Trogg: index strip in ROM + frame copied to a RAM buffer
 ODDINX = '--oddinx' in sys.argv             # the line INX in the odd prefix (shared block from 12)
-NOMIDSYNC = '--nomidsync' in sys.argv       # no STA WSYNC between a row's lines: the even line is padded to 76
+EXACT = next((int(a.split('=')[1]) for a in sys.argv if a.startswith('--exact=')), None)
+# --exact=E: no WSYNC in the kernel; every odd line falls through its BCS at cycle E, then
+# INX + RTS + 4 call-list cycles + JSR = 18, so every body starts at S0 = E - 58 on both lines
+S0 = EXACT - 58 if EXACT is not None else 0
+NOMIDSYNC = '--nomidsync' in sys.argv or EXACT is not None       # no STA WSYNC between a row's lines: the even line is padded to 76
 if BUFFER:
-    LIMIT = 53 if ODDINX or NOMIDSYNC else 51                                # odd line falls through by 53: the longer even tail
+    LIMIT = (EXACT - 3) if EXACT is not None else 53 if ODDINX or NOMIDSYNC else 51                                # odd line falls through by 53: the longer even tail
 LINES = '--lines' in sys.argv               # X counts lines: tables per line, INX in the even tail
 ROWSTRIPES = '--rowstripes' in sys.argv or LINES     # one stripe colour per row (from a row table)
 ROW_STRIPES = [BLACK, MAGENTA, DARK, DARK]
@@ -171,12 +175,17 @@ def body_code(name, code, uses_y, end=None):
     # jumps back to the shared block (the JMP replaces the odd prefix's 3-cycle pad)
     look = ['tay', 'lda Buffer,y'] if BUFFER else []
     odd = ODDINX and LINES
-    out = ['%s:' % name, 'sta WSYNC', 'inc TrogPtr'] + ld + ['sec', 'bit $80'] + (['nop'] if odd else [])
-    out += ['%s_s:' % name] + code + ['bcs %s_e' % name, 'inx', 'rts']
+    out = ['%s:' % name] + ([] if EXACT is not None else ['sta WSYNC']) + ['inc TrogPtr'] + ld + ['sec', 'bit $80'] + (['nop'] if odd else [])
+    oddpad = []
+    if EXACT is not None:
+        k = EXACT - (end + 2)
+        assert k >= 0 and k != 1, ('odd line', name, k)
+        oddpad = [pad(k)] if k else []
+    out += ['%s_s:' % name] + code + ['bcs %s_e' % name] + oddpad + ['inx', 'rts']
     out += ['%s_e:' % name, 'ldy #0', 'lda (TrogPtr),y'] + look + ['sta GRP0'] + (['inx'] if LINES and not odd else [])
     if NOMIDSYNC:                    # pad the even line to exactly 76 cycles instead of STA WSYNC
         tail = out[out.index('%s_e:' % name) + 1:]
-        n = 76 - (end + 3 + ncycles(tail))
+        n = 76 + S0 - (end + 3 + ncycles(tail))
         assert n >= 0, ('even line too long', name, n)
         if n == 1:
             out[out.index('sta GRP0')] = 'sta.w GRP0'
@@ -212,7 +221,7 @@ def build(which, base):
         if key not in bodies:
             res, keep = None, list(objs)
             uses_y = not ROWSTRIPES and (any(pf[0]) or any(pf[1]) or any(o[2][0] == 'stripe' for o in objs))
-            t0 = (T0 if uses_y else T0 - 4) + (2 if ODDINX and LINES else 0)
+            t0 = (T0 if uses_y else T0 - 4) + (2 if ODDINX and LINES else 0) + S0
             while res is None:
                 _ns['FREEY'] = not uses_y        # Y is a second working register unless it holds the stripe
                 try:
@@ -228,7 +237,13 @@ def build(which, base):
             report.append((name, a, b, len(objs), end + 2))
         name = bodies[key][0]
         calls.append('ldx #%d' % (2 * a if LINES else a))
-        calls += ['jsr %s' % name] * (b - a)
+        if EXACT is not None:            # every return path takes 4 call-list cycles
+            calls.append('nop')
+            calls += ['jsr %s' % name, 'nop', 'nop'] * (b - a)
+            calls = calls[:-2]
+            calls.append('PADNEXT')
+        else:
+            calls += ['jsr %s' % name] * (b - a)
         prev = (pf, (objs[-1][2] if objs else prev_col), bool(objs), objs[-1][0] if objs else None)
 
     trogg_strip = [0] * 96
@@ -292,13 +307,26 @@ CopyF:  lda TroggFrame-1,y
         for reg, xx in (('RESP0', tx), ('RESM0', yoyo_x)):
             c = (xx + 68) // 3 if reg == 'RESM0' else (xx + 63) // 3
             o.append('        sta WSYNC\n        ' + pad(c - 3).replace('\n', '\n        ') + '\n        sta %s' % reg)
-        o.append('''        ldx #33
-VB:     sta WSYNC
+        vb = 33
+        o.append('''        ldx #%d
+VB:     sta WSYNC''' % vb + '''
         dex
         bne VB
         lda #0
         sta VBLANK''')
-        o += ['        ' + c for c in calls]
+        if EXACT is not None:
+            p0 = (S0 - 19) % 76          # 9 cycles since the last VB WSYNC, 10 for ldx/nop/jsr
+            p0 = p0 + 76 if p0 == 1 else p0
+            if p0:
+                o += ['        ' + q for q in pad(p0).split('\n')]
+            cl = []
+            for c in calls:                  # between runs the LDX path: 'ldx #n / nop' (4 cycles)
+                cl.append(c)
+            cl = [c for c in cl if c != 'PADNEXT']
+            # within a run: jsr / nop / nop; the last row of a run returns into the next 'ldx / nop'
+            o += ['        ' + c for c in cl]
+        else:
+            o += ['        ' + c for c in calls]
         o.append('''        sta WSYNC
         lda #0
         sta GRP0
@@ -388,7 +416,7 @@ if __name__ == '__main__':
     which = args[0] if args else 'fr'
     outdir = os.path.abspath(args[1] if len(args) > 1 else os.path.join(HERE, 'out', 'screens2'))
     os.makedirs(outdir, exist_ok=True)
-    base = os.path.join(outdir, which + ('_lines' if LINES else '_rows' if ROWSTRIPES else '') + ('_buf' if BUFFER else '') + ('_oddinx' if ODDINX else '') + ('_nms' if NOMIDSYNC else ''))
+    base = os.path.join(outdir, which + ('_lines' if LINES else '_rows' if ROWSTRIPES else '') + ('_buf' if BUFFER else '') + ('_oddinx' if ODDINX else '') + ('_nms' if NOMIDSYNC else '') + ('_e%d' % EXACT if EXACT is not None else ''))
     rows, t, runs, bodies, report, calls, labels = build(which, base)
     print('%s: %d runs, %d bodies' % (which, len(runs), len(bodies)))
     print('layout changes:', '; '.join(CHANGES))
@@ -398,7 +426,7 @@ if __name__ == '__main__':
     for name, a, b, n, fall in report:
         print('  %-4s rows %2d-%2d  %d objects  odd falls through at %d%s' % (
             name, a, b - 1, n, fall, '' if fall <= 55 else '   <-- over the 55 budget'))
-    calls_bytes = sum(2 if c.startswith('ldx') else 3 for c in calls)
+    calls_bytes = sum(0 if c == 'PADNEXT' else 1 if c == 'nop' else 2 if c.startswith('ldx') else 3 for c in calls)
     print('bodies %d bytes, call list %d bytes, tables %d bytes, Trogg strip 96' % (
         labels['BodiesEnd'] - labels['Bodies'], calls_bytes, sum(len(v) for v in t.values())))
     png = tiatest.snapshot(base + '.bin', outdir)
