@@ -205,6 +205,63 @@ The even line has no such limit (its tail is Trogg's read and a `JMP`, ending by
   at the end of the even line; A is held from Trogg's read across the odd line's `STA WSYNC`.
 * Taken branches must not cross a page (the generator checks every branch from the listing).
 
+## Reusable renderers: measured rules
+
+"Reusable" means every graphic, colour and playfield pattern comes from tables; only object
+positions and system colours (black ladders, the background) are in a renderer's code. Measured
+with `test/screens2.py`, `test/limits.py`, `test/ghost_test.py` and `test/leftpf1_test.py`.
+
+**Kernel (current best):**
+
+* **X counts lines, not rows.** Tables have one entry per line (192 per full screen, page-aligned so
+  an indexed load never crosses a page). The even tail does `INX` before falling into the odd line,
+  and the body's exit does `INX` again. Values that differ between a row's two lines are then plain
+  loads in the shared block; loading them into Y in the prefixes cost 4 cycles of horizontal blank
+  and tied up Y for the whole line.
+* **No `WSYNC` between a row's two lines.** The even line is padded to exactly 76 cycles and falls
+  into the odd line; the row boundary keeps its `WSYNC`. The odd prefix ends with the `JMP` to the
+  shared block (in place of its 3-cycle pad), and the even prefix falls into it.
+* **Trogg:** `TrogPtr` points into a ROM strip of row indices (0 = blank), and the current frame is
+  copied once per frame into a RAM buffer (Buffer+0 = 0): `ldy #0 / lda (TrogPtr),y / tay /
+  lda Buffer,y / sta GRP0` in the even tail. RAM: 2 + (frame height + 1) bytes.
+* **Budget:** the shared block starts at cycle 10 and its last store must end by 53, so the odd line
+  falls through by 55. A fixed-cycle row boundary (no `WSYNC` at all) only slides this window; it
+  doesn't widen it, so it isn't used.
+* **A and Y are both working registers** in the shared block (X is the line index). A second
+  register roughly doubles the layouts that fit.
+
+**P1 rules:**
+
+* **Strobes at least 7 cycles (21 px) apart.** A strobe before the previous copy starts drawing
+  (strobe + 7) moves that copy (seen: 2 px).
+* **A single copy leaves a ghost** 16 px to its left on every following line (P1's main copy); the
+  next line's strobe at the same cycle doesn't cancel it. Fix: clear GRP1 after the copy has been
+  drawn, and write the graphic 5 cycles after the strobe (GRP1 = 0 while the old main copy is
+  drawn). About 5 cycles, which is why one-object rows fit worse than two-object rows. A strobe
+  about 21 px or more before an old main copy does cancel it.
+* **Nothing to the right of a ladder at x 85 or beyond:** the next object's graphics write can't land
+  until that ladder has been drawn, after the budget. In practice P1 objects stop at about x 112,
+  and coloured items on rows with ladders at about x 100.
+* **Per row:** at most two coloured objects, or one coloured object and two black ladders, or three
+  ladders. Four independent objects (17 cycles each) can't fit.
+
+**Platform cases** (stripe colour and patterns per line from tables, ladders with rungs from a
+table, strobes 21 px apart):
+
+| Case | Ladders that fit |
+|---|---|
+| Platforms on both halves (PF1 + PF2 per half) | none (the horizontal blank is full) |
+| Left only, platform in PF1 (x 16-47) | two: 118 of 325 pairs, first ladder x 46-82; verified in Stella |
+| Left only, PF1 + PF0 written a line ahead (x 0-47) | two: 69 pairs (the run's first line must not need PF0) |
+| Left only, PF0 + PF1 both in the horizontal blank | none: COLUPF and PF0 both due by 22 |
+| Ladders only | three: 385 of 525 sets |
+
+* **Left-only platforms:** COLUPF is the stripe on the left and switches to the background between
+  the platform's last pixel and the right half's repeat (for PF1: cycles 39-49).
+* **The horizontal blank is the bottleneck:** COLUPF and left PF0 are due by 22, left PF1 by 27 and
+  left PF2 by 38, from cycle 10. Mirroring (reflect mode) doesn't help; it only removes right-half
+  writes, which weren't the problem.
+
 ## The idea
 
 The 2600 can't hold Frak!'s levels: 128 bytes of RAM, no frame buffer, a 20-bit background
