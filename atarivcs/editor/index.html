@@ -71,6 +71,7 @@ canvas.screen { display: block; image-rendering: pixelated; cursor: crosshair; b
 .pix .c { width: 22px; height: 18px; background: var(--panel2); border: 1px solid var(--line); cursor: pointer; }
 .pix .c.y { box-shadow: inset 0 0 0 2px var(--warn); }
 .pix .hx { font: 11px var(--mono); color: var(--muted); padding-left: 6px; align-self: center; }
+.pix .rowcol { width: 22px; height: 16px; padding: 0; margin-left: 6px; border-radius: 3px; align-self: center; }
 .swatches { display: grid; grid-template-columns: repeat(16, 1fr); gap: 2px; max-width: 360px; }
 .swatches button { aspect-ratio: 1; padding: 0; border-radius: 3px; border: 1px solid transparent; min-width: 0; }
 .swatches button.on { border: 2px solid var(--fg); }
@@ -128,7 +129,7 @@ textarea { width: 100%; min-height: 220px; background: var(--panel2); border: 1p
       <label class="row-inline"><input type="checkbox" id="chk-blocks"> Playfield blocks</label>
       <label class="row-inline"><input type="checkbox" id="chk-bands" checked> Shade problem rows</label>
       <h2>Keys</h2>
-      <p class="note">Click an object to select it. Arrow keys nudge it (3 px for ladders and items, a 4 px block for platforms, a row up or down). Delete removes it. Click the gutter to inspect a row.</p>
+      <p class="note">Clicking an existing object selects it, whatever the tool; the drawing tools only create on empty space. Arrow keys move the selection (3 px for ladders and items, a 4 px block for platforms, a row up or down). Shift + arrows resize it: a platform's rows (up/down) and width (left/right), a ladder's length. Delete removes it. Click the gutter to inspect a row.</p>
     </aside>
 
     <div class="screenbox">
@@ -143,13 +144,13 @@ textarea { width: 100%; min-height: 220px; background: var(--panel2); border: 1p
     </div>
 
     <aside style="display:flex;flex-direction:column;gap:16px;min-width:0">
+      <div class="panel">
+        <div class="row-inline"><h2>Selection</h2></div>
+        <div id="sel-info" class="note">Nothing selected. Click a platform, ladder or item to select it (with any tool).</div>
+      </div>
       <div class="panel" id="inspector">
         <h2>Row</h2>
         <div id="row-info" class="note">Click the gutter beside the screen, or any object, to inspect its row.</div>
-      </div>
-      <div class="panel">
-        <div class="row-inline"><h2>Selection</h2></div>
-        <div id="sel-info" class="note">Nothing selected.</div>
       </div>
       <div class="panel">
         <div class="row-inline" style="justify-content:space-between"><h2>Problems on this screen</h2><span id="issue-count"></span></div>
@@ -253,7 +254,7 @@ function sampleProject() {
     graphics: {
       background: 0xAA,
       stripes: [0x00, 0x58, 0x58, 0x00, 0xA4, 0xA4, 0xA4, 0xA4],
-      ladder: { pole: 0x42, rung: 0x7E, every: 4, phase: 0 },
+
       trogg: { colour: 0x1E, frames: [{ name: 'Walk', rows: TROGG.slice(), yoyoRow: 8 }, { name: 'Climb', rows: CLIMB.slice(), yoyoRow: -1 }] },
       items: [
         { kind: 'gem', name: 'Gem', colour: 0x00, rows: ['...XX...', '..X..X..', '.X....X.', 'X......X', '.X....X.', '..X..X..', '...XX...'].map(bitsOf) },
@@ -263,16 +264,37 @@ function sampleProject() {
       ]
     },
     budget: { logic: 1280, ram: 72 },
-    types: [{ name: 'Letters', screens: [starter, fr, ak] }, { name: 'Type 2', screens: [blankScreen('Screen 1')] }, { name: 'Type 3', screens: [blankScreen('Screen 1')] }]
+    types: [{ name: 'Letters', ladder: [0x7E, 0x42, 0x42, 0x42], screens: [starter, fr, ak] },
+      { name: 'Type 2', ladder: [0x7E, 0x42, 0x42, 0x42], screens: [blankScreen('Screen 1')] },
+      { name: 'Type 3', ladder: [0x7E, 0x42, 0x42, 0x42], screens: [blankScreen('Screen 1')] }]
   };
 }
 function blankScreen(name) { return { name, platforms: [], ladders: [], items: [], trogg: { x: 72, row: 75 } }; }
 
 // ---------------------------------------------------------------- state -----------------------
-let P = load() || sampleProject();
+let P = load() || normalise(sampleProject());
 let typeI = 0, scrI = 0, tool = 'select', kind = 'gem', sel = null, rowSel = null, FEAS = null, drag = null, hoverRow = null;
 const scr = () => P.types[typeI].screens[scrI];
-function load() { try { const s = localStorage.getItem('frak-vcs-editor'); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
+function load() { try { const s = localStorage.getItem('frak-vcs-editor'); return s ? normalise(JSON.parse(s)) : null; } catch (e) { return null; } }
+// items carry a colour per row (a per-line colour table, like the platform stripes)
+function normalise(d) {
+  const g = d.graphics;
+  // ladders: one repeating section per level type (older projects: a pole/rung ladder, or kinds)
+  let old = [0x7E, 0x42, 0x42, 0x42];
+  if (g.ladder) { old = []; for (let k = 0; k < g.ladder.every; k++) old.push(k === g.ladder.phase ? g.ladder.rung : g.ladder.pole); }
+  if (Array.isArray(g.ladders) && g.ladders.length && g.ladders[0].middle && g.ladders[0].middle.length) old = g.ladders[0].middle.slice();
+  delete g.ladder; delete g.ladders;
+  for (const T of d.types) {
+    if (!Array.isArray(T.ladder) || !T.ladder.length) T.ladder = old.slice();
+    for (const sc of T.screens) for (const l of sc.ladders) delete l.kind;
+  }
+  for (const it of d.graphics.items) {
+    if (!Array.isArray(it.colours)) it.colours = it.rows.map(() => it.colour);
+    while (it.colours.length < it.rows.length) it.colours.push(it.colours[it.colours.length - 1] ?? it.colour);
+    it.colours.length = it.rows.length;
+  }
+  return d;
+}
 function save() { try { localStorage.setItem('frak-vcs-editor', JSON.stringify(P)); } catch (e) { /* storage blocked: work stays in this tab */ } }
 
 // ---------------------------------------------------------------- rules -----------------------
@@ -303,6 +325,13 @@ const onGrid = x => x >= P1MIN && (x - P1MIN) % 3 === 0;
 const itemDef = k => P.graphics.items.find(i => i.kind === k) || P.graphics.items[0];
 const itemLines = it => [it.bottom - itemDef(it.kind).rows.length, it.bottom];   // [first, end)
 
+// a ladder's byte on screen line y: its level type's section, repeated and anchored to the screen's
+// lines, so every ladder on a line shows the same byte and all share one GRP1 write
+function ladderByte(l, y) {
+  const sec = P.types[typeI].ladder;
+  if (y < 2 * l.top || y >= 2 * l.bottom || !sec.length) return 0;
+  return sec[y % sec.length];
+}
 function rowBlocks(s, r) {
   const b = new Set();
   for (const p of s.platforms) if (r >= p.top && r < p.top + p.rows) for (let k = p.b0; k <= p.b1; k++) b.add(k);
@@ -339,8 +368,13 @@ function rowObjects(s, r, blocks) {
     if (r < l.top || r >= l.bottom) return;
     let behind = false;
     for (let x = l.x; x < l.x + 8; x++) if (blocks.has(x >> 2)) behind = true;
-    if (!behind) objs.push({ t: 'L', x: l.x, ref: ['ladder', i] });
+    if (!behind) objs.push({ t: 'L', x: l.x, ref: ['ladder', i], g: lines.map(y => ladderByte(l, y)).join(',') });
   });
+  // all ladders on a line share one GRP1 write (one per-line table); ladders showing different
+  // graphics need writes of their own, so they are checked as separate objects (as coloured items:
+  // stricter than needed, since a black object needs no colour write)
+  const lg = new Set(objs.filter(o => o.t === 'L').map(o => o.g));
+  if (lg.size > 1) objs.forEach(o => { if (o.t === 'L') { o.t = 'O'; o.mixed = true; } });
   s.items.forEach((it, i) => {
     const [a, z] = itemLines(it);
     if (lines.some(y => y >= a && y < z)) objs.push({ t: 'O', x: it.x, ref: ['item', i] });
@@ -359,6 +393,7 @@ function analyzeRow(s, r) {
   A.xs = objs.map(o => o.x).join(',');
   A.key = A.v + '|' + A.pattern + '|' + A.xs;
   A.empty = !blocks.size && !objs.length;
+  A.mixed = objs.some(o => o.mixed);
   if (vr.err) A.errors.push(vr.err);
   for (const o of objs) {
     if (!onGrid(o.x)) A.errors.push((o.t === 'L' ? 'Ladder' : 'Item') + ' at x ' + o.x + ' is off the P1 grid: x must be 19, 22, 25 ... (3-pixel steps).');
@@ -371,7 +406,8 @@ function analyzeRow(s, r) {
   const table = FEAS.fits[A.v] && FEAS.fits[A.v][A.pattern];
   if (!table) {
     const nO = objs.filter(o => o.t === 'O').length;
-    if (nO && A.v !== 'none') A.errors.push('Coloured items can\'t share a row with a platform: no layout fits in the line budget.');
+    if (A.mixed) A.errors.push('Ladders here show different graphics on the same line, so each needs its own GRP1 write; checked as separate objects (as coloured items), this row doesn\'t fit. Line their sections up, or use one kind per row.');
+    else if (nO && A.v !== 'none') A.errors.push('Coloured items can\'t share a row with a platform: no layout fits in the line budget.');
     else if (nO > 2) A.errors.push('At most two coloured items fit on a row.');
     else A.errors.push('Too many objects for this family (' + familyName(A.v) + ').');
     return A;
@@ -383,6 +419,7 @@ function analyzeRow(s, r) {
     return A;
   }
   [A.first, A.last] = hit;
+  if (A.mixed) A.warnings.push('Ladders here show different graphics on the same line (different kinds, or sections that don\'t line up), so each needs its own GRP1 write. They are checked as if they were coloured items, which is stricter than needed: this row fits.');
   if (A.v === 'L01') A.warnings.push('PF0 is written one line ahead, late in the line: the row above must already have set this row\'s left-edge pattern.');
   if (objs.length === 1) A.infos.push('One object: GRP1 is cleared after it every line to stop its ghost (about 5 cycles, already counted).');
   return A;
@@ -478,7 +515,7 @@ function budgets() {
   const tableBytes = Object.values(perTable).reduce((a, b) => a + b, 0);
   const frames = P.graphics.trogg.frames.reduce((a, f) => a + f.rows.length, 0);
   const maxH = Math.max(...P.graphics.trogg.frames.map(f => f.rows.length));
-  const itemsB = P.graphics.items.reduce((a, i) => a + i.rows.length, 0);
+  const itemsB = P.graphics.items.reduce((a, i) => a + 2 * i.rows.length, 0) + P.types[typeI].ladder.length;
   const rom = { bodies: keys.size * BODY_BYTES, calls, tables: tableBytes, trogg: 128 + frames, items: itemsB, kernel: KERNEL_BYTES, logic: +P.budget.logic || 0 };
   const romTotal = Object.values(rom).reduce((a, b) => a + b, 0);
   const ram = { trogg: 2 + maxH + 1, removable, stack: 4, logic: +P.budget.ram || 0 };
@@ -490,7 +527,7 @@ function lineSig(s, y) {
   let pf = ''; for (let k = 0; k < 40; k++) pf += b.has(k) ? '1' : '0';
   const parts = [pf];
   for (const p of s.platforms) if (r >= p.top && r < p.top + p.rows) { parts.push('s' + (y - 2 * p.top)); break; }
-  for (const l of s.ladders) if (r >= l.top && r < l.bottom) parts.push('l' + ((y - 2 * l.top) % P.graphics.ladder.every === P.graphics.ladder.phase ? 1 : 0));
+  for (const l of s.ladders) if (r >= l.top && r < l.bottom) parts.push('l' + ladderByte(l, y));
   // (a ladder's rung pattern is part of the line data: rungs every 4 lines make ladder runs periodic)
   for (const it of s.items) { const [a, z] = itemLines(it); if (y >= a && y < z) parts.push(it.kind + (y - a)); else if ((y >> 1) === ((a >> 1)) || (y >> 1) === ((z - 1) >> 1)) parts.push(it.kind + '-'); }
   return parts.join(',');
@@ -514,13 +551,10 @@ function draw() {
       const b = rowBlocks(s, r); let behind = false;
       for (let x = l.x; x < l.x + 8; x++) if (b.has(x >> 2)) behind = true;
       if (behind) continue;
-      for (const y of [2 * r, 2 * r + 1]) {
-        const v = (y - 2 * l.top) % g.ladder.every === g.ladder.phase ? g.ladder.rung : g.ladder.pole;
-        drawByte(v, l.x, y, '#000000', 1);
-      }
+      for (const y of [2 * r, 2 * r + 1]) drawByte(ladderByte(l, y), l.x, y, '#000000', 1);
     }
   });
-  s.items.forEach(it => { const d = itemDef(it.kind); const a = it.bottom - d.rows.length; d.rows.forEach((v, i) => drawByte(v, it.x, a + i, col(d.colour), 1)); });
+  s.items.forEach(it => { const d = itemDef(it.kind); const a = it.bottom - d.rows.length; d.rows.forEach((v, i) => drawByte(v, it.x, a + i, col(d.colours[i] ?? d.colour), 1)); });
   // Trogg: double width, each row two lines, first frame
   const t = s.trogg, f = g.trogg.frames[0];
   if (t) f.rows.forEach((v, i) => { for (const y of [2 * (t.row - f.rows.length + 1 + i), 2 * (t.row - f.rows.length + 1 + i) + 1]) drawByte(v, t.x, y, col(g.trogg.colour), 2); });
@@ -601,7 +635,9 @@ function showSel() {
   if (sel.type === 'platform') {
     const p = s.platforms[sel.i];
     h = '<h3>Platform</h3><p class="mono note" style="margin:0">x ' + p.b0 * 4 + '-' + ((p.b1 + 1) * 4 - 1) + ', rows ' + p.top + '-' + (p.top + p.rows - 1) + '</p>' +
-      '<div class="row-inline"><label>Rows tall <input type="number" id="in-prows" min="1" max="16" value="' + p.rows + '"></label></div>';
+      '<div class="row-inline"><label>Rows tall <input type="number" id="in-prows" min="1" max="16" value="' + p.rows + '"></label>' +
+      '<label>Left x <input type="number" id="in-pl" step="4" min="0" max="156" value="' + p.b0 * 4 + '"></label>' +
+      '<label>Right x <input type="number" id="in-pr" step="4" min="3" max="159" value="' + ((p.b1 + 1) * 4 - 1) + '"></label></div>';
   } else if (sel.type === 'ladder') {
     const l = s.ladders[sel.i];
     h = '<h3>Ladder</h3><div class="row-inline"><label>x <input type="number" id="in-lx" step="3" min="19" max="154" value="' + l.x + '"></label>' +
@@ -618,6 +654,8 @@ function showSel() {
   box.innerHTML = h + '<div class="row-inline"><button id="btn-del-sel">Delete</button></div>';
   const bind = (id, fn) => { const e = document.getElementById(id); if (e) e.addEventListener('change', () => { fn(e); commit(); }); };
   bind('in-prows', e => s.platforms[sel.i].rows = clampI(e.value, 1, 16));
+  bind('in-pl', e => { const q = s.platforms[sel.i]; q.b0 = Math.min(q.b1, clampI(e.value / 4, 0, 39)); });
+  bind('in-pr', e => { const q = s.platforms[sel.i]; q.b1 = Math.max(q.b0, clampI((+e.value + 1) / 4 - 1, 0, 39)); });
   bind('in-lx', e => s.ladders[sel.i].x = snapX(+e.value));
   bind('in-lt', e => s.ladders[sel.i].top = clampI(e.value, 0, s.ladders[sel.i].bottom - 1));
   bind('in-lb', e => s.ladders[sel.i].bottom = clampI(+e.value + 1, s.ladders[sel.i].top + 1, 96));
@@ -670,9 +708,10 @@ function buildTools() {
   for (const [k, label] of TOOLS) {
     const b = document.createElement('button'); b.textContent = label; b.id = 'tool-' + k;
     if (k === tool) b.className = 'on';
-    b.addEventListener('click', () => { tool = k; buildTools(); document.getElementById('item-kind-box').hidden = tool !== 'item'; });
+    b.addEventListener('click', () => { tool = k; buildTools(); });
     box.appendChild(b);
   }
+  document.getElementById('item-kind-box').hidden = tool !== 'item';
   const sk = document.getElementById('sel-kind');
   sk.innerHTML = P.graphics.items.map(d => '<option value="' + d.kind + '"' + (d.kind === kind ? ' selected' : '') + '>' + esc(d.name) + '</option>').join('');
 }
@@ -688,6 +727,12 @@ cv.addEventListener('pointerdown', ev => {
     if (tool === 'erase') { if (h) { sel = h; delSel(); } return; }
     sel = h; rowSel = row;
     if (h) drag = { mode: 'move', start: p, orig: JSON.parse(JSON.stringify(objOf(h))) };
+    refresh(false); return;
+  }
+  const h0 = hit(p.x, p.y);
+  if (h0 && tool !== 'trogg') {           // clicking an existing object selects it (and starts a move)
+    sel = h0; rowSel = row;
+    drag = { mode: 'move', start: p, orig: JSON.parse(JSON.stringify(objOf(h0))) };
     refresh(false); return;
   }
   if (tool === 'platform') drag = { mode: 'platform', b0: Math.floor(p.x / 4), r0: row, b1: Math.floor(p.x / 4), r1: row };
@@ -736,7 +781,13 @@ cv.addEventListener('keydown', ev => {
   const o = objOf(sel); if (!o) return;
   const k = ev.key; let done = true;
   if (k === 'Delete' || k === 'Backspace') delSel();
-  else if (k === 'ArrowLeft' || k === 'ArrowRight') {
+  else if (ev.shiftKey && (k.startsWith('Arrow'))) {
+    const up = k === 'ArrowUp' || k === 'ArrowLeft' ? -1 : 1;
+    if (sel.type === 'platform' && (k === 'ArrowUp' || k === 'ArrowDown')) o.rows = Math.max(1, Math.min(ROWS - o.top, o.rows + up));
+    else if (sel.type === 'platform') o.b1 = Math.max(o.b0, Math.min(39, o.b1 + up));
+    else if (sel.type === 'ladder') o.bottom = Math.max(o.top + 1, Math.min(ROWS, o.bottom + up));
+    else done = false;
+  } else if (k === 'ArrowLeft' || k === 'ArrowRight') {
     const d = k === 'ArrowLeft' ? -1 : 1;
     if (sel.type === 'platform') { const w = o.b1 - o.b0; o.b0 = Math.max(0, Math.min(39 - w, o.b0 + d)); o.b1 = o.b0 + w; }
     else if (sel.type === 'trogg') o.x = clampI(o.x + d, 0, 144);
@@ -798,9 +849,13 @@ function swatches(cur, onPick, id) {
 }
 function pixelEditor(rows, colour, opts) {
   const g = document.createElement('div'); g.className = 'pix';
+  if (opts.rowColour) g.style.gridTemplateColumns = 'repeat(8, 22px) auto auto';
   let paint = null;
   rows.forEach((v, r) => {
+    if (opts.rowColour) colour = opts.rowColour(r);
+    const rc = colour;
     for (let b = 0; b < 8; b++) {
+      const colour = rc;
       const c = document.createElement('div'); c.className = 'c' + (b === 7 && opts.yoyo ? ' y' : '');
       if (v & (0x80 >> b)) c.style.background = colour;
       const set = () => { const on = paint; rows[r] = on ? rows[r] | (0x80 >> b) : rows[r] & ~(0x80 >> b); c.style.background = on ? colour : ''; hx.textContent = hexB(rows[r]); };
@@ -809,6 +864,12 @@ function pixelEditor(rows, colour, opts) {
       g.appendChild(c);
     }
     const hx = document.createElement('span'); hx.className = 'hx'; hx.textContent = hexB(v) + (opts.label ? opts.label(r) : ''); g.appendChild(hx);
+    if (opts.onPickRow) {
+      const b = document.createElement('button'); b.className = 'rowcol'; b.style.background = rc;
+      b.title = 'Colour of row ' + (r + 1); b.setAttribute('aria-label', b.title);
+      b.addEventListener('click', () => opts.onPickRow(r, b));
+      g.appendChild(b);
+    }
   });
   g.addEventListener('pointerup', () => { if (paint !== null) { paint = null; commit(); } });
   g.addEventListener('pointerleave', () => { if (paint !== null) { paint = null; commit(); } });
@@ -816,10 +877,15 @@ function pixelEditor(rows, colour, opts) {
 }
 const hexB = v => '$' + (v & 255).toString(16).toUpperCase().padStart(2, '0');
 function card(title, note) { const c = document.createElement('div'); c.className = 'panel'; c.innerHTML = '<h3>' + esc(title) + '</h3>' + (note ? '<p class="note" style="margin:0">' + note + '</p>' : ''); return c; }
-function heightControl(rows, min, max, label) {
+function heightControl(rows, min, max, label, colours) {
   const l = document.createElement('label'); l.className = 'row-inline';
   l.innerHTML = label + ' <input type="number" min="' + min + '" max="' + max + '" value="' + rows.length + '">';
-  l.querySelector('input').addEventListener('change', e => { const n = clampI(e.target.value, min, max); while (rows.length < n) rows.push(0); rows.length = n; commit(); });
+  l.querySelector('input').addEventListener('change', e => {
+    const n = clampI(e.target.value, min, max);
+    while (rows.length < n) rows.push(0); rows.length = n;
+    if (colours) { while (colours.length < n) colours.push(colours[colours.length - 1] ?? 0); colours.length = n; }
+    commit();
+  });
   return l;
 }
 function buildGfx() {
@@ -845,29 +911,36 @@ function buildGfx() {
   tc.appendChild(add); box.appendChild(tc);
   // items
   g.items.forEach((d, di) => {
-    const c = card(d.name, 'Player 1 copy, one row per scanline, with its own colour. Coloured items can\'t share a row with a platform, and at most two fit on a row.');
-    c.appendChild(pixelEditor(d.rows, col(d.colour), {}));
-    const ctl = document.createElement('div'); ctl.className = 'row-inline'; ctl.appendChild(heightControl(d.rows, 1, 32, 'Lines'));
+    const c = card(d.name, 'Player 1 copy, one row per scanline, each row with its own colour (a per-line table). Click a row\'s chip to change its colour, or use the palette below to colour every row. Coloured items can\'t share a row with a platform, and at most two fit on a row.');
+    const pick = document.createElement('div');
+    c.appendChild(pixelEditor(d.rows, col(d.colour), {
+      rowColour: r => col(d.colours[r] ?? d.colour),
+      onPickRow: (r, btn) => {
+        pick.innerHTML = '<p class="note" style="margin:0">Row ' + (r + 1) + ' colour:</p>';
+        pick.appendChild(swatches(d.colours[r], v => { d.colours[r] = v; }, 'sw-row-' + di + '-' + r));
+      }
+    }));
+    c.appendChild(pick);
+    const ctl = document.createElement('div'); ctl.className = 'row-inline'; ctl.appendChild(heightControl(d.rows, 1, 32, 'Lines', d.colours));
     if (g.items.length > 1) { const del = document.createElement('button'); del.textContent = 'Delete'; del.addEventListener('click', () => { g.items.splice(di, 1); commit(); }); ctl.appendChild(del); }
     c.appendChild(ctl);
-    c.appendChild(swatches(d.colour, v => d.colour = v, 'sw-item-' + di));
+    const allL = document.createElement('p'); allL.className = 'note'; allL.style.margin = '0'; allL.textContent = 'Every row:';
+    c.appendChild(allL);
+    c.appendChild(swatches(d.colour, v => { d.colour = v; d.colours = d.rows.map(() => v); }, 'sw-item-' + di));
     box.appendChild(c);
   });
   const ic = card('New item kind', 'Adds a graphic you can place with the Item tool.');
   const ib = document.createElement('button'); ib.textContent = 'Add an item kind';
-  ib.addEventListener('click', () => { const n = g.items.length + 1; g.items.push({ kind: 'item' + Date.now().toString(36), name: 'Item ' + n, colour: 0x1E, rows: [0x3C, 0x7E, 0x7E, 0x3C] }); commit(); });
+  ib.addEventListener('click', () => { const n = g.items.length + 1; g.items.push({ kind: 'item' + Date.now().toString(36), name: 'Item ' + n, colour: 0x1E, rows: [0x3C, 0x7E, 0x7E, 0x3C], colours: [0x1E, 0x1E, 0x1E, 0x1E] }); commit(); });
   ic.appendChild(ib); box.appendChild(ic);
   // ladder
-  const lc = card('Ladders', 'Always black (fixed colour). Every ladder shares one graphic, which is why up to five fit on a row with only one GRP1 write.');
-  const lad = g.ladder;
-  const poleRows = [lad.pole], rungRows = [lad.rung];
-  const pe = pixelEditor(poleRows, '#000000', { label: () => '  pole' }), re = pixelEditor(rungRows, '#000000', { label: () => '  rung' });
-  pe.addEventListener('pointerup', () => { lad.pole = poleRows[0]; commit(); }); re.addEventListener('pointerup', () => { lad.rung = rungRows[0]; commit(); });
-  lc.appendChild(pe); lc.appendChild(re);
-  const le = document.createElement('label'); le.className = 'row-inline';
-  le.innerHTML = 'A rung every <input type="number" min="2" max="16" value="' + lad.every + '"> lines';
-  le.querySelector('input').addEventListener('change', e => { lad.every = clampI(e.target.value, 2, 16); lad.phase = Math.min(lad.phase, lad.every - 1); commit(); });
-  lc.appendChild(le); box.appendChild(lc);
+  P.types.forEach((T, ti) => {
+    const c = card('Ladder: ' + T.name, 'Black (fixed colour). One section, repeated down every ladder in this level type and anchored to the screen\'s lines, so all ladders on a line show the same byte and share one GRP1 write. One row per scanline.');
+    c.appendChild(pixelEditor(T.ladder, '#000000', {}));
+    const ctl = document.createElement('div'); ctl.className = 'row-inline'; ctl.appendChild(heightControl(T.ladder, 1, 32, 'Lines'));
+    c.appendChild(ctl);
+    box.appendChild(c);
+  });
   // stripes and background
   const sc = card('Platform stripes', 'Colour of each scanline of a platform, top to bottom, from a per-line table. Platforms taller than this repeat the last colour.');
   g.stripes.forEach((v, i) => {
@@ -902,7 +975,7 @@ function loadText(t) {
   try {
     const d = JSON.parse(t);
     if (!d.graphics || !Array.isArray(d.types) || !d.types.length) throw new Error('no graphics or level types');
-    P = d; P.budget = P.budget || { logic: 1280, ram: 72 }; typeI = 0; scrI = 0; sel = null; rowSel = null;
+    P = normalise(d); P.budget = P.budget || { logic: 1280, ram: 72 }; typeI = 0; scrI = 0; sel = null; rowSel = null;
     io.hidden = true; commit(); buildTools();
   } catch (e) { ioMsg.textContent = 'That isn\'t a project file (' + e.message + '). Paste the JSON this dialog exports.'; }
 }
