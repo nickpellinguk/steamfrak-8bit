@@ -196,7 +196,8 @@ def expected(v, tabs, y, xs):
 
 
 def main():
-    outdir = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, 'out', 'pf0'))
+    args = [a for a in sys.argv[1:] if not a.startswith('--')]
+    outdir = os.path.abspath(args[0] if args else os.path.join(HERE, 'out', 'pf0'))
     os.makedirs(outdir, exist_ok=True)
     import json
     fits = json.load(open(os.path.join(HERE, '..', 'editor', 'feasibility.json')))['fits']
