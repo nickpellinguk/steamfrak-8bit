@@ -120,35 +120,33 @@ def compile_screen(plan, outdir):
         run_x.append(seen[sig])
     if nlines > 256:
         raise SystemExit('line index overflow: %d lines' % nlines)
-    # data area from $F000: each table's [minX, maxX] in one page, its label = start - minX, with the
-    # start's page offset >= minX so the label is in the same page (no indexed read crosses)
-    mem, labels, cur = {}, {}, 0xF000
-    for t in sorted(data, key=lambda t: -(max(data[t]) - min(data[t]))):
-        lo, hi = min(data[t]), max(data[t])
-        if (cur & 0xFF) < lo:
-            cur = (cur & 0xFF00) + lo
-        if (cur & 0xFF) + (hi - lo) > 0xFF:
-            cur = (cur & 0xFF00) + 0x100 + lo
-        labels[t] = cur - lo
-        for x in range(lo, hi + 1):
-            mem[cur + x - lo] = data[t].get(x, 0)
-        cur += hi - lo + 1
-    table_bytes = sum(max(d) - min(d) + 1 for d in data.values())
+    # data area from $F000, packed: each block is placed at the first address where every byte it
+    # defines is free or already holds the same value (tables only define the lines their runs read,
+    # so they overlap freely); an indexed table's label must be in the same page as every line it
+    # reads (label offset + max line <= 255), so no read crosses a page
+    mem, labels = {}, {}
+
+    def place(name, vals, indexed):
+        xs = sorted(vals)
+        lo, hi = xs[0], xs[-1]
+        for page in range(0xF000, 0x10000, 0x100):
+            for off in (range(0, 256 - hi) if indexed else range(-lo, 256)):
+                a = page + off
+                if all(mem.get(a + x) in (None, vals[x]) for x in xs):
+                    for x in xs:
+                        mem[a + x] = vals[x]
+                    labels[name] = a
+                    return
+        raise SystemExit('no room for ' + name)
+    for t in sorted(data, key=lambda t: -len(data[t])):
+        place(t, data[t], True)
+    table_bytes = sum(len(d) for d in data.values())
     tr = plan['trogg']
     frame = tr['frames'][0]['rows']
     h = len(frame)
     strip = [0] * 96 + list(range(1, h + 1)) + [0] * 96
-    if (cur & 0xFF) + len(strip) > 0x100:
-        cur = (cur & 0xFF00) + 0x100
-    labels['TroggStrip'] = cur
-    for i, v in enumerate(strip):
-        mem[cur + i] = v
-    cur += len(strip)
-    labels['TroggFrame'] = cur
-    for i, v in enumerate(frame):
-        mem[cur + i] = v
-    cur += h
-    data_end = cur
+    place('TroggStrip', dict(enumerate(strip)), True)    # one page: inc TrogPtr only steps the low byte
+    place('TroggFrame', dict(enumerate(frame)), False)
     # Trogg pointer: the first body call increments it before reading, so row k reads ptr0 + k + 1;
     # rows feet-h+1 .. feet show frame rows 1..h (strip index 96 .. 95+h)
     ptr0 = labels['TroggStrip'] + 95 - (tr['row'] - h + 1)
@@ -269,7 +267,7 @@ OS:     sta WSYNC
             sym[p[0]] = int(p[1], 16)
     body_bytes = sum(nbytes(c) for _, c, _ in bodies.values())
     cost = {
-        'tables': table_bytes, 'table area (with page gaps)': labels['TroggStrip'] - 0xF000,
+        'tables (bytes read)': table_bytes, 'data area (packed)': max(mem) + 1 - 0xF000,
         'trogg strip + frame': len(strip) + h,
         'bodies': body_bytes, 'call list': 2 * len(plan['runs']) + 3 * 96,
         'frame code': None, 'total code+data': None,
