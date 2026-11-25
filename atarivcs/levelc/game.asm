@@ -45,7 +45,8 @@ YoF     = $B7
 YoBack  = $B8           ; 1: coming back
 YoDeb   = $B9           ; 1: fire must be released before the next throw
 YoX     = $BA           ; the yoyo's x (M0)
-Collected = $BB         ; a bit per gem / key on the screen (ItBit): collected
+Collected = $BB         ; a bit per item on the screen (ItBit): gone (gems and keys collected,
+                        ; meanies yoyoed)
 Mode    = $BC           ; 0: the front screen, 1: playing
 FArm    = $BD           ; front screen: fire has been up (so a press starts)
 ; RunX ($C0 on, defined by levelc.py): the line index of each run showing items, for the kernel
@@ -582,14 +583,14 @@ YoPos:  lda Facing
         cmp #156
         bcs YPEdge
         sta YoX
-        rts
+        jmp YoHit
 YPL:    lda TX
         sec
         sbc #4
         sbc YoLen
         bcc YPEdge
         sta YoX
-        rts
+        jmp YoHit
 YPEdge: lda #1                  ; the screen's edge: come back
         sta YoBack
         rts
@@ -618,11 +619,53 @@ CoHit:  lda TX
         adc #6
         cmp #13
         bcs CoN                 ; more than 6 px apart
+        lda ItKind,x            ; a meanie: he dies
+        bne CoDie
         lda Collected
         ora ItBit,x
         sta Collected
 CoN:    dex
         bpl CoL
+        ENDIF
+        rts
+CoDie:  lda #90
+        sta Dead
+        rts
+
+; ---- the yoyo against the meanies (ItKind 1) still there: the ball (4 px at YoX, on his hand's
+; row) overlapping one removes it, and the yoyo comes back. Gems and keys aren't affected.
+YoHit:
+        IF NITEM > 0
+        lda TRow
+        sec
+        sbc #HANDUP
+        sta Tmp2                ; his hand's row
+        ldx #NITEM - 1
+YHL:    lda ItKind,x
+        beq YHN
+        lda Collected
+        and ItBit,x
+        bne YHN
+        lda Tmp2
+        cmp ItTop,x
+        bcc YHN
+        lda ItBot,x
+        cmp Tmp2
+        bcc YHN
+        lda YoX                 ; ball x .. x + 3 against the meanie's x .. x + 7
+        clc
+        adc #3
+        sec
+        sbc ItX,x
+        cmp #11
+        bcs YHN
+        lda Collected
+        ora ItBit,x
+        sta Collected
+        lda #1
+        sta YoBack
+YHN:    dex
+        bpl YHL
         ENDIF
         rts
 

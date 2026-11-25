@@ -16,7 +16,7 @@ R, L, D, U, FIRE = 0x80, 0x40, 0x20, 0x10, 'fire'
 
 
 class Game:
-    def __init__(self, base):
+    def __init__(self, base, no_meanie=False):
         self.sym = {}
         for line in open(base + '.sym'):
             p = line.split()
@@ -48,6 +48,8 @@ class Game:
         self.frame(0)
         self.mode1 = self.m.memory[self.sym['Mode']]
         self.yoyo1 = self.m.memory[self.sym['State']]
+        if no_meanie:                       # (the Scrubbly on the floor already yoyoed away)
+            self.m.memory[self.sym['Collected']] |= 4
 
     def select(self, n):
         mem = getattr(self.m.memory, '_subject', self.m.memory)
@@ -90,7 +92,7 @@ def main():
     os.makedirs(outdir, exist_ok=True)
     subprocess.run([sys.executable, os.path.join(HERE, 'levelc.py'), '--game', outdir], check=True,
                    stdout=subprocess.DEVNULL)
-    g = Game(os.path.join(outdir, 'level'))
+    g = Game(os.path.join(outdir, 'level'), no_meanie=True)
     ok = True
 
     def expect(what, st, **want):
@@ -189,7 +191,7 @@ def main():
     expect('down off its bottom (row 81): in the air for rows 81-83', {**g.state(), 'air': air[:1] + air[-1:]}, air=[81, 83])
     expect('... and lands on the floor', g.state(), state=0, row=83, dead=0)
     # the yoyo: fire throws it the way he faces, out while held (to 40 px), back on release
-    g = Game(os.path.join(outdir, 'level'))
+    g = Game(os.path.join(outdir, 'level'), no_meanie=True)
     g.run(40, R)
     x0 = g.state()['x']
     yo = lambda: {**g.state(), 'len': g.m.memory[g.sym['YoLen']], 'yox': g.m.memory[g.sym['YoX']]}
@@ -213,22 +215,45 @@ def main():
     g.run(3)
     expect('released early: comes back', yo(), len=lambda v: not v < 7)
     expect('... and he can walk again', g.run(40, R), state=0, x=lambda v: v <= x0)
-    # gems and keys: touching one collects it (Collected bits: gem x34 = 1, gem x88 = 2, key x103 = 4)
+    # items (Collected bits): gem x34 = 1, gem x88 = 2, Scrubbly x94 (a meanie) = 4, key x118 = 8
     g = Game(os.path.join(outdir, 'level'))
-    col = lambda: {**g.state(), 'coll': g.m.memory[g.sym['Collected']], 'runx': list(g.m.memory[g.sym['RunX']:g.sym['RunX'] + 4])}
+    col = lambda: {**g.state(), 'coll': g.m.memory[g.sym['Collected']], 'runx': list(g.m.memory[g.sym['RunX']:g.sym['RunX'] + 5])}
     st = col()
-    g.run(60, R)
-    expect('walking right along the floor: not yet at the key', col(), coll=0) if col()['x'] < 96 else None
-    while g.state()['x'] < 97:
+    died = False
+    for _ in range(120):
         g.run(1, R)
-    g.run(1)
+        died |= g.died
+        if died:
+            break
+    expect('walking right into the Scrubbly (x 94): he dies', {**g.state(), 'died': int(died)}, died=1, x=lambda v: not 86 <= v <= 90)
+    expect('... it is still there', col(), coll=0)
+    g.run(100)                                     # (restarted at x 57)
+    g.run(20, R)                                   # x 67, facing right
+    for _ in range(60):
+        g.run(1, 0, True)
+        if col()['coll']:
+            break
     st2 = col()
-    expect('reaching the key (x 103): collected', st2, coll=4)
-    expect('... its run now uses its empty dataset', st2, runx=lambda r: r == st['runx'])
+    expect('the yoyo reaches it: the Scrubbly is gone', st2, coll=4, state=3, dead=0)
+    expect('... its runs use their empty datasets', st2, runx=lambda r: r == st['runx'])
+    expect('... and the yoyo comes back', g.run(40), state=0)
+    expect('now he walks past where it was', g.dies(80, R), died=0, x=lambda v: v <= 100)
+    # gems and keys
     g = Game(os.path.join(outdir, 'level'))
     g.run(46, L)
     g.run(200, U)
     expect('climbing to the top-left ledge collects its gem (x 34)', col(), coll=1, row=20)
+    g.m.memory[g.sym['TX']] = 135                 # (onto the right ledge, x 112-143 at row 45: the key's,
+    g.m.memory[g.sym['TRow']] = 44                # facing left, the key at x 118 between him and the edge)
+    g.m.memory[g.sym['Facing']] = 8
+    g.run(2)
+    g.run(1, 0, True)
+    g.run(60, 0, True)
+    expect('the yoyo over the key: no effect on it', col(), coll=1, row=44)
+    g.run(60)
+    for _ in range(40):
+        g.run(1, L)
+    expect('walking into the key collects it', col(), coll=1 | 8)
     print('all ok' if ok else 'SOME FAILED')
     return ok
 

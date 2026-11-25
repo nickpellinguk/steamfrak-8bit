@@ -32,7 +32,7 @@ const fs = require('fs');
         }
         lines.push(L);
       }
-      runs.push({ r, n: e - r, key: A.key, way: A.way, tasks: A.tasks || null, errors: A.errors,
+      runs.push({ r, n: e - r, key: A.key, way: A.way, tasks: A.tasks || null, errors: A.errors, prevcol: A.prevcol || ['imm', 0],
         objs: A.objs.map(o => ({ t: o.t, x: o.x, ref: o.ref })), lit: [...A.lit].sort((a, c) => a - c), lines });
       r = e;
     }

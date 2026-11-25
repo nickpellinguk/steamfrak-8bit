@@ -57,7 +57,8 @@ def body(name, run):
             objs.append((o['x'], ('tbl', 'G%d' % k), ('tbl', 'C%d' % k)))
             k += 1
     extra = [(lo, hi, (ld[0], ld[1]), reg) for lo, hi, ld, reg in (run['tasks'] or [])]
-    code, end = F.schedule(((0, 0, 0), (0, 0, 0)), ((0, 0, 0), (0, 0, 0)), objs, ('imm', 0), True,
+    prevcol = tuple(run.get('prevcol') or ('imm', 0))     # P1's colour as the run above left it
+    code, end = F.schedule(((0, 0, 0), (0, 0, 0)), ((0, 0, 0), (0, 0, 0)), objs, prevcol, True,
                            objs[-1][0] if objs else None, t0=10, end_limit=55, extra=extra)
     flat = [i.strip() for c in code for i in c.split('\n') if i.strip()]
     tail = list(TAIL)
@@ -141,16 +142,18 @@ def compile_screen(plan, outdir, game=False):
     # bodies: one per distinct (row key, timed writes)
     bodies, run_body = {}, []
     for run in plan['runs']:
-        bk = run['key'] + json.dumps(run['tasks'])
+        bk = run['key'] + json.dumps(run['tasks']) + json.dumps(run.get('prevcol'))
         if bk not in bodies:
             name = 'B%d' % len(bodies)
             code, tables = body(name, run)
             bodies[bk] = (name, code, tables)
         run_body.append(bodies[bk])
     # collectable items (gems and keys): a bit each in Collected
-    coll = [i for i, it in enumerate(plan['items']) if it['kind'] in ('gem', 'key')] if game else []
+    # every item can go: gems and keys are collected, the rest are meanies (yoyoed away; touching
+    # one kills the Trogg)
+    coll = list(range(len(plan['items']))) if game else []
     if len(coll) > 8:
-        raise SystemExit('more than 8 gems and keys on a screen')
+        raise SystemExit('more than 8 items (gems, keys and meanies) on a screen')
     bit = {i: 1 << b for b, i in enumerate(coll)}
     # lines: runs with the same body and the same per-line data (in the tables it reads) share them.
     # A run showing collectable items gets a dataset per combination of them collected (their
@@ -218,8 +221,11 @@ def compile_screen(plan, outdir, game=False):
     strip = [0] * 96 + list(range(1, h + 1)) + [0] * 96
     place('TroggStrip', dict(enumerate(strip)), True)    # one page: inc TrogPtr only steps the low byte
     place('TroggFrame', dict(enumerate(frame)), False, 0 if game else 1)
-    nlad = 0
+    nlad, handup = 0, 0
     if game:
+        f0 = tr['frames'][0]
+        hand = [i for i, v in enumerate(f0['rows']) if v & 1]
+        handup = len(f0['rows']) - 1 - (hand[0] if hand else len(f0['rows']) - 1)   # rows above the feet
         pidx, pb, lidx, lb = move_maps(plan)
         fr = [f['rows'] for f in tr['frames'][:2]]
         fr += [fr[0]] * (2 - len(fr))
@@ -240,7 +246,8 @@ def compile_screen(plan, outdir, game=False):
         its = [plan['items'][i] for i in coll]
         for name, vals in (('RM1', rm1), ('RM2', rm2), ('RXV', rxv), ('ItX', [it['x'] for it in its]),
                            ('ItTop', [it['top'] >> 1 for it in its]), ('ItBot', [(it['bottom'] - 1) >> 1 for it in its]),
-                           ('ItBit', [1 << b for b in range(len(its))])):
+                           ('ItBit', [1 << b for b in range(len(its))]),
+                           ('ItKind', [0 if it['kind'] in ('gem', 'key') else 1 for it in its])):
             place(name, dict(enumerate(vals or [0])), False, 0)
         place('HMTab', {r: (-(r - 6) & 15) << 4 for r in range(15)}, True, 0)   # PosObj's fine move
         maps_bytes = len(pidx) + len(pb) + len(lidx) + len(lb)
@@ -255,7 +262,7 @@ def compile_screen(plan, outdir, game=False):
     o += ['HMP0 = $20', 'HMM0 = $22', 'REFP0 = $0B', 'INPT4 = $0C', 'SWCHA = $280', 'INTIM = $284',
           'TIM64T = $296', 'H = %d' % h,
           'START_X = %d' % tr['x'], 'START_ROW = %d' % tr['row'], 'NLAD = %d' % nlad,
-          'NIR = %d' % len(item_runs), 'NITEM = %d' % len(coll), 'RunX = $C0', 'FRONT_BG = $%02X' % front.BG, 'FRONT_INK = $%02X' % front.INK,
+          'NIR = %d' % len(item_runs), 'NITEM = %d' % len(coll), 'HANDUP = %d' % handup, 'RunX = $C0', 'FRONT_BG = $%02X' % front.BG, 'FRONT_INK = $%02X' % front.INK,
           'FRONT_FILL = $%02X' % front.FILL, 'TAIL_X = %d' % front.TAIL_P1_X]
     if game and (('--check' in sys.argv and '--front' not in sys.argv) or plan.get('skipfront')):
         o.append('SKIPFRONT = 1')       # (picture checks of the level start in it)
