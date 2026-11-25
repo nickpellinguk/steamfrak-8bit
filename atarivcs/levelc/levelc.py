@@ -73,7 +73,7 @@ def body(name, run):
         raise ValueError('tail does not fit')
     if n == 1:
         tail[4] = 'sta.w GRP0'
-    out = ['%s_i:' % name, 'inx', '%s:' % name, 'sta WSYNC', 'inc TrogPtr', 'sec', 'bit $80', '%s_s:' % name] + flat
+    out = ['%s_i:' % name, 'inx', '%s:' % name, 'sta WSYNC', 'inc TrogPtr', '%s_c:' % name, 'sec', 'bit $80', '%s_s:' % name] + flat
     # the padding goes before the GRP0 store, so the store always ends at the same late cycle (about
     # 66, pixel 130) whatever the body: every Trogg row then shows on its row's second line and the
     # next row's first, the same for any x up to about 122
@@ -338,7 +338,7 @@ def compile_screen(plan, outdir, game=False):
           'START_X = %d' % tr['x'], 'START_ROW = %d' % tr['row'], 'NLAD = %d' % nlad,
           'NIR = %d' % len(item_runs), 'NITEM = %d' % len(coll), 'KEYMASK = %d' % sum(1 << b for b, i in enumerate(coll) if plan['items'][i]['kind'] == 'key'), 'HANDUP = %d' % handup, 'RunX = $C0', 'FRONT_BG = $%02X' % front.BG, 'FRONT_INK = $%02X' % front.INK,
           'FRONT_FILL = $%02X' % front.FILL, 'TOPROWS = %d' % timer.TOPROWS, 'MUSRAM = $DB', 'AUDC0 = $15', 'AUDC1 = $16', 'AUDF0 = $17',
-          'AUDF1 = $18', 'AUDV0 = $19', 'AUDV1 = $1A', 'TWHITE = $%02X' % timer.WHITE, 'TAIL_X = %d' % front.TAIL_P1_X, 'ENABL = $1F', 'RESBL = $14', 'HMBL = $24']
+          'AUDF1 = $18', 'AUDV0 = $19', 'AUDV1 = $1A', 'TWHITE = $%02X' % timer.WHITE, 'TAIL_X = %d' % front.TAIL_P1_X, 'ENABL = $1F', 'RESBL = $14', 'HMBL = $24', 'HMK = %d' % timer.HMK]
     mv = plan.get('mover') if game else None
     if mv:
         a, b = (mv['x1'], mv['x0']) if mv['mode'] == 'rl' else (mv['x0'], mv['x1'])
@@ -376,7 +376,16 @@ def compile_screen(plan, outdir, game=False):
         calls.append('        ldx RunX+%d' % irun[ri] if ri in irun else '        ldx #%d' % (x0 + 2 * skip))
         if run.get('enabl') and (ri == 0 or plan['runs'][ri - 1].get('enabl') != run['enabl']):
             calls += ['        lda %s' % run['enabl'], '        sta ENABL      ; the moving platform (at cycle 65-67)']
-        calls += ['        jsr %s' % name] + ['        jsr %s_i' % name] * (run['n'] - 1 - skip)
+        first = 'jsr %s' % name
+        if game and not any(c.strip().startswith('jsr') for c in calls):
+            # the band's late HMOVE: its write at cycle 73 (from 57: ldx 2 or 3, the pad, sta HMOVE), a
+            # nop, then into the first body after its WSYNC and inc TrogPtr (at cycle 5: _s at 10)
+            assert not run.get('enabl')
+            n = 70 - 57 - (3 if ri in irun else 2)
+            calls += ['        ' + l for l in pad(n).split('\n')] + ['        sta HMOVE      ; (written at cycle 73)', '        nop', '        jsr %s_c' % name]
+        else:
+            calls.append('        ' + first)
+        calls += ['        jsr %s_i' % name] * (run['n'] - 1 - skip)
     body_code = []
     for name, code, tables in bodies.values():
         # a body must not straddle a page: its taken branch would cost an extra cycle there
@@ -733,7 +742,14 @@ NoTime: lda Mode            ; the front screen: P1 is the tail's fill (double wi
         sta CTRLPF          ; mirrored playfield, over the players
         lda #FRONT_FILL
         sta COLUP1
-NoTail:
+NoTail: lda TX              ; for the band: P0 and the ball HMK right (its HMOVE is late)
+        clc
+        adc #HMK
+        sta Tmp
+        lda MvX
+        clc
+        adc #HMK + 1
+        sta Tmp2
 WaitVB: lda INTIM
         bne WaitVB
         sta WSYNC

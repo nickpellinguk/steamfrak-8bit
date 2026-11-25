@@ -7,6 +7,9 @@ blanks its first 8 pixels) and park P1 for the kernel. Levels can't use rows 0-4
 TOPROWS = 5
 
 
+HMK = 8                        # the late HMOVE's extra move left
+
+
 def _pad(n):
     import tiatest
     return '        ' + tiatest.pad(n).replace('\n', '\n        ')       # (ends at cycle 54)
@@ -66,9 +69,7 @@ TLine:  sta WSYNC
         bne TLine           ; (7 lines: the glyphs' blank 8th row isn't shown)
         sty GRP0
         sty GRP1
-        ldx MvX             ; the ball (the moving platform) at MvX: as PosObj, a missile's x + 1
-        inx
-        txa
+        lda Tmp2            ; the ball (the moving platform): MvX + 1 + HMK (see the HMOVE below)
         jmp TBall           ; (over any alignment padding: neither loop's branch crosses a page)
         IF (<.) > $C8
         ALIGN 256
@@ -84,8 +85,8 @@ TBalL:  sbc #15
         nop
         sta.w RESBL
         sta HMBL            ; (71 at most: x up to 144)
-TPos:   sta WSYNC           ; P0 back to TX: as PosObj (RESP0 ends at 5n + 18)
-        lda TX
+TPos:   sta WSYNC           ; P0 back to TX: as PosObj (RESP0 ends at 5n + 18), from TX + HMK
+        lda Tmp
         sec
 TPosL:  sbc #15
         bcs TPosL
@@ -95,24 +96,26 @@ TPosL:  sbc #15
         nop
         sta.w RESP0
         sta HMP0
-        sta WSYNC
-        sta HMOVE           ; 3 (this line's first 8 pixels are blanked)
-        lda #$20
-        sta NUSIZ0          ; the Trogg again: one copy, a 4 px yoyo
+        sta WSYNC           ; (the HMOVE is at the end of this line, cycle 75: no blanked pixels,
+        lda #$20            ; but every object moves HMK further left: P0 and the ball are positioned
+        sta NUSIZ0          ; HMK right of where they go, and M0 and P1 get $80 to cancel it)
         lda Facing
         sta REFP0
         lda #$%02X
         sta COLUP0
         lda #0
-        sta COLUP1          ; 24
+        sta COLUP1          ; 21
+        lda #$80
+        sta HMM0
+        sta HMP1            ; 29
+        inc TrogPtr         ; 34: the first body's (entered after its WSYNC and inc)
 %s
-        sta RESP1           ; 57: P1 parked for the kernel
-        sta HMCLR           ; 60""" % (level_bg, trogg_col, _pad(30))
+        sta RESP1           ; 57: P1 parked for the kernel""" % (level_bg, trogg_col, _pad(20))
 
 
 def model_lines(minutes=0, seconds=0):
     """The band's 10 lines as the checker expects them: colour index per pixel (None: background)."""
-    img = [[None] * 160 for _ in range(9)] + [[0] * 8 + [None] * 152]
+    img = [[None] * 160 for _ in range(10)]
     chars = [minutes, 10, seconds // 10, seconds % 10]
     for k, c in enumerate(chars):
         for y, v in enumerate(glyph_rows(c)[:7]):
