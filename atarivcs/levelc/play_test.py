@@ -41,7 +41,8 @@ class Game:
         self.select(len(self.banks) - 1)       # (power-on: any bank; the reset stub copes)
         self.m.pc = self.banks[-1][0xFFC] | self.banks[-1][0xFFD] << 8
         self.frames = 0
-        self.frame(0)                       # start-up and the first frame: the front screen
+        self.frame(0)                       # start-up, then a frame of the front screen (fire up)
+        self.frame(0)
         self.mode0 = self.m.memory[self.sym['Mode']]
         self.frame(0, True)                 # fire starts the game
         self.frame(0)

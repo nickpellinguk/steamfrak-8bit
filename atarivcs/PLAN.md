@@ -411,14 +411,15 @@ them in the bank's ROM.
   timing is unchanged (the switch is before its first WSYNC).
 * The front screen (`levelc/front.py`): Frak's speech bubble, "FRAK!", redrawn at block resolution
   from Steam Frak's sFrak_Beeb sprite (rounded outline, 3 x 7 letters, a tail to the lower left;
-  4 lines per design row), in black playfield blocks on green, drawn by the ordinary
-  mirrored-playfield row renderers with the Trogg's buffer cleared. Its runs have their own
-  per-line tables (F prefix, their own line indexes) and call list; the display bank picks the
-  front screen's or the level's call list from `Mode`. Fire (after it has been up) starts the
-  game. `levelc.py --game --check --front` checks it in Stella.
-* Starter screen with the game and the front screen: bank 0 1729 bytes, bank 1 3386 bytes (of
-  4096 each); the front screen's 14 bodies are most of bank 1's growth, and would shrink with
-  shared family renderers.
+  4 lines per design row), in black playfield blocks on green, with a yellow fill made by switching
+  COLUBK at the main bubble's edges (under its outline columns; the tail is not filled yet). Its own
+  loop in the display bank, a line per pass with no JSR / RTS: left PF1 and PF2, COLUBK yellow
+  (cycle 34), right PF1 (41), right PF2 (exactly 48), COLUBK green (63), INX / CPX / BNE; six
+  per-line tables for its 60 lines. The display bank picks it or the level's call list from
+  `Mode`; fire (after it has been up) starts the game. `levelc.py --game --check --front` checks
+  it in Stella.
+* Starter screen with the game and the front screen: bank 0 1733 bytes, bank 1 2615 bytes (of
+  4096 each).
 
 ## Optimisation pass (backlog)
 
