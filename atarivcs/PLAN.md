@@ -389,7 +389,11 @@ them in the bank's ROM.
   bottom of a ladder that stops above a platform (as Frak's do) falls onto it, and Up below such
   a ladder jumps and catches it; left/right walks off a ladder onto a platform or into a
   fall; up/down catches a ladder unless falling fast (a falling Trogg only one carrying on below his feet); climbing down onto a platform stands; up/down
-  ignored after landing until released. `play_test.py` drives it in py65 with scripted joystick
+  ignored after landing until released. Fire throws the yoyo (M0, 4 px) the way he faces, at
+  hand height: out while held at 1.3 Frak px/tick (0.65 of ours) to 80 Frak px (40), back on
+  release, at full length or at the screen's edge; he stands still meanwhile; fire must be released
+  before the next throw. No collisions yet. Objects are positioned by one routine (P0 or M0:
+  divide-by-15 RESx + HMOVE). `play_test.py` drives it in py65 with scripted joystick
   input.
 * Starter screen with the game: 2976 of 4096 bytes.
 

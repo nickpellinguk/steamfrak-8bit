@@ -166,6 +166,31 @@ def main():
     air = [t['row'] for t in trace if t['state'] == 1]
     expect('down off its bottom (row 81): in the air for rows 81-83', {**g.state(), 'air': air[:1] + air[-1:]}, air=[81, 83])
     expect('... and lands on the floor', g.state(), state=0, row=83, dead=0)
+    # the yoyo: fire throws it the way he faces, out while held (to 40 px), back on release
+    g = Game(os.path.join(outdir, 'level'))
+    g.run(40, R)
+    x0 = g.state()['x']
+    yo = lambda: {**g.state(), 'len': g.m.memory[g.sym['YoLen']], 'yox': g.m.memory[g.sym['YoX']]}
+    g.run(1, 0, True)
+    expect('fire: throws the yoyo', yo(), state=3)
+    g.run(30, R, True)
+    expect('held: out at 0.65 px a frame, and he stands still', yo(), x=x0, len=lambda v: v not in (19, 20))
+    peak = max((g.run(1, 0, True), yo())[1]['len'] for _ in range(40))
+    expect('held: goes out to 40 px at most', {**yo(), 'len': peak}, len=40)
+    g.run(1, 0, True)
+    st = yo()
+    expect('... then comes back by itself', st, len=lambda v: v >= 40)
+    g.run(80, 0, True)
+    expect('back in his hand: standing (fire still held)', yo(), state=0)
+    expect('fire still held: no new throw', g.run(20, 0, True), state=0)
+    g.run(1)
+    g.run(1, L)
+    g.run(1, 0, True)
+    g.run(10, 0, True)
+    expect('released, then fire facing left: out to the left', yo(), state=3, yox=lambda v: v >= g.state()['x'])
+    g.run(3)
+    expect('released early: comes back', yo(), len=lambda v: not v < 7)
+    expect('... and he can walk again', g.run(40, R), state=0, x=lambda v: v <= x0)
     print('all ok' if ok else 'SOME FAILED')
     return ok
 
