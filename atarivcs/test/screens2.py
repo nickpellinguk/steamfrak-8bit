@@ -293,7 +293,7 @@ def build(which, base):
     for i, s in enumerate(TROGG):
         trogg_strip[top + i] = (i + 1) if BUFFER else bits(s)
     tx = scr['trogg_x']
-    yoyo_x = tx + 16
+    yoyo_x = tx + 8
 
     def assemble(aligned):
         o = ['        processor 6502']
@@ -334,8 +334,8 @@ Frame:  lda #2
         sta PF2
         lda #1
         sta NUSIZ1
-        lda #$25
-        sta NUSIZ0             ; double-width Trogg, 4-pixel yoyo
+        lda #$20
+        sta NUSIZ0             ; single-width Trogg, 4-pixel yoyo
         lda #>TroggStrip
         sta TrogPtr+1
         lda #<(TroggStrip-1)
@@ -447,7 +447,7 @@ def compare(png, rows, t, tx):
             v = g[1] if g[0] == 'imm' else t[g[1]][y if LINES else y // 2]
             want |= {x + i for i in range(8) if v & (0x80 >> i)}
         got = {x for x in range(160) if im.getpixel((int((x + 0.5) * sx), first + y)) != bg}
-        skip = set(range(tx - 1, tx + 24))           # Trogg and the yoyo
+        skip = set(range(tx - 1, tx + 16))           # Trogg and the yoyo
         if (want - skip) != (got - skip):
             bad.append((y, sorted(want - got - skip)[:10], sorted(got - want - skip)[:10]))
     return bad

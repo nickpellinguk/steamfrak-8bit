@@ -122,7 +122,7 @@ Frame:  lda #2
         sta GRP0
         lda #1
         sta NUSIZ1
-        lda #$25
+        lda #$20
         sta NUSIZ0
         ldy #%d
 CopyF:  lda TroggFrame-1,y
@@ -133,7 +133,7 @@ CopyF:  lda TroggFrame-1,y
         sta TrogPtr+1
         lda #<(TroggStrip-1)
         sta TrogPtr''' % (BG, TROGG_COL, len(TROGG)))
-    for reg, xx in (('RESP0', TX), ('RESM0', TX + 16)):
+    for reg, xx in (('RESP0', TX), ('RESM0', TX + 8)):
         c = (xx + 68) // 3 if reg == 'RESM0' else (xx + 63) // 3
         o.append('        sta WSYNC\n        ' + pad(c - 3).replace('\n', '\n        ') + '\n        sta %s' % reg)
     o.append('        sta WSYNC\n        ' + pad(57).replace('\n', '\n        ') + '\n        sta RESP1   ; park P1')
@@ -218,7 +218,7 @@ if __name__ == '__main__':
     bg = (90, 176, 212)
     first = next(r for r in range(im.height) if im.getpixel((im.width - 2, r)) == bg) + 1
     bad, y0 = 0, 0
-    skip = set(range(TX - 1, TX + 24))
+    skip = set(range(TX - 1, TX + 16))
     for sec, (xs, opt) in enumerate(SECTIONS):
         print('section %d (optional x %d):' % (sec, xs[opt]))
         for k in range(2 * ROWS):
