@@ -105,11 +105,11 @@ def main():
     st = g.run(1, U)
     expect('up: starts climbing', st, state=2)
     st = g.run(4, U)
-    expect('... sliding a pixel every other frame', st, x=32)
-    st = g.run(2, U)
+    expect('... sliding a pixel every fourth frame', st, x=33)
+    st = g.run(8, U)
     expect('... to the ladder centre (x 31)', st, x=31)
     st = g.run(4, U)
-    expect('climbs a row every other frame', st, row=lambda r: r not in (77, 78), state=2)
+    expect('climbs a row every other frame (17 frames: about 8 rows)', st, row=lambda r: r not in (74, 75, 76), state=2)
     st = g.run(6, R)
     expect('right between platforms: walks off into a fall', st, state=lambda v: v == 2)
     expect('... lands safely on the floor (a 6-row fall)', g.run(30), row=83, state=0, dead=0)
@@ -139,6 +139,24 @@ def main():
     st = g.run(1)
     st = g.run(200, D)
     expect('down again: on to the floor', st, state=0, row=83)
+    # the case reported: from the middle-left ledge (row 60, x 16-47), a running jump right catches
+    # the top-right ladder (x 61, rows 24-59) and slides to its centre (not to x 58, the ladder
+    # below it in the same column)
+    g = Game(os.path.join(outdir, 'level'))
+    g.run(46, L)
+    g.run(1, U)
+    while g.state()['row'] > 59:
+        g.run(1, U)
+    expect('climb to the middle-left ledge', g.run(4, R), row=59, state=0)
+    while g.state()['x'] < 40:
+        g.run(1, R)
+    g.run(1, R | U)
+    for _ in range(80):
+        if g.run(1, R | U)['state'] == 2:
+            break
+    st = g.state()
+    expect('running jump right catches the top-right ladder', st, state=2)
+    expect('... and slides to its centre (x 61)', g.run(40), x=61, state=2)
     print('all ok' if ok else 'SOME FAILED')
     return ok
 

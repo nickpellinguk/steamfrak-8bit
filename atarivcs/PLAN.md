@@ -383,8 +383,8 @@ them in the bank's ROM.
   walk a pixel every other frame (our pixels are twice as wide as Frak's; HMOVE in vertical blank); up jumps where there's no ladder (1.25 px/tick,
   gravity 0.05, terminal 4), keeping the walking direction; landing at 1.6 px/tick or faster, or
   reaching the bottom of the screen, kills (restart at the level's start, P0 repositioned by a
-  divide-by-15 RESP0 + HMOVE); climbing a row every other frame, sliding a pixel every other frame to the ladder's
-  centre (a per-column ladder x table); left/right walks off a ladder onto a platform or into a
+  divide-by-15 RESP0 + HMOVE); climbing a row every other frame, sliding a pixel every fourth frame to the ladder's
+  centre (the ladder found in a short per-level list when he starts climbing); left/right walks off a ladder onto a platform or into a
   fall; up/down catches a ladder unless falling fast; climbing down onto a platform stands; up/down
   ignored after landing until released. `play_test.py` drives it in py65 with scripted joystick
   input.

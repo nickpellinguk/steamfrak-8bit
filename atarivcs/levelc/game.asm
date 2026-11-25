@@ -4,14 +4,15 @@
 ;     the walking direction); down climbs onto a ladder below the platform; nothing underfoot falls
 ;   falling: gravity to a terminal speed; up/down catches a ladder when not falling fast; landing
 ;     too fast, or reaching the bottom of the screen, kills him (he restarts at the level's start)
-;   climbing: a row every other frame, sliding a pixel every other frame to the ladder's centre; left/right walks
+;   climbing: a row every other frame, sliding a pixel every fourth frame to the ladder's centre; left/right walks
 ;     off onto a platform, or falls; climbing down onto a platform stands; the top steps off
 ;   up/down are ignored after landing until released (Frak's updowndebounce)
 ; Movement is tested against the level's movement maps (atarivcs/PLAN.md, "Movement maps"):
 ;   PIdx (32 bands of 6 lines) -> byte offset into PPool (2 bytes: 16 cells of 8 px, x 16-143)
 ;   LIdx (32 columns of 4 px)  -> byte offset into LPool (4 bytes: 32 bands of 6 lines)
 ;   FB: feet row -> platform band right under the feet, or $FF; Band3: row -> 6-line band
-;   LadX: column -> the x of the ladder there (the climbing centre)
+;   LadL: the level's ladders (x, top band, bottom band), NLAD of them: the one being climbed
+;     gives the climbing centre (columns can hold different ladders at different heights)
 ; Included by levelc.py, which defines H, START_X, START_ROW and the data labels.
 
 TX      = $A0           ; Trogg x (left edge, pixels)
@@ -32,6 +33,7 @@ XM      = $AE           ; joystick x this frame
 Rows    = $AF
 UDDeb   = $B0           ; 1: ignore up/down until both are released
 Repos   = $B1           ; 1: position P0 from TX this frame (start, restart)
+LTarget = $B2           ; the x of the ladder being climbed
 
 ST_STAND = 0
 ST_AIR   = 1
@@ -272,6 +274,36 @@ StartClimb:
         sta VYL
         sta VYH
         sta XV
+; ---- find the ladder under the Trogg's centre at his band; its x is the climbing centre
+FindLadder:
+        lda TX
+        sta LTarget             ; (none found: stay where he is)
+        ldy TRow
+        lda Band3,y
+        sta Tmp2
+        ldx #0
+FLLoop: cpx #3 * NLAD
+        bcs DSRet
+        lda TX
+        clc
+        adc #4 + 3
+        sec
+        sbc LadL,x              ; centre - ladder x, + 3: within 0-13 when over it (the ladder
+        cmp #14                 ; map's 4 px cells reach up to 3 px past its edges)
+        bcs FLNext
+        lda Tmp2
+        cmp LadL+1,x
+        bcc FLNext
+        lda LadL+2,x
+        cmp Tmp2
+        bcc FLNext
+        lda LadL,x
+        sta LTarget
+        rts
+FLNext: inx
+        inx
+        inx
+        bne FLLoop
 DSRet:  rts
 
 DoAir:  lda XV
@@ -357,10 +389,10 @@ Rise:   clc
         rts
 
 DoClimb:
-        jsr Column              ; slide a pixel towards the ladder's centre
-        bcs DC0
-        lda LadX,y
-        beq DC0
+        lda Frm                 ; slide a pixel every fourth frame towards the ladder's centre
+        and #2
+        bne DC0
+        lda LTarget
         cmp TX
         beq DC0
         lda #1

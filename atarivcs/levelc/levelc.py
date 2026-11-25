@@ -185,6 +185,7 @@ def compile_screen(plan, outdir, game=False):
     strip = [0] * 96 + list(range(1, h + 1)) + [0] * 96
     place('TroggStrip', dict(enumerate(strip)), True)    # one page: inc TrogPtr only steps the low byte
     place('TroggFrame', dict(enumerate(frame)), False)
+    nlad = 0
     if game:
         pidx, pb, lidx, lb = move_maps(plan)
         fr = [f['rows'] for f in tr['frames'][:2]]
@@ -195,12 +196,10 @@ def compile_screen(plan, outdir, game=False):
         for name, vals in (('PIdx', pidx), ('PPool', pb), ('LIdx', lidx), ('LPool', lb), ('FB', fb), ('Band3', [r // 3 for r in range(97)]),
                            ('Mask8', [0x80 >> i for i in range(8)]), ('TroggFrames', frames)):
             place(name, dict(enumerate(vals)), False)
-        ladx = [0] * 32                    # column -> its ladder's x (the climbing centre)
-        for l in plan['ladders']:
-            for c in range(32):
-                if l['x'] <= 4 * c + 2 < l['x'] + 8:
-                    ladx[c] = l['x']
-        place('LadX', dict(enumerate(ladx)), False)
+        lad = [b for l in plan['ladders'] if l['bottom'] > l['top']
+               for b in (l['x'], l['top'] // 3, (l['bottom'] - 1) // 3)]
+        nlad = len(lad) // 3
+        place('LadL', dict(enumerate(lad or [0])), False)
         place('HMTab', {r: (-(r - 6) & 15) << 4 for r in range(15)}, True)   # PosP0's fine move
         maps_bytes = len(pidx) + len(pb) + len(lidx) + len(lb)
         h = hh
@@ -213,7 +212,7 @@ def compile_screen(plan, outdir, game=False):
     o += ['%-8s = $%02X' % (k, v) for k, v in tiatest.EQU.items()]
     o += ['HMP0 = $20', 'HMM0 = $22', 'REFP0 = $0B', 'INPT4 = $0C', 'SWCHA = $280', 'INTIM = $284',
           'TIM64T = $296', 'H = %d' % h,
-          'START_X = %d' % tr['x'], 'START_ROW = %d' % tr['row']]
+          'START_X = %d' % tr['x'], 'START_ROW = %d' % tr['row'], 'NLAD = %d' % nlad]
     o += ['GRP0 = $1B', 'COLUP0 = $06', 'RESM0 = $12', 'ENAM0 = $1D', 'COLUPF = $08',
           'PF0 = $0D', 'PF1 = $0E', 'PF2 = $0F', 'TrogPtr = $80', 'Buffer = $82']
     o += ['%-12s = $%04X' % (k, v) for k, v in labels.items()]
