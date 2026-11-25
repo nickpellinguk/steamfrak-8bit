@@ -301,8 +301,10 @@ def compile_screen(plan, outdir, game=False):
         hand = [i for i, v in enumerate(f0['rows']) if v & 1]
         handup = len(f0['rows']) - 1 - (hand[0] if hand else len(f0['rows']) - 1)   # rows above the feet
         pidx, pb, lidx, lb = move_maps(plan)
-        fr = [f['rows'] for f in tr['frames'][:2]]
-        fr += [fr[0]] * (2 - len(fr))
+        # the game's two frames for now: the first walking one and the first climbing one (the
+        # editor keeps the frames in set order: walking, climbing, yoyoing)
+        by = lambda k: next((f for f in tr['frames'] if f.get('set') == k), None)
+        fr = [f['rows'] for f in (by('walk') or tr['frames'][0], by('climb') or by('walk') or tr['frames'][0])]
         hh = max(len(f) for f in fr)
         frames = [b for f in fr for b in [0] * (hh - len(f)) + f]
         fb = [(r + 1) // 3 if (r + 1) % 3 == 0 else 0xFF for r in range(97)]
