@@ -255,7 +255,8 @@ def compile_screen(plan, outdir, game=False):
     o += ['HMP0 = $20', 'HMM0 = $22', 'REFP0 = $0B', 'INPT4 = $0C', 'SWCHA = $280', 'INTIM = $284',
           'TIM64T = $296', 'H = %d' % h,
           'START_X = %d' % tr['x'], 'START_ROW = %d' % tr['row'], 'NLAD = %d' % nlad,
-          'NIR = %d' % len(item_runs), 'NITEM = %d' % len(coll), 'RunX = $C0', 'FRONT_BG = $%02X' % front.BG, 'FRONT_INK = $%02X' % front.INK]
+          'NIR = %d' % len(item_runs), 'NITEM = %d' % len(coll), 'RunX = $C0', 'FRONT_BG = $%02X' % front.BG, 'FRONT_INK = $%02X' % front.INK,
+          'FRONT_FILL = $%02X' % front.FILL, 'TAIL_X = %d' % front.TAIL_P1_X]
     if game and (('--check' in sys.argv and '--front' not in sys.argv) or plan.get('skipfront')):
         o.append('SKIPFRONT = 1')       # (picture checks of the level start in it)
     assert len(item_runs) <= 40, 'too many runs with items for RunX'
@@ -588,6 +589,17 @@ NoYo:   sta WSYNC
         %s
         sta RESP1
         sta HMCLR
+        lda Mode            ; the front screen: P1 is the tail's fill (double width, yellow,
+        bne NoTail          ; behind the playfield)
+        lda #TAIL_X - 1     ; (a double-width player starts a pixel later)
+        ldx #1
+        jsr PosObj
+        lda #5
+        sta NUSIZ1
+        sta CTRLPF          ; mirrored playfield, over the players
+        lda #FRONT_FILL
+        sta COLUP1
+NoTail:
 WaitVB: lda INTIM
         bne WaitVB
         sta WSYNC

@@ -664,6 +664,8 @@ FLDown: lda FArm
         lda #1
         sta Mode
         sta Repos               ; position the Trogg
+        sta NUSIZ1              ; P1 back to the kernel's two copies, the playfield behind
+        sta CTRLPF
         sta YoDeb               ; (the press doesn't throw the yoyo)
         sta UDDeb
 FLRet:  rts

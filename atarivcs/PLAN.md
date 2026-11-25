@@ -412,7 +412,9 @@ them in the bank's ROM.
 * The front screen (`levelc/front.py`): Frak's speech bubble, "FRAK!", redrawn at block resolution
   from Steam Frak's sFrak_Beeb sprite (rounded outline, 3 x 7 letters, a tail to the lower left;
   4 lines per design row), in black playfield blocks on green, with a yellow fill made by switching
-  COLUBK at the main bubble's edges (under its outline columns; the tail is not filled yet). Its own
+  COLUBK at the main bubble's edges (under its outline columns); the tail's fill is P1, double width at x 36, yellow and behind the
+  playfield (CTRLPF priority), one GRP1 byte per line written at the end of the previous line (most
+  are zero and overlap other data). Its own
   loop in the display bank, a line per pass with no JSR / RTS: left PF1 and PF2, COLUBK yellow
   (cycle 34), right PF1 (41), right PF2 (exactly 48), COLUBK green (63), INX / CPX / BNE; six
   per-line tables for its 60 lines. The display bank picks it or the level's call list from
