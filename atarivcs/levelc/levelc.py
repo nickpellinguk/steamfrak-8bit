@@ -65,10 +65,13 @@ def body(name, run):
     if n == 1:
         tail[4] = 'sta.w GRP0'
     out = ['%s_i:' % name, 'inx', '%s:' % name, 'sta WSYNC', 'inc TrogPtr', 'sec', 'bit $80', '%s_s:' % name] + flat
-    out += ['bcs %s_e' % name, 'rts', '%s_e:' % name] + tail
+    # the padding goes before the GRP0 store, so the store always ends at the same late cycle (about
+    # 66, pixel 130) whatever the body: every Trogg row then shows on its row's second line and the
+    # next row's first, the same for any x up to about 122
+    out += ['bcs %s_e' % name, 'rts', '%s_e:' % name] + tail[:4] + ['inx']
     if n > 1:
         out += pad(n).split('\n')
-    out += ['asl', 'sta ENAM0', 'clc', 'jmp %s_s' % name]
+    out += [tail[4], 'asl', 'sta ENAM0', 'clc', 'jmp %s_s' % name]   # (clc after asl: the carry marks line 2)
     tables = sorted({i.split()[1][:-2] for i in flat if i.startswith(('lda ', 'ldy ')) and i.endswith(',x')})
     return out, tables
 
@@ -93,7 +96,43 @@ def nbytes(code):
     return total
 
 
-def compile_screen(plan, outdir):
+def move_maps(plan):
+    """The movement maps (as the editor's moveMaps, for one level): index + pool per map."""
+    def floor_bits(i):
+        v = 0
+        for p in plan['platforms']:
+            if p['top'] // 3 == i:
+                for k in range(max(4, p['b0']), min(35, p['b1']) + 1):
+                    v |= 1 << (15 - ((k - 4) >> 1))
+        return v
+
+    def ladder_bits(c):
+        v = 0
+        for l in plan['ladders']:
+            if l['x'] <= 4 * c + 2 < l['x'] + 8 and l['bottom'] > l['top']:
+                for b in range(l['top'] // 3, (l['bottom'] - 1) // 3 + 1):
+                    v |= 1 << (31 - b)
+        return v
+    ppool, lpool, pidx, lidx = [0], [0], [], []
+    for i in range(32):
+        v = floor_bits(i)
+        if v not in ppool:
+            ppool.append(v)
+        pidx.append(2 * ppool.index(v))
+    for c in range(32):
+        v = ladder_bits(c)
+        if v not in lpool:
+            lpool.append(v)
+        lidx.append(4 * lpool.index(v))
+    pb = [b for v in ppool for b in (v >> 8, v & 255)]
+    lb = [b for v in lpool for b in (v >> 24, (v >> 16) & 255, (v >> 8) & 255, v & 255)]
+    return pidx, pb, lidx, lb
+
+
+JUMP = [0, 0, 0, 0] + [1] * 8          # read from the end: rise 8 rows, then hang 4 frames
+
+
+def compile_screen(plan, outdir, game=False):
     errs = [(r['r'], e) for r in plan['runs'] for e in r['errors']]
     if errs:
         raise SystemExit('the screen has rows the editor flags; fix them first:\n' +
@@ -147,6 +186,18 @@ def compile_screen(plan, outdir):
     strip = [0] * 96 + list(range(1, h + 1)) + [0] * 96
     place('TroggStrip', dict(enumerate(strip)), True)    # one page: inc TrogPtr only steps the low byte
     place('TroggFrame', dict(enumerate(frame)), False)
+    if game:
+        pidx, pb, lidx, lb = move_maps(plan)
+        fr = [f['rows'] for f in tr['frames'][:2]]
+        fr += [fr[0]] * (2 - len(fr))
+        hh = max(len(f) for f in fr)
+        frames = [b for f in fr for b in [0] * (hh - len(f)) + f]
+        fb = [(r + 1) // 3 if (r + 1) % 3 == 0 else 0xFF for r in range(97)]
+        for name, vals in (('PIdx', pidx), ('PPool', pb), ('LIdx', lidx), ('LPool', lb), ('FB', fb), ('Band3', [r // 3 for r in range(97)]),
+                           ('Mask8', [0x80 >> i for i in range(8)]), ('JumpDY', JUMP), ('TroggFrames', frames)):
+            place(name, dict(enumerate(vals)), False)
+        maps_bytes = len(pidx) + len(pb) + len(lidx) + len(lb)
+        h = hh
     # Trogg pointer: the first body call increments it before reading, so row k reads ptr0 + k + 1;
     # rows feet-h+1 .. feet show frame rows 1..h (strip index 96 .. 95+h)
     ptr0 = labels['TroggStrip'] + 95 - (tr['row'] - h + 1)
@@ -154,7 +205,8 @@ def compile_screen(plan, outdir):
 
     o = ['        processor 6502']
     o += ['%-8s = $%02X' % (k, v) for k, v in tiatest.EQU.items()]
-    o += ['HMP0 = $20', 'HMM0 = $22']
+    o += ['HMP0 = $20', 'HMM0 = $22', 'REFP0 = $0B', 'INPT4 = $0C', 'SWCHA = $280', 'INTIM = $284',
+          'TIM64T = $296', 'H = %d' % h, 'JUMPLEN = %d' % len(JUMP)]
     o += ['GRP0 = $1B', 'COLUP0 = $06', 'RESM0 = $12', 'ENAM0 = $1D', 'COLUPF = $08',
           'PF0 = $0D', 'PF1 = $0E', 'PF2 = $0F', 'TrogPtr = $80', 'Buffer = $82']
     o += ['%-12s = $%04X' % (k, v) for k, v in labels.items()]
@@ -166,6 +218,70 @@ def compile_screen(plan, outdir):
         o.append('        .byte ' + ','.join('$%02X' % v for v in chunk))
         a += len(chunk)
     code_start = len(o)
+    if game:
+        o.append(game_frame(plan, tr, h, labels, tx))
+    else:
+        o += static_frame(plan, tr, h, ptr0, tx)
+    calls = []
+    for run, (name, code, tables), x0 in zip(plan['runs'], run_body, run_x):
+        calls.append('        ldx #%d' % x0)
+        calls += ['        jsr %s' % name] + ['        jsr %s_i' % name] * (run['n'] - 1)
+    o += calls
+    o.append('''        sta WSYNC
+        lda #0
+        sta PF1
+        sta PF2
+        sta GRP1
+        sta GRP0
+        sta ENAM0
+        lda #2
+        sta VBLANK
+        ldx #29
+OS:     sta WSYNC
+        dex
+        bne OS
+        jmp Frame''')
+    for name, code, tables in bodies.values():
+        # a body must not straddle a page: its taken branch would cost an extra cycle there
+        o += ['        IF (<.) + %d > 256' % (nbytes(code) + 2), '        ALIGN 256', '        ENDIF']
+        o += [c if c.endswith(':') else '        ' + c for c in code]
+    if game:
+        o.append('        include "%s"' % os.path.join(HERE, 'game.asm'))
+    o.append('CodeEnd:')
+    o.append('        org $FFFC\n        .word Start\n        .word Start')
+    base = os.path.join(outdir, 'level')
+    open(base + '.asm', 'w').write('\n'.join(o) + '\n')
+    r = subprocess.run(['dasm', base + '.asm', '-f3', '-o' + base + '.bin', '-l' + base + '.lst', '-s' + base + '.sym'],
+                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if r.returncode:
+        print(r.stdout[-2000:])
+        raise SystemExit('dasm failed')
+    sym = {}
+    for line in open(base + '.sym'):
+        p = line.split()
+        if len(p) >= 2 and all(c in '0123456789abcdefABCDEF' for c in p[1]):
+            sym[p[0]] = int(p[1], 16)
+    body_bytes = sum(nbytes(c) for _, c, _ in bodies.values())
+    cost = {
+        'tables (bytes read)': table_bytes, 'data area (packed)': max(mem) + 1 - 0xF000,
+        'trogg strip + frame': len(strip) + h,
+        'bodies': body_bytes, 'call list': 2 * len(plan['runs']) + 3 * 96,
+        'frame code': None, 'total code+data': None,
+    }
+    first_body = sym.get(list(bodies.values())[0][0] + '_i')
+    cost['frame code'] = sym['Start'] and (first_body - sym['Start'] - cost['call list'])
+    cost['total code+data'] = first_body - 0xF000 + body_bytes
+    if game:
+        cost['game code'] = sym['CodeEnd'] - sym['Logic'] + sym['Logic'] - sym['Floor']
+    cost['ROM used (to the last byte)'] = sym['CodeEnd'] - 0xF000
+    info = {'bodies': len(bodies), 'runs': len(plan['runs']), 'lines': nlines, 'tables': sorted(data), 'cost': cost}
+    json.dump(info, open(base + '.json', 'w'), indent=1)
+    return base, info, labels, data, run_x, run_body
+
+
+def static_frame(plan, tr, h, ptr0, tx):
+    """Start-up and the frame up to the kernel, Trogg standing still (the picture check)."""
+    o = []
     o.append('''Start:  sei
         cld
         ldx #$FF
@@ -231,56 +347,98 @@ VB:     sta WSYNC
         bne VB
         lda #0
         sta VBLANK''')
-    calls = []
-    for run, (name, code, tables), x0 in zip(plan['runs'], run_body, run_x):
-        calls.append('        ldx #%d' % x0)
-        calls += ['        jsr %s' % name] + ['        jsr %s_i' % name] * (run['n'] - 1)
-    o += calls
-    o.append('''        sta WSYNC
+    return o
+
+
+def game_frame(plan, tr, h, labels, tx):
+    """Start-up and the frame up to the kernel, with the Trogg moved by the game logic."""
+    o = ['''Start:  sei
+        cld
+        ldx #$FF
+        txs
         lda #0
-        sta PF1
-        sta PF2
-        sta GRP1
-        sta GRP0
-        sta ENAM0
+Clear:  sta $00,x
+        dex
+        bne Clear
+        lda #%d
+        sta TX
+        lda #%d
+        sta TRow
+        lda #$80
+        sta FireOld
+        lda #1
+        sta CTRLPF          ; mirrored playfield
+        sta NUSIZ1
+        lda #$20
+        sta NUSIZ0          ; single-width Trogg''' % (tx, tr['row'])]
+    # the Trogg's start position: RESP0 (P0 at 3c - 63), then HMOVE for the last 0-2 px; after that
+    # the logic moves him with one HMOVE a frame
+    c = (tx + 63) // 3
+    o.append('        sta WSYNC\n        ' + pad(c - 3).replace('\n', '\n        ') + '\n        sta RESP0')
+    o.append('''        lda #$%02X
+        sta HMP0
+        sta WSYNC
+        sta HMOVE''' % ((-(tx - (3 * c - 63)) & 15) << 4))
+    o.append('''Frame:  lda #2
+        sta VSYNC
+        sta WSYNC
+        sta WSYNC
+        sta WSYNC
+        lda #0
+        sta VSYNC
+        lda #43
+        sta TIM64T
         lda #2
         sta VBLANK
-        ldx #29
-OS:     sta WSYNC
-        dex
-        bne OS
-        jmp Frame''')
-    for name, code, tables in bodies.values():
-        o += [c if c.endswith(':') else '        ' + c for c in code]
-    o.append('        org $FFFC\n        .word Start\n        .word Start')
-    base = os.path.join(outdir, 'level')
-    open(base + '.asm', 'w').write('\n'.join(o) + '\n')
-    r = subprocess.run(['dasm', base + '.asm', '-f3', '-o' + base + '.bin', '-l' + base + '.lst', '-s' + base + '.sym'],
-                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    if r.returncode:
-        print(r.stdout[-2000:])
-        raise SystemExit('dasm failed')
-    sym = {}
-    for line in open(base + '.sym'):
-        p = line.split()
-        if len(p) >= 2 and all(c in '0123456789abcdefABCDEF' for c in p[1]):
-            sym[p[0]] = int(p[1], 16)
-    body_bytes = sum(nbytes(c) for _, c, _ in bodies.values())
-    cost = {
-        'tables (bytes read)': table_bytes, 'data area (packed)': max(mem) + 1 - 0xF000,
-        'trogg strip + frame': len(strip) + h,
-        'bodies': body_bytes, 'call list': 2 * len(plan['runs']) + 3 * 96,
-        'frame code': None, 'total code+data': None,
-    }
-    first_body = sym.get(list(bodies.values())[0][0] + '_i')
-    cost['frame code'] = sym['Start'] and (first_body - sym['Start'] - cost['call list'])
-    cost['total code+data'] = first_body - 0xF000 + body_bytes
-    info = {'bodies': len(bodies), 'runs': len(plan['runs']), 'lines': nlines, 'tables': sorted(data), 'cost': cost}
-    json.dump(info, open(base + '.json', 'w'), indent=1)
-    return base, info, labels, data, run_x, run_body
+        sta HMCLR
+        lda #$%02X
+        sta COLUBK
+        sta COLUPF
+        lda #$%02X
+        sta COLUP0
+        lda #0
+        sta COLUP1
+        sta GRP1
+        sta GRP0
+        sta PF1
+        sta PF2
+        inc Frm
+        jsr Logic
+        ldx #0              ; the Trogg's frame (walking, or climbing) into the buffer, yoyo bit off
+        lda Climb
+        beq CF0
+        ldx #H
+CF0:    ldy #1
+CopyF:  lda TroggFrames,x
+        and #$FE
+        sta Buffer,y
+        inx
+        iny
+        cpy #H+1
+        bne CopyF
+        lda Facing
+        sta REFP0
+        lda #<(TroggStrip+94+H)
+        sec
+        sbc TRow
+        sta TrogPtr
+        lda #>TroggStrip
+        sta TrogPtr+1
+        lda HMV
+        sta HMP0
+        sta WSYNC
+        sta HMOVE''' % (plan['background'], tr['colour']))
+    o.append('        sta WSYNC\n        ' + pad(57).replace('\n', '\n        ') + '\n        sta RESP1')
+    o.append('''        sta HMCLR
+WaitVB: lda INTIM
+        bne WaitVB
+        sta WSYNC
+        lda #0
+        sta VBLANK''')
+    return '\n'.join(o)
 
 
-def model(plan, palette):
+def model(plan, palette, yoyo=True):
     """Expected colour index (or None for background) of every pixel of the 192 lines."""
     img = [[None] * 160 for _ in range(192)]
     for run in plan['runs']:
@@ -300,6 +458,8 @@ def model(plan, palette):
     tr = plan['trogg']
     rows = tr['frames'][0]['rows']
     for i, v in enumerate(rows):
+        if not yoyo:
+            v &= 0xFE                                   # --game copies the frame with bit 0 off
         # the Trogg's GRP0 / ENAM0 are stored late in a row's first line (the tail, after the shared
         # block), so each of his rows shows on that row's second line and the next row's first
         top = 2 * (tr['row'] - len(rows) + 1 + i) + 1
@@ -307,13 +467,13 @@ def model(plan, palette):
             for b in range(8):
                 if v & (0x80 >> b):
                     img[y][tr['x'] + b] = tr['colour']
-            if v & 1:                                   # the yoyo (M0, 4 px)
+            if v & 1 and yoyo:                          # the yoyo (M0, 4 px; hidden in --game ROMs)
                 for x in range(tr['x'] + 8, tr['x'] + 12):
                     img[y][x] = tr['colour']
     return img
 
 
-def check(base, plan, outdir):
+def check(base, plan, outdir, game=False):
     from PIL import Image
     palette = json.load(open(os.path.join(ROOT, 'editor', 'palette.json')))
     rgb = lambda h: tuple(int(h[i:i + 2], 16) for i in (1, 3, 5))
@@ -329,7 +489,7 @@ def check(base, plan, outdir):
     # the first kernel line: the background shows from the top of the visible picture
     # (VBLANK goes off part-way through the line before the first body's WSYNC)
     first = next(r for r in range(im.height) if im.getpixel((im.width - 2, r)) == bgrgb) + 1
-    want = model(plan, pal)
+    want = model(plan, pal, yoyo=not game)
     bad = []
     for y in range(192):
         got = [im.getpixel((int((x + 0.5) * sx), first + y)) for x in range(160)]
@@ -349,12 +509,14 @@ def main():
     outdir = os.path.abspath(args[0] if args else os.path.join(HERE, 'out'))
     os.makedirs(outdir, exist_ok=True)
     plan = get_plan(outdir)
-    base, info, *_ = compile_screen(plan, outdir)
+    if opt('trogg'):                       # --trogg=X,ROW: move his start (checks other positions)
+        plan['trogg']['x'], plan['trogg']['row'] = (int(v) for v in opt('trogg').split(','))
+    base, info, *_ = compile_screen(plan, outdir, game='--game' in sys.argv)
     print('%s: %d runs, %d bodies, %d lines, tables %s' % (plan['name'], info['runs'], info['bodies'], info['lines'], ' '.join(info['tables'])))
     for k, v in info['cost'].items():
         print('  %-28s %5d' % (k, v))
     if '--check' in sys.argv:
-        check(base, plan, outdir)
+        check(base, plan, outdir, game='--game' in sys.argv)
 
 
 if __name__ == '__main__':
