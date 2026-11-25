@@ -68,6 +68,13 @@ canvas.screen { display: block; image-rendering: pixelated; cursor: crosshair; b
 .pix .c { width: 22px; height: 18px; background: var(--panel2); border: 1px solid var(--line); cursor: pointer; }
 .pix .c.y { box-shadow: inset 0 0 0 2px var(--warn); }
 .pix .hx { font: 11px var(--mono); color: var(--muted); padding-left: 6px; align-self: center; }
+.tset { margin-top: 14px; }
+.tset > .head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.tset .frames { display: flex; gap: 14px; overflow-x: auto; padding: 8px 0 4px; }
+.tset .frame { flex: none; }
+.tset .frame .ctl { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+.tset .frame .ctl button { padding: 2px 7px; }
+.tset canvas.prev { image-rendering: pixelated; background: var(--panel2); border: 1px solid var(--line); border-radius: 4px; }
 .pix .rowcol { width: 22px; height: 16px; padding: 0; margin-left: 6px; border-radius: 3px; align-self: center; }
 .swatches { display: grid; grid-template-columns: repeat(16, 1fr); gap: 2px; max-width: 360px; }
 .swatches button { aspect-ratio: 1; padding: 0; border-radius: 3px; border: 1px solid transparent; min-width: 0; }
@@ -88,6 +95,7 @@ textarea { width: 100%; min-height: 220px; background: var(--panel2); border: 1p
     <h1>Frak VCS Editor</h1>
     <div class="tabs" role="tablist">
       <button id="tab-levels" class="on" role="tab">Levels</button>
+      <button id="tab-trogg" role="tab">Trogg</button>
       <button id="tab-gfx" role="tab">Graphics</button>
     </div>
     <div class="group">
@@ -177,6 +185,10 @@ textarea { width: 100%; min-height: 220px; background: var(--panel2); border: 1p
     </aside>
   </section>
 
+  <section id="view-trogg" hidden>
+    <div id="trogg-ed"></div>
+  </section>
+
   <section id="view-gfx" hidden>
     <div class="gfx" id="gfx"></div>
   </section>
@@ -210,6 +222,7 @@ const P1MIN = 19, P1MAX = 118, SPACING = 21;
 const BODY_BYTES = 60, KERNEL_BYTES = 360, BANK = 4096;
 
 // ---------------------------------------------------------------- sample project --------------
+const TSETS = [['walk', 'Walking'], ['climb', 'Climbing'], ['yoyo', 'Yoyoing']];   // Trogg's frame sets
 function bitsOf(s) { return parseInt(s.replace(/X/g, '1').replace(/\./g, '0'), 2); }
 const TROGG = ['...XX...', '..XXXX..', '.XXXXX..', '.XX.XXX.', '.XXXXXX.', '..XXX...', '.XXXXX..',
   'XXXXXXX.', 'X.XXXX.X', '..XXXX..', '..X..X..', '..X..X..', '.XX..XX.'].map(bitsOf);
@@ -258,7 +271,7 @@ function sampleProject() {
       background: 0xAA,
       stripes: [0x00, 0x58, 0x58, 0x00, 0xA4, 0xA4, 0xA4, 0xA4],
 
-      trogg: { colour: 0x1E, frames: [{ name: 'Walk', rows: TROGG.slice(), yoyoRow: 8 }, { name: 'Climb', rows: CLIMB.slice(), yoyoRow: -1 }] },
+      trogg: { colour: 0x1E, frames: [{ name: 'Walk', set: 'walk', rows: TROGG.slice(), yoyoRow: 8 }, { name: 'Climb', set: 'climb', rows: CLIMB.slice(), yoyoRow: -1 }] },
       items: [
         { kind: 'gem', name: 'Gem', colour: 0x00, rows: ['...XX...', '..X..X..', '.X....X.', 'X......X', '.X....X.', '..X..X..', '...XX...'].map(bitsOf) },
         { kind: 'key', name: 'Key', colour: 0x1E, rows: ['.XX.....', 'X..X....', 'X..XXXXX', 'X..X.X.X', '.XX.....'].map(bitsOf) },
@@ -283,6 +296,14 @@ function load() { try { const s = localStorage.getItem('frak-vcs-editor'); retur
 // items carry a colour per row (a per-line colour table, like the platform stripes)
 function normalise(d) {
   const g = d.graphics;
+  // Trogg's frames: each in a set (walking, climbing, yoyoing), all one height (padded at the top,
+  // so the feet stay put), in set order; at least one walking and one climbing frame
+  const fr = g.trogg.frames;
+  for (const f of fr) if (!TSETS.some(([k]) => k === f.set)) f.set = /climb/i.test(f.name) ? 'climb' : /yo/i.test(f.name) ? 'yoyo' : 'walk';
+  for (const [k, n] of TSETS.slice(0, 2)) if (!fr.some(f => f.set === k)) fr.push({ name: n, set: k, rows: (k === 'climb' ? CLIMB : TROGG).slice(), yoyoRow: -1 });
+  const th = Math.max(...fr.map(f => f.rows.length));
+  for (const f of fr) { const n = th - f.rows.length; if (n) { f.rows.unshift(...Array(n).fill(0)); if (f.yoyoRow >= 0) f.yoyoRow += n; } }
+  g.trogg.frames = TSETS.flatMap(([k]) => fr.filter(f => f.set === k));
   // ladders: one repeating section per level type (older projects: a pole/rung ladder, or kinds)
   let old = [0x7E, 0x42, 0x42, 0x42];
   if (g.ladder) { old = []; for (let k = 0; k < g.ladder.every; k++) old.push(k === g.ladder.phase ? g.ladder.rung : g.ladder.pole); }
@@ -486,7 +507,7 @@ function analyzeScreen(s) {
 function projectChecks() {
   const out = [];
   P.graphics.trogg.frames.forEach(f => f.rows.forEach((b, i) => {
-    if ((b & 1) && i !== f.yoyoRow) out.push('Trogg frame "' + f.name + '", row ' + (i + 1) + ': the front pixel (bit 0) switches the yoyo on. Only the hand row of the walking frame may set it.');
+    if ((b & 1) && i !== f.yoyoRow) out.push('Trogg frame "' + f.name + '", row ' + (i + 1) + ': the front pixel (bit 0) switches the yoyo on. Only a frame\'s hand row may set it (walking and yoyoing frames).');
   }));
   return out;
 }
@@ -995,25 +1016,8 @@ function heightControl(rows, min, max, label, colours) {
 }
 function buildGfx() {
   const box = document.getElementById('gfx'), g = P.graphics; box.innerHTML = '';
-  // Trogg
-  g.trogg.frames.forEach((f, fi) => {
-    const c = card('Trogg: ' + f.name, 'Player 0, single width; each row is two scanlines. Bit 0 (the right-hand column, outlined) switches the yoyo on, so only the walking frame\'s hand row may set it. RAM buffer: ' + (f.rows.length + 1) + ' bytes for this frame.');
-    c.appendChild(pixelEditor(f.rows, col(g.trogg.colour), { yoyo: true, label: r => r === f.yoyoRow ? '  hand' : '' }));
-    const ctl = document.createElement('div'); ctl.className = 'row-inline';
-    ctl.appendChild(heightControl(f.rows, 1, 24, 'Rows'));
-    const hl = document.createElement('label'); hl.className = 'row-inline';
-    hl.innerHTML = 'Hand row <input type="number" min="0" max="24" value="' + (f.yoyoRow >= 0 ? f.yoyoRow + 1 : 0) + '">';
-    hl.querySelector('input').addEventListener('change', e => { f.yoyoRow = clampI(e.target.value, 0, 24) - 1; commit(); });
-    ctl.appendChild(hl);
-    if (g.trogg.frames.length > 1) { const d = document.createElement('button'); d.textContent = 'Delete frame'; d.addEventListener('click', () => { g.trogg.frames.splice(fi, 1); commit(); }); ctl.appendChild(d); }
-    c.appendChild(ctl);
-    box.appendChild(c);
-  });
-  const tc = card('Trogg colour and frames', 'All of Trogg\'s frames share one colour (COLUP0).');
-  tc.appendChild(swatches(g.trogg.colour, v => g.trogg.colour = v, 'sw-trogg'));
-  const add = document.createElement('button'); add.textContent = 'Add a frame';
-  add.addEventListener('click', () => { g.trogg.frames.push({ name: 'Frame ' + (g.trogg.frames.length + 1), rows: g.trogg.frames[0].rows.slice(), yoyoRow: -1 }); commit(); });
-  tc.appendChild(add); box.appendChild(tc);
+  const tn = card('Trogg', 'Trogg\'s frames (walking, climbing, yoyoing) and colour are on the Trogg tab.');
+  box.appendChild(tn);
   // items
   g.items.forEach((d, di) => {
     const c = card(d.name, 'Player 1 copy, one row per scanline, each row with its own colour (a per-line table). Click a row\'s chip to change its colour, or use the palette below to colour every row. Coloured items can\'t share a row with a platform, and at most two fit on a row.');
@@ -1061,13 +1065,113 @@ function buildGfx() {
   box.appendChild(bc);
 }
 
+// ---------------------------------------------------------------- Trogg ----------------------
+// Frames by set, side by side, each with its pixel grid, hand row and buttons; one height and one
+// colour for all of them; an animated preview of each set, facing right and (REFP0) left.
+let troggTimer = null;
+function buildTrogg() {
+  const box = document.getElementById('trogg-ed'), g = P.graphics, T = g.trogg;
+  box.innerHTML = '';
+  const h = T.frames[0].rows.length;
+  const top = card('Trogg', 'Player 0, single width; each row is two scanlines. Every frame is the same height (the game\'s RAM buffer: ' + (h + 1) + ' bytes), and rows are added or removed at the top, so the feet stay on the same line. Bit 0 (the right-hand column, outlined) switches the yoyo (M0) on: only a frame\'s hand row may set it.');
+  const ctl = document.createElement('div'); ctl.className = 'row-inline';
+  const hl = document.createElement('label'); hl.className = 'row-inline';
+  hl.innerHTML = 'Rows <input type="number" min="4" max="24" value="' + h + '">';
+  hl.querySelector('input').addEventListener('change', e => {
+    const n = clampI(e.target.value, 4, 24), d = n - h;
+    for (const f of T.frames) {
+      if (d > 0) f.rows.unshift(...Array(d).fill(0)); else f.rows.splice(0, -d);
+      if (f.yoyoRow >= 0) f.yoyoRow = Math.max(-1, f.yoyoRow + d);
+    }
+    commit();
+  });
+  ctl.appendChild(hl);
+  const sp = document.createElement('label'); sp.className = 'row-inline';
+  sp.innerHTML = 'Preview <select id="tr-speed"><option value="4">fast</option><option value="8" selected>medium</option><option value="16">slow</option></select> frames a step';
+  ctl.appendChild(sp);
+  top.appendChild(ctl);
+  top.appendChild(swatches(T.colour, v => T.colour = v, 'sw-trogg'));
+  box.appendChild(top);
+  const previews = [];
+  for (const [set, title] of TSETS) {
+    const list = T.frames.filter(f => f.set === set);
+    const sec = document.createElement('div'); sec.className = 'panel tset';
+    const head = document.createElement('div'); head.className = 'head';
+    head.innerHTML = '<h3 style="margin:0">' + title + '</h3><span class="note">' + list.length + ' frame' + (list.length === 1 ? '' : 's') + '</span>';
+    const pv = document.createElement('canvas'); pv.className = 'prev'; pv.width = 2 * 8 + 6; pv.height = 2 * h; pv.style.width = (pv.width * 4) + 'px'; pv.style.height = (pv.height * 4 / 2 * 2) + 'px';
+    head.appendChild(pv); previews.push([pv, list]);
+    const add = document.createElement('button'); add.textContent = list.length ? 'Add (copy of the last)' : 'Add a frame';
+    add.addEventListener('click', () => {
+      const src = list[list.length - 1] || T.frames[0];
+      insertFrame({ name: title.replace(/ing$/, '') + ' ' + (list.length + 1), set, rows: src.rows.slice(), yoyoRow: set === 'climb' ? -1 : src.yoyoRow }, src && list.length ? src : null);
+    });
+    head.appendChild(add);
+    sec.appendChild(head);
+    const row = document.createElement('div'); row.className = 'frames';
+    list.forEach((f, k) => {
+      const fc = document.createElement('div'); fc.className = 'frame';
+      const nm = document.createElement('input'); nm.value = f.name; nm.style.width = '120px'; nm.setAttribute('aria-label', 'Frame name');
+      nm.addEventListener('change', () => { f.name = nm.value || f.name; commit(); });
+      fc.appendChild(nm);
+      fc.appendChild(pixelEditor(f.rows, col(T.colour), { yoyo: true, label: r => r === f.yoyoRow ? ' hand' : '' }));
+      const c2 = document.createElement('div'); c2.className = 'ctl';
+      if (set !== 'climb') {
+        const hr = document.createElement('label'); hr.className = 'row-inline';
+        hr.innerHTML = 'Hand <input type="number" min="0" max="' + h + '" value="' + (f.yoyoRow >= 0 ? f.yoyoRow + 1 : 0) + '" style="width:48px">';
+        hr.querySelector('input').addEventListener('change', e => { f.yoyoRow = clampI(e.target.value, 0, h) - 1; commit(); });
+        c2.appendChild(hr);
+      }
+      const btn = (t, title, fn, dis) => { const b = document.createElement('button'); b.textContent = t; b.title = title; b.setAttribute('aria-label', title); b.disabled = !!dis; b.addEventListener('click', fn); c2.appendChild(b); };
+      btn('◀', 'Move earlier', () => swapFrames(f, list[k - 1]), k === 0);
+      btn('▶', 'Move later', () => swapFrames(f, list[k + 1]), k === list.length - 1);
+      btn('Copy', 'Duplicate this frame', () => insertFrame({ ...f, name: f.name + ' copy', rows: f.rows.slice() }, f));
+      btn('Flip', 'Mirror this frame left to right', () => { for (let r = 0; r < f.rows.length; r++) { let v = 0; for (let b = 0; b < 8; b++) if (f.rows[r] >> b & 1) v |= 0x80 >> b; f.rows[r] = v; } commit(); });
+      btn('Delete', 'Delete this frame', () => { T.frames.splice(T.frames.indexOf(f), 1); commit(); }, set !== 'yoyo' && list.length === 1);
+      fc.appendChild(c2);
+      row.appendChild(fc);
+    });
+    if (!list.length) { const n = document.createElement('p'); n.className = 'note'; n.textContent = 'No frames yet.'; row.appendChild(n); }
+    sec.appendChild(row);
+    box.appendChild(sec);
+  }
+  // the previews: each set's frames in turn, right-facing then mirrored (as REFP0 draws it)
+  if (troggTimer) clearInterval(troggTimer);
+  let tick = 0;
+  const paint = () => {
+    const sp = +(document.getElementById('tr-speed') || { value: 8 }).value;
+    for (const [pv, list] of previews) {
+      const c = pv.getContext('2d'); c.fillStyle = col(g.background); c.fillRect(0, 0, pv.width, pv.height);
+      if (!list.length) continue;
+      const f = list[Math.floor(tick / sp) % list.length];
+      c.fillStyle = col(T.colour);
+      f.rows.forEach((v, r) => { for (let b = 0; b < 8; b++) { if (v & (0x80 >> b)) c.fillRect(b, 2 * r, 1, 2); if (v & (1 << b)) c.fillRect(14 + b, 2 * r, 1, 2); } });
+    }
+    tick++;
+  };
+  paint(); troggTimer = setInterval(() => { if (document.getElementById('view-trogg').hidden) return; paint(); }, 1000 / 60);
+}
+function insertFrame(f, after) {
+  const fr = P.graphics.trogg.frames;
+  fr.splice(after ? fr.indexOf(after) + 1 : fr.length, 0, f);
+  P.graphics.trogg.frames = TSETS.flatMap(([k]) => fr.filter(q => q.set === k));
+  commit();
+}
+function swapFrames(a, b) {
+  const fr = P.graphics.trogg.frames, i = fr.indexOf(a), j = fr.indexOf(b);
+  fr[i] = b; fr[j] = a; commit();
+}
+
 // ---------------------------------------------------------------- tabs, import/export ---------
 document.getElementById('tab-levels').addEventListener('click', () => setTab('levels'));
 document.getElementById('tab-gfx').addEventListener('click', () => setTab('gfx'));
+document.getElementById('tab-trogg').addEventListener('click', () => setTab('trogg'));
 function setTab(t) {
-  document.getElementById('view-levels').hidden = t !== 'levels'; document.getElementById('view-gfx').hidden = t !== 'gfx';
-  document.getElementById('tab-levels').className = t === 'levels' ? 'on' : ''; document.getElementById('tab-gfx').className = t === 'gfx' ? 'on' : '';
+  for (const k of ['levels', 'trogg', 'gfx']) {
+    document.getElementById('view-' + k).hidden = t !== k;
+    document.getElementById('tab-' + k).className = t === k ? 'on' : '';
+  }
   if (t === 'gfx') buildGfx();
+  if (t === 'trogg') buildTrogg();
 }
 const io = document.getElementById('io'), ioText = document.getElementById('io-text'), ioMsg = document.getElementById('io-msg');
 document.getElementById('btn-io').addEventListener('click', () => { ioText.value = JSON.stringify(P, null, 1); ioMsg.textContent = ''; io.hidden = false; ioText.focus(); });
@@ -1093,7 +1197,7 @@ document.getElementById('io-reset').addEventListener('click', e => {
 });
 
 // ---------------------------------------------------------------- refresh ---------------------
-function commit() { save(); refresh(); if (!document.getElementById('view-gfx').hidden) buildGfx(); }
+function commit() { save(); refresh(); if (!document.getElementById('view-gfx').hidden) buildGfx(); if (!document.getElementById('view-trogg').hidden) buildTrogg(); }
 // the moving platform's panel: shows the screen's settings; a change sets them
 function showMover() {
   const m = scr().mover || { mode: 'none', row: 60, x0: 48, x1: 100, speed: 128 };
