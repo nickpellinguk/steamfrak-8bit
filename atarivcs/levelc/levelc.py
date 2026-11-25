@@ -763,8 +763,6 @@ def check(base, plan, outdir, game=False):
     # the first kernel line: the background shows from the top of the visible picture
     # (VBLANK goes off part-way through the line before the first body's WSYNC)
     first = next(r for r in range(im.height) if im.getpixel((im.width - 2, r)) == bgrgb) + 1
-    if game and '--front' not in sys.argv:
-        first -= 2 * timer.TOPROWS          # (the timer's band is black: the first background line is its last)
     want = front_model() if '--front' in sys.argv else model(plan, pal, yoyo=not game)
     if game and '--front' not in sys.argv:
         want[:timer.TOPROWS * 2] = timer.model_lines()
