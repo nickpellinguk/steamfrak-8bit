@@ -395,7 +395,33 @@ them in the bank's ROM.
   before the next throw. No collisions yet. Objects are positioned by one routine (P0 or M0:
   divide-by-15 RESx + HMOVE). `play_test.py` drives it in py65 with scripted joystick
   input.
-* Starter screen with the game: 2976 of 4096 bytes.
+* Gems and keys: touching one (the Trogg's rows against its rows, x within 6 px) sets its bit in
+  `Collected` (up to 8 per screen). Every run showing collectable items has a dataset per
+  combination of them collected (their graphics zeroed; identical lines still shared), and its call
+  list entry is `ldx RunX+k` (zero page, a cycle more than an immediate, which the gap between
+  bodies allows); before the kernel, `RunVars` turns the bits into each run's X (RM1 / RM2: the
+  items in its two slots, RXV: X per variant). Collected items stay collected after a death for
+  now. The Starter screen: 4 item runs, 208 lines.
+* `--game` builds an 8K F8 ROM in two 4K banks. Bank 1, the display: the per-line tables, the
+  Trogg strip, the call list and the bodies. Bank 0, the game: start-up, the vertical blank and
+  overscan, the game code, the movement maps, item tables, Trogg frames and positioning tables.
+  Stubs at $FFE0-$FFF1 sit at the same addresses in both banks (the instruction after a switch
+  comes from the other bank): `bit $FFF9` into the kernel at the end of the vertical blank,
+  `bit $FFF8` back for overscan, and a reset stub that selects bank 0 from either. The kernel's
+  timing is unchanged (the switch is before its first WSYNC).
+* The front screen (`levelc/front.py`): Frak's speech bubble, "FRAK!", redrawn at block resolution
+  from Steam Frak's sFrak_Beeb sprite (rounded outline, 3 x 7 letters, a tail to the lower left;
+  4 lines per design row), in black playfield blocks on green, with a yellow fill made by switching
+  COLUBK at the main bubble's edges (under its outline columns); the tail's fill is P1, double width at x 36, yellow and behind the
+  playfield (CTRLPF priority), one GRP1 byte per line written at the end of the previous line (most
+  are zero and overlap other data). Its own
+  loop in the display bank, a line per pass with no JSR / RTS: left PF1 and PF2, COLUBK yellow
+  (cycle 34), right PF1 (41), right PF2 (exactly 48), COLUBK green (63), INX / CPX / BNE; six
+  per-line tables for its 60 lines. The display bank picks it or the level's call list from
+  `Mode`; fire (after it has been up) starts the game. `levelc.py --game --check --front` checks
+  it in Stella.
+* Starter screen with the game and the front screen: bank 0 1733 bytes, bank 1 2615 bytes (of
+  4096 each).
 
 ## Optimisation pass (backlog)
 

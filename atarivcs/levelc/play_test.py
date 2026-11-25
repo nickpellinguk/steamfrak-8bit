@@ -26,12 +26,32 @@ class Game:
                 except ValueError:
                     pass
         rom = open(base + '.bin', 'rb').read()
-        self.m = MPU()
-        for i, b in enumerate(rom):
-            self.m.memory[0xF000 + i] = b
-        self.m.pc = rom[0xFFC] | rom[0xFFD] << 8
+        # 4K banks; an 8K ROM is F8: reading $FFF8 / $FFF9 selects bank 0 / 1
+        self.banks = [rom[i:i + 4096] for i in range(0, len(rom), 4096)]
+        if len(self.banks) > 1:
+            from py65.memory import ObservableMemory
+            mem = ObservableMemory()
+            self.m = MPU(memory=mem)
+
+            def switch(addr):
+                self.select(addr - 0xFFF8)
+            mem.subscribe_to_read([0xFFF8, 0xFFF9], switch)
+        else:
+            self.m = MPU()
+        self.select(len(self.banks) - 1)       # (power-on: any bank; the reset stub copes)
+        self.m.pc = self.banks[-1][0xFFC] | self.banks[-1][0xFFD] << 8
         self.frames = 0
-        self.frame(0)                       # start-up and the first frame
+        self.frame(0)                       # start-up, then a frame of the front screen (fire up)
+        self.frame(0)
+        self.mode0 = self.m.memory[self.sym['Mode']]
+        self.frame(0, True)                 # fire starts the game
+        self.frame(0)
+        self.mode1 = self.m.memory[self.sym['Mode']]
+        self.yoyo1 = self.m.memory[self.sym['State']]
+
+    def select(self, n):
+        mem = getattr(self.m.memory, '_subject', self.m.memory)
+        mem[0xF000:0x10000] = list(self.banks[n])
 
     def frame(self, keys=0, fire=False):
         """Run until the code is back at Frame, with these inputs held."""
@@ -79,6 +99,8 @@ def main():
         print('%-46s %s %s' % (what, st, 'ok' if not bad else 'FAIL %s' % bad))
         ok &= not bad
 
+    expect('the front screen first, fire starts the game (no yoyo)', g.state(),
+           x=lambda v: (g.mode0, g.mode1, g.yoyo1) != (0, 1, 0))
     s0 = g.state()
     expect('start, standing on the floor (row 83)', g.run(10), row=83, state=0)
     expect('walk right 20 frames: 10 px', g.run(20, R), x=s0['x'] + 10, row=83)
@@ -191,6 +213,22 @@ def main():
     g.run(3)
     expect('released early: comes back', yo(), len=lambda v: not v < 7)
     expect('... and he can walk again', g.run(40, R), state=0, x=lambda v: v <= x0)
+    # gems and keys: touching one collects it (Collected bits: gem x34 = 1, gem x88 = 2, key x103 = 4)
+    g = Game(os.path.join(outdir, 'level'))
+    col = lambda: {**g.state(), 'coll': g.m.memory[g.sym['Collected']], 'runx': list(g.m.memory[g.sym['RunX']:g.sym['RunX'] + 4])}
+    st = col()
+    g.run(60, R)
+    expect('walking right along the floor: not yet at the key', col(), coll=0) if col()['x'] < 96 else None
+    while g.state()['x'] < 97:
+        g.run(1, R)
+    g.run(1)
+    st2 = col()
+    expect('reaching the key (x 103): collected', st2, coll=4)
+    expect('... its run now uses its empty dataset', st2, runx=lambda r: r == st['runx'])
+    g = Game(os.path.join(outdir, 'level'))
+    g.run(46, L)
+    g.run(200, U)
+    expect('climbing to the top-left ledge collects its gem (x 34)', col(), coll=1, row=20)
     print('all ok' if ok else 'SOME FAILED')
     return ok
 

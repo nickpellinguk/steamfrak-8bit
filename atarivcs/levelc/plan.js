@@ -33,11 +33,11 @@ const fs = require('fs');
         lines.push(L);
       }
       runs.push({ r, n: e - r, key: A.key, way: A.way, tasks: A.tasks || null, errors: A.errors,
-        objs: A.objs.map(o => ({ t: o.t, x: o.x })), lit: [...A.lit].sort((a, c) => a - c), lines });
+        objs: A.objs.map(o => ({ t: o.t, x: o.x, ref: o.ref })), lit: [...A.lit].sort((a, c) => a - c), lines });
       r = e;
     }
     return { name: s.name, background: g.background, trogg: { x: s.trogg.x, row: s.trogg.row, colour: g.trogg.colour, frames: g.trogg.frames },
-      platforms: s.platforms, ladders: s.ladders, items: s.items, runs };
+      platforms: s.platforms, ladders: s.ladders, items: s.items.map(it => ({ ...it, top: itemLines(it)[0] })), runs };
   }, [proj ? fs.readFileSync(proj, 'utf8') : null, ti, si]);
   if (errs.length) { console.error(errs); process.exit(1); }
   fs.writeFileSync(out, JSON.stringify(plan));

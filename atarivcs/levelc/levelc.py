@@ -27,6 +27,8 @@ sys.path.insert(0, os.path.join(ROOT, 'tools'))
 import feasibility as F  # noqa: E402
 import tiatest  # noqa: E402
 import screens2  # noqa: E402
+import mirrorrows as M  # noqa: E402
+import front  # noqa: E402
 
 F._setup()
 pad = tiatest.pad
@@ -145,26 +147,54 @@ def compile_screen(plan, outdir, game=False):
             code, tables = body(name, run)
             bodies[bk] = (name, code, tables)
         run_body.append(bodies[bk])
-    # lines: runs with the same body and the same per-line data (in the tables it reads) share them
+    # collectable items (gems and keys): a bit each in Collected
+    coll = [i for i, it in enumerate(plan['items']) if it['kind'] in ('gem', 'key')] if game else []
+    if len(coll) > 8:
+        raise SystemExit('more than 8 gems and keys on a screen')
+    bit = {i: 1 << b for b, i in enumerate(coll)}
+    # lines: runs with the same body and the same per-line data (in the tables it reads) share them.
+    # A run showing collectable items gets a dataset per combination of them collected (their
+    # graphics zeroed); the call list loads its X from RunX+k, set before the kernel from the bits.
     seen, run_x, nlines, data = {}, [], 0, {}
-    for run, (name, code, tables) in zip(plan['runs'], run_body):
-        sig = name + json.dumps([[L.get(t, 0) for t in tables] for L in run['lines']])
+    item_runs = []                         # (run index, [bit per slot], [x per variant])
+
+    def lines_at(name, tables, lines):
+        nonlocal nlines
+        sig = name + json.dumps([[L.get(t, 0) for t in tables] for L in lines])
         if sig not in seen:
             seen[sig] = nlines
-            for k, L in enumerate(run['lines']):
+            for k, L in enumerate(lines):
                 for t in tables:
                     data.setdefault(t, {})[nlines + k] = L.get(t, 0)
-            nlines += len(run['lines'])
-        run_x.append(seen[sig])
+            nlines += len(lines)
+        return seen[sig]
+    for ri, (run, (name, code, tables)) in enumerate(zip(plan['runs'], run_body)):
+        slots, k = [], 0
+        for o in run['objs']:
+            if o['t'] != 'L':
+                if o.get('ref') and o['ref'][0] == 'item' and o['ref'][1] in bit:
+                    slots.append((k, bit[o['ref'][1]]))
+                k += 1
+        run_x.append(lines_at(name, tables, run['lines']))
+        if slots:
+            xs = []
+            for v in range(1 << len(slots)):
+                gone = {'G%d' % kk for j, (kk, _) in enumerate(slots) if v >> j & 1}
+                xs.append(lines_at(name, tables, [{t: (0 if t in gone else val) for t, val in L.items()} for L in run['lines']]))
+            item_runs.append((ri, [b for _, b in slots], xs))
     if nlines > 256:
         raise SystemExit('line index overflow: %d lines' % nlines)
     # data area from $F000, packed: each block is placed at the first address where every byte it
     # defines is free or already holds the same value (tables only define the lines their runs read,
     # so they overlap freely); an indexed table's label must be in the same page as every line it
     # reads (label offset + max line <= 255), so no read crosses a page
-    mem, labels = {}, {}
+    # (--game: two 4K banks, F8. Bank 1, the display: the per-line tables, the Trogg strip, the call
+    # list and the bodies. Bank 0, the game: the movement maps, item tables, frames, the game code.)
+    mems, labels = {0: {}, 1: {}}, {}
+    mem = mems[1]
 
-    def place(name, vals, indexed):
+    def place(name, vals, indexed, bank=1):
+        mem = mems[bank]
         xs = sorted(vals)
         lo, hi = xs[0], xs[-1]
         for page in range(0xF000, 0x10000, 0x100):
@@ -179,12 +209,15 @@ def compile_screen(plan, outdir, game=False):
     for t in sorted(data, key=lambda t: -len(data[t])):
         place(t, data[t], True)
     table_bytes = sum(len(d) for d in data.values())
+    if game:                               # the front screen's per-line tables (its own loop)
+        for t, vals in front.tables().items():
+            place(t, dict(enumerate(vals)), True)
     tr = plan['trogg']
     frame = tr['frames'][0]['rows']
     h = len(frame)
     strip = [0] * 96 + list(range(1, h + 1)) + [0] * 96
     place('TroggStrip', dict(enumerate(strip)), True)    # one page: inc TrogPtr only steps the low byte
-    place('TroggFrame', dict(enumerate(frame)), False)
+    place('TroggFrame', dict(enumerate(frame)), False, 0 if game else 1)
     nlad = 0
     if game:
         pidx, pb, lidx, lb = move_maps(plan)
@@ -195,12 +228,21 @@ def compile_screen(plan, outdir, game=False):
         fb = [(r + 1) // 3 if (r + 1) % 3 == 0 else 0xFF for r in range(97)]
         for name, vals in (('PIdx', pidx), ('PPool', pb), ('LIdx', lidx), ('LPool', lb), ('FB', fb), ('Band3', [r // 3 for r in range(128)]),
                            ('Mask8', [0x80 >> i for i in range(8)]), ('TroggFrames', frames)):
-            place(name, dict(enumerate(vals)), False)
+            place(name, dict(enumerate(vals)), False, 0)
         lad = [b for l in plan['ladders'] if l['bottom'] > l['top']
                for b in (l['x'], l['top'], l['bottom'] - 1)]
         nlad = len(lad) // 3
-        place('LadL', dict(enumerate(lad or [0])), False)
-        place('HMTab', {r: (-(r - 6) & 15) << 4 for r in range(15)}, True)   # PosObj's fine move
+        place('LadL', dict(enumerate(lad or [0])), False, 0)
+        # the runs showing collectable items: their item bits (two slots) and X per variant
+        rm1 = [b[0] for _, b, _ in item_runs]
+        rm2 = [b[1] if len(b) > 1 else 0 for _, b, _ in item_runs]
+        rxv = [x for _, _, xs in item_runs for x in (xs + xs[-1:] * 4)[:4]]
+        its = [plan['items'][i] for i in coll]
+        for name, vals in (('RM1', rm1), ('RM2', rm2), ('RXV', rxv), ('ItX', [it['x'] for it in its]),
+                           ('ItTop', [it['top'] >> 1 for it in its]), ('ItBot', [(it['bottom'] - 1) >> 1 for it in its]),
+                           ('ItBit', [1 << b for b in range(len(its))])):
+            place(name, dict(enumerate(vals or [0])), False, 0)
+        place('HMTab', {r: (-(r - 6) & 15) << 4 for r in range(15)}, True, 0)   # PosObj's fine move
         maps_bytes = len(pidx) + len(pb) + len(lidx) + len(lb)
         h = hh
     # Trogg pointer: the first body call increments it before reading, so row k reads ptr0 + k + 1;
@@ -212,51 +254,110 @@ def compile_screen(plan, outdir, game=False):
     o += ['%-8s = $%02X' % (k, v) for k, v in tiatest.EQU.items()]
     o += ['HMP0 = $20', 'HMM0 = $22', 'REFP0 = $0B', 'INPT4 = $0C', 'SWCHA = $280', 'INTIM = $284',
           'TIM64T = $296', 'H = %d' % h,
-          'START_X = %d' % tr['x'], 'START_ROW = %d' % tr['row'], 'NLAD = %d' % nlad]
+          'START_X = %d' % tr['x'], 'START_ROW = %d' % tr['row'], 'NLAD = %d' % nlad,
+          'NIR = %d' % len(item_runs), 'NITEM = %d' % len(coll), 'RunX = $C0', 'FRONT_BG = $%02X' % front.BG, 'FRONT_INK = $%02X' % front.INK,
+          'FRONT_FILL = $%02X' % front.FILL, 'TAIL_X = %d' % front.TAIL_P1_X]
+    if game and (('--check' in sys.argv and '--front' not in sys.argv) or plan.get('skipfront')):
+        o.append('SKIPFRONT = 1')       # (picture checks of the level start in it)
+    assert len(item_runs) <= 40, 'too many runs with items for RunX'
+    if game and plan.get('collected'):
+        o.append('START_COLL = %d' % sum(bit[i] for i in plan['collected'] if i in bit))
     if game and plan.get('yotest'):
         o += ['YOTEST = %d' % plan['yotest'][0], 'YOFACE = %d' % plan['yotest'][1]]
     o += ['GRP0 = $1B', 'COLUP0 = $06', 'RESM0 = $12', 'ENAM0 = $1D', 'COLUPF = $08',
           'PF0 = $0D', 'PF1 = $0E', 'PF2 = $0F', 'TrogPtr = $80', 'Buffer = $82']
     o += ['%-12s = $%04X' % (k, v) for k, v in labels.items()]
-    o.append('        seg code\n        org $F000')
-    addrs = sorted(mem)
-    a = 0xF000
-    while a <= addrs[-1]:
-        chunk = [mem.get(a + i, 0) for i in range(min(16, addrs[-1] - a + 1))]
-        o.append('        .byte ' + ','.join('$%02X' % v for v in chunk))
-        a += len(chunk)
-    code_start = len(o)
-    if game:
-        o.append(game_frame(plan, tr, h, labels, tx))
-    else:
-        o += static_frame(plan, tr, h, ptr0, tx)
+    def data_bytes(mem):
+        out, a = [], 0xF000
+        top = max(mem) if mem else 0xEFFF
+        while a <= top:
+            chunk = [mem.get(a + i, 0) for i in range(min(16, top - a + 1))]
+            out.append('        .byte ' + ','.join('$%02X' % v for v in chunk))
+            a += len(chunk)
+        return out
     calls = []
-    for run, (name, code, tables), x0 in zip(plan['runs'], run_body, run_x):
-        calls.append('        ldx #%d' % x0)
+    irun = {ri: k for k, (ri, _, _) in enumerate(item_runs)}
+    for ri, (run, (name, code, tables), x0) in enumerate(zip(plan['runs'], run_body, run_x)):
+        calls.append('        ldx RunX+%d' % irun[ri] if ri in irun else '        ldx #%d' % x0)
         calls += ['        jsr %s' % name] + ['        jsr %s_i' % name] * (run['n'] - 1)
-    o += calls
-    o.append('''        sta WSYNC
+    body_code = []
+    for name, code, tables in bodies.values():
+        # a body must not straddle a page: its taken branch would cost an extra cycle there
+        body_code += ['        IF (<.) + %d > 256' % (nbytes(code) + 2), '        ALIGN 256', '        ENDIF']
+        body_code += [c if c.endswith(':') else '        ' + c for c in code]
+    kernel_end = '''        sta WSYNC
         lda #0
         sta PF1
         sta PF2
         sta GRP1
         sta GRP0
-        sta ENAM0
-        lda #2
+        sta ENAM0'''
+    overscan = '''        lda #2
         sta VBLANK
         ldx #29
 OS:     sta WSYNC
         dex
         bne OS
-        jmp Frame''')
-    for name, code, tables in bodies.values():
-        # a body must not straddle a page: its taken branch would cost an extra cycle there
-        o += ['        IF (<.) + %d > 256' % (nbytes(code) + 2), '        ALIGN 256', '        ENDIF']
-        o += [c if c.endswith(':') else '        ' + c for c in code]
+        jmp Frame'''
     if game:
+        # bank switching (F8: reading $FFF8 selects bank 0, $FFF9 bank 1): stubs at the same
+        # addresses in both banks, so the instruction after the switch comes from the other bank
+        o.append('        seg bank0\n        org $0000\n        rorg $F000')
+        o += data_bytes(mems[0])
+        o.append(game_frame(plan, tr, h, labels, tx))
+        o.append('        jmp $FFE0           ; to the display bank: the kernel')
+        o.append('Overscan:')
+        o.append(overscan)
         o.append('        include "%s"' % os.path.join(HERE, 'game.asm'))
-    o.append('CodeEnd:')
-    o.append('        org $FFFC\n        .word Start\n        .word Start')
+        o.append('LogicEnd:')
+        o.append('''        org $0FE0
+        rorg $FFE0
+        bit $FFF9           ; $FFE0: -> bank 1 (which carries on at $FFE3: jmp Kernel)
+        .byte 0,0,0
+        .byte 0,0,0         ; $FFE6: (bank 1: bit $FFF8)
+        jmp Overscan        ; $FFE9: back from the kernel
+        bit $FFF8           ; $FFEC: reset, in either bank -> bank 0
+        jmp Start           ; $FFEF
+        org $0FFC
+        rorg $FFFC
+        .word $FFEC
+        .word $FFEC''')
+        o.append('        seg bank1\n        org $1000\n        rorg $F000')
+        o += data_bytes(mems[1])
+        o.append('Kernel: lda Mode         ; 0: the front screen')
+        o.append('        beq KFront')
+        o.append('        jmp KLevel')
+        o.append('KFront:')
+        o.append(front.kernel())
+        o.append('        jmp KEnd')
+        o.append('KLevel:')
+        o += calls
+        o.append('KEnd:')
+        o.append(kernel_end)
+        o.append('        jmp $FFE6           ; back to the game bank: overscan')
+        o += body_code
+        o.append('CodeEnd:')
+        o.append('''        org $1FE0
+        rorg $FFE0
+        .byte 0,0,0         ; $FFE0: (bank 0: bit $FFF9)
+        jmp Kernel          ; $FFE3
+        bit $FFF8           ; $FFE6: -> bank 0 (which carries on at $FFE9: jmp Overscan)
+        .byte 0,0,0
+        bit $FFF8           ; $FFEC: reset -> bank 0 (jmp Start at $FFEF there)
+        org $1FFC
+        rorg $FFFC
+        .word $FFEC
+        .word $FFEC''')
+    else:
+        o.append('        seg code\n        org $F000')
+        o += data_bytes(mems[1])
+        o += static_frame(plan, tr, h, ptr0, tx)
+        o += calls
+        o.append(kernel_end)
+        o.append(overscan)
+        o += body_code
+        o.append('CodeEnd:')
+        o.append('        org $FFFC\n        .word Start\n        .word Start')
     base = os.path.join(outdir, 'level')
     open(base + '.asm', 'w').write('\n'.join(o) + '\n')
     r = subprocess.run(['dasm', base + '.asm', '-f3', '-o' + base + '.bin', '-l' + base + '.lst', '-s' + base + '.sym'],
@@ -276,12 +377,17 @@ OS:     sta WSYNC
         'bodies': body_bytes, 'call list': 2 * len(plan['runs']) + 3 * 96,
         'frame code': None, 'total code+data': None,
     }
-    first_body = sym.get(list(bodies.values())[0][0] + '_i')
-    cost['frame code'] = sym['Start'] and (first_body - sym['Start'] - cost['call list'])
-    cost['total code+data'] = first_body - 0xF000 + body_bytes
     if game:
-        cost['game code'] = sym['CodeEnd'] - sym['Logic'] + sym['Logic'] - sym['Floor']
-    cost['ROM used (to the last byte)'] = sym['CodeEnd'] - 0xF000
+        cost['frame code'] = None
+        cost['total code+data'] = None
+        cost['game code'] = sym['LogicEnd'] - sym['Floor']
+        cost['bank 0 (game) used'] = sym['LogicEnd'] - 0xF000
+        cost['bank 1 (display) used'] = sym['CodeEnd'] - 0xF000
+    else:
+        first_body = sym.get(list(bodies.values())[0][0] + '_i')
+        cost['frame code'] = first_body - sym['Start'] - cost['call list']
+        cost['total code+data'] = first_body - 0xF000 + body_bytes
+        cost['ROM used (to the last byte)'] = sym['CodeEnd'] - 0xF000
     info = {'bodies': len(bodies), 'runs': len(plan['runs']), 'lines': nlines, 'tables': sorted(data), 'cost': cost}
     json.dump(info, open(base + '.json', 'w'), indent=1)
     return base, info, labels, data, run_x, run_body
@@ -378,6 +484,14 @@ Clear:  sta $00,x
         lda #YOFACE
         sta Facing
         ENDIF
+        IFCONST SKIPFRONT
+        lda #1
+        sta Mode
+        ENDIF
+        IFCONST START_COLL
+        lda #START_COLL
+        sta Collected
+        ENDIF
         lda #1
         sta Repos           ; position P0 in the first frame
         sta CTRLPF          ; mirrored playfield
@@ -408,13 +522,26 @@ Frame:  lda #2
         sta PF1
         sta PF2
         inc Frm
-        jsr Logic
+        lda Mode
+        bne InGame
+        lda #FRONT_BG       ; the front screen: green, black blocks, no Trogg, fire starts
+        sta COLUBK
+        lda #FRONT_INK
+        sta COLUPF
+        jsr FrontLogic
+        jmp Shown
+InGame: jsr Logic
+        jsr RunVars         ; the item runs' line indexes, from the collected bits
+Shown:
         lda #$FE            ; the frame's bit 0 (the hand row's yoyo, M0) only while it's out
         ldx State
         cpx #ST_YOYO
         bne CFm
         lda #$FF
-CFm:    sta Tmp
+CFm:    ldx Mode
+        bne CFm2
+        lda #0              ; (front screen: an empty Trogg buffer)
+CFm2:   sta Tmp
         ldx #0              ; the Trogg's frame (walking, or climbing) into the buffer
         lda State
         cmp #ST_CLIMB
@@ -462,11 +589,26 @@ NoYo:   sta WSYNC
         %s
         sta RESP1
         sta HMCLR
+        lda Mode            ; the front screen: P1 is the tail's fill (double width, yellow,
+        bne NoTail          ; behind the playfield)
+        lda #TAIL_X - 1     ; (a double-width player starts a pixel later)
+        ldx #1
+        jsr PosObj
+        lda #5
+        sta NUSIZ1
+        sta CTRLPF          ; mirrored playfield, over the players
+        lda #FRONT_FILL
+        sta COLUP1
+NoTail:
 WaitVB: lda INTIM
         bne WaitVB
         sta WSYNC
         lda #0
         sta VBLANK''' % (plan['background'], tr['colour'], pad(57).replace('\n', '\n        '))
+
+
+def front_model():
+    return front.model()
 
 
 def model(plan, palette, yoyo=True):
@@ -480,10 +622,13 @@ def model(plan, palette, yoyo=True):
                 for x in range(4 * b, 4 * b + 4):
                     img[y][x] = L['Stripe']
             gi = 0
+            gone = set(plan.get('collected', ()))
             for ob in run['objs']:
                 v, c = (L.get('Lad', 0), 0) if ob['t'] == 'L' else (L.get('G%d' % gi, 0), L.get('C%d' % gi, 0))
                 if ob['t'] != 'L':
                     gi += 1
+                if ob.get('ref') and ob['ref'][0] == 'item' and ob['ref'][1] in gone:
+                    continue
                 for b in range(8):
                     if v & (0x80 >> b):
                         img[y][ob['x'] + b] = c
@@ -532,7 +677,7 @@ def check(base, plan, outdir, game=False):
     # the first kernel line: the background shows from the top of the visible picture
     # (VBLANK goes off part-way through the line before the first body's WSYNC)
     first = next(r for r in range(im.height) if im.getpixel((im.width - 2, r)) == bgrgb) + 1
-    want = model(plan, pal, yoyo=not game)
+    want = front_model() if '--front' in sys.argv else model(plan, pal, yoyo=not game)
     bad = []
     for y in range(192):
         got = [im.getpixel((int((x + 0.5) * sx), first + y)) for x in range(160)]
@@ -552,6 +697,8 @@ def main():
     outdir = os.path.abspath(args[0] if args else os.path.join(HERE, 'out'))
     os.makedirs(outdir, exist_ok=True)
     plan = get_plan(outdir)
+    if opt('collected'):                   # --collected=I,J: those items start collected
+        plan['collected'] = [int(v) for v in opt('collected').split(',')]
     if opt('yotest'):                      # --yotest=LEN,FACING (0 right, 8 left): yoyo held out
         plan['yotest'] = tuple(int(v) for v in opt('yotest').split(','))
     if opt('trogg'):                       # --trogg=X,ROW: move his start (checks other positions)
@@ -559,7 +706,8 @@ def main():
     base, info, *_ = compile_screen(plan, outdir, game='--game' in sys.argv)
     print('%s: %d runs, %d bodies, %d lines, tables %s' % (plan['name'], info['runs'], info['bodies'], info['lines'], ' '.join(info['tables'])))
     for k, v in info['cost'].items():
-        print('  %-28s %5d' % (k, v))
+        if v is not None:
+            print('  %-28s %5d' % (k, v))
     if '--check' in sys.argv:
         check(base, plan, outdir, game='--game' in sys.argv)
 
