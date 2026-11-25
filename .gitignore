@@ -4,3 +4,4 @@ tools/emu/node_modules/
 tools/emu/package-lock.json
 tools/emu/screenshots/
 __pycache__/
+atarivcs/levelc/out/

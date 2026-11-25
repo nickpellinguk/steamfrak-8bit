@@ -339,13 +339,13 @@ them in the bank's ROM.
 * **Platform map**: platforms are exactly 6 lines (3 rows) tall, with tops on 6-line boundaries
   (the editor enforces both), so there is one entry per 6 lines: 32 entries. 16 cells of 8 px across x 16-143 (platforms are on 8 px boundaries, so this is
   exact). 2 bytes per entry; bit 7 of byte 0 is x 16-23.
-* **Ladder map**: one entry per 4 px column (x 0-127), 24 bands of 4 rows (8 lines) down. 3 bytes
-  per entry; bit 7 of byte 0 is rows 0-3. A cell is set where its centre (4c + 2) is over a
-  ladder; climbing snaps the Trogg to the cell.
+* **Ladder map**: one entry per 4 px column (x 0-127), 32 bands of 6 lines down (the platform
+  grid, so a ladder's top meets its platform). 4 bytes per entry; bit 7 of byte 0 is rows 0-2. A
+  cell is set where its centre (4c + 2) is over a ladder.
 * **Indexes and sharing**: each level has an index (32 platform rows + 32 ladder columns = 64
   bytes) of byte offsets into two pools shared by the whole bank. Offset 0 is the one all-zero
   entry, so an empty row or column costs only its index byte, and identical rows / columns are
-  stored once across the bank's levels. Pools are limited to 128 platform rows and 85 ladder
+  stored once across the bank's levels. Pools are limited to 128 platform rows and 64 ladder
   columns per bank (byte offsets). With 3 levels a bank's indexes are 192 bytes; packing the index in nibbles (up to 15 distinct entries per
   bank) would halve that for about 10 more cycles per test.
 * **Tests** (about 40 cycles each; CellOff / CellMask are 20-entry tables indexed by x >> 3,
@@ -364,8 +364,25 @@ them in the bank's ROM.
       lda PPool,y
       and CellMask-2,x    ; non-zero: floor
 
-  The ladder test is the same shape: column x >> 2 indexes LIdx, then band >> 3 picks the byte
+  The ladder test is the same shape: column x >> 2 indexes LIdx, then the 6-line band (a row / 3 table) >> 3 picks the byte
   and band & 7 the bit.
+
+## Level compiler and first game code (`levelc/`)
+
+* `levelc.py` compiles one editor screen into a 4K ROM: the editor's own row plan (`plan.js`), the
+  shared scheduler, the current kernel. `--check` compares all 192 lines with the plan in Stella;
+  `--game` adds the Trogg control code (`game.asm`); `--trogg=X,ROW` moves his start.
+* Data is packed: tables only define the lines their runs read and overlap wherever bytes are
+  free or equal; an indexed table's label stays in the page of every line it reads; the Trogg
+  strip stays in one page (`inc TrogPtr` steps the low byte only). Bodies never straddle a page
+  (a taken branch across one costs a cycle).
+* The Trogg's GRP0 store is padded to a fixed late cycle (about 66) in every body, so each of his
+  rows shows on its row's second line and the next row's first, the same everywhere up to x 122.
+* Game code (330 bytes): walk (1 px a frame by HMOVE in vertical blank), fall off edges, jump on
+  fire (8 rows up, a short hang, then fall), climb on up/down where the ladder map allows, step
+  off a ladder onto a platform. Uses the movement maps; the vertical blank is timed by TIM64T.
+  `play_test.py` drives it in py65 with scripted joystick input.
+* Starter screen with the game: 2607 of 4096 bytes.
 
 ## Optimisation pass (backlog)
 
