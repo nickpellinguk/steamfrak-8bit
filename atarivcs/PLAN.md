@@ -330,6 +330,43 @@ special handling, and mirror-symmetric rows need no mid-line rewrite at all. Usa
   centre-crossing platforms much better (three ladders: 422 layouts against 47); one-sided platforms
   that reach the centre slightly worse (the colour switch then lands at exactly cycle 49).
 
+## Movement maps (decided)
+
+Movement is tested against two bitmaps per level, not against the kernel's tables, so the game
+logic in vertical blank stays short. The editor builds them (overlay: "Movement maps") and counts
+them in the bank's ROM.
+
+* **Platform map**: platforms are exactly 6 lines (3 rows) tall, with tops on 6-line boundaries
+  (the editor enforces both), so there is one entry per 6 lines: 32 entries. 16 cells of 8 px across x 16-143 (platforms are on 8 px boundaries, so this is
+  exact). 2 bytes per entry; bit 7 of byte 0 is x 16-23.
+* **Ladder map**: one entry per 4 px column (x 0-127), 24 bands of 4 rows (8 lines) down. 3 bytes
+  per entry; bit 7 of byte 0 is rows 0-3. A cell is set where its centre (4c + 2) is over a
+  ladder; climbing snaps the Trogg to the cell.
+* **Indexes and sharing**: each level has an index (32 platform rows + 32 ladder columns = 64
+  bytes) of byte offsets into two pools shared by the whole bank. Offset 0 is the one all-zero
+  entry, so an empty row or column costs only its index byte, and identical rows / columns are
+  stored once across the bank's levels. Pools are limited to 128 platform rows and 85 ladder
+  columns per bank (byte offsets). With 3 levels a bank's indexes are 192 bytes; packing the index in nibbles (up to 15 distinct entries per
+  bank) would halve that for about 10 more cycles per test.
+* **Tests** (about 40 cycles each; CellOff / CellMask are 20-entry tables indexed by x >> 3,
+  shared by all banks):
+
+      lda TroggX          ; floor under the Trogg's feet?
+      lsr
+      lsr
+      lsr
+      tax                 ; 8 px cell, 2-17
+      ldy FeetBand        ; 6-line band (kept by the game, 0-31)
+      lda (PIdx),y        ; this level's platform index
+      clc
+      adc CellOff-2,x     ; + 0 or 1: which byte of the entry
+      tay
+      lda PPool,y
+      and CellMask-2,x    ; non-zero: floor
+
+  The ladder test is the same shape: column x >> 2 indexes LIdx, then band >> 3 picks the byte
+  and band & 7 the bit.
+
 ## Optimisation pass (backlog)
 
 Parked until the design is settled; none of these change what a screen can show, only what it

@@ -123,8 +123,9 @@ textarea { width: 100%; min-height: 220px; background: var(--panel2); border: 1p
       <label class="row-inline"><input type="checkbox" id="chk-blocks"> Platform grid (8 px)</label>
       <label class="row-inline"><input type="checkbox" id="chk-regs" checked> Playfield registers</label>
       <label class="row-inline"><input type="checkbox" id="chk-bands" checked> Shade problem rows</label>
+      <label class="row-inline"><input type="checkbox" id="chk-maps"> Movement maps</label>
       <h2>Keys</h2>
-      <p class="note">Clicking an existing object selects it, whatever the tool; the drawing tools only create on empty space. Arrow keys move the selection (3 px for ladders and items, a 4 px block for platforms, a row up or down). Shift + arrows resize it: a platform's rows (up/down) and width (left/right), a ladder's length. Delete removes it. Click the gutter to inspect a row.</p>
+      <p class="note">Clicking an existing object selects it, whatever the tool; the drawing tools only create on empty space. Arrow keys move the selection (3 px for ladders and items, 8 px for platforms; up/down a row, or 6 lines for platforms). Platforms are always 6 lines (3 rows) tall, with tops on 6-line boundaries. Shift + arrows resize: a platform's width (left/right), a ladder's length. Delete removes it. Click the gutter to inspect a row.</p>
     </aside>
 
     <div class="screenbox">
@@ -194,6 +195,7 @@ textarea { width: 100%; min-height: 220px; background: var(--panel2); border: 1p
 // ---------------------------------------------------------------- constants -------------------
 const PAL = [__PALETTE__].map(h => '#' + h);              // Stella's NTSC palette, colour value >> 1
 const col = v => PAL[(v >> 1) & 127];
+const PROWS = 3, snapPTop = r => Math.max(0, Math.min(96 - PROWS, PROWS * Math.round(r / PROWS)));
 const W = 160, LINES = 192, ROWS = 96, S = 3, GUT = 20;
 const P1MIN = 19, P1MAX = 118, SPACING = 21;
 const BODY_BYTES = 60, KERNEL_BYTES = 360, BANK = 4096;
@@ -205,8 +207,8 @@ const TROGG = ['...XX...', '..XXXX..', '.XXXXX..', '.XX.XXX.', '.XXXXXX.', '..XX
 const CLIMB = ['...XX...', '..XXXX..', '..XXXX..', 'X.XXXX..', 'XXXXXXX.', '..XXXX..', '..XXXX..',
   '.XXXXXX.', '.X.XX.X.', '..XXXX..', '..X..X..', '.XX..XX.', '.X....X.'].map(bitsOf);   // bit 0 clear: no yoyo on ladders
 function sampleProject() {
-  const plat = (top, x0, x1) => ({ b0: Math.floor(x0 / 4), b1: Math.floor((x1 + 1) / 4) - 1, top: top >> 1, rows: 4 });
-  const step = (top, x) => { const b = Math.round(x / 4); return { b0: b, b1: b + 1, top: top >> 1, rows: 4 }; };
+  const plat = (top, x0, x1) => ({ b0: Math.floor(x0 / 4), b1: Math.floor((x1 + 1) / 4) - 1, top: top >> 1, rows: 3 });
+  const step = (top, x) => { const b = Math.round(x / 4); return { b0: b, b1: b + 1, top: top >> 1, rows: 3 }; };
   const lad = (x, a, b) => ({ x, top: a >> 1, bottom: b >> 1 });
   const item = (kind, x, bottom) => ({ kind, x, bottom, removable: kind !== 'key' });
   const fr = {
@@ -280,6 +282,9 @@ function normalise(d) {
     if (!Array.isArray(T.ladder) || !T.ladder.length) T.ladder = old.slice();
     for (const sc of T.screens) for (const l of sc.ladders) delete l.kind;
   }
+  // platforms: exactly 6 lines (3 rows) tall, tops on 6-line boundaries (the platform map's entries)
+  for (const T of d.types) for (const sc of T.screens) for (const p of sc.platforms) { p.rows = PROWS; p.top = snapPTop(p.top); }
+  if (Array.isArray(g.stripes)) { while (g.stripes.length < 2 * PROWS) g.stripes.push(g.stripes[g.stripes.length - 1] ?? 0); g.stripes.length = 2 * PROWS; }
   for (const it of d.graphics.items) {
     if (!Array.isArray(it.colours)) it.colours = it.rows.map(() => it.colour);
     while (it.colours.length < it.rows.length) it.colours.push(it.colours[it.colours.length - 1] ?? it.colour);
@@ -452,6 +457,39 @@ function projectChecks() {
   return out;
 }
 
+// ---------------------------------------------------------------- movement maps ---------------
+// Built per bank (level type) from all its screens. Platform map: one entry per 6 lines (platforms
+// are 6 lines tall with tops on 6-line boundaries), 16 cells of 8 px across x 16-143, 2 bytes, bit 7 of byte 0 = x 16-23.
+// Ladder map: one entry per 4-pixel column (x 0-127), 24 bands of 4 rows (8 lines) down, 3 bytes,
+// bit 7 of byte 0 = rows 0-3; a cell is set where its centre (4c + 2) is over a ladder.
+// Each level has an index (32 + 32 bytes) of byte offsets into the bank's shared pools; offset 0
+// is the one all-zero entry, so empty rows and columns cost nothing but their index byte, and
+// identical rows / columns are stored once for the whole bank.
+const PMAP_ROWS = 32, LMAP_COLS = 32, LMAP_BANDS = 24;
+function floorBits(s, i) {
+  let v = 0;
+  for (const p of s.platforms) if (Math.floor(p.top / PROWS) === i) for (let k = Math.max(4, p.b0); k <= Math.min(35, p.b1); k++) v |= 1 << (15 - ((k - 4) >> 1));
+  return v;
+}
+function ladderBits(s, c) {
+  let v = 0;
+  for (const l of s.ladders) if (4 * c + 2 >= l.x && 4 * c + 2 < l.x + 8 && l.bottom > l.top)
+    for (let b = l.top >> 2; b <= (l.bottom - 1) >> 2; b++) v |= 1 << (23 - b);
+  return v;
+}
+function moveMaps(T) {
+  const pPool = [0], lPool = [0], screens = [];
+  const at = (pool, v) => { let i = pool.indexOf(v); if (i < 0) { i = pool.length; pool.push(v); } return i; };
+  for (const s of T.screens) {
+    const pIdx = [], lIdx = [];
+    for (let i = 0; i < PMAP_ROWS; i++) pIdx.push(2 * at(pPool, floorBits(s, i)));
+    for (let c = 0; c < LMAP_COLS; c++) lIdx.push(3 * at(lPool, ladderBits(s, c)));
+    screens.push({ pIdx, lIdx });
+  }
+  const bytes = T.screens.length * (PMAP_ROWS + LMAP_COLS) + 2 * pPool.length + 3 * lPool.length;
+  return { pPool, lPool, screens, bytes, ok: 2 * pPool.length <= 256 && 3 * lPool.length <= 256 };
+}
+
 function budgets() {
   const T = P.types[typeI];
   const keys = new Set(), sigs = new Map(), tables = new Set(['Stripe']);
@@ -502,11 +540,12 @@ function budgets() {
   const frames = P.graphics.trogg.frames.reduce((a, f) => a + f.rows.length, 0);
   const maxH = Math.max(...P.graphics.trogg.frames.map(f => f.rows.length));
   const itemsB = P.graphics.items.reduce((a, i) => a + 2 * i.rows.length, 0) + P.types[typeI].ladder.length;
-  const rom = { bodies: keys.size * BODY_BYTES, calls, tables: tableBytes, trogg: 128 + frames, items: itemsB, kernel: KERNEL_BYTES, logic: +P.budget.logic || 0 };
+  const MM = moveMaps(T);
+  const rom = { bodies: keys.size * BODY_BYTES, calls, tables: tableBytes, maps: MM.bytes, trogg: 128 + frames, items: itemsB, kernel: KERNEL_BYTES, logic: +P.budget.logic || 0 };
   const romTotal = Object.values(rom).reduce((a, b) => a + b, 0);
   const ram = { trogg: 2 + maxH + 1, removable, stack: 4, logic: +P.budget.ram || 0 };
   const ramTotal = Object.values(ram).reduce((a, b) => a + b, 0);
-  return { rom, romTotal, ram, ramTotal, lines, bodies: keys.size, tables: tables.size };
+  return { rom, romTotal, ram, ramTotal, lines, bodies: keys.size, tables: tables.size, MM };
 }
 function lineSig(s, y) {
   const r = y >> 1, b = rowBlocks(s, r);
@@ -579,6 +618,12 @@ function draw() {
     cx.fillStyle = 'rgba(0,0,0,0.22)';
     for (let x = 0; x <= W; x += 8) cx.fillRect(x * S, 0, 1, LINES * S);
   }
+  if (document.getElementById('chk-maps').checked) {     // what the game logic sees
+    cx.fillStyle = 'rgba(255,214,10,0.45)';               // ladder cells: 4 px x 8 lines
+    for (let c = 0; c < LMAP_COLS; c++) { const v = ladderBits(s, c); for (let b = 0; b < LMAP_BANDS; b++) if (v >> (23 - b) & 1) cx.fillRect(4 * c * S, 8 * b * S, 4 * S - 1, 8 * S - 1); }
+    cx.fillStyle = 'rgba(40,255,120,0.9)';                // floor cells: 8 px, on a platform's top line
+    for (let i = 0; i < PMAP_ROWS; i++) { const v = floorBits(s, i); for (let k = 0; k < 16; k++) if (v >> (15 - k) & 1) cx.fillRect((16 + 8 * k) * S, 6 * i * S, 8 * S - 1, S); }
+  }
   if (document.getElementById('chk-bands').checked) ROWS_A.forEach(A => {
     if (A.errors.length) { cx.fillStyle = 'rgba(236,91,82,0.18)'; cx.fillRect(0, A.r * 2 * S, W * S, 2 * S); }
   });
@@ -646,7 +691,7 @@ function showSel() {
   if (sel.type === 'platform') {
     const p = s.platforms[sel.i];
     h = '<h3>Platform</h3><p class="mono note" style="margin:0">x ' + p.b0 * 4 + '-' + ((p.b1 + 1) * 4 - 1) + ', rows ' + p.top + '-' + (p.top + p.rows - 1) + '</p>' +
-      '<div class="row-inline"><label>Rows tall <input type="number" id="in-prows" min="1" max="16" value="' + p.rows + '"></label>' +
+      '<div class="row-inline">' +
       '<label>Left x <input type="number" id="in-pl" step="8" min="0" max="152" value="' + p.b0 * 4 + '"></label>' +
       '<label>Right x <input type="number" id="in-pr" step="8" min="7" max="159" value="' + ((p.b1 + 1) * 4 - 1) + '"></label></div>';
   } else if (sel.type === 'ladder') {
@@ -664,7 +709,6 @@ function showSel() {
   }
   box.innerHTML = h + '<div class="row-inline"><button id="btn-del-sel">Delete</button></div>';
   const bind = (id, fn) => { const e = document.getElementById(id); if (e) e.addEventListener('change', () => { fn(e); commit(); }); };
-  bind('in-prows', e => s.platforms[sel.i].rows = clampI(e.value, 1, 16));
   bind('in-pl', e => { const q = s.platforms[sel.i]; q.b0 = Math.min(q.b1 - 1, 2 * clampI(e.value / 8, 0, 19)); q.b1 += (q.b1 - q.b0 + 1) % 2; });
   bind('in-pr', e => { const q = s.platforms[sel.i]; q.b1 = Math.max(q.b0 + 1, 2 * clampI((+e.value + 1) / 8, 1, 20) - 1); q.b0 -= q.b0 % 2; });
   bind('in-lx', e => s.ladders[sel.i].x = snapX(+e.value));
@@ -707,7 +751,7 @@ function showBudgets() {
   const r = B.rom;
   box.innerHTML =
     meter('ROM, bank "' + esc(P.types[typeI].name) + '"', B.romTotal, BANK,
-      'bodies ' + r.bodies + ' (' + B.bodies + ' × ~' + BODY_BYTES + ') · call lists ' + r.calls + ' · tables ' + r.tables + ' (' + B.tables + ' tables) · Trogg ' + r.trogg + ' · items ' + r.items + ' · kernel ' + r.kernel + ' · game code ' + r.logic) +
+      'bodies ' + r.bodies + ' (' + B.bodies + ' × ~' + BODY_BYTES + ') · call lists ' + r.calls + ' · tables ' + r.tables + ' (' + B.tables + ' tables) · Trogg ' + r.trogg + ' · items ' + r.items + ' · movement maps ' + r.maps + ' (' + (B.MM.pPool.length - 1) + ' platform rows, ' + (B.MM.lPool.length - 1) + ' ladder columns, shared' + (B.MM.ok ? '' : '; TOO MANY for byte offsets') + ')' + ' · kernel ' + r.kernel + ' · game code ' + r.logic) +
     meter('Line index (X) for this bank', B.lines, 256, 'per-line data of every renderer run, shared where runs are identical; X counts lines 0-255') +
     meter('RAM', B.ramTotal, 128, 'Trogg pointer + frame buffer ' + B.ram.trogg + ' · collectables ' + B.ram.removable + ' · stack ' + B.ram.stack + ' · game ' + B.ram.logic);
 }
@@ -757,17 +801,17 @@ cv.addEventListener('pointermove', ev => {
   const g2 = !drag && p.x < W && !hit(p.x, p.y) ? (
     tool === 'ladder' ? [snapX(p.x - 4), 2 * row, snapX(p.x - 4) + 8, 2 * row + 32] :
     tool === 'item' ? (() => { const n = itemDef(kind).rows.length; const x = snapX(p.x - 4); return [x, 2 * row + 2 - n, x + 8, 2 * row + 2]; })() :
-    tool === 'platform' ? [unitOf(p.x) * 8, 2 * row, unitOf(p.x) * 8 + 16, 2 * row + 8] :
+    tool === 'platform' ? [unitOf(p.x) * 8, 2 * snapPTop(row), unitOf(p.x) * 8 + 16, 2 * snapPTop(row) + 2 * PROWS] :
     tool === 'trogg' ? (() => { const h = P.graphics.trogg.frames[0].rows.length, x = snapTX(p.x - 4); return [x, 2 * (row - h + 1), x + 8, 2 * row + 2]; })() : null) : null;
   if (JSON.stringify(g2) !== JSON.stringify(ghost)) { ghost = g2; if (!drag) draw(); }
   const A = ROWS_A[row];
   document.getElementById('status').textContent = 'x ' + Math.floor(Math.min(p.x, W - 1)) + ' · line ' + Math.floor(p.y) + ' · row ' + row + (A ? ' · ' + A.desc + (A.errors.length ? ' · can\'t be drawn' : '') : '');
   if (!drag) return;
-  if (drag.mode === 'platform') { drag.u1 = unitOf(p.x); drag.r1 = row; const a = Math.min(drag.u0, drag.u1), z = Math.max(drag.u0, drag.u1); drag.preview = [a * 8, Math.min(drag.r0, drag.r1) * 2, (z + 1) * 8, (Math.max(drag.r0, drag.r1) + 1) * 2]; draw(); }
+  if (drag.mode === 'platform') { drag.u1 = unitOf(p.x); drag.r1 = row; const a = Math.min(drag.u0, drag.u1), z = Math.max(drag.u0, drag.u1); const t = snapPTop(Math.min(drag.r0, drag.r1)); drag.preview = [a * 8, t * 2, (z + 1) * 8, (t + PROWS) * 2]; draw(); }
   else if (drag.mode === 'ladder') { drag.r1 = row; drag.preview = [drag.x, Math.min(drag.r0, drag.r1) * 2, drag.x + 8, (Math.max(drag.r0, drag.r1) + 1) * 2]; draw(); }
   else if (drag.mode === 'move') {
     const dx = p.x - drag.start.x, dy = p.y - drag.start.y, o = objOf(sel), O = drag.orig, dr = Math.round(dy / 2);
-    if (sel.type === 'platform') { const db = 2 * Math.round(dx / 8), w = O.b1 - O.b0; o.b0 = Math.max(0, Math.min(39 - w, O.b0 + db)); o.b0 -= o.b0 % 2; o.b1 = o.b0 + w + ((o.b0 + w) % 2 ? 0 : 1); o.top = Math.max(0, Math.min(ROWS - o.rows, O.top + dr)); }
+    if (sel.type === 'platform') { const db = 2 * Math.round(dx / 8), w = O.b1 - O.b0; o.b0 = Math.max(0, Math.min(39 - w, O.b0 + db)); o.b0 -= o.b0 % 2; o.b1 = o.b0 + w + ((o.b0 + w) % 2 ? 0 : 1); o.top = snapPTop(O.top + dr); }
     if (sel.type === 'ladder') { o.x = snapX(O.x + dx); const h = O.bottom - O.top; o.top = Math.max(0, Math.min(ROWS - h, O.top + dr)); o.bottom = o.top + h; }
     if (sel.type === 'item') { o.x = snapX(O.x + dx); o.bottom = Math.max(1, Math.min(LINES, O.bottom + 2 * dr)); }
     if (sel.type === 'trogg') { o.x = snapTX(O.x + dx); o.row = clampI(O.row + dr, 0, ROWS - 1); }
@@ -779,8 +823,9 @@ cv.addEventListener('pointerup', () => {
   const s = scr(), d = drag; drag = null;
   if (d.mode === 'platform') {
     let a = 2 * Math.min(d.u0, d.u1), z = 2 * Math.max(d.u0, d.u1) + 1, top = Math.min(d.r0, d.r1), rows = Math.abs(d.r1 - d.r0) + 1;
-    if (a + 1 === z && rows === 1) { z = Math.min(39, a + 3); rows = 4; }
-    s.platforms.push({ b0: a, b1: z, top, rows: Math.min(rows, ROWS - top) }); sel = { type: 'platform', i: s.platforms.length - 1 }; rowSel = top;
+    if (a + 1 === z && rows === 1) z = Math.min(39, a + 3);
+    top = snapPTop(top);
+    s.platforms.push({ b0: a, b1: z, top, rows: PROWS }); sel = { type: 'platform', i: s.platforms.length - 1 }; rowSel = top;
   } else if (d.mode === 'ladder') {
     let top = Math.min(d.r0, d.r1), bottom = Math.max(d.r0, d.r1) + 1;
     if (bottom - top === 1) bottom = Math.min(ROWS, top + 16);
@@ -801,7 +846,7 @@ cv.addEventListener('keydown', ev => {
   if (k === 'Delete' || k === 'Backspace') delSel();
   else if (ev.shiftKey && (k.startsWith('Arrow'))) {
     const up = k === 'ArrowUp' || k === 'ArrowLeft' ? -1 : 1;
-    if (sel.type === 'platform' && (k === 'ArrowUp' || k === 'ArrowDown')) o.rows = Math.max(1, Math.min(ROWS - o.top, o.rows + up));
+    if (sel.type === 'platform' && (k === 'ArrowUp' || k === 'ArrowDown')) { /* fixed height */ }
     else if (sel.type === 'platform') { o.b1 = Math.max(o.b0 + 1, Math.min(39, o.b1 + 2 * up)); o.b1 -= (o.b1 - o.b0 + 1) % 2; }
     else if (sel.type === 'ladder') o.bottom = Math.max(o.top + 1, Math.min(ROWS, o.bottom + up));
     else done = false;
@@ -812,14 +857,14 @@ cv.addEventListener('keydown', ev => {
     else o.x = snapX(o.x + 3 * d);
   } else if (k === 'ArrowUp' || k === 'ArrowDown') {
     const d = k === 'ArrowUp' ? -1 : 1;
-    if (sel.type === 'platform') o.top = Math.max(0, Math.min(ROWS - o.rows, o.top + d));
+    if (sel.type === 'platform') o.top = snapPTop(o.top + PROWS * d);
     else if (sel.type === 'ladder') { const h = o.bottom - o.top; o.top = Math.max(0, Math.min(ROWS - h, o.top + d)); o.bottom = o.top + h; }
     else if (sel.type === 'item') o.bottom = Math.max(1, Math.min(LINES, o.bottom + 2 * d));
     else o.row = clampI(o.row + d, 0, ROWS - 1);
   } else done = false;
   if (done) { ev.preventDefault(); commit(); }
 });
-['chk-grid', 'chk-blocks', 'chk-bands', 'chk-regs'].forEach(id => document.getElementById(id).addEventListener('change', draw));
+['chk-grid', 'chk-blocks', 'chk-bands', 'chk-regs', 'chk-maps'].forEach(id => document.getElementById(id).addEventListener('change', draw));
 
 // ---------------------------------------------------------------- level types and screens -----
 function fillSelects() {
@@ -960,7 +1005,7 @@ function buildGfx() {
     box.appendChild(c);
   });
   // stripes and background
-  const sc = card('Platform stripes', 'Colour of each scanline of a platform, top to bottom, from a per-line table. Platforms taller than this repeat the last colour.');
+  const sc = card('Platform stripes', 'Colour of each of a platform\'s 6 scanlines, top to bottom, from a per-line table.');
   g.stripes.forEach((v, i) => {
     const row = document.createElement('div'); row.className = 'row-inline';
     row.innerHTML = '<span class="mono note">line ' + (i + 1) + '</span> <span class="swatch" style="background:' + col(v) + '"></span> <span class="mono note">' + hexB(v) + '</span>';
