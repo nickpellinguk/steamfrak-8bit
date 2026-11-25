@@ -49,6 +49,11 @@ Collected = $BB         ; a bit per item on the screen (ItBit): gone (gems and k
                         ; meanies yoyoed)
 Mode    = $BC           ; 0: the front screen, 1: playing
 FArm    = $BD           ; front screen: fire has been up (so a press starts)
+TDig    = $D0           ; the timer: pointers to its four characters' glyphs (M, colon, S, S)
+TFr     = $D8           ; frames into the second
+TSec    = $D9           ; seconds (BCD)
+TMin    = $DA
+; MUSRAM ($DB-$E7, defined by levelc.py): the music driver's 13 bytes
 ; RunX ($C0 on, defined by levelc.py): the line index of each run showing items, for the kernel
 
 ST_STAND = 0
@@ -445,7 +450,7 @@ Rise:   clc
         adc #0
         beq AirRet              ; ($FF: up a row this frame)
         lda TRow
-        cmp #H
+        cmp #H + TOPROWS        ; (his head stays below the timer's band)
         bcc AirRet
         dec TRow
         rts
@@ -490,7 +495,7 @@ DCV:    lda Joy
         lsr
         bcs DCRet
         lda TRow
-        cmp #H
+        cmp #H + TOPROWS        ; (his head stays below the timer's band)
         bcc DCRet
         dec TRow
         rts
@@ -711,4 +716,63 @@ FLDown: lda FArm
         sta CTRLPF
         sta YoDeb               ; (the press doesn't throw the yoyo)
         sta UDDeb
+        jsr MusicInit           ; the tune starts with the game
 FLRet:  rts
+
+; ---- the time since the start: frames, BCD seconds, minutes (stops at 9:59); then the band's
+; four glyph pointers (Font: 8 bytes per glyph, 0-9 then the colon)
+Timer:
+        IFNCONST NOTIMER
+        inc TFr
+        lda TFr
+        cmp #60
+        bcc TPtr
+        lda #0
+        sta TFr
+        lda TMin
+        cmp #9
+        bne TInc
+        lda TSec
+        cmp #$59
+        beq TPtr
+TInc:   sed
+        clc
+        lda TSec
+        adc #1
+        sta TSec
+        cld
+        cmp #$60
+        bcc TPtr
+        lda #0
+        sta TSec
+        inc TMin
+        ENDIF
+TPtr:   lda TMin
+        asl
+        asl
+        asl
+        clc
+        adc #<Font
+        sta TDig
+        lda #<(Font + 80)
+        sta TDig+2
+        lda TSec
+        and #$F0
+        lsr
+        clc
+        adc #<Font
+        sta TDig+4
+        lda TSec
+        and #$0F
+        asl
+        asl
+        asl
+        clc
+        adc #<Font
+        sta TDig+6
+        lda #>Font
+        sta TDig+1
+        sta TDig+3
+        sta TDig+5
+        sta TDig+7
+        rts
