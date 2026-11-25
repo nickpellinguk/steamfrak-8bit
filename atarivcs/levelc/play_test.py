@@ -26,12 +26,26 @@ class Game:
                 except ValueError:
                     pass
         rom = open(base + '.bin', 'rb').read()
-        self.m = MPU()
-        for i, b in enumerate(rom):
-            self.m.memory[0xF000 + i] = b
-        self.m.pc = rom[0xFFC] | rom[0xFFD] << 8
+        # 4K banks; an 8K ROM is F8: reading $FFF8 / $FFF9 selects bank 0 / 1
+        self.banks = [rom[i:i + 4096] for i in range(0, len(rom), 4096)]
+        if len(self.banks) > 1:
+            from py65.memory import ObservableMemory
+            mem = ObservableMemory()
+            self.m = MPU(memory=mem)
+
+            def switch(addr):
+                self.select(addr - 0xFFF8)
+            mem.subscribe_to_read([0xFFF8, 0xFFF9], switch)
+        else:
+            self.m = MPU()
+        self.select(len(self.banks) - 1)       # (power-on: any bank; the reset stub copes)
+        self.m.pc = self.banks[-1][0xFFC] | self.banks[-1][0xFFD] << 8
         self.frames = 0
         self.frame(0)                       # start-up and the first frame
+
+    def select(self, n):
+        mem = getattr(self.m.memory, '_subject', self.m.memory)
+        mem[0xF000:0x10000] = list(self.banks[n])
 
     def frame(self, keys=0, fire=False):
         """Run until the code is back at Frame, with these inputs held."""

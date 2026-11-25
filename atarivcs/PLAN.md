@@ -402,7 +402,14 @@ them in the bank's ROM.
   bodies allows); before the kernel, `RunVars` turns the bits into each run's X (RM1 / RM2: the
   items in its two slots, RXV: X per variant). Collected items stay collected after a death for
   now. The Starter screen: 4 item runs, 208 lines.
-* Starter screen with the game: 3438 of 4096 bytes.
+* `--game` builds an 8K F8 ROM in two 4K banks. Bank 1, the display: the per-line tables, the
+  Trogg strip, the call list and the bodies. Bank 0, the game: start-up, the vertical blank and
+  overscan, the game code, the movement maps, item tables, Trogg frames and positioning tables.
+  Stubs at $FFE0-$FFF1 sit at the same addresses in both banks (the instruction after a switch
+  comes from the other bank): `bit $FFF9` into the kernel at the end of the vertical blank,
+  `bit $FFF8` back for overscan, and a reset stub that selects bank 0 from either. The kernel's
+  timing is unchanged (the switch is before its first WSYNC).
+* Starter screen with the game: bank 0 1685 bytes, bank 1 1966 bytes (of 4096 each).
 
 ## Optimisation pass (backlog)
 
