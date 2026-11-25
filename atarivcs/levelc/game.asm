@@ -46,6 +46,8 @@ YoBack  = $B8           ; 1: coming back
 YoDeb   = $B9           ; 1: fire must be released before the next throw
 YoX     = $BA           ; the yoyo's x (M0)
 Collected = $BB         ; a bit per gem / key on the screen (ItBit): collected
+Mode    = $BC           ; 0: the front screen, 1: playing
+FArm    = $BD           ; front screen: fire has been up (so a press starts)
 ; RunX ($C0 on, defined by levelc.py): the line index of each run showing items, for the kernel
 
 ST_STAND = 0
@@ -649,3 +651,19 @@ RV2:    ldy Tmp
         bpl RVL
         ENDIF
         rts
+
+; ---- the front screen: a press of fire (after it has been up) starts the game
+FrontLogic:
+        lda INPT4
+        bpl FLDown
+        lda #1
+        sta FArm
+        rts
+FLDown: lda FArm
+        beq FLRet
+        lda #1
+        sta Mode
+        sta Repos               ; position the Trogg
+        sta YoDeb               ; (the press doesn't throw the yoyo)
+        sta UDDeb
+FLRet:  rts

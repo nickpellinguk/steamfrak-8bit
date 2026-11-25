@@ -41,7 +41,12 @@ class Game:
         self.select(len(self.banks) - 1)       # (power-on: any bank; the reset stub copes)
         self.m.pc = self.banks[-1][0xFFC] | self.banks[-1][0xFFD] << 8
         self.frames = 0
-        self.frame(0)                       # start-up and the first frame
+        self.frame(0)                       # start-up and the first frame: the front screen
+        self.mode0 = self.m.memory[self.sym['Mode']]
+        self.frame(0, True)                 # fire starts the game
+        self.frame(0)
+        self.mode1 = self.m.memory[self.sym['Mode']]
+        self.yoyo1 = self.m.memory[self.sym['State']]
 
     def select(self, n):
         mem = getattr(self.m.memory, '_subject', self.m.memory)
@@ -93,6 +98,8 @@ def main():
         print('%-46s %s %s' % (what, st, 'ok' if not bad else 'FAIL %s' % bad))
         ok &= not bad
 
+    expect('the front screen first, fire starts the game (no yoyo)', g.state(),
+           x=lambda v: (g.mode0, g.mode1, g.yoyo1) != (0, 1, 0))
     s0 = g.state()
     expect('start, standing on the floor (row 83)', g.run(10), row=83, state=0)
     expect('walk right 20 frames: 10 px', g.run(20, R), x=s0['x'] + 10, row=83)
