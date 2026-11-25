@@ -145,17 +145,41 @@ def compile_screen(plan, outdir, game=False):
             code, tables = body(name, run)
             bodies[bk] = (name, code, tables)
         run_body.append(bodies[bk])
-    # lines: runs with the same body and the same per-line data (in the tables it reads) share them
+    # collectable items (gems and keys): a bit each in Collected
+    coll = [i for i, it in enumerate(plan['items']) if it['kind'] in ('gem', 'key')] if game else []
+    if len(coll) > 8:
+        raise SystemExit('more than 8 gems and keys on a screen')
+    bit = {i: 1 << b for b, i in enumerate(coll)}
+    # lines: runs with the same body and the same per-line data (in the tables it reads) share them.
+    # A run showing collectable items gets a dataset per combination of them collected (their
+    # graphics zeroed); the call list loads its X from RunX+k, set before the kernel from the bits.
     seen, run_x, nlines, data = {}, [], 0, {}
-    for run, (name, code, tables) in zip(plan['runs'], run_body):
-        sig = name + json.dumps([[L.get(t, 0) for t in tables] for L in run['lines']])
+    item_runs = []                         # (run index, [bit per slot], [x per variant])
+
+    def lines_at(name, tables, lines):
+        nonlocal nlines
+        sig = name + json.dumps([[L.get(t, 0) for t in tables] for L in lines])
         if sig not in seen:
             seen[sig] = nlines
-            for k, L in enumerate(run['lines']):
+            for k, L in enumerate(lines):
                 for t in tables:
                     data.setdefault(t, {})[nlines + k] = L.get(t, 0)
-            nlines += len(run['lines'])
-        run_x.append(seen[sig])
+            nlines += len(lines)
+        return seen[sig]
+    for ri, (run, (name, code, tables)) in enumerate(zip(plan['runs'], run_body)):
+        slots, k = [], 0
+        for o in run['objs']:
+            if o['t'] != 'L':
+                if o.get('ref') and o['ref'][0] == 'item' and o['ref'][1] in bit:
+                    slots.append((k, bit[o['ref'][1]]))
+                k += 1
+        run_x.append(lines_at(name, tables, run['lines']))
+        if slots:
+            xs = []
+            for v in range(1 << len(slots)):
+                gone = {'G%d' % kk for j, (kk, _) in enumerate(slots) if v >> j & 1}
+                xs.append(lines_at(name, tables, [{t: (0 if t in gone else val) for t, val in L.items()} for L in run['lines']]))
+            item_runs.append((ri, [b for _, b in slots], xs))
     if nlines > 256:
         raise SystemExit('line index overflow: %d lines' % nlines)
     # data area from $F000, packed: each block is placed at the first address where every byte it
@@ -200,6 +224,15 @@ def compile_screen(plan, outdir, game=False):
                for b in (l['x'], l['top'], l['bottom'] - 1)]
         nlad = len(lad) // 3
         place('LadL', dict(enumerate(lad or [0])), False)
+        # the runs showing collectable items: their item bits (two slots) and X per variant
+        rm1 = [b[0] for _, b, _ in item_runs]
+        rm2 = [b[1] if len(b) > 1 else 0 for _, b, _ in item_runs]
+        rxv = [x for _, _, xs in item_runs for x in (xs + xs[-1:] * 4)[:4]]
+        its = [plan['items'][i] for i in coll]
+        for name, vals in (('RM1', rm1), ('RM2', rm2), ('RXV', rxv), ('ItX', [it['x'] for it in its]),
+                           ('ItTop', [it['top'] >> 1 for it in its]), ('ItBot', [(it['bottom'] - 1) >> 1 for it in its]),
+                           ('ItBit', [1 << b for b in range(len(its))])):
+            place(name, dict(enumerate(vals or [0])), False)
         place('HMTab', {r: (-(r - 6) & 15) << 4 for r in range(15)}, True)   # PosObj's fine move
         maps_bytes = len(pidx) + len(pb) + len(lidx) + len(lb)
         h = hh
@@ -212,7 +245,11 @@ def compile_screen(plan, outdir, game=False):
     o += ['%-8s = $%02X' % (k, v) for k, v in tiatest.EQU.items()]
     o += ['HMP0 = $20', 'HMM0 = $22', 'REFP0 = $0B', 'INPT4 = $0C', 'SWCHA = $280', 'INTIM = $284',
           'TIM64T = $296', 'H = %d' % h,
-          'START_X = %d' % tr['x'], 'START_ROW = %d' % tr['row'], 'NLAD = %d' % nlad]
+          'START_X = %d' % tr['x'], 'START_ROW = %d' % tr['row'], 'NLAD = %d' % nlad,
+          'NIR = %d' % len(item_runs), 'NITEM = %d' % len(coll), 'RunX = $C0']
+    assert len(item_runs) <= 40, 'too many runs with items for RunX'
+    if game and plan.get('collected'):
+        o.append('START_COLL = %d' % sum(bit[i] for i in plan['collected'] if i in bit))
     if game and plan.get('yotest'):
         o += ['YOTEST = %d' % plan['yotest'][0], 'YOFACE = %d' % plan['yotest'][1]]
     o += ['GRP0 = $1B', 'COLUP0 = $06', 'RESM0 = $12', 'ENAM0 = $1D', 'COLUPF = $08',
@@ -231,8 +268,9 @@ def compile_screen(plan, outdir, game=False):
     else:
         o += static_frame(plan, tr, h, ptr0, tx)
     calls = []
-    for run, (name, code, tables), x0 in zip(plan['runs'], run_body, run_x):
-        calls.append('        ldx #%d' % x0)
+    irun = {ri: k for k, (ri, _, _) in enumerate(item_runs)}
+    for ri, (run, (name, code, tables), x0) in enumerate(zip(plan['runs'], run_body, run_x)):
+        calls.append('        ldx RunX+%d' % irun[ri] if ri in irun else '        ldx #%d' % x0)
         calls += ['        jsr %s' % name] + ['        jsr %s_i' % name] * (run['n'] - 1)
     o += calls
     o.append('''        sta WSYNC
@@ -378,6 +416,10 @@ Clear:  sta $00,x
         lda #YOFACE
         sta Facing
         ENDIF
+        IFCONST START_COLL
+        lda #START_COLL
+        sta Collected
+        ENDIF
         lda #1
         sta Repos           ; position P0 in the first frame
         sta CTRLPF          ; mirrored playfield
@@ -409,6 +451,7 @@ Frame:  lda #2
         sta PF2
         inc Frm
         jsr Logic
+        jsr RunVars         ; the item runs' line indexes, from the collected bits
         lda #$FE            ; the frame's bit 0 (the hand row's yoyo, M0) only while it's out
         ldx State
         cpx #ST_YOYO
@@ -480,10 +523,13 @@ def model(plan, palette, yoyo=True):
                 for x in range(4 * b, 4 * b + 4):
                     img[y][x] = L['Stripe']
             gi = 0
+            gone = set(plan.get('collected', ()))
             for ob in run['objs']:
                 v, c = (L.get('Lad', 0), 0) if ob['t'] == 'L' else (L.get('G%d' % gi, 0), L.get('C%d' % gi, 0))
                 if ob['t'] != 'L':
                     gi += 1
+                if ob.get('ref') and ob['ref'][0] == 'item' and ob['ref'][1] in gone:
+                    continue
                 for b in range(8):
                     if v & (0x80 >> b):
                         img[y][ob['x'] + b] = c
@@ -552,6 +598,8 @@ def main():
     outdir = os.path.abspath(args[0] if args else os.path.join(HERE, 'out'))
     os.makedirs(outdir, exist_ok=True)
     plan = get_plan(outdir)
+    if opt('collected'):                   # --collected=I,J: those items start collected
+        plan['collected'] = [int(v) for v in opt('collected').split(',')]
     if opt('yotest'):                      # --yotest=LEN,FACING (0 right, 8 left): yoyo held out
         plan['yotest'] = tuple(int(v) for v in opt('yotest').split(','))
     if opt('trogg'):                       # --trogg=X,ROW: move his start (checks other positions)

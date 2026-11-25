@@ -191,6 +191,22 @@ def main():
     g.run(3)
     expect('released early: comes back', yo(), len=lambda v: not v < 7)
     expect('... and he can walk again', g.run(40, R), state=0, x=lambda v: v <= x0)
+    # gems and keys: touching one collects it (Collected bits: gem x34 = 1, gem x88 = 2, key x103 = 4)
+    g = Game(os.path.join(outdir, 'level'))
+    col = lambda: {**g.state(), 'coll': g.m.memory[g.sym['Collected']], 'runx': list(g.m.memory[g.sym['RunX']:g.sym['RunX'] + 4])}
+    st = col()
+    g.run(60, R)
+    expect('walking right along the floor: not yet at the key', col(), coll=0) if col()['x'] < 96 else None
+    while g.state()['x'] < 97:
+        g.run(1, R)
+    g.run(1)
+    st2 = col()
+    expect('reaching the key (x 103): collected', st2, coll=4)
+    expect('... its run now uses its empty dataset', st2, runx=lambda r: r == st['runx'])
+    g = Game(os.path.join(outdir, 'level'))
+    g.run(46, L)
+    g.run(200, U)
+    expect('climbing to the top-left ledge collects its gem (x 34)', col(), coll=1, row=20)
     print('all ok' if ok else 'SOME FAILED')
     return ok
 

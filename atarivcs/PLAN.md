@@ -395,7 +395,14 @@ them in the bank's ROM.
   before the next throw. No collisions yet. Objects are positioned by one routine (P0 or M0:
   divide-by-15 RESx + HMOVE). `play_test.py` drives it in py65 with scripted joystick
   input.
-* Starter screen with the game: 2976 of 4096 bytes.
+* Gems and keys: touching one (the Trogg's rows against its rows, x within 6 px) sets its bit in
+  `Collected` (up to 8 per screen). Every run showing collectable items has a dataset per
+  combination of them collected (their graphics zeroed; identical lines still shared), and its call
+  list entry is `ldx RunX+k` (zero page, a cycle more than an immediate, which the gap between
+  bodies allows); before the kernel, `RunVars` turns the bits into each run's X (RM1 / RM2: the
+  items in its two slots, RXV: X per variant). Collected items stay collected after a death for
+  now. The Starter screen: 4 item runs, 208 lines.
+* Starter screen with the game: 3438 of 4096 bytes.
 
 ## Optimisation pass (backlog)
 

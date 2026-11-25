@@ -45,6 +45,8 @@ YoF     = $B7
 YoBack  = $B8           ; 1: coming back
 YoDeb   = $B9           ; 1: fire must be released before the next throw
 YoX     = $BA           ; the yoyo's x (M0)
+Collected = $BB         ; a bit per gem / key on the screen (ItBit): collected
+; RunX ($C0 on, defined by levelc.py): the line index of each run showing items, for the kernel
 
 ST_STAND = 0
 ST_AIR   = 1
@@ -220,7 +222,8 @@ Logic:  lda #0
         sta Repos
         sta UDDeb
 LRet:   rts
-Alive:  lda SWCHA
+Alive:  jsr Collide
+        lda SWCHA
         sta Joy
         lda INPT4               ; fire released: the next throw is allowed
         bpl FireDn
@@ -587,4 +590,62 @@ YPL:    lda TX
         rts
 YPEdge: lda #1                  ; the screen's edge: come back
         sta YoBack
+        rts
+
+; ---- gems and keys: the Trogg's box (rows TRow - H + 1 .. TRow, x within 6 px) against each one
+; not yet collected (ItX, ItTop / ItBot rows, ItBit); touching one collects it
+Collide:
+        IF NITEM > 0
+        ldx #NITEM - 1
+CoL:    lda Collected
+        and ItBit,x
+        bne CoN
+        lda TRow
+        cmp ItTop,x
+        bcc CoN                 ; his feet are above it
+        sec
+        sbc #H - 1
+        bcc CoHit               ; (his head is off the top: the bottom test passes)
+        cmp ItBot,x
+        beq CoHit
+        bcs CoN                 ; his head is below it
+CoHit:  lda TX
+        sec
+        sbc ItX,x
+        clc
+        adc #6
+        cmp #13
+        bcs CoN                 ; more than 6 px apart
+        lda Collected
+        ora ItBit,x
+        sta Collected
+CoN:    dex
+        bpl CoL
+        ENDIF
+        rts
+
+; ---- before the kernel: each run showing items gets the line index (X) of its dataset for what
+; is still there: variant = slot 1 collected + 2 x slot 2 collected (RM1 / RM2: their item bits)
+RunVars:
+        IF NIR > 0
+        ldx #NIR - 1
+RVL:    txa
+        asl
+        asl
+        sta Tmp
+        lda Collected
+        and RM1,x
+        beq RV1
+        inc Tmp
+RV1:    lda Collected
+        and RM2,x
+        beq RV2
+        inc Tmp
+        inc Tmp
+RV2:    ldy Tmp
+        lda RXV,y
+        sta RunX,x
+        dex
+        bpl RVL
+        ENDIF
         rts
