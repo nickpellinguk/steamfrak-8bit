@@ -402,6 +402,11 @@ them in the bank's ROM.
   bodies allows); before the kernel, `RunVars` turns the bits into each run's X (RM1 / RM2: the
   items in its two slots, RXV: X per variant). Collected items stay collected after a death for
   now. The Starter screen: 4 item runs, 208 lines.
+* Meanies: every item that isn't a gem or a key (ItKind 1). Touching one kills the Trogg; the yoyo
+  ball (on his hand's row) overlapping one removes it (the same bits and datasets as collected
+  gems) and sends the yoyo back. The yoyo doesn't affect gems and keys. Up to 8 items per screen.
+* P1's colour is carried from run to run (the editor's analysis and the compiler): a run whose
+  first object is black only skips its colour write if the runs above left P1 black.
 * `--game` builds an 8K F8 ROM in two 4K banks. Bank 1, the display: the per-line tables, the
   Trogg strip, the call list and the bodies. Bank 0, the game: start-up, the vertical blank and
   overscan, the game code, the movement maps, item tables, Trogg frames and positioning tables.
