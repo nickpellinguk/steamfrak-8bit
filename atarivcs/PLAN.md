@@ -65,7 +65,7 @@ Rules that follow:
   on an odd line and the following even line: a consistent one-line offset.
 * **The even line's `GRP0` store comes late,** so it must land after Trogg has been drawn on that
   line; otherwise his row splits partway across. That is fine unless he is at the far right (about
-  x > 120 for a double-width Trogg), where a section has to make the store earlier or accept a
+  x > 120 for the Trogg), where a section has to make the store earlier or accept a
   one-line split.
 * **The `INC` uses 5 cycles of the even line's horizontal blank,** competing with left-half
   playfield writes (left `PF0` by cycle 22, `PF1` by 27, `PF2` by 38) and early strobes.

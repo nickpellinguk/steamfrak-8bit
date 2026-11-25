@@ -48,6 +48,7 @@ input[type=number] { width: 70px; }
 .rail .tool-grid { display: grid; grid-template-columns: 1fr; gap: 6px; }
 .rail label.row-inline { flex-wrap: nowrap; gap: 8px; }
 .screenbox { overflow-x: auto; min-width: 0; }
+.aspect { display: inline-flex; gap: 6px; align-items: center; margin-bottom: 6px; font-size: 13px; }
 canvas.screen { display: block; image-rendering: pixelated; cursor: crosshair; border-radius: 4px; touch-action: none; }
 .status { font-family: var(--mono); font-size: 12px; color: var(--muted); min-height: 1.5em; }
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; border: 1px solid var(--line); }
@@ -134,6 +135,11 @@ textarea { width: 100%; min-height: 220px; background: var(--panel2); border: 1p
     </aside>
 
     <div class="screenbox">
+      <label class="aspect">Pixels <select id="sel-aspect" aria-label="Pixel aspect ratio">
+        <option value="1">Square</option>
+        <option value="1.714">NTSC VCS (12:7)</option>
+        <option value="2.079">PAL VCS (≈2.08:1)</option>
+      </select></label>
       <canvas id="screen" class="screen" width="500" height="576" tabindex="0" aria-label="Screen editor, 160 by 192 pixels"></canvas>
       <div class="status" id="status">&nbsp;</div>
       <div class="legend">
@@ -543,7 +549,7 @@ function describe(lit) {
 }
 
 const snapX = x => Math.max(P1MIN, Math.min(154, P1MIN + Math.round((x - P1MIN) / 3) * 3));
-const snapTX = x => Math.max(0, Math.min(141, 3 * Math.round(x / 3)));   // Trogg (player 0): x a multiple of 3
+const snapTX = x => Math.max(0, Math.min(150, 3 * Math.round(x / 3)));   // Trogg (player 0): x a multiple of 3
 const unitOf = x => Math.max(0, Math.min(19, Math.floor(x / 8)));        // platforms: 8-pixel units (2 blocks)
 const onGrid = x => x >= P1MIN && (x - P1MIN) % 3 === 0;
 const itemDef = k => P.graphics.items.find(i => i.kind === k) || P.graphics.items[0];
@@ -747,6 +753,18 @@ function lineSig(s, y) {
 
 // ---------------------------------------------------------------- drawing ---------------------
 const cv = document.getElementById('screen'), cx = cv.getContext('2d');
+// pixel aspect: the canvas is drawn with square pixels and stretched horizontally by CSS (clicks
+// map back through getBoundingClientRect). A TIA pixel is one colour clock wide and one scanline
+// tall: NTSC 3.58 MHz against a square-pixel rate of 6.14 MHz (12:7), PAL 3.55 against 7.375.
+const selAspect = document.getElementById('sel-aspect');
+function applyAspect() {
+  const k = +selAspect.value || 1;
+  cv.style.width = Math.round(cv.width * k) + 'px'; cv.style.height = cv.height + 'px';
+  try { localStorage.setItem('frak-aspect', selAspect.value); } catch (e) { }
+}
+try { const a = localStorage.getItem('frak-aspect'); if (a && [...selAspect.options].some(o => o.value === a)) selAspect.value = a; } catch (e) { }
+selAspect.addEventListener('change', applyAspect);
+applyAspect();
 let ROWS_A = [];
 function draw() {
   const s = scr(), g = P.graphics;
@@ -767,9 +785,9 @@ function draw() {
     }
   });
   s.items.forEach(it => { const d = itemDef(it.kind); const a = it.bottom - d.rows.length; d.rows.forEach((v, i) => drawByte(v, it.x, a + i, col(d.colours[i] ?? d.colour), 1)); });
-  // Trogg: double width, each row two lines, first frame
+  // Trogg: single width, each row two lines, first frame
   const t = s.trogg, f = g.trogg.frames[0];
-  if (t) f.rows.forEach((v, i) => { for (const y of [2 * (t.row - f.rows.length + 1 + i), 2 * (t.row - f.rows.length + 1 + i) + 1]) drawByte(v, t.x, y, col(g.trogg.colour), 2); });
+  if (t) f.rows.forEach((v, i) => { for (const y of [2 * (t.row - f.rows.length + 1 + i), 2 * (t.row - f.rows.length + 1 + i) + 1]) drawByte(v, t.x, y, col(g.trogg.colour), 1); });
   // overlays
   if (document.getElementById('chk-regs').checked) {     // both copies of PF0, PF1, PF2
     // mirrored: the right half runs PF2, PF1, PF0, so the PF0 areas are the screen edges (never drawn)
@@ -817,7 +835,7 @@ function bbox(o) {
   if (o.type === 'platform') { const p = s.platforms[o.i]; return p && [p.b0 * 4, p.top * 2, (p.b1 + 1) * 4, (p.top + p.rows) * 2]; }
   if (o.type === 'ladder') { const l = s.ladders[o.i]; return l && [l.x, l.top * 2, l.x + 8, l.bottom * 2]; }
   if (o.type === 'item') { const it = s.items[o.i]; if (!it) return null; const [a, z] = itemLines(it); return [it.x, a, it.x + 8, z]; }
-  if (o.type === 'trogg') { const t = s.trogg, h = P.graphics.trogg.frames[0].rows.length; return [t.x, (t.row - h + 1) * 2, t.x + 16, (t.row + 1) * 2]; }
+  if (o.type === 'trogg') { const t = s.trogg, h = P.graphics.trogg.frames[0].rows.length; return [t.x, (t.row - h + 1) * 2, t.x + 8, (t.row + 1) * 2]; }
 }
 function hit(x, y) {
   const s = scr(), inside = b => b && x >= b[0] && x < b[2] && y >= b[1] && y < b[3];
@@ -874,7 +892,7 @@ function showSel() {
       '<label class="row-inline"><input type="checkbox" id="in-ir"' + (it.removable ? ' checked' : '') + '> Collectable (1 byte of RAM)</label></div>';
   } else if (sel.type === 'trogg') {
     const t = s.trogg;
-    h = '<h3>Trogg\'s start</h3><div class="row-inline"><label>x <input type="number" id="in-tx" step="3" min="0" max="141" value="' + t.x + '"></label><label>Feet on row <input type="number" id="in-tr" min="0" max="95" value="' + t.row + '"></label></div>';
+    h = '<h3>Trogg\'s start</h3><div class="row-inline"><label>x <input type="number" id="in-tx" step="3" min="0" max="150" value="' + t.x + '"></label><label>Feet on row <input type="number" id="in-tr" min="0" max="95" value="' + t.row + '"></label></div>';
   }
   box.innerHTML = h + '<div class="row-inline"><button id="btn-del-sel">Delete</button></div>';
   const bind = (id, fn) => { const e = document.getElementById(id); if (e) e.addEventListener('change', () => { fn(e); commit(); }); };
@@ -963,7 +981,7 @@ cv.addEventListener('pointerdown', ev => {
   if (tool === 'platform') drag = { mode: 'platform', u0: unitOf(p.x), r0: row, u1: unitOf(p.x), r1: row };
   else if (tool === 'ladder') drag = { mode: 'ladder', x: snapX(p.x - 4), r0: row, r1: row };
   else if (tool === 'item') { s.items.push({ kind, x: snapX(p.x - 4), bottom: 2 * row + 2, removable: kind !== 'key' }); sel = { type: 'item', i: s.items.length - 1 }; rowSel = row; commit(); }
-  else if (tool === 'trogg') { s.trogg = { x: snapTX(p.x - 8), row }; sel = { type: 'trogg' }; rowSel = row; commit(); }
+  else if (tool === 'trogg') { s.trogg = { x: snapTX(p.x - 4), row }; sel = { type: 'trogg' }; rowSel = row; commit(); }
 });
 cv.addEventListener('pointermove', ev => {
   const p = pos(ev), row = Math.max(0, Math.min(ROWS - 1, Math.floor(p.y / 2)));
@@ -972,7 +990,7 @@ cv.addEventListener('pointermove', ev => {
     tool === 'ladder' ? [snapX(p.x - 4), 2 * row, snapX(p.x - 4) + 8, 2 * row + 32] :
     tool === 'item' ? (() => { const n = itemDef(kind).rows.length; const x = snapX(p.x - 4); return [x, 2 * row + 2 - n, x + 8, 2 * row + 2]; })() :
     tool === 'platform' ? [unitOf(p.x) * 8, 2 * row, unitOf(p.x) * 8 + 16, 2 * row + 8] :
-    tool === 'trogg' ? (() => { const h = P.graphics.trogg.frames[0].rows.length, x = snapTX(p.x - 8); return [x, 2 * (row - h + 1), x + 16, 2 * row + 2]; })() : null) : null;
+    tool === 'trogg' ? (() => { const h = P.graphics.trogg.frames[0].rows.length, x = snapTX(p.x - 4); return [x, 2 * (row - h + 1), x + 8, 2 * row + 2]; })() : null) : null;
   if (JSON.stringify(g2) !== JSON.stringify(ghost)) { ghost = g2; if (!drag) draw(); }
   const A = ROWS_A[row];
   document.getElementById('status').textContent = 'x ' + Math.floor(Math.min(p.x, W - 1)) + ' · line ' + Math.floor(p.y) + ' · row ' + row + (A ? ' · ' + A.desc + (A.errors.length ? ' · can\'t be drawn' : '') : '');
@@ -1124,7 +1142,7 @@ function buildGfx() {
   const box = document.getElementById('gfx'), g = P.graphics; box.innerHTML = '';
   // Trogg
   g.trogg.frames.forEach((f, fi) => {
-    const c = card('Trogg: ' + f.name, 'Player 0, double width; each row is two scanlines. Bit 0 (the right-hand column, outlined) switches the yoyo on, so only the walking frame\'s hand row may set it. RAM buffer: ' + (f.rows.length + 1) + ' bytes for this frame.');
+    const c = card('Trogg: ' + f.name, 'Player 0, single width; each row is two scanlines. Bit 0 (the right-hand column, outlined) switches the yoyo on, so only the walking frame\'s hand row may set it. RAM buffer: ' + (f.rows.length + 1) + ' bytes for this frame.');
     c.appendChild(pixelEditor(f.rows, col(g.trogg.colour), { yoyo: true, label: r => r === f.yoyoRow ? '  hand' : '' }));
     const ctl = document.createElement('div'); ctl.className = 'row-inline';
     ctl.appendChild(heightControl(f.rows, 1, 24, 'Rows'));

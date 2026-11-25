@@ -118,7 +118,7 @@ Frame:  lda #2
         sta PF2
         lda #1
         sta NUSIZ1
-        lda #$25
+        lda #$20
         sta NUSIZ0
         ldy #%d
 CopyF:  lda TroggFrame-1,y
@@ -129,7 +129,7 @@ CopyF:  lda TroggFrame-1,y
         sta TrogPtr+1
         lda #<(TroggStrip-1)
         sta TrogPtr''' % (BG, TROGG_COL, len(TROGG)))
-    for reg, xx in (('RESP0', TX), ('RESM0', TX + 16)):
+    for reg, xx in (('RESP0', TX), ('RESM0', TX + 8)):
         c = (xx + 68) // 3 if reg == 'RESM0' else (xx + 63) // 3
         o.append('        sta WSYNC\n        ' + pad(c - 3).replace('\n', '\n        ') + '\n        sta %s' % reg)
     o.append('''        ldx #33
@@ -221,7 +221,7 @@ if __name__ == '__main__':
                         want[x + b] = (0, 0, 0)
             got = {q: im.getpixel((int((q + 0.5) * sx), first + y0 + k)) for q in range(160)}
             got = {q: c for q, c in got.items() if c != bg}
-            trogg = set(range(TX - 1, TX + 24))            # Trogg and his yoyo
+            trogg = set(range(TX - 1, TX + 16))            # Trogg and his yoyo
             w = {q: c for q, c in want.items() if q not in trogg}
             g = {q: c for q, c in got.items() if q not in trogg}
             if w != g:
