@@ -407,6 +407,14 @@ them in the bank's ROM.
   gems) and sends the yoyo back. The yoyo doesn't affect gems and keys. Up to 8 items per screen.
 * P1's colour is carried from run to run (the editor's analysis and the compiler): a run whose
   first object is black only skips its colour write if the runs above left P1 black.
+* The timer (`levelc/timer.py`): the time since the start, "M:SS" to 9:59, white on a black band
+  at the top left (x 16-47, the start of PF1). P0 and P1 both two copies close (NUSIZ 1), P0 at x 16
+  and P1 at x 24 (placed in the vertical blank), interleaved: each line writes GRP0 by cycle 8 and
+  GRP1 by 16 (the first copies), then GRP0 at 31 and GRP1 at 34 (the second copies), from four
+  glyph pointers (`lda (TDig),y`). The band is the top 5 rows (10 lines): 8 lines of digits, then
+  a line that puts P0 back at the Trogg's x (coarse RESP0) and one with its HMOVE (that line's first
+  8 pixels are blanked, a notch under the band) that also parks P1 for the kernel. Levels can't use
+  rows 0-4 (the compiler refuses them), and the Trogg's head stays below the band.
 * `--game` builds an 8K F8 ROM in two 4K banks. Bank 1, the display: the per-line tables, the
   Trogg strip, the call list and the bodies. Bank 0, the game: start-up, the vertical blank and
   overscan, the game code, the movement maps, item tables, Trogg frames and positioning tables.

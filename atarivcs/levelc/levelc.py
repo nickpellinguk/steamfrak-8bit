@@ -29,6 +29,7 @@ import tiatest  # noqa: E402
 import screens2  # noqa: E402
 import mirrorrows as M  # noqa: E402
 import front  # noqa: E402
+import timer  # noqa: E402
 
 F._setup()
 pad = tiatest.pad
@@ -136,6 +137,9 @@ def move_maps(plan):
 
 def compile_screen(plan, outdir, game=False):
     errs = [(r['r'], e) for r in plan['runs'] for e in r['errors']]
+    if game:
+        errs += [(r['r'], 'rows 0-%d are the timer\'s band: keep them empty' % (timer.TOPROWS - 1))
+                 for r in plan['runs'] if r['r'] < timer.TOPROWS and (r['lit'] or r['objs'])]
     if errs:
         raise SystemExit('the screen has rows the editor flags; fix them first:\n' +
                          '\n'.join('  row %d: %s' % (r, e) for r, e in errs[:10]))
@@ -212,6 +216,9 @@ def compile_screen(plan, outdir, game=False):
     for t in sorted(data, key=lambda t: -len(data[t])):
         place(t, data[t], True)
     table_bytes = sum(len(d) for d in data.values())
+    if game:                               # the timer's font, and P0's fine moves, for the band
+        place('Font', dict(enumerate(timer.font())), True)
+        place('HMTab1', {r: (-(r - 6) & 15) << 4 for r in range(15)}, True)
     if game:                               # the front screen's per-line tables (its own loop)
         for t, vals in front.tables().items():
             place(t, dict(enumerate(vals)), True)
@@ -263,12 +270,14 @@ def compile_screen(plan, outdir, game=False):
           'TIM64T = $296', 'H = %d' % h,
           'START_X = %d' % tr['x'], 'START_ROW = %d' % tr['row'], 'NLAD = %d' % nlad,
           'NIR = %d' % len(item_runs), 'NITEM = %d' % len(coll), 'HANDUP = %d' % handup, 'RunX = $C0', 'FRONT_BG = $%02X' % front.BG, 'FRONT_INK = $%02X' % front.INK,
-          'FRONT_FILL = $%02X' % front.FILL, 'TAIL_X = %d' % front.TAIL_P1_X]
+          'FRONT_FILL = $%02X' % front.FILL, 'TOPROWS = %d' % timer.TOPROWS, 'TWHITE = $%02X' % timer.WHITE, 'TAIL_X = %d' % front.TAIL_P1_X]
     if game and (('--check' in sys.argv and '--front' not in sys.argv) or plan.get('skipfront')):
         o.append('SKIPFRONT = 1')       # (picture checks of the level start in it)
     assert len(item_runs) <= 40, 'too many runs with items for RunX'
     if game and plan.get('collected'):
         o.append('START_COLL = %d' % sum(bit[i] for i in plan['collected'] if i in bit))
+    if game and '--check' in sys.argv:
+        o.append('NOTIMER = 1')         # (picture checks: the time stays 0:00)
     if game and plan.get('yotest'):
         o += ['YOTEST = %d' % plan['yotest'][0], 'YOFACE = %d' % plan['yotest'][1]]
     o += ['GRP0 = $1B', 'COLUP0 = $06', 'RESM0 = $12', 'ENAM0 = $1D', 'COLUPF = $08',
@@ -285,8 +294,11 @@ def compile_screen(plan, outdir, game=False):
     calls = []
     irun = {ri: k for k, (ri, _, _) in enumerate(item_runs)}
     for ri, (run, (name, code, tables), x0) in enumerate(zip(plan['runs'], run_body, run_x)):
-        calls.append('        ldx RunX+%d' % irun[ri] if ri in irun else '        ldx #%d' % x0)
-        calls += ['        jsr %s' % name] + ['        jsr %s_i' % name] * (run['n'] - 1)
+        skip = max(0, timer.TOPROWS - run['r']) if game else 0     # (the timer's band rows)
+        if run['n'] <= skip:
+            continue
+        calls.append('        ldx RunX+%d' % irun[ri] if ri in irun else '        ldx #%d' % (x0 + 2 * skip))
+        calls += ['        jsr %s' % name] + ['        jsr %s_i' % name] * (run['n'] - 1 - skip)
     body_code = []
     for name, code, tables in bodies.values():
         # a body must not straddle a page: its taken branch would cost an extra cycle there
@@ -340,6 +352,7 @@ OS:     sta WSYNC
         o.append(front.kernel())
         o.append('        jmp KEnd')
         o.append('KLevel:')
+        o.append(timer.band(plan['background'], tr['colour']))
         o += calls
         o.append('KEnd:')
         o.append(kernel_end)
@@ -539,7 +552,8 @@ Frame:  lda #2
         sta COLUPF
         jsr FrontLogic
         jmp Shown
-InGame: jsr Logic
+InGame: jsr Timer
+        jsr Logic
         jsr RunVars         ; the item runs' line indexes, from the collected bits
 Shown:
         lda #$FE            ; the frame's bit 0 (the hand row's yoyo, M0) only while it's out
@@ -566,7 +580,7 @@ CopyF:  lda TroggFrames,x
         bne CopyF
         lda Facing
         sta REFP0
-        lda #<(TroggStrip+94+H)
+        lda #<(TroggStrip+94+H+TOPROWS)   ; (the kernel's first body is row TOPROWS)
         sec
         sbc TRow
         sta TrogPtr
@@ -598,7 +612,22 @@ NoYo:   sta WSYNC
         %s
         sta RESP1
         sta HMCLR
-        lda Mode            ; the front screen: P1 is the tail's fill (double width, yellow,
+        lda Mode            ; playing: P0 and P1 for the timer (the band puts P0 back)
+        beq NoTime
+        lda #16
+        ldx #0
+        jsr PosObj
+        lda #24
+        ldx #1
+        jsr PosObj
+        lda #1
+        sta NUSIZ0          ; two copies close: x 16 and 32 (P1: 24 and 40)
+        lda #TWHITE
+        sta COLUP0
+        sta COLUP1
+        lda #0
+        sta REFP0
+NoTime: lda Mode            ; the front screen: P1 is the tail's fill (double width, yellow,
         bne NoTail          ; behind the playfield)
         lda #TAIL_X - 1     ; (a double-width player starts a pixel later)
         ldx #1
@@ -686,7 +715,11 @@ def check(base, plan, outdir, game=False):
     # the first kernel line: the background shows from the top of the visible picture
     # (VBLANK goes off part-way through the line before the first body's WSYNC)
     first = next(r for r in range(im.height) if im.getpixel((im.width - 2, r)) == bgrgb) + 1
+    if game and '--front' not in sys.argv:
+        first -= 2 * timer.TOPROWS          # (the timer's band is black: the first background line is its last)
     want = front_model() if '--front' in sys.argv else model(plan, pal, yoyo=not game)
+    if game and '--front' not in sys.argv:
+        want[:timer.TOPROWS * 2] = timer.model_lines()
     bad = []
     for y in range(192):
         got = [im.getpixel((int((x + 0.5) * sx), first + y)) for x in range(160)]
