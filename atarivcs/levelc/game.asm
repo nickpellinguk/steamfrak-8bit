@@ -40,10 +40,18 @@ LTarget = $B2           ; the x of the ladder being climbed
 LTop    = $B3           ; ... its top and bottom rows (feet)
 LBot    = $B4
 LRowQ   = $B5
+YoLen   = $B6           ; yoyo: length (pixels) and fraction
+YoF     = $B7
+YoBack  = $B8           ; 1: coming back
+YoDeb   = $B9           ; 1: fire must be released before the next throw
+YoX     = $BA           ; the yoyo's x (M0)
 
 ST_STAND = 0
 ST_AIR   = 1
 ST_CLIMB = 2
+ST_YOYO  = 3
+YOSPD   = 166           ; 1.3 Frak px/tick: 0.65 of our pixels a frame
+YOMAX   = 40            ; 80 Frak px
 GRAV    = 5             ; 0.05 px/tick^2
 JUMPV   = 122           ; 1.25 px/tick
 DIEV    = 157           ; landing at 1.6 px/tick or faster kills
@@ -51,14 +59,15 @@ TERMV   = 392           ; 4 px/tick
 DROPV   = 98            ; dropping off a ladder's bottom: 1 px/tick
 GRABV   = 125           ; ladders can be caught when falling no faster than 1.275 px/tick
 
-; ---- P0 to TX: coarse RESP0 from a divide-by-15 loop, then HMOVE for the rest. RESP0 ends at
-; cycle 5n + 18 (n loop passes), so the coarse x is 15(n - 1) + 6 and HMTab moves it r - 6 (r =
-; TX mod 15). Kept within a page: a branch across one would add a cycle.
+; ---- position an object: A = x, X = 0 for P0 or 2 for M0 (pass x + 1 for M0: it lands a pixel left
+; of P0 for the same strobe). Coarse RESx from a divide-by-15 loop, then HMOVE for the rest: the
+; strobe ends at cycle 5n + 18 (n loop passes), so P0's coarse x is 15(n - 1) + 6 and HMTab moves
+; it r - 6 (r = x mod 15). Takes three lines; HMCLR at the end. Kept within a page: a branch across
+; one would add a cycle.
         IF (<.) > $E0
         ALIGN 256
         ENDIF
-PosP0:  sta WSYNC
-        lda TX
+PosObj: sta WSYNC
         sec
 PosL:   sbc #15
         bcs PosL
@@ -66,10 +75,13 @@ PosL:   sbc #15
         tay
         lda HMTab,y
         bit $80
-        sta RESP0
-        sta HMP0
+        nop
+        sta RESP0,x
+        sta HMP0,x
         sta WSYNC
         sta HMOVE
+        sta WSYNC
+        sta HMCLR
         rts
 
 ; ---- A = feet row; returns A != 0 when a platform is right under the feet (X, Y, Tmp used)
@@ -210,6 +222,11 @@ Logic:  lda #0
 LRet:   rts
 Alive:  lda SWCHA
         sta Joy
+        lda INPT4               ; fire released: the next throw is allowed
+        bpl FireDn
+        lda #0
+        sta YoDeb
+FireDn:
         lda UDDeb
         beq NoDeb
         lda Joy
@@ -223,7 +240,10 @@ UDHeld: lda Joy
         ora #$30
         sta Joy
 NoDeb:  lda State
-        cmp #ST_CLIMB
+        cmp #ST_YOYO
+        bne L0
+        jmp DoYoyo
+L0:     cmp #ST_CLIMB
         bne L1
         jmp DoClimb
 L1:     cmp #ST_AIR
@@ -249,7 +269,20 @@ DS1:    lda TRow
         lda #ST_AIR
         sta State
         rts
-DS2:    lda Joy
+DS2:    lda INPT4               ; fire: throw the yoyo the way he faces (he stands still)
+        bmi DS2a
+        lda YoDeb
+        bne DS2a
+        lda #1
+        sta YoDeb
+        lda #0
+        sta YoLen
+        sta YoF
+        sta YoBack
+        lda #ST_YOYO
+        sta State
+        jmp YoPos
+DS2a:   lda Joy
         and #$10
         bne DS3
         lda TRow                ; up: a ladder at the feet, or jump
@@ -485,4 +518,73 @@ DCOff:  lda #0                  ; off the bottom of the ladder: drop, at Frak's 
         sta VYL
         lda #ST_AIR
         sta State
+        rts
+
+; ---- the yoyo (Frak's YoyoingOut / YoyoingBack): out while fire is held, up to YOMAX; back when
+; fire is released, at full length or at the screen's edge; then standing again. No collisions yet.
+DoYoyo:
+        IFCONST YOTEST          ; (picture checks: held out at YOTEST pixels)
+        lda #YOTEST
+        sta YoLen
+        jmp YoPos
+        ENDIF
+        lda TRow
+        jsr Floor
+        bne DY1
+        lda #0                  ; the floor has gone: fall
+        sta XV
+        sta VYL
+        sta VYH
+        sta TYF
+        lda #ST_AIR
+        sta State
+        rts
+DY1:    lda YoBack
+        bne DYBack
+        lda INPT4
+        bmi DYTurn
+        lda YoLen
+        cmp #YOMAX
+        bcs DYTurn
+        clc
+        lda YoF
+        adc #YOSPD
+        sta YoF
+        lda YoLen
+        adc #0
+        sta YoLen
+        jmp YoPos
+DYTurn: lda #1
+        sta YoBack
+DYBack: sec
+        lda YoF
+        sbc #YOSPD
+        sta YoF
+        lda YoLen
+        sbc #0
+        sta YoLen
+        bcs YoPos
+        lda #ST_STAND           ; back in his hand
+        sta State
+        rts
+; YoX from the length: right of his hand facing right (TX + 8 + len), left of it facing left
+YoPos:  lda Facing
+        bne YPL
+        lda TX
+        clc
+        adc #8
+        adc YoLen
+        cmp #156
+        bcs YPEdge
+        sta YoX
+        rts
+YPL:    lda TX
+        sec
+        sbc #4
+        sbc YoLen
+        bcc YPEdge
+        sta YoX
+        rts
+YPEdge: lda #1                  ; the screen's edge: come back
+        sta YoBack
         rts

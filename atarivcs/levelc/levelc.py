@@ -200,7 +200,7 @@ def compile_screen(plan, outdir, game=False):
                for b in (l['x'], l['top'], l['bottom'] - 1)]
         nlad = len(lad) // 3
         place('LadL', dict(enumerate(lad or [0])), False)
-        place('HMTab', {r: (-(r - 6) & 15) << 4 for r in range(15)}, True)   # PosP0's fine move
+        place('HMTab', {r: (-(r - 6) & 15) << 4 for r in range(15)}, True)   # PosObj's fine move
         maps_bytes = len(pidx) + len(pb) + len(lidx) + len(lb)
         h = hh
     # Trogg pointer: the first body call increments it before reading, so row k reads ptr0 + k + 1;
@@ -213,6 +213,8 @@ def compile_screen(plan, outdir, game=False):
     o += ['HMP0 = $20', 'HMM0 = $22', 'REFP0 = $0B', 'INPT4 = $0C', 'SWCHA = $280', 'INTIM = $284',
           'TIM64T = $296', 'H = %d' % h,
           'START_X = %d' % tr['x'], 'START_ROW = %d' % tr['row'], 'NLAD = %d' % nlad]
+    if game and plan.get('yotest'):
+        o += ['YOTEST = %d' % plan['yotest'][0], 'YOFACE = %d' % plan['yotest'][1]]
     o += ['GRP0 = $1B', 'COLUP0 = $06', 'RESM0 = $12', 'ENAM0 = $1D', 'COLUPF = $08',
           'PF0 = $0D', 'PF1 = $0E', 'PF2 = $0F', 'TrogPtr = $80', 'Buffer = $82']
     o += ['%-12s = $%04X' % (k, v) for k, v in labels.items()]
@@ -370,6 +372,12 @@ Clear:  sta $00,x
         sta TX
         lda #START_ROW
         sta TRow
+        IFCONST YOTEST
+        lda #ST_YOYO
+        sta State
+        lda #YOFACE
+        sta Facing
+        ENDIF
         lda #1
         sta Repos           ; position P0 in the first frame
         sta CTRLPF          ; mirrored playfield
@@ -401,14 +409,20 @@ Frame:  lda #2
         sta PF2
         inc Frm
         jsr Logic
-        ldx #0              ; the Trogg's frame (walking, or climbing) into the buffer, yoyo bit off
+        lda #$FE            ; the frame's bit 0 (the hand row's yoyo, M0) only while it's out
+        ldx State
+        cpx #ST_YOYO
+        bne CFm
+        lda #$FF
+CFm:    sta Tmp
+        ldx #0              ; the Trogg's frame (walking, or climbing) into the buffer
         lda State
         cmp #ST_CLIMB
         bne CF0
         ldx #H
 CF0:    ldy #1
 CopyF:  lda TroggFrames,x
-        and #$FE
+        and Tmp
         sta Buffer,y
         inx
         iny
@@ -426,13 +440,25 @@ CopyF:  lda TroggFrames,x
         beq NoRep
         lda #0
         sta Repos
-        jsr PosP0
+        lda TX
+        ldx #0
+        jsr PosObj
         jmp Moved
 NoRep:  lda HMV             ; otherwise this frame's pixel of movement
         sta HMP0
         sta WSYNC
         sta HMOVE
-Moved:  sta WSYNC
+        sta WSYNC
+        sta HMCLR
+Moved:  lda State           ; the yoyo: M0 to YoX
+        cmp #ST_YOYO
+        bne NoYo
+        ldx YoX
+        inx
+        txa
+        ldx #2
+        jsr PosObj
+NoYo:   sta WSYNC
         %s
         sta RESP1
         sta HMCLR
@@ -444,6 +470,7 @@ WaitVB: lda INTIM
 
 
 def model(plan, palette, yoyo=True):
+    """(plan['yotest'] = (length, facing): the yoyo held out, as a --yotest build draws it)"""
     """Expected colour index (or None for background) of every pixel of the 192 lines."""
     img = [[None] * 160 for _ in range(192)]
     for run in plan['runs']:
@@ -462,9 +489,16 @@ def model(plan, palette, yoyo=True):
                         img[y][ob['x'] + b] = c
     tr = plan['trogg']
     rows = tr['frames'][0]['rows']
+    yt = plan.get('yotest')
+    face = yt[1] if yt else 0
     for i, v in enumerate(rows):
+        hand = v & 1
         if not yoyo:
             v &= 0xFE                                   # --game copies the frame with bit 0 off
+        if yt:
+            v = rows[i]                                 # (yoyo out: the frame as it is)
+        if face:
+            v = int('{:08b}'.format(v)[::-1], 2)        # REFP0
         # the Trogg's GRP0 / ENAM0 are stored late in a row's first line (the tail, after the shared
         # block), so each of his rows shows on that row's second line and the next row's first
         top = 2 * (tr['row'] - len(rows) + 1 + i) + 1
@@ -472,8 +506,12 @@ def model(plan, palette, yoyo=True):
             for b in range(8):
                 if v & (0x80 >> b):
                     img[y][tr['x'] + b] = tr['colour']
-            if v & 1 and yoyo:                          # the yoyo (M0, 4 px; hidden in --game ROMs)
+            if hand and yoyo and not yt:                # the yoyo (M0, 4 px) beside his hand
                 for x in range(tr['x'] + 8, tr['x'] + 12):
+                    img[y][x] = tr['colour']
+            if hand and yt:                             # held out: TX + 8 + len, or TX - 4 - len
+                x0 = tr['x'] + 8 + yt[0] if not face else tr['x'] - 4 - yt[0]
+                for x in range(x0, x0 + 4):
                     img[y][x] = tr['colour']
     return img
 
@@ -514,6 +552,8 @@ def main():
     outdir = os.path.abspath(args[0] if args else os.path.join(HERE, 'out'))
     os.makedirs(outdir, exist_ok=True)
     plan = get_plan(outdir)
+    if opt('yotest'):                      # --yotest=LEN,FACING (0 right, 8 left): yoyo held out
+        plan['yotest'] = tuple(int(v) for v in opt('yotest').split(','))
     if opt('trogg'):                       # --trogg=X,ROW: move his start (checks other positions)
         plan['trogg']['x'], plan['trogg']['row'] = (int(v) for v in opt('trogg').split(','))
     base, info, *_ = compile_screen(plan, outdir, game='--game' in sys.argv)
