@@ -1,0 +1,27 @@
+{
+ "bodies": 15,
+ "runs": 17,
+ "lines": 224,
+ "tables": [
+  "C0",
+  "G0",
+  "LPF1",
+  "LPF2",
+  "Lad",
+  "RPF1",
+  "RPF2",
+  "Stripe"
+ ],
+ "cost": {
+  "tables (bytes read)": 356,
+  "data area (packed)": 1485,
+  "trogg strip + frame": 218,
+  "bodies": 875,
+  "call list": 322,
+  "frame code": null,
+  "total code+data": null,
+  "game code": 2137,
+  "bank 0 (game) used": 2934,
+  "bank 1 (display) used": 2990
+ }
+}

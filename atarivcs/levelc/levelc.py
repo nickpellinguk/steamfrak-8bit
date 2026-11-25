@@ -329,9 +329,19 @@ OS:     sta WSYNC
         o.append(game_frame(plan, tr, h, labels, tx))
         o.append('        jmp $FFE0           ; to the display bank: the kernel')
         o.append('Overscan:')
-        o.append(overscan)
+        o.append('''        lda #2
+        sta VBLANK
+        lda #33             ; the overscan's 29 lines, timed (the music's time varies)
+        sta TIM64T
+        lda Mode
+        beq OSWait
+        jsr MusicTick       ; the tune, a frame on (while playing)
+OSWait: lda INTIM
+        bne OSWait
+        sta WSYNC
+        jmp Frame''')
         o.append('        include "%s"' % os.path.join(HERE, 'game.asm'))
-        o.append('        include "musicdrv.asm"     ; the Frak tune (atarivcs/music), 13 bytes of RAM at MUSRAM')
+        o.append("        include \"musicdrv_c.asm\"   ; the Frak tune, compact (atarivcs/music), 13 bytes of RAM at MUSRAM")
         o.append('LogicEnd:')
         o.append('''        org $0FE0
         rorg $FFE0
@@ -555,7 +565,6 @@ Frame:  lda #2
         jsr FrontLogic
         jmp Shown
 InGame: jsr Timer
-        jsr MusicTick       ; the tune, a frame on
         jsr Logic
         jsr RunVars         ; the item runs' line indexes, from the collected bits
 Shown:
