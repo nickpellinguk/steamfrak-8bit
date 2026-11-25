@@ -254,6 +254,26 @@ def main():
     for _ in range(40):
         g.run(1, L)
     expect('walking into the key collects it', col(), coll=1 | 8)
+    # the last key completes the level: a pause with the clock stopped, then the level again (for
+    # now) with everything back and the time so far its checkpoint
+    tm = lambda: (g.m.memory[g.sym['TMin']], g.m.memory[g.sym['TSec']], g.m.memory[g.sym['TFr']])
+    won = g.m.memory[g.sym['Won']]
+    t0 = tm()
+    g.run(10)
+    expect('the last key: the level-complete pause, clock stopped',
+           {**col(), 'won': won, 'clock': int(tm() == t0)}, won=lambda v: v == 0, clock=1)
+    g.run(90)
+    ck = (g.m.memory[g.sym['CkMin']], g.m.memory[g.sym['CkSec']])
+    expect('... then the level again: items back, at the start', col(), coll=0, x=s0['x'], row=83)
+    expect('... the time when it was reached is the checkpoint', {**g.state(), 'ck': ck}, ck=t0[:2])
+    # death sets the clock back to the checkpoint
+    g = Game(os.path.join(outdir, 'level'))
+    g.run(200)                                     # (3 s or so on the clock)
+    g.m.memory[g.sym['CkSec']] = 2                 # (as if this level was reached at 0:02)
+    t1 = tm()
+    g.dies(200, R)                                 # off the floor's end, and the restart
+    expect('a death: the clock goes back to the checkpoint (0:02)',
+           {**g.state(), 'clock': tm()[:2], 'was': t1[:2]}, clock=lambda v: v[0] != 0 or not 2 <= v[1] <= 4)
     print('all ok' if ok else 'SOME FAILED')
     return ok
 

@@ -49,6 +49,9 @@ Collected = $BB         ; a bit per item on the screen (ItBit): gone (gems and k
                         ; meanies yoyoed)
 Mode    = $BC           ; 0: the front screen, 1: playing
 FArm    = $BD           ; front screen: fire has been up (so a press starts)
+Won     = $BE           ; frames of the level-complete pause (0: none)
+CkSec   = $E8           ; the time when this level was reached (death sets the clock back to it)
+CkMin   = $E9
 TDig    = $D0           ; the timer: pointers to its four characters' glyphs (M, colon, S, S)
 TFr     = $D8           ; frames into the second
 TSec    = $D9           ; seconds (BCD)
@@ -211,11 +214,31 @@ SF1:    stx Facing
 ; ---- one frame of movement
 Logic:  lda #0
         sta HMV
-        lda Dead
+        lda Won                 ; the level-complete pause; then the next level (for now: this one
+        beq LDead               ; again), its time the new checkpoint
+        dec Won
+        bne LRet
+        lda TSec
+        sta CkSec
+        lda TMin
+        sta CkMin
+        jmp Restart
+LDead:  lda Dead
         beq Alive
         dec Dead
         bne LRet
-        lda #START_X            ; restart
+        lda CkSec               ; death: the clock back to the level's start
+        sta TSec
+        lda CkMin
+        sta TMin
+Restart:
+        lda #0
+        sta TFr
+        IFCONST START_COLL
+        lda #START_COLL
+        ENDIF
+        sta Collected           ; everything back (A is 0 here without START_COLL)
+        lda #START_X
         sta TX
         lda #START_ROW
         sta TRow
@@ -629,6 +652,14 @@ CoHit:  lda TX
         lda Collected
         ora ItBit,x
         sta Collected
+        IF KEYMASK > 0
+        and #KEYMASK            ; the last key: the level is done
+        cmp #KEYMASK
+        bne CoN
+        lda #90
+        sta Won
+        rts
+        ENDIF
 CoN:    dex
         bpl CoL
         ENDIF
@@ -723,6 +754,9 @@ FLRet:  rts
 ; four glyph pointers (Font: 8 bytes per glyph, 0-9 then the colon)
 Timer:
         IFNCONST NOTIMER
+        lda Dead                ; stopped while dying and in the level-complete pause
+        ora Won
+        bne TPtr
         inc TFr
         lda TFr
         cmp #60
