@@ -269,7 +269,7 @@ def compile_screen(plan, outdir, game=False):
     o += ['HMP0 = $20', 'HMM0 = $22', 'REFP0 = $0B', 'INPT4 = $0C', 'SWCHA = $280', 'INTIM = $284',
           'TIM64T = $296', 'H = %d' % h,
           'START_X = %d' % tr['x'], 'START_ROW = %d' % tr['row'], 'NLAD = %d' % nlad,
-          'NIR = %d' % len(item_runs), 'NITEM = %d' % len(coll), 'HANDUP = %d' % handup, 'RunX = $C0', 'FRONT_BG = $%02X' % front.BG, 'FRONT_INK = $%02X' % front.INK,
+          'NIR = %d' % len(item_runs), 'NITEM = %d' % len(coll), 'KEYMASK = %d' % sum(1 << b for b, i in enumerate(coll) if plan['items'][i]['kind'] == 'key'), 'HANDUP = %d' % handup, 'RunX = $C0', 'FRONT_BG = $%02X' % front.BG, 'FRONT_INK = $%02X' % front.INK,
           'FRONT_FILL = $%02X' % front.FILL, 'TOPROWS = %d' % timer.TOPROWS, 'MUSRAM = $DB', 'AUDC0 = $15', 'AUDC1 = $16', 'AUDF0 = $17',
           'AUDF1 = $18', 'AUDV0 = $19', 'AUDV1 = $1A', 'TWHITE = $%02X' % timer.WHITE, 'TAIL_X = %d' % front.TAIL_P1_X]
     if game and (('--check' in sys.argv and '--front' not in sys.argv) or plan.get('skipfront')):

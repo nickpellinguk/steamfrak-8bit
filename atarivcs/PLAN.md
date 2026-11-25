@@ -442,7 +442,13 @@ them in the bank's ROM.
   per-line tables for its 60 lines. The display bank picks it or the level's call list from
   `Mode`; fire (after it has been up) starts the game. `levelc.py --game --check --front` checks
   it in Stella.
-* Starter screen with the game, front screen, timer and music: bank 0 2934 bytes, bank 1 2990
+* Starter screen with the game, front screen, timer and music: bank 0 2989 bytes, bank 1 2990
+* Timed runs, no checkpoint saves: touching the last remaining key (`KEYMASK`, the compiler's mask
+  of the key items' `Collected` bits) completes the level: a 90-frame pause (`Won`), then the next
+  level (for now the same one again). The time on reaching a level is its checkpoint (`CkSec`,
+  `CkMin`): dying sets the clock back to it, and the items and meanies all come back. The clock
+  stops during the death and level-complete pauses, and holds at 9:59. A set of levels (one per
+  bank, three sets) is timed from its start; moving to the next level waits on the multi-level layout.
   bytes (of 4096 each).
 
 ## Optimisation pass (backlog)
