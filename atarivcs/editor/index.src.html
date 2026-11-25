@@ -118,6 +118,15 @@ textarea { width: 100%; min-height: 220px; background: var(--panel2); border: 1p
         <span class="label">Item</span>
         <select id="sel-kind" aria-label="Item kind"></select>
       </div>
+      <h2>Moving platform</h2>
+      <div class="row-inline" id="mv-panel">
+        <label>Mode <select id="mv-mode"><option value="none">None</option><option value="two">Two-way</option><option value="lr">Left to right</option><option value="rl">Right to left</option></select></label>
+        <label>Top row <input type="number" id="mv-row" step="3" min="6" max="93" value="60"></label>
+        <label>From x <input type="number" id="mv-x0" min="16" max="120" value="48"></label>
+        <label>To x <input type="number" id="mv-x1" min="16" max="120" value="100"></label>
+        <label>Speed <select id="mv-spd"><option value="64">0.25 px</option><option value="128" selected>0.5 px</option><option value="192">0.75 px</option><option value="255">1 px</option></select></label>
+      </div>
+      <p class="note">One per screen: the ball, 8 px wide and 6 lines tall, between From and To (its left edge). Two-way pauses at each end; one way pauses at its start, carries the Trogg across, pauses, and is gone for a second before it starts again. Speed: pixels per frame.</p>
       <h2>View</h2>
       <label class="row-inline"><input type="checkbox" id="chk-grid" checked> P1 grid</label>
       <label class="row-inline"><input type="checkbox" id="chk-blocks"> Platform grid (8 px)</label>
@@ -306,13 +315,13 @@ const SCHED_CACHE = new Map();
 // P1's colour as the rows above left it (the last object drawn): a run whose first object is black
 // can only skip its colour write if P1 is already black (set by analyzeScreen for each row)
 let PREVCOL = ['imm', 0];
-function schedRow(objs, tasks) {
-  const key = JSON.stringify([objs.map(o => [o.x, o.t]), tasks, PREVCOL]);
+function schedRow(objs, tasks, endLimit = 55) {
+  const key = JSON.stringify([objs.map(o => [o.x, o.t]), tasks, PREVCOL, endLimit]);
   if (SCHED_CACHE.has(key)) return SCHED_CACHE.get(key);
   let oi = 0;
   const so = objs.map(o => o.t === 'L' ? { x: o.x, gfx: ['tbl', 'Lad'], col: ['imm', 0] }
     : (k => ({ x: o.x, gfx: ['tbl', 'G' + k], col: ['tbl', 'C' + k] }))(oi++));
-  const r = FrakScheduler.schedule(so, PREVCOL, true, objs.length ? objs[objs.length - 1].x : null, 10, 55, tasks);
+  const r = FrakScheduler.schedule(so, PREVCOL, true, objs.length ? objs[objs.length - 1].x : null, 10, endLimit, tasks);
   if (SCHED_CACHE.size > 20000) SCHED_CACHE.clear();
   SCHED_CACHE.set(key, r);
   return r;
@@ -343,6 +352,16 @@ function rowBlocks(s, r) {
   const b = new Set();
   for (const p of s.platforms) if (r >= p.top && r < p.top + p.rows) for (let k = p.b0; k <= p.b1; k++) b.add(k);
   return b;
+}
+// the moving platform (one per screen, the ball: 8 px, 6 lines): its rows, and a key tag that gives
+// its rows (and the rows just before its first and its last, whose bodies end earlier for the call
+// list's ENABL write) renderers of their own
+const MV_MODES = [['none', 'None'], ['two', 'Two-way'], ['lr', 'Left to right'], ['rl', 'Right to left']];
+const moverOf = s => s.mover && s.mover.mode && s.mover.mode !== 'none' ? s.mover : null;
+function moverTag(s, r) {
+  const m = moverOf(s);
+  if (!m) return '';
+  return (r >= m.row && r < m.row + PROWS ? 'M' : '') + (r === m.row - 1 || r === m.row + PROWS - 1 ? 'E' : '');
 }
 function rowObjects(s, r, blocks) {
   const objs = [];
@@ -376,7 +395,9 @@ function analyzeRow(s, r, prev) {
   A.desc = describe(lit);
   A.pattern = objs.map(o => o.t).join('');
   A.xs = objs.map(o => o.x).join(',');
-  A.key = [...lit].sort((a, b) => a - b).join(',') + '|' + A.pattern + '|' + A.xs;
+  A.key = [...lit].sort((a, b) => a - b).join(',') + '|' + A.pattern + '|' + A.xs + moverTag(s, r);
+  const mv = moverOf(s), inMv = mv && r >= mv.row && r < mv.row + PROWS;
+  A.endLimit = /E/.test(moverTag(s, r)) ? 50 : 55;
   A.empty = !lit.size && !objs.length;
   A.fallbackEnd = { col: lit.size ? 'stripe' : (prev ? prev.col : 'bg'), PF1: FrakMirror.value(lit, 'PF1', 'R'), PF2: FrakMirror.value(lit, 'PF2', 'R') };
   if ([...lit].some(k => k < 4 || k > 35))
@@ -391,13 +412,17 @@ function analyzeRow(s, r, prev) {
     A.errors.push('Objects at x ' + objs[i - 1].x + ' and ' + objs[i].x + ' are closer than 21 px: P1 strobes must be at least 7 cycles apart.');
   if (objs.filter(o => o.t === 'O').length > 2) A.errors.push('At most two coloured items fit on a row.');
   if (A.errors.length) return A;
-  const ways = FrakMirror.tasks(lit, prev);
+  if (inMv && (mv.x0 < 16 || mv.x1 < 16 || mv.x0 > 120 || mv.x1 > 120 || mv.x0 === mv.x1))
+    A.errors.push('The moving platform\'s range must be within x 16-120 (its left edge; its ENABL writes land at pixel 130), and not empty.');
+  if (inMv && mv.row % PROWS) A.errors.push('The moving platform\'s top must be on a 6-line boundary.');
+  if (A.errors.length) return A;
+  const ways = inMv ? FrakMirror.tasks(lit, prev, Math.min(mv.x0, mv.x1)) : FrakMirror.tasks(lit, prev);
   for (const [way, tk, end] of ways) {
-    const res = schedRow(objs, tk);
+    const res = schedRow(objs, tk, A.endLimit);
     if (res) { A.way = way; A.end = end; A.tasks = tk; A.parked = !!res.parked; A.fakeLeft = objs.length === 1 && res.strobes.length === 2 && !res.parked; A.fakeAt = res.fakeAt || 19; if (objs.length) { A.first = res.strobes[0]; A.last = res.strobes[res.strobes.length - 1]; } break; }
   }
   if (!A.way) {
-    A.errors.push('This row doesn\'t fit in the line budget (shared block from cycle 10, last store by 55)' +
+    A.errors.push('This row doesn\'t fit in the line budget (shared block from cycle 10, last store by ' + A.endLimit + (A.endLimit < 55 ? ': the moving platform\'s ENABL write follows it' : '') + ')' +
       (lit.size && objs.length ? ': the platforms\' timed writes leave no room for these objects.' : '.'));
     A.suggest = suggest(A, ways);
     return A;
@@ -433,7 +458,7 @@ function analyzeScreen(s) {
   let lastCol = ['imm', 0];                // P1's colour as the rows above leave it (black at the top)
   for (let r = 0; r < ROWS; r++) {
     let A;
-    const key = (() => { const lit = rowBlocks(s, r); const o = rowObjects(s, r, lit); return [...lit].sort((a, b) => a - b).join(',') + '|' + o.map(q => q.t).join('') + '|' + o.map(q => q.x).join(','); })();
+    const key = (() => { const lit = rowBlocks(s, r); const o = rowObjects(s, r, lit); return [...lit].sort((a, b) => a - b).join(',') + '|' + o.map(q => q.t).join('') + '|' + o.map(q => q.x).join(',') + moverTag(s, r); })();
     if (r && rows[r - 1].key === key) {   // the same renderer as the row above: its first row decides
       const B = rows[r - 1];
       A = { ...B, r, errors: B.errors.slice(), warnings: [], infos: B.infos.slice() };
@@ -590,6 +615,14 @@ function draw() {
     const y = 2 * p.top + k; if (y >= LINES) break;
     cx.fillStyle = col(g.stripes[Math.min(k, g.stripes.length - 1)]);
     cx.fillRect(p.b0 * 4 * S, y * S, (p.b1 - p.b0 + 1) * 4 * S, S);
+  }
+  const mv = moverOf(s);                   // the moving platform: at its start, and its range
+  if (mv) {
+    const a = mv.mode === 'rl' ? mv.x1 : mv.x0;
+    for (let k = 0; k < 2 * PROWS; k++) { cx.fillStyle = col(g.stripes[Math.min(k, g.stripes.length - 1)]); cx.fillRect(a * S, (2 * mv.row + k) * S, 8 * S, S); }
+    cx.strokeStyle = 'rgba(255,255,255,0.8)'; cx.setLineDash([4, 3]);
+    cx.strokeRect(Math.min(mv.x0, mv.x1) * S + 0.5, 2 * mv.row * S + 0.5, (Math.abs(mv.x1 - mv.x0) + 8) * S - 1, 2 * PROWS * S - 1);
+    cx.setLineDash([]);
   }
   // ladders (not drawn on rows where a platform covers them)
   s.ladders.forEach(l => {
@@ -1061,7 +1094,23 @@ document.getElementById('io-reset').addEventListener('click', e => {
 
 // ---------------------------------------------------------------- refresh ---------------------
 function commit() { save(); refresh(); if (!document.getElementById('view-gfx').hidden) buildGfx(); }
+// the moving platform's panel: shows the screen's settings; a change sets them
+function showMover() {
+  const m = scr().mover || { mode: 'none', row: 60, x0: 48, x1: 100, speed: 128 };
+  for (const [id, k] of [['mv-mode', 'mode'], ['mv-row', 'row'], ['mv-x0', 'x0'], ['mv-x1', 'x1'], ['mv-spd', 'speed']]) {
+    const e = document.getElementById(id);
+    if (document.activeElement !== e) e.value = m[k];
+  }
+}
+for (const id of ['mv-mode', 'mv-row', 'mv-x0', 'mv-x1', 'mv-spd']) document.getElementById(id).addEventListener('change', () => {
+  const v = id => document.getElementById(id).value;
+  const mode = v('mv-mode');
+  scr().mover = mode === 'none' ? undefined : { mode, row: clampI(Math.round(+v('mv-row') / PROWS) * PROWS, PROWS, ROWS - PROWS),
+    x0: clampI(v('mv-x0'), 16, 120), x1: clampI(v('mv-x1'), 16, 120), speed: +v('mv-spd') };
+  commit();
+});
 function refresh(full = true) {
+  showMover();
   ROWS_A = analyzeScreen(scr());
   if (full) { fillSelects(); document.getElementById('num-logic').value = P.budget.logic; document.getElementById('num-ram').value = P.budget.ram; }
   draw(); showRow(); showSel(); showIssues(); showBudgets();

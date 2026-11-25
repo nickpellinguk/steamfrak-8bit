@@ -298,6 +298,40 @@ def main():
     g.dies(200, R)                                 # off the floor's end, and the restart
     expect('a death: the clock goes back to the checkpoint (0:02)',
            {**g.state(), 'clock': tm()[:2], 'was': t1[:2]}, clock=lambda v: v[0] != 0 or not 2 <= v[1] <= 4)
+    # the moving platform (rows 66-68, x 48 to 100, below the middle-left ledge's right end)
+    for mode in ('lr', 'two', 'rl'):
+        mdir = os.path.join(outdir, 'mv_' + mode)
+        os.makedirs(mdir, exist_ok=True)
+        subprocess.run([sys.executable, os.path.join(HERE, 'levelc.py'), '--game', '--mover=%s,66,48,100' % mode, mdir],
+                       check=True, stdout=subprocess.DEVNULL)
+        g = Game(os.path.join(mdir, 'level'))
+        mv = lambda: {**g.state(), 'mx': g.m.memory[g.sym['MvX']], 'on': g.m.memory[g.sym['MvOn']], 'ph': g.m.memory[g.sym['MvPh']]}
+        hold = lambda x, ph=0: [g.m.memory.__setitem__(g.sym[k], v) for k, v in
+                                (('MvX', x), ('MvPh', ph), ('MvT', 250), ('MvOn', 2))]
+        g.run(2)
+        if mode == 'rl':
+            expect('rl: starts at its right end, paused', mv(), mx=100, on=2)
+        a = 100 if mode == 'rl' else 48
+        hold(a)                                     # (paused at its start)
+        for k, v in (('TX', a), ('TRow', 58), ('State', 1), ('XV', 0), ('VYL', 0), ('VYH', 0), ('Repos', 1)):
+            g.m.memory[g.sym[k]] = v                # (just above it, falling)
+        expect(mode + ': lands on it (row 65)', g.run(30), row=65, state=0, dead=0)
+        g.m.memory[g.sym['MvT']] = 1
+        g.run(40)
+        st = mv()
+        expect(mode + ': carries him as it moves', st, row=65, state=0, x=lambda v: v - a != st['mx'] - a or v == a)
+        g.run(120)
+        b = 48 if mode == 'rl' else 100
+        expect(mode + ': ... to its far end (x %d)' % b, mv(), mx=b, row=65, x=b)
+        if mode != 'two':
+            st = g.run(70)
+            expect(mode + ': then it goes (hidden), and he falls', {**mv(), 'fell': int(st['row'] != 65)}, on=0, fell=1)
+            ons = [(g.run(1), mv()['on'])[1] for _ in range(80)]
+            expect(mode + ': back a second later', {**mv(), 'back': ons[-1]}, back=2)
+        else:
+            xs = [(g.run(1), mv())[1] for _ in range(200)]
+            low = min(xs, key=lambda q: q['mx'])
+            expect('two: and back again, carrying him', low, mx=48, row=65, x=48)
     print('all ok' if ok else 'SOME FAILED')
     return ok
 

@@ -2,7 +2,7 @@
 start of PF1), black on the level's background, 7 lines tall: P0 and P1 both at two copies close (NUSIZ 1), P0 at x 16 and
 P1 at x 24, interleaved, so four 8 px characters sit side by side; each line rewrites GRP0 and GRP1
 between their first and second copies. The band is the screen's top 5 rows (10 lines): 7 lines of
-digits, a blank line, then two lines that put P0 back at the Trogg's x (a coarse RESP0, then HMOVE: whose line
+digits, a line positioning the ball (the moving platform), then two lines that put P0 back at the Trogg's x (a coarse RESP0, then HMOVE: whose line
 blanks its first 8 pixels) and park P1 for the kernel. Levels can't use rows 0-4."""
 TOPROWS = 5
 
@@ -66,7 +66,37 @@ TLine:  sta WSYNC
         bne TLine           ; (7 lines: the glyphs' blank 8th row isn't shown)
         sty GRP0
         sty GRP1
+        ldx MvX             ; the ball (the moving platform) at MvX: as PosObj, a missile's x + 1
+        inx
+        txa
+        jmp TBall           ; (over any alignment padding: neither loop's branch crosses a page)
+        IF (<.) > $C8
+        ALIGN 256
+        ENDIF
+TBall:  sta WSYNC           ; (the band's 8th line)
+        sec
+TBalL:  sbc #15
+        bcs TBalL
+        adc #15
+        tay
+        lda HMTab1,y
+        bit $80
+        nop
+        sta.w RESBL
+        sta HMBL            ; (71 at most: x up to 144)
+TPos:   sta WSYNC           ; P0 back to TX: as PosObj (RESP0 ends at 5n + 18)
+        lda TX
+        sec
+TPosL:  sbc #15
+        bcs TPosL
+        adc #15
+        tay
+        lda HMTab1,y
+        nop
+        sta.w RESP0
+        sta HMP0
         sta WSYNC
+        sta HMOVE           ; 3 (this line's first 8 pixels are blanked)
         lda #$20
         sta NUSIZ0          ; the Trogg again: one copy, a 4 px yoyo
         lda Facing
@@ -74,28 +104,10 @@ TLine:  sta WSYNC
         lda #$%02X
         sta COLUP0
         lda #0
-        sta COLUP1
-        lda TX
-        jmp TPos
-        IF (<.) > $E0
-        ALIGN 256
-        ENDIF
-TPos:   sta WSYNC           ; P0 back to TX: as PosObj (RESP0 ends at 5n + 18)
-        sec
-TPosL:  sbc #15
-        bcs TPosL
-        adc #15
-        tay
-        lda HMTab1,y
-        bit $80
-        nop
-        sta.w RESP0
-        sta HMP0
-        sta WSYNC
-        sta HMOVE           ; 3 (this line's first 8 pixels are blanked)
+        sta COLUP1          ; 24
 %s
         sta RESP1           ; 57: P1 parked for the kernel
-        sta HMCLR           ; 60""" % (level_bg, trogg_col, _pad(51))
+        sta HMCLR           ; 60""" % (level_bg, trogg_col, _pad(30))
 
 
 def model_lines(minutes=0, seconds=0):
