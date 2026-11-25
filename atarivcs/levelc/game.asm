@@ -13,8 +13,9 @@
 ;     bands of 6 lines)
 ;   FB: feet row -> platform band right under the feet, or $FF; Band3: n -> n / 3 (rows to
 ;     6-line bands, and pixels to 3 px columns)
-;   LadL: the level's ladders (x, top band, bottom band), NLAD of them: the one being climbed
-;     gives the climbing centre (columns can hold different ladders at different heights)
+;   LadL: the level's ladders (x, top row, bottom row), NLAD of them. The map says whether there is
+;     a ladder (to 6 lines); the list gives the one being climbed: its x (the climbing centre) and
+;     its exact ends (a Frak ladder stops above the platform below: down off it drops)
 ; Included by levelc.py, which defines H, START_X, START_ROW and the data labels.
 
 TX      = $A0           ; Trogg x (left edge, pixels)
@@ -36,6 +37,9 @@ Rows    = $AF
 UDDeb   = $B0           ; 1: ignore up/down until both are released
 Repos   = $B1           ; 1: position P0 from TX this frame (start, restart)
 LTarget = $B2           ; the x of the ladder being climbed
+LTop    = $B3           ; ... its top and bottom rows (feet)
+LBot    = $B4
+LRowQ   = $B5
 
 ST_STAND = 0
 ST_AIR   = 1
@@ -44,6 +48,7 @@ GRAV    = 5             ; 0.05 px/tick^2
 JUMPV   = 122           ; 1.25 px/tick
 DIEV    = 157           ; landing at 1.6 px/tick or faster kills
 TERMV   = 392           ; 4 px/tick
+DROPV   = 98            ; dropping off a ladder's bottom: 1 px/tick
 GRABV   = 125           ; ladders can be caught when falling no faster than 1.275 px/tick
 
 ; ---- P0 to TX: coarse RESP0 from a divide-by-15 loop, then HMOVE for the rest. RESP0 ends at
@@ -248,7 +253,7 @@ DS2:    lda Joy
         and #$10
         bne DS3
         lda TRow                ; up: a ladder at the feet, or jump
-        jsr Ladder
+        jsr TryLadder
         bne StartClimb
         lda XM
         sta XV
@@ -268,7 +273,7 @@ DS3:    lda Joy
         cmp #94
         bcs DSRet
         adc #1
-        jsr Ladder
+        jsr TryLadder
         beq DSRet
         inc TRow
 StartClimb:
@@ -279,37 +284,45 @@ StartClimb:
         sta VYL
         sta VYH
         sta XV
-; ---- find the ladder under the Trogg's centre at his band; its x is the climbing centre
-FindLadder:
-        lda TX
-        sta LTarget             ; (none found: stay where he is)
-        ldy TRow
-        lda Band3,y
-        sta Tmp2
+DSRet:  rts
+
+; ---- A = row: is there a ladder at it under the Trogg's centre? The map first, then the list for
+; the exact ladder: sets LTarget / LTop / LBot and returns A != 0
+TryLadder:
+        sta LRowQ
+        jsr Ladder
+        beq TLNo
         ldx #0
-FLLoop: cpx #3 * NLAD
-        bcs DSRet
+TLLoop: cpx #3 * NLAD
+        bcs TLNo
         lda TX
         clc
         adc #4 + 1
         sec
-        sbc LadL,x              ; centre - ladder x, + 1: within 0-9 when over it (the ladder
-        cmp #10                 ; map's 3 px cells reach a pixel past its edges)
-        bcs FLNext
-        lda Tmp2
+        sbc LadL,x              ; centre - ladder x, + 1: within 0-9 when over it (the map's
+        cmp #10                 ; 3 px cells reach a pixel past its edges)
+        bcs TLNext
+        lda LRowQ
         cmp LadL+1,x
-        bcc FLNext
+        bcc TLNext
         lda LadL+2,x
-        cmp Tmp2
-        bcc FLNext
+        cmp LRowQ
+        bcc TLNext
         lda LadL,x
         sta LTarget
+        lda LadL+1,x
+        sta LTop
+        lda LadL+2,x
+        sta LBot
+        lda #1
         rts
-FLNext: inx
+TLNext: inx
         inx
         inx
-        bne FLLoop
-DSRet:  rts
+        bne TLLoop
+TLNo:   lda #0
+        rts
+
 
 DoAir:  lda XV
         jsr MoveX
@@ -338,8 +351,13 @@ NoGrav: lda Joy                 ; up/down catches a ladder unless falling fast
         lda VYL
         cmp #GRABV + 1
         bcs NoGrab
-Grab:   lda TRow
-        jsr Ladder
+Grab:   lda TRow                ; rising: a ladder at the feet; falling: one carrying on below
+        ldx VYH                 ; them (so dropping off a ladder's bottom isn't caught again)
+        bmi GrabAt
+        cmp #94
+        bcs NoGrab
+        adc #1
+GrabAt: jsr TryLadder
         beq NoGrab
         jmp StartClimb
 NoGrab: lda VYH
@@ -426,9 +444,9 @@ DCDrop: lda #0
 DCV:    lda Joy
         and #$10
         bne DCDown
-        lda TRow
-        jsr Ladder
-        beq DCTop
+        lda TRow                ; up while the feet are on the ladder (its exact top)
+        cmp LTop
+        bcc DCTop
         lda Frm                 ; a row every other frame
         lsr
         bcs DCRet
@@ -451,17 +469,20 @@ DCDown: lda Joy
         lda TRow
         jsr Floor
         bne DCStand             ; climbed down onto a platform
-        lda TRow
-        cmp #94
-        bcs DCRet
-        adc #1
-        jsr Ladder
-        beq DCOff
+        lda TRow                ; down to its exact bottom, then off it
+        cmp LBot
+        bcs DCOff
         lda Frm
         lsr
         bcs DCRet
         inc TRow
 DCRet:  rts
-DCOff:  lda #0                  ; off the bottom of the ladder
+DCOff:  lda #0                  ; off the bottom of the ladder: drop, at Frak's 1 px/tick
         sta XV
-        beq DCDrop
+        sta TYF
+        sta VYH
+        lda #DROPV
+        sta VYL
+        lda #ST_AIR
+        sta State
+        rts

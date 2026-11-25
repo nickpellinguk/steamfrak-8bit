@@ -384,8 +384,11 @@ them in the bank's ROM.
   gravity 0.05, terminal 4), keeping the walking direction; landing at 1.6 px/tick or faster, or
   reaching the bottom of the screen, kills (restart at the level's start, P0 repositioned by a
   divide-by-15 RESP0 + HMOVE); climbing a row every other frame, sliding a pixel every fourth frame to the ladder's
-  centre (the ladder found in a short per-level list when he starts climbing); left/right walks off a ladder onto a platform or into a
-  fall; up/down catches a ladder unless falling fast; climbing down onto a platform stands; up/down
+  centre; the map says whether there is a ladder (to 6 lines), and a short per-level list (x, top
+  row, bottom row) gives the one being climbed: its centre and its exact ends, so dropping off the
+  bottom of a ladder that stops above a platform (as Frak's do) falls onto it, and Up below such
+  a ladder jumps and catches it; left/right walks off a ladder onto a platform or into a
+  fall; up/down catches a ladder unless falling fast (a falling Trogg only one carrying on below his feet); climbing down onto a platform stands; up/down
   ignored after landing until released. `play_test.py` drives it in py65 with scripted joystick
   input.
 * Starter screen with the game: 2976 of 4096 bytes.

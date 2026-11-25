@@ -197,7 +197,7 @@ def compile_screen(plan, outdir, game=False):
                            ('Mask8', [0x80 >> i for i in range(8)]), ('TroggFrames', frames)):
             place(name, dict(enumerate(vals)), False)
         lad = [b for l in plan['ladders'] if l['bottom'] > l['top']
-               for b in (l['x'], l['top'] // 3, (l['bottom'] - 1) // 3)]
+               for b in (l['x'], l['top'], l['bottom'] - 1)]
         nlad = len(lad) // 3
         place('LadL', dict(enumerate(lad or [0])), False)
         place('HMTab', {r: (-(r - 6) & 15) << 4 for r in range(15)}, True)   # PosP0's fine move

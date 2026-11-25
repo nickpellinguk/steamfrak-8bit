@@ -157,6 +157,15 @@ def main():
     st = g.state()
     expect('running jump right catches the top-right ladder', st, state=2)
     expect('... and slides to its centre (x 61)', g.run(40), x=61, state=2)
+    # Frak's ladders stop above the platform below: down off the bottom drops onto it
+    g = Game(os.path.join(outdir, 'level'))
+    states = [g.run(1, U)['state'] for _ in range(6)]
+    expect('up from the floor under it: jumps (no ladder at the feet)', {**g.state(), 'state': states[0]}, state=1)
+    expect('... and catches its bottom on the way up', g.run(20, U), state=2)
+    trace = [g.run(1, D) for _ in range(60)]
+    air = [t['row'] for t in trace if t['state'] == 1]
+    expect('down off its bottom (row 81): in the air for rows 81-83', {**g.state(), 'air': air[:1] + air[-1:]}, air=[81, 83])
+    expect('... and lands on the floor', g.state(), state=0, row=83, dead=0)
     print('all ok' if ok else 'SOME FAILED')
     return ok
 
