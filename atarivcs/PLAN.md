@@ -378,11 +378,17 @@ them in the bank's ROM.
   (a taken branch across one costs a cycle).
 * The Trogg's GRP0 store is padded to a fixed late cycle (about 66) in every body, so each of his
   rows shows on its row's second line and the next row's first, the same everywhere up to x 122.
-* Game code (330 bytes): walk (1 px a frame by HMOVE in vertical blank), fall off edges, jump on
-  fire (8 rows up, a short hang, then fall), climb on up/down where the ladder map allows, step
-  off a ladder onto a platform. Uses the movement maps; the vertical blank is timed by TIM64T.
-  `play_test.py` drives it in py65 with scripted joystick input.
-* Starter screen with the game: 2607 of 4096 bytes.
+* Game code (`game.asm`), after Steam Frak's TroggStanding / TroggFalling / TroggClimbing, scaled
+  from its 34-pixel Trogg to ours (1 Frak pixel = 13/34 row; vertical position in 8.8 rows):
+  walk a pixel a frame (HMOVE in vertical blank); up jumps where there's no ladder (1.25 px/tick,
+  gravity 0.05, terminal 4), keeping the walking direction; landing at 1.6 px/tick or faster, or
+  reaching the bottom of the screen, kills (restart at the level's start, P0 repositioned by a
+  divide-by-15 RESP0 + HMOVE); climbing a row a frame, sliding a pixel a frame to the ladder's
+  centre (a per-column ladder x table); left/right walks off a ladder onto a platform or into a
+  fall; up/down catches a ladder unless falling fast; climbing down onto a platform stands; up/down
+  ignored after landing until released. `play_test.py` drives it in py65 with scripted joystick
+  input.
+* Starter screen with the game: 2976 of 4096 bytes.
 
 ## Optimisation pass (backlog)
 

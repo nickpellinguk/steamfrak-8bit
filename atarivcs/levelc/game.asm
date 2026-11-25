@@ -1,23 +1,69 @@
-; Trogg control, first version: walk, fall off edges, jump (fire), climb ladders (up/down).
-; Everything is tested against the level's movement maps (atarivcs/PLAN.md, "Movement maps"):
+; Trogg control, after Steam Frak's TroggStanding / TroggFalling / TroggClimbing (js/trogg.js),
+; scaled from its 34-pixel Trogg to ours (13 rows): 1 Frak pixel = 13/34 row.
+;   standing: left/right walk a pixel a frame; up climbs a ladder at the feet, or jumps (keeping
+;     the walking direction); down climbs onto a ladder below the platform; nothing underfoot falls
+;   falling: gravity to a terminal speed; up/down catches a ladder when not falling fast; landing
+;     too fast, or reaching the bottom of the screen, kills him (he restarts at the level's start)
+;   climbing: a row a frame, sliding a pixel a frame towards the ladder's centre; left/right walks
+;     off onto a platform, or falls; climbing down onto a platform stands; the top steps off
+;   up/down are ignored after landing until released (Frak's updowndebounce)
+; Movement is tested against the level's movement maps (atarivcs/PLAN.md, "Movement maps"):
 ;   PIdx (32 bands of 6 lines) -> byte offset into PPool (2 bytes: 16 cells of 8 px, x 16-143)
 ;   LIdx (32 columns of 4 px)  -> byte offset into LPool (4 bytes: 32 bands of 6 lines)
-;   FB: feet row -> platform band right under the feet, or $FF when the row below isn't a top
-; Included by levelc.py, which defines H (frame height), JUMPLEN and the data labels.
+;   FB: feet row -> platform band right under the feet, or $FF; Band3: row -> 6-line band
+;   LadX: column -> the x of the ladder there (the climbing centre)
+; Included by levelc.py, which defines H, START_X, START_ROW and the data labels.
 
 TX      = $A0           ; Trogg x (left edge, pixels)
-TRow    = $A1           ; feet row (2-line rows, 0-95)
-JumpT   = $A2           ; frames left in a jump (0: not jumping)
-Climb   = $A3           ; 1 while on a ladder
-Facing  = $A4           ; REFP0 value: 0 right, 8 left
-Tmp     = $A5
-Tmp2    = $A6
-FireOld = $A7           ; INPT4 last frame (bit 7 clear: fire was held)
-Joy     = $A8           ; SWCHA this frame (player 0 in bits 7-4, 0 = pressed)
-HMV     = $A9           ; HMP0 for this frame's HMOVE
-Frm     = $AA           ; frame counter
+TRow    = $A1           ; feet row (2-line rows)
+TYF     = $A2           ; feet row fraction (1/256 row)
+VYL     = $A3           ; vertical speed, rows/frame in 8.8, down positive
+VYH     = $A4
+XV      = $A5           ; horizontal speed in the air: -1, 0, 1
+State   = $A6           ; 0 standing, 1 in the air, 2 climbing
+Facing  = $A7           ; REFP0 value: 0 right, 8 left
+Tmp     = $A8
+Tmp2    = $A9
+Joy     = $AA           ; SWCHA this frame (player 0 in bits 7-4, 0 = pressed)
+HMV     = $AB           ; HMP0 for this frame's HMOVE
+Frm     = $AC
+Dead    = $AD           ; frames until the restart (0: alive)
+XM      = $AE           ; joystick x this frame
+Rows    = $AF
+UDDeb   = $B0           ; 1: ignore up/down until both are released
+Repos   = $B1           ; 1: position P0 from TX this frame (start, restart)
 
-; ---- A = feet row; returns A != 0 when a platform is right under the feet (X, Y used)
+ST_STAND = 0
+ST_AIR   = 1
+ST_CLIMB = 2
+GRAV    = 5             ; 0.05 px/tick^2
+JUMPV   = 122           ; 1.25 px/tick
+DIEV    = 157           ; landing at 1.6 px/tick or faster kills
+TERMV   = 392           ; 4 px/tick
+GRABV   = 125           ; ladders can be caught when falling no faster than 1.275 px/tick
+
+; ---- P0 to TX: coarse RESP0 from a divide-by-15 loop, then HMOVE for the rest. RESP0 ends at
+; cycle 5n + 18 (n loop passes), so the coarse x is 15(n - 1) + 6 and HMTab moves it r - 6 (r =
+; TX mod 15). Kept within a page: a branch across one would add a cycle.
+        IF (<.) > $E0
+        ALIGN 256
+        ENDIF
+PosP0:  sta WSYNC
+        lda TX
+        sec
+PosL:   sbc #15
+        bcs PosL
+        adc #15
+        tay
+        lda HMTab,y
+        bit $80
+        sta RESP0
+        sta HMP0
+        sta WSYNC
+        sta HMOVE
+        rts
+
+; ---- A = feet row; returns A != 0 when a platform is right under the feet (X, Y, Tmp used)
 Floor:  tay
         lda FB,y
         bmi FloorNo
@@ -51,16 +97,10 @@ FloorNo: lda #0
 
 ; ---- A = row; returns A != 0 when a ladder cell is under the Trogg's centre on that row
 Ladder: tay
-        lda Band3,y             ; 6-line band, 0-31 (the platform grid)
+        lda Band3,y             ; 6-line band, 0-31
         sta Tmp2
-        lda TX
-        clc
-        adc #4
-        lsr
-        lsr                     ; 4 px column
-        cmp #32
+        jsr Column
         bcs LadNo
-        tay
         lda LIdx,y
         sta Tmp
         lda Tmp2
@@ -79,124 +119,301 @@ Ladder: tay
 LadNo:  lda #0
         rts
 
+; ---- Y = the 4 px column under the Trogg's centre; carry set when it is off the map
+Column: lda TX
+        clc
+        adc #4
+        lsr
+        lsr
+        cmp #32
+        tay
+        rts
+
+; ---- A = -1, 0, 1: move a pixel (within x 16-135), through this frame's HMOVE
+MoveX:  tax
+        beq MXDone
+        bmi MXLeft
+        lda TX
+        cmp #135
+        bcs MXDone
+        inc TX
+        lda #$F0
+        sta HMV
+        rts
+MXLeft: lda TX
+        cmp #17
+        bcc MXDone
+        dec TX
+        lda #$10
+        sta HMV
+MXDone: rts
+
+; ---- joystick x: A = 1 right, -1 left, 0 (flags set)
+JoyX:   lda Joy
+        bpl JXR
+        asl
+        bpl JXL
+        lda #0
+        rts
+JXR:    lda #1
+        rts
+JXL:    lda #$FF
+        rts
+
+; ---- A = -1 / 1: face that way
+SetFacing:
+        ldx #0
+        cmp #1
+        beq SF1
+        ldx #8
+SF1:    stx Facing
+        rts
+
 ; ---- one frame of movement
 Logic:  lda #0
         sta HMV
-        lda SWCHA
+        lda Dead
+        beq Alive
+        dec Dead
+        bne LRet
+        lda #START_X            ; restart
+        sta TX
+        lda #START_ROW
+        sta TRow
+        lda #0
+        sta TYF
+        sta VYL
+        sta VYH
+        sta XV
+        sta State
+        sta Facing
+        lda #1
+        sta Repos
+        sta UDDeb
+LRet:   rts
+Alive:  lda SWCHA
         sta Joy
-        lda Climb
-        beq NotClimb
-        ; on a ladder: left or right while standing on a platform steps off it
+        lda UDDeb
+        beq NoDeb
         lda Joy
-        and #$C0
-        cmp #$C0
-        beq ClimbV
-        lda TRow
-        jsr Floor
-        beq ClimbV
+        and #$30
+        cmp #$30
+        bne UDHeld
         lda #0
-        sta Climb
-        jmp NotClimb
-ClimbV: lda Frm
-        and #1                  ; climb a row every other frame
-        bne CDone
-        lda Joy
-        and #$10
-        bne CDown
-        lda TRow
-        jsr Ladder
-        bne CUp
-        lda TRow                ; the top of the ladder: step off onto a platform, or stay
-        jsr Floor
-        bne COff
-        rts
-CUp:        lda TRow
-        cmp #H
-        bcc CDone
-        dec TRow
-        rts
-CDown:  lda Joy
-        and #$20
-        bne CDone
-        lda TRow
-        cmp #94
-        bcs CDone
-        adc #1
-        jsr Ladder
-        beq COff                ; off the bottom
-        inc TRow
-        rts
-COff:   lda #0
-        sta Climb
-CDone:  rts
+        sta UDDeb
+        beq NoDeb
+UDHeld: lda Joy
+        ora #$30
+        sta Joy
+NoDeb:  lda State
+        cmp #ST_CLIMB
+        bne L1
+        jmp DoClimb
+L1:     cmp #ST_AIR
+        bne DoStand
+        jmp DoAir
 
-NotClimb:
-        ; up with a ladder at the feet, or down with one just below them, starts climbing
-        lda JumpT
-        bne Walk
-        lda Joy
+DoStand:
+        jsr JoyX
+        sta XM
+        beq DS1
+        jsr SetFacing
+        lda XM
+        jsr MoveX
+DS1:    lda TRow
+        jsr Floor
+        bne DS2
+        lda XM                  ; nothing underfoot: fall, still going the way he walked
+        sta XV
+        lda #0
+        sta VYL
+        sta VYH
+        sta TYF
+        lda #ST_AIR
+        sta State
+        rts
+DS2:    lda Joy
         and #$10
-        bne NC1
-        lda TRow
+        bne DS3
+        lda TRow                ; up: a ladder at the feet, or jump
         jsr Ladder
-        bne StartC
-NC1:    lda Joy
+        bne StartClimb
+        lda XM
+        sta XV
+        lda #<(-JUMPV)
+        sta VYL
+        lda #$FF
+        sta VYH
+        lda #0
+        sta TYF
+        lda #ST_AIR
+        sta State
+        rts
+DS3:    lda Joy
         and #$20
-        bne Walk
-        lda TRow
+        bne DSRet
+        lda TRow                ; down: a ladder below the platform
         cmp #94
-        bcs Walk
+        bcs DSRet
         adc #1
         jsr Ladder
-        beq Walk
-StartC: lda #1
-        sta Climb
-        rts
-Walk:   lda Joy
-        bmi NoRight
-        lda TX
-        cmp #135
-        bcs NoRight
-        inc TX
-        lda #$F0                ; HMP0 -1: one pixel right
-        sta HMV
+        beq DSRet
+        inc TRow
+StartClimb:
+        lda #ST_CLIMB
+        sta State
         lda #0
-        sta Facing
-NoRight: bit Joy
-        bvs NoLeft
-        lda TX
-        cmp #17
-        bcc NoLeft
-        dec TX
-        lda #$10                ; one pixel left
-        sta HMV
-        lda #8
-        sta Facing
-NoLeft: lda JumpT
-        beq NoJump
-        dec JumpT
-        tax
-        lda JumpDY-1,x          ; 1: up a row this frame
-        beq JDone
+        sta TYF
+        sta VYL
+        sta VYH
+        sta XV
+DSRet:  rts
+
+DoAir:  lda XV
+        jsr MoveX
+        lda VYH                 ; gravity, up to the terminal speed
+        bmi Grav
+        cmp #>TERMV
+        bcc Grav
+        bne NoGrav
+        lda VYL
+        cmp #<TERMV
+        bcs NoGrav
+Grav:   clc
+        lda VYL
+        adc #GRAV
+        sta VYL
+        lda VYH
+        adc #0
+        sta VYH
+NoGrav: lda Joy                 ; up/down catches a ladder unless falling fast
+        and #$30
+        cmp #$30
+        beq NoGrab
+        lda VYH
+        bmi Grab
+        bne NoGrab
+        lda VYL
+        cmp #GRABV + 1
+        bcs NoGrab
+Grab:   lda TRow
+        jsr Ladder
+        beq NoGrab
+        jmp StartClimb
+NoGrab: lda VYH
+        bmi Rise
+        clc                     ; falling: row by row, landing on the first platform crossed
+        lda TYF
+        adc VYL
+        sta TYF
+        lda VYH
+        adc #0
+        sta Rows
+        beq AirRet
+Down1:  lda TRow
+        jsr Floor
+        bne Land
+        inc TRow
+        lda TRow
+        cmp #95
+        bcs Die                 ; the bottom of the screen
+        dec Rows
+        bne Down1
+AirRet: rts
+Land:   lda #0
+        sta TYF
+        lda VYH                 ; too fast?
+        bne Die
+        lda VYL
+        cmp #DIEV
+        bcs Die
+        lda #0
+        sta VYL
+        sta VYH
+        sta XV
+        sta State
+        lda #1
+        sta UDDeb
+        rts
+Die:    lda #90
+        sta Dead
+        rts
+Rise:   clc
+        lda TYF
+        adc VYL
+        sta TYF
+        lda VYH
+        adc #0
+        beq AirRet              ; ($FF: up a row this frame)
         lda TRow
         cmp #H
-        bcc JDone
+        bcc AirRet
         dec TRow
-JDone:  rts
-NoJump: lda TRow
-        jsr Floor
-        beq Fall
-        lda INPT4               ; on a platform: fire (newly pressed) jumps
-        bmi FireUp
-        lda FireOld
-        bpl FireUp
-        lda #JUMPLEN
-        sta JumpT
-FireUp: lda INPT4
-        sta FireOld
         rts
-Fall:   lda TRow
+
+DoClimb:
+        jsr Column              ; slide a pixel towards the ladder's centre
+        bcs DC0
+        lda LadX,y
+        beq DC0
+        cmp TX
+        beq DC0
+        lda #1
+        bcs DCn
+        lda #$FF
+DCn:    jsr MoveX
+DC0:    jsr JoyX
+        beq DCV
+        sta XM
+        jsr SetFacing
+        lda TRow
+        jsr Floor
+        beq DCFall
+        lda #ST_STAND           ; on a platform: walk off the ladder
+        sta State
+        rts
+DCFall: lda XM                  ; between platforms: walk off into a fall
+        sta XV
+DCDrop: lda #0
+        sta VYL
+        sta VYH
+        sta TYF
+        lda #ST_AIR
+        sta State
+        rts
+DCV:    lda Joy
+        and #$10
+        bne DCDown
+        lda TRow
+        jsr Ladder
+        beq DCTop
+        lda TRow
+        cmp #H
+        bcc DCRet
+        dec TRow
+        rts
+DCTop:  lda TRow                ; the top: step off onto a platform, or hold on
+        jsr Floor
+        beq DCRet
+DCStand: lda #ST_STAND
+        sta State
+        lda #1
+        sta UDDeb
+        rts
+DCDown: lda Joy
+        and #$20
+        bne DCRet
+        lda TRow
+        jsr Floor
+        bne DCStand             ; climbed down onto a platform
+        lda TRow
         cmp #94
-        bcs FireUp
+        bcs DCRet
+        adc #1
+        jsr Ladder
+        beq DCOff
         inc TRow
-        jmp FireUp
+DCRet:  rts
+DCOff:  lda #0                  ; off the bottom of the ladder
+        sta XV
+        beq DCDrop

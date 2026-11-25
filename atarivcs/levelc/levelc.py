@@ -129,7 +129,6 @@ def move_maps(plan):
     return pidx, pb, lidx, lb
 
 
-JUMP = [0, 0, 0, 0] + [1] * 8          # read from the end: rise 8 rows, then hang 4 frames
 
 
 def compile_screen(plan, outdir, game=False):
@@ -194,8 +193,15 @@ def compile_screen(plan, outdir, game=False):
         frames = [b for f in fr for b in [0] * (hh - len(f)) + f]
         fb = [(r + 1) // 3 if (r + 1) % 3 == 0 else 0xFF for r in range(97)]
         for name, vals in (('PIdx', pidx), ('PPool', pb), ('LIdx', lidx), ('LPool', lb), ('FB', fb), ('Band3', [r // 3 for r in range(97)]),
-                           ('Mask8', [0x80 >> i for i in range(8)]), ('JumpDY', JUMP), ('TroggFrames', frames)):
+                           ('Mask8', [0x80 >> i for i in range(8)]), ('TroggFrames', frames)):
             place(name, dict(enumerate(vals)), False)
+        ladx = [0] * 32                    # column -> its ladder's x (the climbing centre)
+        for l in plan['ladders']:
+            for c in range(32):
+                if l['x'] <= 4 * c + 2 < l['x'] + 8:
+                    ladx[c] = l['x']
+        place('LadX', dict(enumerate(ladx)), False)
+        place('HMTab', {r: (-(r - 6) & 15) << 4 for r in range(15)}, True)   # PosP0's fine move
         maps_bytes = len(pidx) + len(pb) + len(lidx) + len(lb)
         h = hh
     # Trogg pointer: the first body call increments it before reading, so row k reads ptr0 + k + 1;
@@ -206,7 +212,8 @@ def compile_screen(plan, outdir, game=False):
     o = ['        processor 6502']
     o += ['%-8s = $%02X' % (k, v) for k, v in tiatest.EQU.items()]
     o += ['HMP0 = $20', 'HMM0 = $22', 'REFP0 = $0B', 'INPT4 = $0C', 'SWCHA = $280', 'INTIM = $284',
-          'TIM64T = $296', 'H = %d' % h, 'JUMPLEN = %d' % len(JUMP)]
+          'TIM64T = $296', 'H = %d' % h,
+          'START_X = %d' % tr['x'], 'START_ROW = %d' % tr['row']]
     o += ['GRP0 = $1B', 'COLUP0 = $06', 'RESM0 = $12', 'ENAM0 = $1D', 'COLUPF = $08',
           'PF0 = $0D', 'PF1 = $0E', 'PF2 = $0F', 'TrogPtr = $80', 'Buffer = $82']
     o += ['%-12s = $%04X' % (k, v) for k, v in labels.items()]
@@ -352,7 +359,7 @@ VB:     sta WSYNC
 
 def game_frame(plan, tr, h, labels, tx):
     """Start-up and the frame up to the kernel, with the Trogg moved by the game logic."""
-    o = ['''Start:  sei
+    return '''Start:  sei
         cld
         ldx #$FF
         txs
@@ -360,26 +367,17 @@ def game_frame(plan, tr, h, labels, tx):
 Clear:  sta $00,x
         dex
         bne Clear
-        lda #%d
+        lda #START_X
         sta TX
-        lda #%d
+        lda #START_ROW
         sta TRow
-        lda #$80
-        sta FireOld
         lda #1
+        sta Repos           ; position P0 in the first frame
         sta CTRLPF          ; mirrored playfield
         sta NUSIZ1
         lda #$20
-        sta NUSIZ0          ; single-width Trogg''' % (tx, tr['row'])]
-    # the Trogg's start position: RESP0 (P0 at 3c - 63), then HMOVE for the last 0-2 px; after that
-    # the logic moves him with one HMOVE a frame
-    c = (tx + 63) // 3
-    o.append('        sta WSYNC\n        ' + pad(c - 3).replace('\n', '\n        ') + '\n        sta RESP0')
-    o.append('''        lda #$%02X
-        sta HMP0
-        sta WSYNC
-        sta HMOVE''' % ((-(tx - (3 * c - 63)) & 15) << 4))
-    o.append('''Frame:  lda #2
+        sta NUSIZ0          ; single-width Trogg
+Frame:  lda #2
         sta VSYNC
         sta WSYNC
         sta WSYNC
@@ -405,8 +403,9 @@ Clear:  sta $00,x
         inc Frm
         jsr Logic
         ldx #0              ; the Trogg's frame (walking, or climbing) into the buffer, yoyo bit off
-        lda Climb
-        beq CF0
+        lda State
+        cmp #ST_CLIMB
+        bne CF0
         ldx #H
 CF0:    ldy #1
 CopyF:  lda TroggFrames,x
@@ -424,18 +423,25 @@ CopyF:  lda TroggFrames,x
         sta TrogPtr
         lda #>TroggStrip
         sta TrogPtr+1
-        lda HMV
+        lda Repos           ; a new position (start, restart): RESP0 and HMOVE from TX
+        beq NoRep
+        lda #0
+        sta Repos
+        jsr PosP0
+        jmp Moved
+NoRep:  lda HMV             ; otherwise this frame's pixel of movement
         sta HMP0
         sta WSYNC
-        sta HMOVE''' % (plan['background'], tr['colour']))
-    o.append('        sta WSYNC\n        ' + pad(57).replace('\n', '\n        ') + '\n        sta RESP1')
-    o.append('''        sta HMCLR
+        sta HMOVE
+Moved:  sta WSYNC
+        %s
+        sta RESP1
+        sta HMCLR
 WaitVB: lda INTIM
         bne WaitVB
         sta WSYNC
         lda #0
-        sta VBLANK''')
-    return '\n'.join(o)
+        sta VBLANK''' % (plan['background'], tr['colour'], pad(57).replace('\n', '\n        '))
 
 
 def model(plan, palette, yoyo=True):
