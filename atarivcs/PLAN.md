@@ -457,8 +457,11 @@ them in the bank's ROM.
   on it (or yoyoing) carries the Trogg (TX and the frame's HMP0). Picture checks hold it at its
   start. Cost: about 200 bytes of logic and 80 of display, plus a body or two per screen that uses
   it. Vertical blank worst case about 1940 of 2752 cycles.
-* Timer band: 7 lines, black digits on the level's background (the HMOVE line's first 8 pixels,
-  blanked by the hardware, now show as a short black dash under it).
+* Timer band: 7 lines, black digits on the level's background. Its HMOVE (P0 back to the Trogg,
+  the ball to the moving platform) is written at cycle 73 of its last line, so no pixels are
+  blanked; a late HMOVE moves everything HMK (8) px further left, so P0 and the ball are positioned
+  8 px right (Tmp, Tmp2: set before the vertical blank's end), and M0 and P1 get HMxx $80 to cancel
+  it. The call list then enters the first body after its WSYNC and inc TrogPtr (label _c).
 * Returning meanies: a yoyoed meanie shows as a light grey ($0C) dotted outline (its edge pixels,
   every other one) and comes back 5 s later (`Ret`, a countdown per item by 4 frames), but not
   while that would put it on the Trogg. The outline is its collected dataset (instead of zeros), so
