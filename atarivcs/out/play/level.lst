@@ -1,0 +1,2282 @@
+------- FILE /home/user/steamfrak-8bit/atarivcs/out/play/level.asm LEVEL 1 PASS 3
+      1  1ffe					      processor	6502
+      2  1ffe		       00 00	   VSYNC      =	$00
+      3  1ffe		       00 01	   VBLANK     =	$01
+      4  1ffe		       00 02	   WSYNC      =	$02
+      5  1ffe		       00 04	   NUSIZ0     =	$04
+      6  1ffe		       00 05	   NUSIZ1     =	$05
+      7  1ffe		       00 06	   COLUP0     =	$06
+      8  1ffe		       00 07	   COLUP1     =	$07
+      9  1ffe		       00 09	   COLUBK     =	$09
+     10  1ffe		       00 0a	   CTRLPF     =	$0A
+     11  1ffe		       00 0c	   REFP1      =	$0C
+     12  1ffe		       00 10	   RESP0      =	$10
+     13  1ffe		       00 11	   RESP1      =	$11
+     14  1ffe		       00 13	   RESM1      =	$13
+     15  1ffe		       00 14	   RESBL      =	$14
+     16  1ffe		       00 1c	   GRP1       =	$1C
+     17  1ffe		       00 1e	   ENAM1      =	$1E
+     18  1ffe		       00 1f	   ENABL      =	$1F
+     19  1ffe		       00 21	   HMP1       =	$21
+     20  1ffe		       00 23	   HMM1       =	$23
+     21  1ffe		       00 24	   HMBL       =	$24
+     22  1ffe		       00 26	   VDELP1     =	$26
+     23  1ffe		       00 2a	   HMOVE      =	$2A
+     24  1ffe		       00 2b	   HMCLR      =	$2B
+     25  1ffe		       00 20	   HMP0       =	$20
+     26  1ffe		       00 22	   HMM0       =	$22
+     27  1ffe		       00 0b	   REFP0      =	$0B
+     28  1ffe		       00 0c	   INPT4      =	$0C
+     29  1ffe		       02 80	   SWCHA      =	$280
+     30  1ffe		       02 84	   INTIM      =	$284
+     31  1ffe		       02 96	   TIM64T     =	$296
+     32  1ffe		       00 0d	   H	      =	13
+     33  1ffe		       00 39	   START_X    =	57
+     34  1ffe		       00 53	   START_ROW  =	83
+     35  1ffe		       00 03	   NLAD       =	3
+     36  1ffe		       00 05	   NIR	      =	5
+     37  1ffe		       00 04	   NITEM      =	4
+     38  1ffe		       00 04	   HANDUP     =	4
+     39  1ffe		       00 c0	   RunX       =	$C0
+     40  1ffe		       00 c6	   FRONT_BG   =	$C6
+     41  1ffe		       00 00	   FRONT_INK  =	$00
+     42  1ffe		       00 1e	   FRONT_FILL =	$1E
+     43  1ffe		       00 05	   TOPROWS    =	5
+     44  1ffe		       00 db	   MUSRAM     =	$DB
+     45  1ffe		       00 15	   AUDC0      =	$15
+     46  1ffe		       00 16	   AUDC1      =	$16
+     47  1ffe		       00 17	   AUDF0      =	$17
+     48  1ffe		       00 18	   AUDF1      =	$18
+     49  1ffe		       00 19	   AUDV0      =	$19
+     50  1ffe		       00 1a	   AUDV1      =	$1A
+     51  1ffe		       00 0e	   TWHITE     =	$0E
+     52  1ffe		       00 24	   TAIL_X     =	36
+     53  1ffe		       00 1b	   GRP0       =	$1B
+     54  1ffe		       00 06	   COLUP0     =	$06
+     55  1ffe		       00 12	   RESM0      =	$12
+     56  1ffe		       00 1d	   ENAM0      =	$1D
+     57  1ffe		       00 08	   COLUPF     =	$08
+     58  1ffe		       00 0d	   PF0	      =	$0D
+     59  1ffe		       00 0e	   PF1	      =	$0E
+     60  1ffe		       00 0f	   PF2	      =	$0F
+     61  1ffe		       00 80	   TrogPtr    =	$80
+     62  1ffe		       00 82	   Buffer     =	$82
+     63  1ffe		       f0 00	   Lad	      =	$F000
+     64  1ffe		       f1 00	   C0	      =	$F100
+     65  1ffe		       f2 00	   G0	      =	$F200
+     66  1ffe		       f1 00	   Stripe     =	$F100
+     67  1ffe		       f0 00	   LPF1       =	$F000
+     68  1ffe		       f0 8a	   RPF1       =	$F08A
+     69  1ffe		       f0 90	   RPF2       =	$F090
+     70  1ffe		       f0 00	   LPF2       =	$F000
+     71  1ffe		       f3 00	   Font       =	$F300
+     72  1ffe		       f0 00	   HMTab1     =	$F000
+     73  1ffe		       f3 58	   FL1	      =	$F358
+     74  1ffe		       f3 94	   FL2	      =	$F394
+     75  1ffe		       f4 00	   FR2	      =	$F400
+     76  1ffe		       f4 3c	   FR1	      =	$F43C
+     77  1ffe		       f4 78	   FBK1       =	$F478
+     78  1ffe		       f4 a0	   FBK2       =	$F4A0
+     79  1ffe		       f2 c4	   FG1	      =	$F2C4
+     80  1ffe		       f5 00	   TroggStrip =	$F500
+     81  1ffe		       f0 00	   TroggFrame =	$F000
+     82  1ffe		       f0 0d	   PIdx       =	$F00D
+     83  1ffe		       f0 2b	   PPool      =	$F02B
+     84  1ffe		       f0 35	   LIdx       =	$F035
+     85  1ffe		       f0 55	   LPool      =	$F055
+     86  1ffe		       f0 69	   FB	      =	$F069
+     87  1ffe		       f0 ca	   Band3      =	$F0CA
+     88  1ffe		       f1 4a	   Mask8      =	$F14A
+     89  1ffe		       f1 52	   TroggFrames =	$F152
+     90  1ffe		       f1 6c	   LadL       =	$F16C
+     91  1ffe		       f1 75	   RM1	      =	$F175
+     92  1ffe		       f0 0d	   RM2	      =	$F00D
+     93  1ffe		       f1 7a	   RXV	      =	$F17A
+     94  1ffe		       f1 8e	   ItX	      =	$F18E
+     95  1ffe		       f1 92	   ItTop      =	$F192
+     96  1ffe		       f1 96	   ItBot      =	$F196
+     97  1ffe		       f1 9a	   ItBit      =	$F19A
+     98  1ffe		       f1 9e	   ItKind     =	$F19E
+     99  1ffe		       f1 a2	   HMTab      =	$F1A2
+    100  1000 ????				      seg	bank0
+    101  0000					      org	$0000
+    102  0000					      rorg	$F000
+    103  0000		       18 3c 7c 6e*	      .byte.b	$18,$3C,$7C,$6E,$7E,$38,$7C,$FE,$BD,$3C,$24,$24,$66,$00,$00,$00
+    104  0010		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$02,$00,$04,$00,$00,$00,$00,$00,$06,$00,$00,$00
+    105  0020		       00 02 00 00*	      .byte.b	$00,$02,$00,$00,$00,$00,$00,$00,$00,$08,$00,$00,$00,$F0,$00,$00
+    106  0030		       3f 00 0f ff*	      .byte.b	$3F,$00,$0F,$FF,$F0,$00,$00,$00,$00,$04,$04,$04,$00,$00,$00,$00
+    107  0040		       00 00 08 0c*	      .byte.b	$00,$00,$08,$0C,$0C,$10,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    108  0050		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$01,$FF,$FF,$F0,$00,$00,$07
+    109  0060		       f0 00 ff f7*	      .byte.b	$F0,$00,$FF,$F7,$F0,$00,$FF,$F0,$00,$FF,$FF,$01,$FF,$FF,$02,$FF
+    110  0070		       ff 03 ff ff*	      .byte.b	$FF,$03,$FF,$FF,$04,$FF,$FF,$05,$FF,$FF,$06,$FF,$FF,$07,$FF,$FF
+    111  0080		       08 ff ff 09*	      .byte.b	$08,$FF,$FF,$09,$FF,$FF,$0A,$FF,$FF,$0B,$FF,$FF,$0C,$FF,$FF,$0D
+    112  0090		       ff ff 0e ff*	      .byte.b	$FF,$FF,$0E,$FF,$FF,$0F,$FF,$FF,$10,$FF,$FF,$11,$FF,$FF,$12,$FF
+    113  00a0		       ff 13 ff ff*	      .byte.b	$FF,$13,$FF,$FF,$14,$FF,$FF,$15,$FF,$FF,$16,$FF,$FF,$17,$FF,$FF
+    114  00b0		       18 ff ff 19*	      .byte.b	$18,$FF,$FF,$19,$FF,$FF,$1A,$FF,$FF,$1B,$FF,$FF,$1C,$FF,$FF,$1D
+    115  00c0		       ff ff 1e ff*	      .byte.b	$FF,$FF,$1E,$FF,$FF,$1F,$FF,$FF,$20,$FF,$00,$00,$00,$01,$01,$01
+    116  00d0		       02 02 02 03*	      .byte.b	$02,$02,$02,$03,$03,$03,$04,$04,$04,$05,$05,$05,$06,$06,$06,$07
+    117  00e0		       07 07 08 08*	      .byte.b	$07,$07,$08,$08,$08,$09,$09,$09,$0A,$0A,$0A,$0B,$0B,$0B,$0C,$0C
+    118  00f0		       0c 0d 0d 0d*	      .byte.b	$0C,$0D,$0D,$0D,$0E,$0E,$0E,$0F,$0F,$0F,$10,$10,$10,$11,$11,$11
+    119  0100		       12 12 12 13*	      .byte.b	$12,$12,$12,$13,$13,$13,$14,$14,$14,$15,$15,$15,$16,$16,$16,$17
+    120  0110		       17 17 18 18*	      .byte.b	$17,$17,$18,$18,$18,$19,$19,$19,$1A,$1A,$1A,$1B,$1B,$1B,$1C,$1C
+    121  0120		       1c 1d 1d 1d*	      .byte.b	$1C,$1D,$1D,$1D,$1E,$1E,$1E,$1F,$1F,$1F,$20,$20,$20,$21,$21,$21
+    122  0130		       22 22 22 23*	      .byte.b	$22,$22,$22,$23,$23,$23,$24,$24,$24,$25,$25,$25,$26,$26,$26,$27
+    123  0140		       27 27 28 28*	      .byte.b	$27,$27,$28,$28,$28,$29,$29,$29,$2A,$2A,$80,$40,$20,$10,$08,$04
+    124  0150		       02 01 18 3c*	      .byte.b	$02,$01,$18,$3C,$7C,$6E,$7E,$38,$7C,$FE,$BD,$3C,$24,$24,$66,$18
+    125  0160		       3c 3c bc fe*	      .byte.b	$3C,$3C,$BC,$FE,$3C,$3C,$7E,$5A,$3C,$24,$66,$42,$1F,$15,$53,$3D
+    126  0170		       18 3b 3a 40*	      .byte.b	$18,$3B,$3A,$40,$51,$01,$08,$02,$04,$04,$22,$2A,$2A,$2A,$5C,$62
+    127  0180		       62 62 7e 86*	      .byte.b	$62,$62,$7E,$86,$86,$86,$A8,$B4,$B4,$B4,$C0,$C4,$C4,$C4,$22,$58
+    128  0190		       5e 76 11 38*	      .byte.b	$5E,$76,$11,$38,$4C,$2A,$14,$3B,$53,$2C,$01,$02,$04,$08,$00,$00
+    129  01a0		       01 00 60 50*	      .byte.b	$01,$00,$60,$50,$40,$30,$20,$10,$00,$F0,$E0,$D0,$C0,$B0,$A0,$90
+    130  01b0		       80		      .byte.b	$80
+    131  01b1		       78	   Start      sei
+    132  01b2		       d8		      cld
+    133  01b3		       a2 ff		      ldx	#$FF
+    134  01b5		       9a		      txs
+    135  01b6		       a9 00		      lda	#0
+    136  01b8		       95 00	   Clear      sta	$00,x
+    137  01ba		       ca		      dex
+    138  01bb		       d0 fb		      bne	Clear
+    139  01bd		       a9 39		      lda	#START_X
+    140  01bf		       85 a0		      sta	TX
+    141  01c1		       a9 53		      lda	#START_ROW
+    142  01c3		       85 a1		      sta	TRow
+    143  01c5				  -	      IFCONST	YOTEST
+    144  01c5				  -	      lda	#ST_YOYO
+    145  01c5				  -	      sta	State
+    146  01c5				  -	      lda	#YOFACE
+    147  01c5				  -	      sta	Facing
+    148  01c5					      ENDIF
+    149  01c5				  -	      IFCONST	SKIPFRONT
+    150  01c5				  -	      lda	#1
+    151  01c5				  -	      sta	Mode
+    152  01c5					      ENDIF
+    153  01c5				  -	      IFCONST	START_COLL
+    154  01c5				  -	      lda	#START_COLL
+    155  01c5				  -	      sta	Collected
+    156  01c5					      ENDIF
+    157  01c5		       a9 01		      lda	#1
+    158  01c7		       85 b1		      sta	Repos	; position P0 in the first frame
+    159  01c9		       85 0a		      sta	CTRLPF	; mirrored playfield
+    160  01cb		       85 05		      sta	NUSIZ1
+    161  01cd		       a9 20		      lda	#$20
+    162  01cf		       85 04		      sta	NUSIZ0	; single-width Trogg
+    163  01d1		       a9 02	   Frame      lda	#2
+    164  01d3		       85 00		      sta	VSYNC
+    165  01d5		       85 02		      sta	WSYNC
+    166  01d7		       85 02		      sta	WSYNC
+    167  01d9		       85 02		      sta	WSYNC
+    168  01db		       a9 00		      lda	#0
+    169  01dd		       85 00		      sta	VSYNC
+    170  01df		       a9 2b		      lda	#43
+    171  01e1		       8d 96 02 	      sta	TIM64T
+    172  01e4		       a9 02		      lda	#2
+    173  01e6		       85 01		      sta	VBLANK
+    174  01e8		       85 2b		      sta	HMCLR
+    175  01ea		       a9 aa		      lda	#$AA
+    176  01ec		       85 09		      sta	COLUBK
+    177  01ee		       85 08		      sta	COLUPF
+    178  01f0		       a9 1e		      lda	#$1E
+    179  01f2		       85 06		      sta	COLUP0
+    180  01f4		       a9 00		      lda	#0
+    181  01f6		       85 07		      sta	COLUP1
+    182  01f8		       85 1c		      sta	GRP1
+    183  01fa		       85 1b		      sta	GRP0
+    184  01fc		       85 0e		      sta	PF1
+    185  01fe		       85 0f		      sta	PF2
+    186  0200		       e6 ac		      inc	Frm
+    187  0202		       a5 bc		      lda	Mode
+    188  0204		       d0 0e		      bne	InGame
+    189  0206		       a9 c6		      lda	#FRONT_BG	; the front screen: green, black blocks, no Trogg, fire starts
+    190  0208		       85 09		      sta	COLUBK
+    191  020a		       a9 00		      lda	#FRONT_INK
+    192  020c		       85 08		      sta	COLUPF
+    193  020e		       20 49 f7 	      jsr	FrontLogic
+    194  0211		       4c 20 f2 	      jmp	Shown
+    195  0214		       20 68 f7    InGame     jsr	Timer
+    196  0217		       20 df f7 	      jsr	MusicTick	; the tune, a frame on
+    197  021a		       20 c6 f3 	      jsr	Logic
+    198  021d		       20 23 f7 	      jsr	RunVars	; the item runs' line indexes, from the collected bits
+    199  0220				   Shown
+    200  0220		       a9 fe		      lda	#$FE	; the frame's bit 0 (the hand row's yoyo, M0) only while it's out
+    201  0222		       a6 a6		      ldx	State
+    202  0224		       e0 03		      cpx	#ST_YOYO
+    203  0226		       d0 02		      bne	CFm
+    204  0228		       a9 ff		      lda	#$FF
+    205  022a		       a6 bc	   CFm	      ldx	Mode
+    206  022c		       d0 02		      bne	CFm2
+    207  022e		       a9 00		      lda	#0	; (front screen: an empty Trogg buffer)
+    208  0230		       85 a8	   CFm2       sta	Tmp
+    209  0232		       a2 00		      ldx	#0	; the Trogg's frame (walking, or climbing) into the buffer
+    210  0234		       a5 a6		      lda	State
+    211  0236		       c9 02		      cmp	#ST_CLIMB
+    212  0238		       d0 02		      bne	CF0
+    213  023a		       a2 0d		      ldx	#H
+    214  023c		       a0 01	   CF0	      ldy	#1
+    215  023e		       bd 52 f1    CopyF      lda	TroggFrames,x
+    216  0241		       25 a8		      and	Tmp
+    217  0243		       99 82 00 	      sta	Buffer,y
+    218  0246		       e8		      inx
+    219  0247		       c8		      iny
+    220  0248		       c0 0e		      cpy	#H+1
+    221  024a		       d0 f2		      bne	CopyF
+    222  024c		       a5 a7		      lda	Facing
+    223  024e		       85 0b		      sta	REFP0
+    224  0250		       a9 70		      lda	#<(TroggStrip+94+H+TOPROWS)	; (the kernel's first body is row TOPROWS)
+    225  0252		       38		      sec
+    226  0253		       e5 a1		      sbc	TRow
+    227  0255		       85 80		      sta	TrogPtr
+    228  0257		       a9 f5		      lda	#>TroggStrip
+    229  0259		       85 81		      sta	TrogPtr+1
+    230  025b		       a5 b1		      lda	Repos	; a new position (start, restart): RESP0 and HMOVE from TX
+    231  025d		       f0 0e		      beq	NoRep
+    232  025f		       a9 00		      lda	#0
+    233  0261		       85 b1		      sta	Repos
+    234  0263		       a5 a0		      lda	TX
+    235  0265		       a2 00		      ldx	#0
+    236  0267		       20 00 f3 	      jsr	PosObj
+    237  026a		       4c 79 f2 	      jmp	Moved
+    238  026d		       a5 ab	   NoRep      lda	HMV	; otherwise this frame's pixel of movement
+    239  026f		       85 20		      sta	HMP0
+    240  0271		       85 02		      sta	WSYNC
+    241  0273		       85 2a		      sta	HMOVE
+    242  0275		       85 02		      sta	WSYNC
+    243  0277		       85 2b		      sta	HMCLR
+    244  0279		       a5 a6	   Moved      lda	State	; the yoyo: M0 to YoX
+    245  027b		       c9 03		      cmp	#ST_YOYO
+    246  027d		       d0 09		      bne	NoYo
+    247  027f		       a6 ba		      ldx	YoX
+    248  0281		       e8		      inx
+    249  0282		       8a		      txa
+    250  0283		       a2 02		      ldx	#2
+    251  0285		       20 00 f3 	      jsr	PosObj
+    252  0288		       85 02	   NoYo       sta	WSYNC
+    253  028a		       24 80		      bit	$80
+    254  028c		       ea		      nop
+    255  028d		       ea		      nop
+    256  028e		       ea		      nop
+    257  028f		       ea		      nop
+    258  0290		       ea		      nop
+    259  0291		       ea		      nop
+    260  0292		       ea		      nop
+    261  0293		       ea		      nop
+    262  0294		       ea		      nop
+    263  0295		       ea		      nop
+    264  0296		       ea		      nop
+    265  0297		       ea		      nop
+    266  0298		       ea		      nop
+    267  0299		       ea		      nop
+    268  029a		       ea		      nop
+    269  029b		       ea		      nop
+    270  029c		       ea		      nop
+    271  029d		       ea		      nop
+    272  029e		       ea		      nop
+    273  029f		       ea		      nop
+    274  02a0		       ea		      nop
+    275  02a1		       ea		      nop
+    276  02a2		       ea		      nop
+    277  02a3		       ea		      nop
+    278  02a4		       ea		      nop
+    279  02a5		       ea		      nop
+    280  02a6		       ea		      nop
+    281  02a7		       85 11		      sta	RESP1
+    282  02a9		       85 2b		      sta	HMCLR
+    283  02ab		       a5 bc		      lda	Mode	; playing: P0 and P1 for the timer (the band puts P0 back)
+    284  02ad		       f0 1c		      beq	NoTime
+    285  02af		       a9 10		      lda	#16
+    286  02b1		       a2 00		      ldx	#0
+    287  02b3		       20 00 f3 	      jsr	PosObj
+    288  02b6		       a9 18		      lda	#24
+    289  02b8		       a2 01		      ldx	#1
+    290  02ba		       20 00 f3 	      jsr	PosObj
+    291  02bd		       a9 01		      lda	#1
+    292  02bf		       85 04		      sta	NUSIZ0	; two copies close: x 16 and 32 (P1: 24 and 40)
+    293  02c1		       a9 0e		      lda	#TWHITE
+    294  02c3		       85 06		      sta	COLUP0
+    295  02c5		       85 07		      sta	COLUP1
+    296  02c7		       a9 00		      lda	#0
+    297  02c9		       85 0b		      sta	REFP0
+    298  02cb		       a5 bc	   NoTime     lda	Mode	; the front screen: P1 is the tail's fill (double width, yellow,
+    299  02cd		       d0 11		      bne	NoTail	; behind the playfield)
+    300  02cf		       a9 23		      lda	#TAIL_X - 1	; (a double-width player starts a pixel later)
+    301  02d1		       a2 01		      ldx	#1
+    302  02d3		       20 00 f3 	      jsr	PosObj
+    303  02d6		       a9 05		      lda	#5
+    304  02d8		       85 05		      sta	NUSIZ1
+    305  02da		       85 0a		      sta	CTRLPF	; mirrored playfield, over the players
+    306  02dc		       a9 1e		      lda	#FRONT_FILL
+    307  02de		       85 07		      sta	COLUP1
+    308  02e0				   NoTail
+    309  02e0		       ad 84 02    WaitVB     lda	INTIM
+    310  02e3		       d0 fb		      bne	WaitVB
+    311  02e5		       85 02		      sta	WSYNC
+    312  02e7		       a9 00		      lda	#0
+    313  02e9		       85 01		      sta	VBLANK
+    314  02eb		       4c e0 ff 	      jmp	$FFE0	; to the display bank: the kernel
+    315  02ee				   Overscan
+    316  02ee		       a9 02		      lda	#2
+    317  02f0		       85 01		      sta	VBLANK
+    318  02f2		       a2 1d		      ldx	#29
+    319  02f4		       85 02	   OS	      sta	WSYNC
+    320  02f6		       ca		      dex
+    321  02f7		       d0 fb		      bne	OS
+    322  02f9		       4c d1 f1 	      jmp	Frame
+------- FILE /home/user/steamfrak-8bit/atarivcs/levelc/game.asm LEVEL 2 PASS 3
+      0  02fc					      include	"/home/user/steamfrak-8bit/atarivcs/levelc/game.asm"
+      1  02fc							; Trogg control, after Steam Frak's TroggStanding / TroggFalling / TroggClimbing (js/trogg.js),
+      2  02fc							; scaled from its 34-pixel Trogg to ours (13 rows): 1 Frak pixel = 13/34 row.
+      3  02fc							;   standing: left/right walk a pixel every other frame (our pixels are twice Frak's); up climbs a ladder at the feet, or jumps (keeping
+      4  02fc							;     the walking direction); down climbs onto a ladder below the platform; nothing underfoot falls
+      5  02fc							;   falling: gravity to a terminal speed; up/down catches a ladder when not falling fast; landing
+      6  02fc							;     too fast, or reaching the bottom of the screen, kills him (he restarts at the level's start)
+      7  02fc							;   climbing: a row every other frame, sliding a pixel every fourth frame to the ladder's centre; left/right walks
+      8  02fc							;     off onto a platform, or falls; climbing down onto a platform stands; the top steps off
+      9  02fc							;   up/down are ignored after landing until released (Frak's updowndebounce)
+     10  02fc							; Movement is tested against the level's movement maps (atarivcs/PLAN.md, "Movement maps"):
+     11  02fc							;   PIdx (32 bands of 6 lines) -> byte offset into PPool (2 bytes: 16 cells of 8 px, x 16-143)
+     12  02fc							;   LIdx (36 columns of 3 px on the P1 grid, x 19-126) -> byte offset into LPool (4 bytes: 32
+     13  02fc							;     bands of 6 lines)
+     14  02fc							;   FB: feet row -> platform band right under the feet, or $FF; Band3: n -> n / 3 (rows to
+     15  02fc							;     6-line bands, and pixels to 3 px columns)
+     16  02fc							;   LadL: the level's ladders (x, top row, bottom row), NLAD of them. The map says whether there is
+     17  02fc							;     a ladder (to 6 lines); the list gives the one being climbed: its x (the climbing centre) and
+     18  02fc							;     its exact ends (a Frak ladder stops above the platform below: down off it drops)
+     19  02fc							; Included by levelc.py, which defines H, START_X, START_ROW and the data labels.
+     20  02fc
+     21  02fc		       00 a0	   TX	      =	$A0	; Trogg x (left edge, pixels)
+     22  02fc		       00 a1	   TRow       =	$A1	; feet row (2-line rows)
+     23  02fc		       00 a2	   TYF	      =	$A2	; feet row fraction (1/256 row)
+     24  02fc		       00 a3	   VYL	      =	$A3	; vertical speed, rows/frame in 8.8, down positive
+     25  02fc		       00 a4	   VYH	      =	$A4
+     26  02fc		       00 a5	   XV	      =	$A5	; horizontal speed in the air: -1, 0, 1
+     27  02fc		       00 a6	   State      =	$A6	; 0 standing, 1 in the air, 2 climbing
+     28  02fc		       00 a7	   Facing     =	$A7	; REFP0 value: 0 right, 8 left
+     29  02fc		       00 a8	   Tmp	      =	$A8
+     30  02fc		       00 a9	   Tmp2       =	$A9
+     31  02fc		       00 aa	   Joy	      =	$AA	; SWCHA this frame (player 0 in bits 7-4, 0 = pressed)
+     32  02fc		       00 ab	   HMV	      =	$AB	; HMP0 for this frame's HMOVE
+     33  02fc		       00 ac	   Frm	      =	$AC
+     34  02fc		       00 ad	   Dead       =	$AD	; frames until the restart (0: alive)
+     35  02fc		       00 ae	   XM	      =	$AE	; joystick x this frame
+     36  02fc		       00 af	   Rows       =	$AF
+     37  02fc		       00 b0	   UDDeb      =	$B0	; 1: ignore up/down until both are released
+     38  02fc		       00 b1	   Repos      =	$B1	; 1: position P0 from TX this frame (start, restart)
+     39  02fc		       00 b2	   LTarget    =	$B2	; the x of the ladder being climbed
+     40  02fc		       00 b3	   LTop       =	$B3	; ... its top and bottom rows (feet)
+     41  02fc		       00 b4	   LBot       =	$B4
+     42  02fc		       00 b5	   LRowQ      =	$B5
+     43  02fc		       00 b6	   YoLen      =	$B6	; yoyo: length (pixels) and fraction
+     44  02fc		       00 b7	   YoF	      =	$B7
+     45  02fc		       00 b8	   YoBack     =	$B8	; 1: coming back
+     46  02fc		       00 b9	   YoDeb      =	$B9	; 1: fire must be released before the next throw
+     47  02fc		       00 ba	   YoX	      =	$BA	; the yoyo's x (M0)
+     48  02fc		       00 bb	   Collected  =	$BB	; a bit per item on the screen (ItBit): gone (gems and keys collected,
+     49  02fc							; meanies yoyoed)
+     50  02fc		       00 bc	   Mode       =	$BC	; 0: the front screen, 1: playing
+     51  02fc		       00 bd	   FArm       =	$BD	; front screen: fire has been up (so a press starts)
+     52  02fc		       00 d0	   TDig       =	$D0	; the timer: pointers to its four characters' glyphs (M, colon, S, S)
+     53  02fc		       00 d8	   TFr	      =	$D8	; frames into the second
+     54  02fc		       00 d9	   TSec       =	$D9	; seconds (BCD)
+     55  02fc		       00 da	   TMin       =	$DA
+     56  02fc							; MUSRAM ($DB-$E7, defined by levelc.py): the music driver's 13 bytes
+     57  02fc							; RunX ($C0 on, defined by levelc.py): the line index of each run showing items, for the kernel
+     58  02fc
+     59  02fc		       00 00	   ST_STAND   =	0
+     60  02fc		       00 01	   ST_AIR     =	1
+     61  02fc		       00 02	   ST_CLIMB   =	2
+     62  02fc		       00 03	   ST_YOYO    =	3
+     63  02fc		       00 a6	   YOSPD      =	166	; 1.3 Frak px/tick: 0.65 of our pixels a frame
+     64  02fc		       00 28	   YOMAX      =	40	; 80 Frak px
+     65  02fc		       00 05	   GRAV       =	5	; 0.05 px/tick^2
+     66  02fc		       00 7a	   JUMPV      =	122	; 1.25 px/tick
+     67  02fc		       00 9d	   DIEV       =	157	; landing at 1.6 px/tick or faster kills
+     68  02fc		       01 88	   TERMV      =	392	; 4 px/tick
+     69  02fc		       00 62	   DROPV      =	98	; dropping off a ladder's bottom: 1 px/tick
+     70  02fc		       00 7d	   GRABV      =	125	; ladders can be caught when falling no faster than 1.275 px/tick
+     71  02fc
+     72  02fc							; ---- position an object: A = x, X = 0 for P0 or 2 for M0 (pass x + 1 for M0: it lands a pixel left
+     73  02fc							; of P0 for the same strobe). Coarse RESx from a divide-by-15 loop, then HMOVE for the rest: the
+     74  02fc							; strobe ends at cycle 5n + 18 (n loop passes), so P0's coarse x is 15(n - 1) + 6 and HMTab moves
+     75  02fc							; it r - 6 (r = x mod 15). Takes three lines; HMCLR at the end. Kept within a page: a branch across
+     76  02fc							; one would add a cycle.
+     77  02fc					      IF	(<.) > $E0
+     78  0300		       00 00 00 00	      ALIGN	256
+     79  0300					      ENDIF
+     80  0300		       85 02	   PosObj     sta	WSYNC
+     81  0302		       38		      sec
+     82  0303		       e9 0f	   PosL       sbc	#15
+     83  0305		       b0 fc		      bcs	PosL
+     84  0307		       69 0f		      adc	#15
+     85  0309		       a8		      tay
+     86  030a		       b9 a2 f1 	      lda	HMTab,y
+     87  030d		       24 80		      bit	$80
+     88  030f		       ea		      nop
+     89  0310		       95 10		      sta	RESP0,x
+     90  0312		       95 20		      sta	HMP0,x
+     91  0314		       85 02		      sta	WSYNC
+     92  0316		       85 2a		      sta	HMOVE
+     93  0318		       85 02		      sta	WSYNC
+     94  031a		       85 2b		      sta	HMCLR
+     95  031c		       60		      rts
+     96  031d
+     97  031d							; ---- A = feet row; returns A != 0 when a platform is right under the feet (X, Y, Tmp used)
+     98  031d		       a8	   Floor      tay
+     99  031e		       b9 69 f0 	      lda	FB,y
+    100  0321		       30 27		      bmi	FloorNo
+    101  0323		       a8		      tay
+    102  0324		       b9 0d f0 	      lda	PIdx,y
+    103  0327		       85 a8		      sta	Tmp
+    104  0329		       a5 a0		      lda	TX
+    105  032b		       38		      sec
+    106  032c		       e9 0c		      sbc	#12	; the Trogg's centre (TX + 4) - 16
+    107  032e		       90 1a		      bcc	FloorNo
+    108  0330		       c9 80		      cmp	#128
+    109  0332		       b0 16		      bcs	FloorNo
+    110  0334		       4a		      lsr
+    111  0335		       4a		      lsr
+    112  0336		       4a		      lsr		; 8 px cell, 0-15
+    113  0337		       aa		      tax
+    114  0338		       4a		      lsr
+    115  0339		       4a		      lsr
+    116  033a		       4a		      lsr		; its byte in the entry, 0-1
+    117  033b		       18		      clc
+    118  033c		       65 a8		      adc	Tmp
+    119  033e		       a8		      tay
+    120  033f		       8a		      txa
+    121  0340		       29 07		      and	#7
+    122  0342		       aa		      tax
+    123  0343		       b9 2b f0 	      lda	PPool,y
+    124  0346		       3d 4a f1 	      and	Mask8,x
+    125  0349		       60		      rts
+    126  034a		       a9 00	   FloorNo    lda	#0
+    127  034c		       60		      rts
+    128  034d
+    129  034d							; ---- A = row; returns A != 0 when a ladder cell is under the Trogg's centre on that row
+    130  034d		       a8	   Ladder     tay
+    131  034e		       b9 ca f0 	      lda	Band3,y	; 6-line band, 0-31
+    132  0351		       85 a9		      sta	Tmp2
+    133  0353		       20 75 f3 	      jsr	Column
+    134  0356		       b0 1a		      bcs	LadNo
+    135  0358		       b9 35 f0 	      lda	LIdx,y
+    136  035b		       85 a8		      sta	Tmp
+    137  035d		       a5 a9		      lda	Tmp2
+    138  035f		       4a		      lsr
+    139  0360		       4a		      lsr
+    140  0361		       4a		      lsr
+    141  0362		       18		      clc
+    142  0363		       65 a8		      adc	Tmp
+    143  0365		       a8		      tay
+    144  0366		       a5 a9		      lda	Tmp2
+    145  0368		       29 07		      and	#7
+    146  036a		       aa		      tax
+    147  036b		       b9 55 f0 	      lda	LPool,y
+    148  036e		       3d 4a f1 	      and	Mask8,x
+    149  0371		       60		      rts
+    150  0372		       a9 00	   LadNo      lda	#0
+    151  0374		       60		      rts
+    152  0375
+    153  0375							; ---- Y = the 3 px column (P1 grid: x 19 + 3c) under the Trogg's centre; carry set when off the map
+    154  0375		       a5 a0	   Column     lda	TX
+    155  0377		       38		      sec
+    156  0378		       e9 0f		      sbc	#15	; centre (TX + 4) - 19
+    157  037a		       90 08		      bcc	ColOff
+    158  037c		       a8		      tay
+    159  037d		       b9 ca f0 	      lda	Band3,y
+    160  0380		       c9 24		      cmp	#36
+    161  0382		       a8		      tay
+    162  0383		       60		      rts
+    163  0384		       38	   ColOff     sec
+    164  0385		       60		      rts
+    165  0386
+    166  0386							; ---- A = -1, 0, 1: move a pixel (within x 16-135), through this frame's HMOVE; only on even
+    167  0386							; frames (our pixels are twice as wide as Frak's, so a pixel every other frame matches its speed)
+    168  0386		       aa	   MoveX      tax
+    169  0387		       f0 21		      beq	MXDone
+    170  0389		       a5 ac		      lda	Frm
+    171  038b		       4a		      lsr
+    172  038c		       b0 1c		      bcs	MXDone
+    173  038e		       8a		      txa
+    174  038f		       30 0d		      bmi	MXLeft
+    175  0391		       a5 a0		      lda	TX
+    176  0393		       c9 87		      cmp	#135
+    177  0395		       b0 13		      bcs	MXDone
+    178  0397		       e6 a0		      inc	TX
+    179  0399		       a9 f0		      lda	#$F0
+    180  039b		       85 ab		      sta	HMV
+    181  039d		       60		      rts
+    182  039e		       a5 a0	   MXLeft     lda	TX
+    183  03a0		       c9 11		      cmp	#17
+    184  03a2		       90 06		      bcc	MXDone
+    185  03a4		       c6 a0		      dec	TX
+    186  03a6		       a9 10		      lda	#$10
+    187  03a8		       85 ab		      sta	HMV
+    188  03aa		       60	   MXDone     rts
+    189  03ab
+    190  03ab							; ---- joystick x: A = 1 right, -1 left, 0 (flags set)
+    191  03ab		       a5 aa	   JoyX       lda	Joy
+    192  03ad		       10 06		      bpl	JXR
+    193  03af		       0a		      asl
+    194  03b0		       10 06		      bpl	JXL
+    195  03b2		       a9 00		      lda	#0
+    196  03b4		       60		      rts
+    197  03b5		       a9 01	   JXR	      lda	#1
+    198  03b7		       60		      rts
+    199  03b8		       a9 ff	   JXL	      lda	#$FF
+    200  03ba		       60		      rts
+    201  03bb
+    202  03bb							; ---- A = -1 / 1: face that way
+    203  03bb				   SetFacing
+    204  03bb		       a2 00		      ldx	#0
+    205  03bd		       c9 01		      cmp	#1
+    206  03bf		       f0 02		      beq	SF1
+    207  03c1		       a2 08		      ldx	#8
+    208  03c3		       86 a7	   SF1	      stx	Facing
+    209  03c5		       60		      rts
+    210  03c6
+    211  03c6							; ---- one frame of movement
+    212  03c6		       a9 00	   Logic      lda	#0
+    213  03c8		       85 ab		      sta	HMV
+    214  03ca		       a5 ad		      lda	Dead
+    215  03cc		       f0 21		      beq	Alive
+    216  03ce		       c6 ad		      dec	Dead
+    217  03d0		       d0 1c		      bne	LRet
+    218  03d2		       a9 39		      lda	#START_X	; restart
+    219  03d4		       85 a0		      sta	TX
+    220  03d6		       a9 53		      lda	#START_ROW
+    221  03d8		       85 a1		      sta	TRow
+    222  03da		       a9 00		      lda	#0
+    223  03dc		       85 a2		      sta	TYF
+    224  03de		       85 a3		      sta	VYL
+    225  03e0		       85 a4		      sta	VYH
+    226  03e2		       85 a5		      sta	XV
+    227  03e4		       85 a6		      sta	State
+    228  03e6		       85 a7		      sta	Facing
+    229  03e8		       a9 01		      lda	#1
+    230  03ea		       85 b1		      sta	Repos
+    231  03ec		       85 b0		      sta	UDDeb
+    232  03ee		       60	   LRet       rts
+    233  03ef		       20 a6 f6    Alive      jsr	Collide
+    234  03f2		       ad 80 02 	      lda	SWCHA
+    235  03f5		       85 aa		      sta	Joy
+    236  03f7		       a5 0c		      lda	INPT4	; fire released: the next throw is allowed
+    237  03f9		       10 04		      bpl	FireDn
+    238  03fb		       a9 00		      lda	#0
+    239  03fd		       85 b9		      sta	YoDeb
+    240  03ff				   FireDn
+    241  03ff		       a5 b0		      lda	UDDeb
+    242  0401		       f0 14		      beq	NoDeb
+    243  0403		       a5 aa		      lda	Joy
+    244  0405		       29 30		      and	#$30
+    245  0407		       c9 30		      cmp	#$30
+    246  0409		       d0 06		      bne	UDHeld
+    247  040b		       a9 00		      lda	#0
+    248  040d		       85 b0		      sta	UDDeb
+    249  040f		       f0 06		      beq	NoDeb
+    250  0411		       a5 aa	   UDHeld     lda	Joy
+    251  0413		       09 30		      ora	#$30
+    252  0415		       85 aa		      sta	Joy
+    253  0417		       a5 a6	   NoDeb      lda	State
+    254  0419		       c9 03		      cmp	#ST_YOYO
+    255  041b		       d0 03		      bne	L0
+    256  041d		       4c 33 f6 	      jmp	DoYoyo
+    257  0420		       c9 02	   L0	      cmp	#ST_CLIMB
+    258  0422		       d0 03		      bne	L1
+    259  0424		       4c a1 f5 	      jmp	DoClimb
+    260  0427		       c9 01	   L1	      cmp	#ST_AIR
+    261  0429		       d0 03		      bne	DoStand
+    262  042b		       4c f8 f4 	      jmp	DoAir
+    263  042e
+    264  042e				   DoStand
+    265  042e		       20 ab f3 	      jsr	JoyX
+    266  0431		       85 ae		      sta	XM
+    267  0433		       f0 08		      beq	DS1
+    268  0435		       20 bb f3 	      jsr	SetFacing
+    269  0438		       a5 ae		      lda	XM
+    270  043a		       20 86 f3 	      jsr	MoveX
+    271  043d		       a5 a1	   DS1	      lda	TRow
+    272  043f		       20 1d f3 	      jsr	Floor
+    273  0442		       d0 11		      bne	DS2
+    274  0444		       a5 ae		      lda	XM	; nothing underfoot: fall, still going the way he walked
+    275  0446		       85 a5		      sta	XV
+    276  0448		       a9 00		      lda	#0
+    277  044a		       85 a3		      sta	VYL
+    278  044c		       85 a4		      sta	VYH
+    279  044e		       85 a2		      sta	TYF
+    280  0450		       a9 01		      lda	#ST_AIR
+    281  0452		       85 a6		      sta	State
+    282  0454		       60		      rts
+    283  0455		       a5 0c	   DS2	      lda	INPT4	; fire: throw the yoyo the way he faces (he stands still)
+    284  0457		       30 17		      bmi	DS2a
+    285  0459		       a5 b9		      lda	YoDeb
+    286  045b		       d0 13		      bne	DS2a
+    287  045d		       a9 01		      lda	#1
+    288  045f		       85 b9		      sta	YoDeb
+    289  0461		       a9 00		      lda	#0
+    290  0463		       85 b6		      sta	YoLen
+    291  0465		       85 b7		      sta	YoF
+    292  0467		       85 b8		      sta	YoBack
+    293  0469		       a9 03		      lda	#ST_YOYO
+    294  046b		       85 a6		      sta	State
+    295  046d		       4c 7f f6 	      jmp	YoPos
+    296  0470		       a5 aa	   DS2a       lda	Joy
+    297  0472		       29 10		      and	#$10
+    298  0474		       d0 1c		      bne	DS3
+    299  0476		       a5 a1		      lda	TRow	; up: a ladder at the feet, or jump
+    300  0478		       20 b6 f4 	      jsr	TryLadder
+    301  047b		       d0 2a		      bne	StartClimb
+    302  047d		       a5 ae		      lda	XM
+    303  047f		       85 a5		      sta	XV
+    304  0481		       a9 86		      lda	#<(-JUMPV)
+    305  0483		       85 a3		      sta	VYL
+    306  0485		       a9 ff		      lda	#$FF
+    307  0487		       85 a4		      sta	VYH
+    308  0489		       a9 00		      lda	#0
+    309  048b		       85 a2		      sta	TYF
+    310  048d		       a9 01		      lda	#ST_AIR
+    311  048f		       85 a6		      sta	State
+    312  0491		       60		      rts
+    313  0492		       a5 aa	   DS3	      lda	Joy
+    314  0494		       29 20		      and	#$20
+    315  0496		       d0 1d		      bne	DSRet
+    316  0498		       a5 a1		      lda	TRow	; down: a ladder below the platform
+    317  049a		       c9 5e		      cmp	#94
+    318  049c		       b0 17		      bcs	DSRet
+    319  049e		       69 01		      adc	#1
+    320  04a0		       20 b6 f4 	      jsr	TryLadder
+    321  04a3		       f0 10		      beq	DSRet
+    322  04a5		       e6 a1		      inc	TRow
+    323  04a7				   StartClimb
+    324  04a7		       a9 02		      lda	#ST_CLIMB
+    325  04a9		       85 a6		      sta	State
+    326  04ab		       a9 00		      lda	#0
+    327  04ad		       85 a2		      sta	TYF
+    328  04af		       85 a3		      sta	VYL
+    329  04b1		       85 a4		      sta	VYH
+    330  04b3		       85 a5		      sta	XV
+    331  04b5		       60	   DSRet      rts
+    332  04b6
+    333  04b6							; ---- A = row: is there a ladder at it under the Trogg's centre? The map first, then the list for
+    334  04b6							; the exact ladder: sets LTarget / LTop / LBot and returns A != 0
+    335  04b6				   TryLadder
+    336  04b6		       85 b5		      sta	LRowQ
+    337  04b8		       20 4d f3 	      jsr	Ladder
+    338  04bb		       f0 38		      beq	TLNo
+    339  04bd		       a2 00		      ldx	#0
+    340  04bf		       e0 09	   TLLoop     cpx	#3 * NLAD
+    341  04c1		       b0 32		      bcs	TLNo
+    342  04c3		       a5 a0		      lda	TX
+    343  04c5		       18		      clc
+    344  04c6		       69 05		      adc	#4 + 1
+    345  04c8		       38		      sec
+    346  04c9		       fd 6c f1 	      sbc	LadL,x	; centre - ladder x, + 1: within 0-9 when over it (the map's
+    347  04cc		       c9 0a		      cmp	#10	; 3 px cells reach a pixel past its edges)
+    348  04ce		       b0 20		      bcs	TLNext
+    349  04d0		       a5 b5		      lda	LRowQ
+    350  04d2		       dd 6d f1 	      cmp	LadL+1,x
+    351  04d5		       90 19		      bcc	TLNext
+    352  04d7		       bd 6e f1 	      lda	LadL+2,x
+    353  04da		       c5 b5		      cmp	LRowQ
+    354  04dc		       90 12		      bcc	TLNext
+    355  04de		       bd 6c f1 	      lda	LadL,x
+    356  04e1		       85 b2		      sta	LTarget
+    357  04e3		       bd 6d f1 	      lda	LadL+1,x
+    358  04e6		       85 b3		      sta	LTop
+    359  04e8		       bd 6e f1 	      lda	LadL+2,x
+    360  04eb		       85 b4		      sta	LBot
+    361  04ed		       a9 01		      lda	#1
+    362  04ef		       60		      rts
+    363  04f0		       e8	   TLNext     inx
+    364  04f1		       e8		      inx
+    365  04f2		       e8		      inx
+    366  04f3		       d0 ca		      bne	TLLoop
+    367  04f5		       a9 00	   TLNo       lda	#0
+    368  04f7		       60		      rts
+    369  04f8
+    370  04f8
+    371  04f8		       a5 a5	   DoAir      lda	XV
+    372  04fa		       20 86 f3 	      jsr	MoveX
+    373  04fd		       a5 a4		      lda	VYH	; gravity, up to the terminal speed
+    374  04ff		       30 0c		      bmi	Grav
+    375  0501		       c9 01		      cmp	#>TERMV
+    376  0503		       90 08		      bcc	Grav
+    377  0505		       d0 13		      bne	NoGrav
+    378  0507		       a5 a3		      lda	VYL
+    379  0509		       c9 88		      cmp	#<TERMV
+    380  050b		       b0 0d		      bcs	NoGrav
+    381  050d		       18	   Grav       clc
+    382  050e		       a5 a3		      lda	VYL
+    383  0510		       69 05		      adc	#GRAV
+    384  0512		       85 a3		      sta	VYL
+    385  0514		       a5 a4		      lda	VYH
+    386  0516		       69 00		      adc	#0
+    387  0518		       85 a4		      sta	VYH
+    388  051a		       a5 aa	   NoGrav     lda	Joy	; up/down catches a ladder unless falling fast
+    389  051c		       29 30		      and	#$30
+    390  051e		       c9 30		      cmp	#$30
+    391  0520		       f0 20		      beq	NoGrab
+    392  0522		       a5 a4		      lda	VYH
+    393  0524		       30 08		      bmi	Grab
+    394  0526		       d0 1a		      bne	NoGrab
+    395  0528		       a5 a3		      lda	VYL
+    396  052a		       c9 7e		      cmp	#GRABV + 1
+    397  052c		       b0 14		      bcs	NoGrab
+    398  052e		       a5 a1	   Grab       lda	TRow	; rising: a ladder at the feet; falling: one carrying on below
+    399  0530		       a6 a4		      ldx	VYH	; them (so dropping off a ladder's bottom isn't caught again)
+    400  0532		       30 06		      bmi	GrabAt
+    401  0534		       c9 5e		      cmp	#94
+    402  0536		       b0 0a		      bcs	NoGrab
+    403  0538		       69 01		      adc	#1
+    404  053a		       20 b6 f4    GrabAt     jsr	TryLadder
+    405  053d		       f0 03		      beq	NoGrab
+    406  053f		       4c a7 f4 	      jmp	StartClimb
+    407  0542		       a5 a4	   NoGrab     lda	VYH
+    408  0544		       30 45		      bmi	Rise
+    409  0546		       18		      clc		; falling: row by row, landing on the first platform crossed
+    410  0547		       a5 a2		      lda	TYF
+    411  0549		       65 a3		      adc	VYL
+    412  054b		       85 a2		      sta	TYF
+    413  054d		       a5 a4		      lda	VYH
+    414  054f		       69 00		      adc	#0
+    415  0551		       85 af		      sta	Rows
+    416  0553		       f0 13		      beq	AirRet
+    417  0555		       a5 a1	   Down1      lda	TRow
+    418  0557		       20 1d f3 	      jsr	Floor
+    419  055a		       d0 0d		      bne	Land
+    420  055c		       e6 a1		      inc	TRow
+    421  055e		       a5 a1		      lda	TRow
+    422  0560		       c9 5f		      cmp	#95
+    423  0562		       b0 22		      bcs	Die	; the bottom of the screen
+    424  0564		       c6 af		      dec	Rows
+    425  0566		       d0 ed		      bne	Down1
+    426  0568		       60	   AirRet     rts
+    427  0569		       a9 00	   Land       lda	#0
+    428  056b		       85 a2		      sta	TYF
+    429  056d		       a5 a4		      lda	VYH	; too fast?
+    430  056f		       d0 15		      bne	Die
+    431  0571		       a5 a3		      lda	VYL
+    432  0573		       c9 9d		      cmp	#DIEV
+    433  0575		       b0 0f		      bcs	Die
+    434  0577		       a9 00		      lda	#0
+    435  0579		       85 a3		      sta	VYL
+    436  057b		       85 a4		      sta	VYH
+    437  057d		       85 a5		      sta	XV
+    438  057f		       85 a6		      sta	State
+    439  0581		       a9 01		      lda	#1
+    440  0583		       85 b0		      sta	UDDeb
+    441  0585		       60		      rts
+    442  0586		       a9 5a	   Die	      lda	#90
+    443  0588		       85 ad		      sta	Dead
+    444  058a		       60		      rts
+    445  058b		       18	   Rise       clc
+    446  058c		       a5 a2		      lda	TYF
+    447  058e		       65 a3		      adc	VYL
+    448  0590		       85 a2		      sta	TYF
+    449  0592		       a5 a4		      lda	VYH
+    450  0594		       69 00		      adc	#0
+    451  0596		       f0 d0		      beq	AirRet	; ($FF: up a row this frame)
+    452  0598		       a5 a1		      lda	TRow
+    453  059a		       c9 12		      cmp	#H + TOPROWS	; (his head stays below the timer's band)
+    454  059c		       90 ca		      bcc	AirRet
+    455  059e		       c6 a1		      dec	TRow
+    456  05a0		       60		      rts
+    457  05a1
+    458  05a1				   DoClimb
+    459  05a1		       a5 ac		      lda	Frm	; slide a pixel every fourth frame towards the ladder's centre
+    460  05a3		       29 02		      and	#2
+    461  05a5		       d0 0f		      bne	DC0
+    462  05a7		       a5 b2		      lda	LTarget
+    463  05a9		       c5 a0		      cmp	TX
+    464  05ab		       f0 09		      beq	DC0
+    465  05ad		       a9 01		      lda	#1
+    466  05af		       b0 02		      bcs	DCn
+    467  05b1		       a9 ff		      lda	#$FF
+    468  05b3		       20 86 f3    DCn	      jsr	MoveX
+    469  05b6		       20 ab f3    DC0	      jsr	JoyX
+    470  05b9		       f0 22		      beq	DCV
+    471  05bb		       85 ae		      sta	XM
+    472  05bd		       20 bb f3 	      jsr	SetFacing
+    473  05c0		       a5 a1		      lda	TRow
+    474  05c2		       20 1d f3 	      jsr	Floor
+    475  05c5		       f0 05		      beq	DCFall
+    476  05c7		       a9 00		      lda	#ST_STAND	; on a platform: walk off the ladder
+    477  05c9		       85 a6		      sta	State
+    478  05cb		       60		      rts
+    479  05cc		       a5 ae	   DCFall     lda	XM	; between platforms: walk off into a fall
+    480  05ce		       85 a5		      sta	XV
+    481  05d0		       a9 00	   DCDrop     lda	#0
+    482  05d2		       85 a3		      sta	VYL
+    483  05d4		       85 a4		      sta	VYH
+    484  05d6		       85 a2		      sta	TYF
+    485  05d8		       a9 01		      lda	#ST_AIR
+    486  05da		       85 a6		      sta	State
+    487  05dc		       60		      rts
+    488  05dd		       a5 aa	   DCV	      lda	Joy
+    489  05df		       29 10		      and	#$10
+    490  05e1		       d0 24		      bne	DCDown
+    491  05e3		       a5 a1		      lda	TRow	; up while the feet are on the ladder (its exact top)
+    492  05e5		       c5 b3		      cmp	LTop
+    493  05e7		       90 0e		      bcc	DCTop
+    494  05e9		       a5 ac		      lda	Frm	; a row every other frame
+    495  05eb		       4a		      lsr
+    496  05ec		       b0 33		      bcs	DCRet
+    497  05ee		       a5 a1		      lda	TRow
+    498  05f0		       c9 12		      cmp	#H + TOPROWS	; (his head stays below the timer's band)
+    499  05f2		       90 2d		      bcc	DCRet
+    500  05f4		       c6 a1		      dec	TRow
+    501  05f6		       60		      rts
+    502  05f7		       a5 a1	   DCTop      lda	TRow	; the top: step off onto a platform, or hold on
+    503  05f9		       20 1d f3 	      jsr	Floor
+    504  05fc		       f0 23		      beq	DCRet
+    505  05fe		       a9 00	   DCStand    lda	#ST_STAND
+    506  0600		       85 a6		      sta	State
+    507  0602		       a9 01		      lda	#1
+    508  0604		       85 b0		      sta	UDDeb
+    509  0606		       60		      rts
+    510  0607		       a5 aa	   DCDown     lda	Joy
+    511  0609		       29 20		      and	#$20
+    512  060b		       d0 14		      bne	DCRet
+    513  060d		       a5 a1		      lda	TRow
+    514  060f		       20 1d f3 	      jsr	Floor
+    515  0612		       d0 ea		      bne	DCStand	; climbed down onto a platform
+    516  0614		       a5 a1		      lda	TRow	; down to its exact bottom, then off it
+    517  0616		       c5 b4		      cmp	LBot
+    518  0618		       b0 08		      bcs	DCOff
+    519  061a		       a5 ac		      lda	Frm
+    520  061c		       4a		      lsr
+    521  061d		       b0 02		      bcs	DCRet
+    522  061f		       e6 a1		      inc	TRow
+    523  0621		       60	   DCRet      rts
+    524  0622		       a9 00	   DCOff      lda	#0	; off the bottom of the ladder: drop, at Frak's 1 px/tick
+    525  0624		       85 a5		      sta	XV
+    526  0626		       85 a2		      sta	TYF
+    527  0628		       85 a4		      sta	VYH
+    528  062a		       a9 62		      lda	#DROPV
+    529  062c		       85 a3		      sta	VYL
+    530  062e		       a9 01		      lda	#ST_AIR
+    531  0630		       85 a6		      sta	State
+    532  0632		       60		      rts
+    533  0633
+    534  0633							; ---- the yoyo (Frak's YoyoingOut / YoyoingBack): out while fire is held, up to YOMAX; back when
+    535  0633							; fire is released, at full length or at the screen's edge; then standing again. No collisions yet.
+    536  0633				   DoYoyo
+    537  0633				  -	      IFCONST	YOTEST	; (picture checks: held out at YOTEST pixels)
+    538  0633				  -	      lda	#YOTEST
+    539  0633				  -	      sta	YoLen
+    540  0633				  -	      jmp	YoPos
+    541  0633					      ENDIF
+    542  0633		       a5 a1		      lda	TRow
+    543  0635		       20 1d f3 	      jsr	Floor
+    544  0638		       d0 0f		      bne	DY1
+    545  063a		       a9 00		      lda	#0	; the floor has gone: fall
+    546  063c		       85 a5		      sta	XV
+    547  063e		       85 a3		      sta	VYL
+    548  0640		       85 a4		      sta	VYH
+    549  0642		       85 a2		      sta	TYF
+    550  0644		       a9 01		      lda	#ST_AIR
+    551  0646		       85 a6		      sta	State
+    552  0648		       60		      rts
+    553  0649		       a5 b8	   DY1	      lda	YoBack
+    554  064b		       d0 1e		      bne	DYBack
+    555  064d		       a5 0c		      lda	INPT4
+    556  064f		       30 16		      bmi	DYTurn
+    557  0651		       a5 b6		      lda	YoLen
+    558  0653		       c9 28		      cmp	#YOMAX
+    559  0655		       b0 10		      bcs	DYTurn
+    560  0657		       18		      clc
+    561  0658		       a5 b7		      lda	YoF
+    562  065a		       69 a6		      adc	#YOSPD
+    563  065c		       85 b7		      sta	YoF
+    564  065e		       a5 b6		      lda	YoLen
+    565  0660		       69 00		      adc	#0
+    566  0662		       85 b6		      sta	YoLen
+    567  0664		       4c 7f f6 	      jmp	YoPos
+    568  0667		       a9 01	   DYTurn     lda	#1
+    569  0669		       85 b8		      sta	YoBack
+    570  066b		       38	   DYBack     sec
+    571  066c		       a5 b7		      lda	YoF
+    572  066e		       e9 a6		      sbc	#YOSPD
+    573  0670		       85 b7		      sta	YoF
+    574  0672		       a5 b6		      lda	YoLen
+    575  0674		       e9 00		      sbc	#0
+    576  0676		       85 b6		      sta	YoLen
+    577  0678		       b0 05		      bcs	YoPos
+    578  067a		       a9 00		      lda	#ST_STAND	; back in his hand
+    579  067c		       85 a6		      sta	State
+    580  067e		       60		      rts
+    581  067f							; YoX from the length: right of his hand facing right (TX + 8 + len), left of it facing left
+    582  067f		       a5 a7	   YoPos      lda	Facing
+    583  0681		       d0 10		      bne	YPL
+    584  0683		       a5 a0		      lda	TX
+    585  0685		       18		      clc
+    586  0686		       69 08		      adc	#8
+    587  0688		       65 b6		      adc	YoLen
+    588  068a		       c9 9c		      cmp	#156
+    589  068c		       b0 13		      bcs	YPEdge
+    590  068e		       85 ba		      sta	YoX
+    591  0690		       4c e4 f6 	      jmp	YoHit
+    592  0693		       a5 a0	   YPL	      lda	TX
+    593  0695		       38		      sec
+    594  0696		       e9 04		      sbc	#4
+    595  0698		       e5 b6		      sbc	YoLen
+    596  069a		       90 05		      bcc	YPEdge
+    597  069c		       85 ba		      sta	YoX
+    598  069e		       4c e4 f6 	      jmp	YoHit
+    599  06a1		       a9 01	   YPEdge     lda	#1	; the screen's edge: come back
+    600  06a3		       85 b8		      sta	YoBack
+    601  06a5		       60		      rts
+    602  06a6
+    603  06a6							; ---- gems and keys: the Trogg's box (rows TRow - H + 1 .. TRow, x within 6 px) against each one
+    604  06a6							; not yet collected (ItX, ItTop / ItBot rows, ItBit); touching one collects it
+    605  06a6				   Collide
+    606  06a6					      IF	NITEM > 0
+    607  06a6		       a2 03		      ldx	#NITEM - 1
+    608  06a8		       a5 bb	   CoL	      lda	Collected
+    609  06aa		       3d 9a f1 	      and	ItBit,x
+    610  06ad		       d0 2c		      bne	CoN
+    611  06af		       a5 a1		      lda	TRow
+    612  06b1		       dd 92 f1 	      cmp	ItTop,x
+    613  06b4		       90 25		      bcc	CoN	; his feet are above it
+    614  06b6		       38		      sec
+    615  06b7		       e9 0c		      sbc	#H - 1
+    616  06b9		       90 07		      bcc	CoHit	; (his head is off the top: the bottom test passes)
+    617  06bb		       dd 96 f1 	      cmp	ItBot,x
+    618  06be		       f0 02		      beq	CoHit
+    619  06c0		       b0 19		      bcs	CoN	; his head is below it
+    620  06c2		       a5 a0	   CoHit      lda	TX
+    621  06c4		       38		      sec
+    622  06c5		       fd 8e f1 	      sbc	ItX,x
+    623  06c8		       18		      clc
+    624  06c9		       69 06		      adc	#6
+    625  06cb		       c9 0d		      cmp	#13
+    626  06cd		       b0 0c		      bcs	CoN	; more than 6 px apart
+    627  06cf		       bd 9e f1 	      lda	ItKind,x	; a meanie: he dies
+    628  06d2		       d0 0b		      bne	CoDie
+    629  06d4		       a5 bb		      lda	Collected
+    630  06d6		       1d 9a f1 	      ora	ItBit,x
+    631  06d9		       85 bb		      sta	Collected
+    632  06db		       ca	   CoN	      dex
+    633  06dc		       10 ca		      bpl	CoL
+    634  06de					      ENDIF
+    635  06de		       60		      rts
+    636  06df		       a9 5a	   CoDie      lda	#90
+    637  06e1		       85 ad		      sta	Dead
+    638  06e3		       60		      rts
+    639  06e4
+    640  06e4							; ---- the yoyo against the meanies (ItKind 1) still there: the ball (4 px at YoX, on his hand's
+    641  06e4							; row) overlapping one removes it, and the yoyo comes back. Gems and keys aren't affected.
+    642  06e4				   YoHit
+    643  06e4					      IF	NITEM > 0
+    644  06e4		       a5 a1		      lda	TRow
+    645  06e6		       38		      sec
+    646  06e7		       e9 04		      sbc	#HANDUP
+    647  06e9		       85 a9		      sta	Tmp2	; his hand's row
+    648  06eb		       a2 03		      ldx	#NITEM - 1
+    649  06ed		       bd 9e f1    YHL	      lda	ItKind,x
+    650  06f0		       f0 2d		      beq	YHN
+    651  06f2		       a5 bb		      lda	Collected
+    652  06f4		       3d 9a f1 	      and	ItBit,x
+    653  06f7		       d0 26		      bne	YHN
+    654  06f9		       a5 a9		      lda	Tmp2
+    655  06fb		       dd 92 f1 	      cmp	ItTop,x
+    656  06fe		       90 1f		      bcc	YHN
+    657  0700		       bd 96 f1 	      lda	ItBot,x
+    658  0703		       c5 a9		      cmp	Tmp2
+    659  0705		       90 18		      bcc	YHN
+    660  0707		       a5 ba		      lda	YoX	; ball x .. x + 3 against the meanie's x .. x + 7
+    661  0709		       18		      clc
+    662  070a		       69 03		      adc	#3
+    663  070c		       38		      sec
+    664  070d		       fd 8e f1 	      sbc	ItX,x
+    665  0710		       c9 0b		      cmp	#11
+    666  0712		       b0 0b		      bcs	YHN
+    667  0714		       a5 bb		      lda	Collected
+    668  0716		       1d 9a f1 	      ora	ItBit,x
+    669  0719		       85 bb		      sta	Collected
+    670  071b		       a9 01		      lda	#1
+    671  071d		       85 b8		      sta	YoBack
+    672  071f		       ca	   YHN	      dex
+    673  0720		       10 cb		      bpl	YHL
+    674  0722					      ENDIF
+    675  0722		       60		      rts
+    676  0723
+    677  0723							; ---- before the kernel: each run showing items gets the line index (X) of its dataset for what
+    678  0723							; is still there: variant = slot 1 collected + 2 x slot 2 collected (RM1 / RM2: their item bits)
+    679  0723				   RunVars
+    680  0723					      IF	NIR > 0
+    681  0723		       a2 04		      ldx	#NIR - 1
+    682  0725		       8a	   RVL	      txa
+    683  0726		       0a		      asl
+    684  0727		       0a		      asl
+    685  0728		       85 a8		      sta	Tmp
+    686  072a		       a5 bb		      lda	Collected
+    687  072c		       3d 75 f1 	      and	RM1,x
+    688  072f		       f0 02		      beq	RV1
+    689  0731		       e6 a8		      inc	Tmp
+    690  0733		       a5 bb	   RV1	      lda	Collected
+    691  0735		       3d 0d f0 	      and	RM2,x
+    692  0738		       f0 04		      beq	RV2
+    693  073a		       e6 a8		      inc	Tmp
+    694  073c		       e6 a8		      inc	Tmp
+    695  073e		       a4 a8	   RV2	      ldy	Tmp
+    696  0740		       b9 7a f1 	      lda	RXV,y
+    697  0743		       95 c0		      sta	RunX,x
+    698  0745		       ca		      dex
+    699  0746		       10 dd		      bpl	RVL
+    700  0748					      ENDIF
+    701  0748		       60		      rts
+    702  0749
+    703  0749							; ---- the front screen: a press of fire (after it has been up) starts the game
+    704  0749				   FrontLogic
+    705  0749		       a5 0c		      lda	INPT4
+    706  074b		       10 05		      bpl	FLDown
+    707  074d		       a9 01		      lda	#1
+    708  074f		       85 bd		      sta	FArm
+    709  0751		       60		      rts
+    710  0752		       a5 bd	   FLDown     lda	FArm
+    711  0754		       f0 11		      beq	FLRet
+    712  0756		       a9 01		      lda	#1
+    713  0758		       85 bc		      sta	Mode
+    714  075a		       85 b1		      sta	Repos	; position the Trogg
+    715  075c		       85 05		      sta	NUSIZ1	; P1 back to the kernel's two copies, the playfield behind
+    716  075e		       85 0a		      sta	CTRLPF
+    717  0760		       85 b9		      sta	YoDeb	; (the press doesn't throw the yoyo)
+    718  0762		       85 b0		      sta	UDDeb
+    719  0764		       20 c2 f7 	      jsr	MusicInit	; the tune starts with the game
+    720  0767		       60	   FLRet      rts
+    721  0768
+    722  0768							; ---- the time since the start: frames, BCD seconds, minutes (stops at 9:59); then the band's
+    723  0768							; four glyph pointers (Font: 8 bytes per glyph, 0-9 then the colon)
+    724  0768				   Timer
+    725  0768					      IFNCONST	NOTIMER
+    726  0768		       e6 d8		      inc	TFr
+    727  076a		       a5 d8		      lda	TFr
+    728  076c		       c9 3c		      cmp	#60
+    729  076e		       90 23		      bcc	TPtr
+    730  0770		       a9 00		      lda	#0
+    731  0772		       85 d8		      sta	TFr
+    732  0774		       a5 da		      lda	TMin
+    733  0776		       c9 09		      cmp	#9
+    734  0778		       d0 06		      bne	TInc
+    735  077a		       a5 d9		      lda	TSec
+    736  077c		       c9 59		      cmp	#$59
+    737  077e		       f0 13		      beq	TPtr
+    738  0780		       f8	   TInc       sed
+    739  0781		       18		      clc
+    740  0782		       a5 d9		      lda	TSec
+    741  0784		       69 01		      adc	#1
+    742  0786		       85 d9		      sta	TSec
+    743  0788		       d8		      cld
+    744  0789		       c9 60		      cmp	#$60
+    745  078b		       90 06		      bcc	TPtr
+    746  078d		       a9 00		      lda	#0
+    747  078f		       85 d9		      sta	TSec
+    748  0791		       e6 da		      inc	TMin
+    749  0793					      ENDIF
+    750  0793		       a5 da	   TPtr       lda	TMin
+    751  0795		       0a		      asl
+    752  0796		       0a		      asl
+    753  0797		       0a		      asl
+    754  0798		       18		      clc
+    755  0799		       69 00		      adc	#<Font
+    756  079b		       85 d0		      sta	TDig
+    757  079d		       a9 50		      lda	#<(Font + 80)
+    758  079f		       85 d2		      sta	TDig+2
+    759  07a1		       a5 d9		      lda	TSec
+    760  07a3		       29 f0		      and	#$F0
+    761  07a5		       4a		      lsr
+    762  07a6		       18		      clc
+    763  07a7		       69 00		      adc	#<Font
+    764  07a9		       85 d4		      sta	TDig+4
+    765  07ab		       a5 d9		      lda	TSec
+    766  07ad		       29 0f		      and	#$0F
+    767  07af		       0a		      asl
+    768  07b0		       0a		      asl
+    769  07b1		       0a		      asl
+    770  07b2		       18		      clc
+    771  07b3		       69 00		      adc	#<Font
+    772  07b5		       85 d6		      sta	TDig+6
+    773  07b7		       a9 f3		      lda	#>Font
+    774  07b9		       85 d1		      sta	TDig+1
+    775  07bb		       85 d3		      sta	TDig+3
+    776  07bd		       85 d5		      sta	TDig+5
+    777  07bf		       85 d7		      sta	TDig+7
+    778  07c1		       60		      rts
+------- FILE /home/user/steamfrak-8bit/atarivcs/out/play/level.asm
+------- FILE musicdrv_c.asm LEVEL 2 PASS 3
+      0  07c2					      include	"musicdrv_c.asm"	; the Frak tune, compact (atarivcs/music), 13 bytes of RAM at MUSRAM
+      1  07c2							; Frak music driver, compact: the same tune and sound as musicdrv.asm (equiv_test.py compares
+      2  07c2							; their register writes frame by frame), from frakmusic_c.inc (compact.py), with one routine for
+      3  07c2							; both channels. Called once per frame (in vertical blank or overscan).
+      4  07c2							;
+      5  07c2							;   jsr MusicInit	 ; once
+      6  07c2							;   jsr MusicTick	 ; every frame
+      7  07c2							;
+      8  07c2							; A pattern is a list of one-byte notes: bits 0-5 the code, bits 6-7 the length (8, 16, 24 or 32
+      9  07c2							; frames). Codes: below SLIDE0 a note (MusNote: AUDF in bits 0-4, bit 7 set for AUDC 4, else 12),
+     10  07c2							; SLIDE0 on a pitch slide (MusSlide: its offset into MusSlides, one pitch a frame, ended by $FF:
+     11  07c2							; the last pitch is held), 61 tie (carry on, no new attack), 62 end of pattern, 63 rest. Each
+     12  07c2							; channel has an order list in MusOrder (ended by $FF) and a loop position (MusLoop). A new note
+     13  07c2							; starts at the channel's top volume and falls by one every 4 frames to its floor.
+     14  07c2							;
+     15  07c2							; RAM (MUSRAM defined by the includer, 13 bytes): each channel's variables are 2 bytes apart, so
+     16  07c2							; X = 0 (bass) or 2 (lead) indexes them all, its pattern pointer read with (MusPtr,x).
+     17  07c2		       00 db	   MusPtr     =	MUSRAM	; 0-1 bass, 2-3 lead
+     18  07c2		       00 df	   MusTim     =	MUSRAM + 4	; frames left of the note (bass +4, lead +6)
+     19  07c2		       00 e0	   MusVol     =	MUSRAM + 5	; volume (bass +5, lead +7)
+     20  07c2		       00 e3	   MusOrd     =	MUSRAM + 8	; position in MusOrder (bass +8, lead +10)
+     21  07c2		       00 e4	   MusSl      =	MUSRAM + 9	; position in MusSlides, $FF: none (bass +9, lead +11)
+     22  07c2		       00 e7	   MusFrame   =	MUSRAM + 12	; frame counter (the envelope)
+     23  07c2
+     24  07c2				   MusicInit
+     25  07c2		       a2 0c		      ldx	#12
+     26  07c4		       bd cd f7    MIL	      lda	MusInit,x
+     27  07c7		       95 db		      sta	MUSRAM,x
+     28  07c9		       ca		      dex
+     29  07ca		       10 f8		      bpl	MIL
+     30  07cc		       60		      rts
+     31  07cd		       da f7 da f7*MusInit    .byte.b	<MusEnd,>MusEnd,<MusEnd,>MusEnd, 1,0,1,0
+     32  07d5		       ff ff 04 ff*	      .byte.b	$FF,$FF,MUSORD1,$FF, 0	; (order positions: just before each channel's list)
+     33  07da		       3e	   MusEnd     .byte.b	62	; an empty pattern: the first tick moves to each channel's first
+     34  07db		       0a 0c	   MusTop     .byte.b	10,12	; top volume (bass, lead)
+     35  07dd		       07 06	   MusFloor   .byte.b	6+1,5+1	; floor + 1
+     36  07df
+     37  07df				   MusicTick
+     38  07df		       e6 e7		      inc	MusFrame
+     39  07e1		       a2 02		      ldx	#2
+     40  07e3		       20 02 f8    MTL	      jsr	MusChan
+     41  07e6		       ca		      dex
+     42  07e7		       ca		      dex
+     43  07e8		       10 f9		      bpl	MTL
+     44  07ea		       60		      rts
+     45  07eb
+     46  07eb							; ---- A = a MusNote byte: AUDF and AUDC for channel X / 2
+     47  07eb				   SetPitch
+     48  07eb		       48		      pha
+     49  07ec		       8a		      txa
+     50  07ed		       4a		      lsr
+     51  07ee		       a8		      tay
+     52  07ef		       68		      pla
+     53  07f0		       48		      pha
+     54  07f1		       29 1f		      and	#$1F
+     55  07f3		       99 17 00 	      sta	AUDF0,y
+     56  07f6		       68		      pla
+     57  07f7		       0a		      asl
+     58  07f8		       a9 0c		      lda	#12
+     59  07fa		       90 02		      bcc	SP1
+     60  07fc		       a9 04		      lda	#4
+     61  07fe		       99 15 00    SP1	      sta	AUDC0,y
+     62  0801		       60		      rts
+     63  0802
+     64  0802				   MusChan
+     65  0802		       d6 df		      dec	MusTim,x
+     66  0804		       d0 70		      bne	MEnv
+     67  0806		       a1 db	   MNext      lda	(MusPtr,x)
+     68  0808		       c9 3e		      cmp	#62
+     69  080a		       d0 23		      bne	MNote
+     70  080c		       f6 e3		      inc	MusOrd,x	; end of pattern: the next one in the order list
+     71  080e		       b4 e3		      ldy	MusOrd,x
+     72  0810		       b9 92 f9 	      lda	MusOrder,y
+     73  0813		       10 0c		      bpl	MPat
+     74  0815		       8a		      txa		; the end of the list: back to its loop position
+     75  0816		       4a		      lsr
+     76  0817		       a8		      tay
+     77  0818		       b9 ad f9 	      lda	MusLoop,y
+     78  081b		       95 e3		      sta	MusOrd,x
+     79  081d		       a8		      tay
+     80  081e		       b9 92 f9 	      lda	MusOrder,y
+     81  0821		       a8	   MPat       tay
+     82  0822		       b9 af f9 	      lda	MusPatLo,y
+     83  0825		       95 db		      sta	MusPtr,x
+     84  0827		       b9 c8 f9 	      lda	MusPatHi,y
+     85  082a		       95 dc		      sta	MusPtr+1,x
+     86  082c		       4c 06 f8 	      jmp	MNext
+     87  082f		       f6 db	   MNote      inc	MusPtr,x
+     88  0831		       d0 02		      bne	MN1
+     89  0833		       f6 dc		      inc	MusPtr+1,x
+     90  0835		       a8	   MN1	      tay
+     91  0836		       29 c0		      and	#$C0	; the length: 8 x (bits 6-7, + 1)
+     92  0838		       4a		      lsr
+     93  0839		       4a		      lsr
+     94  083a		       4a		      lsr
+     95  083b		       69 08		      adc	#8	; (carry is clear)
+     96  083d		       95 df		      sta	MusTim,x
+     97  083f		       98		      tya
+     98  0840		       29 3f		      and	#$3F
+     99  0842		       c9 3f		      cmp	#63
+    100  0844		       f0 28		      beq	MRest
+    101  0846		       c9 3d		      cmp	#61
+    102  0848		       f0 2c		      beq	MEnv	; a tie: no new attack (a slide carries on)
+    103  084a		       48		      pha
+    104  084b		       a9 ff		      lda	#$FF
+    105  084d		       95 e4		      sta	MusSl,x
+    106  084f		       8a		      txa
+    107  0850		       4a		      lsr
+    108  0851		       a8		      tay
+    109  0852		       b9 db f7 	      lda	MusTop,y
+    110  0855		       95 e0		      sta	MusVol,x
+    111  0857		       68		      pla
+    112  0858		       c9 27		      cmp	#SLIDE0
+    113  085a		       90 08		      bcc	MPlain
+    114  085c		       a8		      tay
+    115  085d		       b9 a8 f8 	      lda	MusSlide-SLIDE0,y	; a slide: its first step is taken below, this frame
+    116  0860		       95 e4		      sta	MusSl,x
+    117  0862		       b0 12		      bcs	MEnv	; (carry is set)
+    118  0864		       a8	   MPlain     tay
+    119  0865		       b9 a8 f8 	      lda	MusNote,y
+    120  0868		       20 eb f7 	      jsr	SetPitch
+    121  086b		       4c 76 f8 	      jmp	MEnv
+    122  086e		       a9 00	   MRest      lda	#0
+    123  0870		       95 e0		      sta	MusVol,x
+    124  0872		       a9 ff		      lda	#$FF
+    125  0874		       95 e4		      sta	MusSl,x
+    126  0876		       b4 e4	   MEnv       ldy	MusSl,x	; a slide in progress: this frame's pitch
+    127  0878		       c0 ff		      cpy	#$FF
+    128  087a		       f0 14		      beq	MDec
+    129  087c		       b9 db f8 	      lda	MusSlides,y
+    130  087f		       c9 ff		      cmp	#$FF
+    131  0881		       d0 04		      bne	MStep
+    132  0883		       95 e4		      sta	MusSl,x	; its end: hold the last pitch
+    133  0885		       b0 09		      bcs	MDec	; (carry is set: equal)
+    134  0887		       f6 e4	   MStep      inc	MusSl,x
+    135  0889		       a8		      tay
+    136  088a		       b9 a8 f8 	      lda	MusNote,y
+    137  088d		       20 eb f7 	      jsr	SetPitch
+    138  0890		       8a	   MDec       txa
+    139  0891		       4a		      lsr
+    140  0892		       a8		      tay
+    141  0893		       a5 e7		      lda	MusFrame
+    142  0895		       29 03		      and	#3
+    143  0897		       d0 09		      bne	MOut
+    144  0899		       b5 e0		      lda	MusVol,x
+    145  089b		       d9 dd f7 	      cmp	MusFloor,y
+    146  089e		       90 02		      bcc	MOut	; at the floor (or silent)
+    147  08a0		       d6 e0		      dec	MusVol,x
+    148  08a2		       b5 e0	   MOut       lda	MusVol,x
+    149  08a4		       99 19 00 	      sta	AUDV0,y
+    150  08a7		       60		      rts
+    151  08a8
+------- FILE frakmusic_c.inc LEVEL 3 PASS 3
+      0  08a8					      include	"frakmusic_c.inc"
+      1  08a8							; GENERATED by atarivcs/music/compact.py from frakmusic.inc: the compact form for
+      2  08a8							; musicdrv_c.asm (one byte per note; see compact.py)
+      3  08a8		       00 27	   SLIDE0     =	39
+      4  08a8		       13 1f 1d 1b*MusNote    .byte.b	19,31,29,27,26,24,21,23,20,17,16,15,14,13,12,18,11,15,11,159,142,144,145,146,147,148,152,151,157,154,150,143,140,14,10,16,12,153,149
+      5  08cf		       00 12 24 36*MusSlide   .byte.b	0,18,36,54,64,83,105,113,123,153,163,173
+      6  08db		       23 23 23 23*MusSlides  .byte.b	$23,$23,$23,$23,$23,$23,$23,$23,$23,$23,$23,$23,$23,$23,$23,$23,$11,$FF,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+      7  08fb		       24 24 12 ff*	      .byte.b	$24,$24,$12,$FF,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$13,$FF,$23,$23,$23,$23,$23,$23,$23,$23,$11,$FF
+      8  091b		       1a 25 1a 1a*	      .byte.b	$1A,$25,$1A,$1A,$1A,$25,$1A,$1A,$1A,$1A,$1A,$1A,$1A,$1B,$1A,$1B,$1A,$1B,$FF,$1D,$1D,$25,$1D,$1D,$1D,$25,$1D,$1D,$25,$1D,$25,$25
+      9  093b		       25 25 25 25*	      .byte.b	$25,$25,$25,$25,$1A,$25,$25,$1A,$FF,$1A,$25,$1A,$1A,$1B,$1A,$1B,$FF,$1D,$1D,$25,$1D,$25,$25,$1A,$25,$1A,$FF,$19,$26,$19,$19,$19
+     10  095b		       19 19 19 19*	      .byte.b	$19,$19,$19,$19,$19,$19,$19,$19,$18,$19,$19,$19,$18,$19,$18,$19,$18,$19,$18,$19,$18,$18,$19,$18,$FF,$19,$26,$19,$19,$18,$19,$18
+     11  097b		       19 18 ff 24*	      .byte.b	$19,$18,$FF,$24,$24,$24,$24,$24,$24,$24,$24,$12,$FF,$22,$22,$22,$22,$22,$22,$22,$22,$13,$FF
+     12  0992		       00 01 02 03*MusOrder   .byte.b	$00,$01,$02,$03,$FF,$04,$05,$06,$07,$08,$09,$0A,$0B,$0C,$0D,$0E,$0F,$10,$11,$12,$13,$14,$15,$16,$17,$18,$FF
+     13  09ad		       00 06	   MusLoop    .byte.b	0,6
+     14  09ad		       00 04	   MUSORD1    =	4
+     15  09af		       e1 f4 03 16*MusPatLo   .byte.b	<MusPat0,<MusPat1,<MusPat2,<MusPat3,<MusPat4,<MusPat5,<MusPat6,<MusPat7,<MusPat8,<MusPat9,<MusPat10,<MusPat11,<MusPat12,<MusPat13,<MusPat14,<MusPat15,<MusPat16,<MusPat17,<MusPat18,<MusPat19,<MusPat20,<MusPat21,<MusPat22,<MusPat23,<MusPat24
+     16  09c8		       f9 f9 fa fa*MusPatHi   .byte.b	>MusPat0,>MusPat1,>MusPat2,>MusPat3,>MusPat4,>MusPat5,>MusPat6,>MusPat7,>MusPat8,>MusPat9,>MusPat10,>MusPat11,>MusPat12,>MusPat13,>MusPat14,>MusPat15,>MusPat16,>MusPat17,>MusPat18,>MusPat19,>MusPat20,>MusPat21,>MusPat22,>MusPat23,>MusPat24
+     17  09e1		       80 00 81 01*MusPat0    .byte.b	128,0,129,1,130,2,131,3,4,3,4,69,6,69,68,68,71,72,62
+     18  09f4		       80 84 47 80*MusPat1    .byte.b	128,132,71,128,68,4,71,128,132,71,64,73,74,75,62
+     19  0a03		       8c 80 49 8c*MusPat2    .byte.b	140,128,73,140,7,7,6,8,0,140,64,0,73,12,12,75,76,77,62
+     20  0a16		       8e 49 09 4b*MusPat3    .byte.b	142,73,9,75,142,8,0,8,15,9,142,73,9,75,14,14,16,74,0,73,62
+     21  0a2b		       ff fd fd fd*MusPat4    .byte.b	255,253,253,253,253,253,253,125,103,62
+     22  0a35		       fd fd fd ff*MusPat5    .byte.b	253,253,253,255,253,253,253,125,104,62
+     23  0a3f		       fd fd fd ff*MusPat6    .byte.b	253,253,253,255,253,253,253,125,105,62
+     24  0a49		       fd fd fd ff*MusPat7    .byte.b	253,253,253,255,253,253,253,253,62
+     25  0a52		       7f 54 d5 7f*MusPat8    .byte.b	127,84,213,127,86,87,255,152,63,89,88,255,103,62
+     26  0a60		       fd fd fd 7f*MusPat9    .byte.b	253,253,253,127,90,91,24,26,27,28,93,220,127,104,62
+     27  0a6f		       fd fd fd 7f*MusPat10   .byte.b	253,253,253,127,87,86,20,23,22,30,88,222,127,105,62
+     28  0a7e		       fd fd fd 7f*MusPat11   .byte.b	253,253,253,127,85,95,32,21,31,24,86,216,255,62
+     29  0a8c		       7f 54 d5 7f*MusPat12   .byte.b	127,84,213,127,86,87,255,152,63,89,88,255,106,62
+     30  0a9a		       5b 5b 5b 52*MusPat13   .byte.b	91,91,91,82,28,92,27,127,82,92,92,92,28,171,255,125,62
+     31  0aab		       5a 5a 5a 52*MusPat14   .byte.b	90,90,90,82,28,92,26,127,82,92,92,92,28,161,255,125,62
+     32  0abc		       5d 5d 5d 5c*MusPat15   .byte.b	93,93,93,92,29,93,93,63,92,93,93,93,28,172,255,28,28,62
+     33  0ace		       6d 6d 6d 3f*MusPat16   .byte.b	109,109,109,63,28,26,90,154,28,28,88,88,94,110,92,255,103,62
+     34  0ae0		       7d ef fd 1e*MusPat17   .byte.b	125,239,253,30,24,27,28,63,28,91,91,30,88,219,189,104,62
+     35  0af1		       7d ef fd 1e*MusPat18   .byte.b	125,239,253,30,24,26,28,63,28,92,92,26,28,98,220,125,105,62
+     36  0b03		       7d ef fd 1e*MusPat19   .byte.b	125,239,253,30,24,26,29,63,24,88,88,21,24,94,216,125,127,62
+     37  0b15		       70 70 1e 1b*MusPat20   .byte.b	112,112,30,27,85,112,112,30,26,127,112,21,112,21,112,24,21,24,21,88,21,17,62
+     38  0b2c		       54 51 54 51*MusPat21   .byte.b	84,81,84,81,84,81,84,127,92,28,156,93,26,93,93,28,113,62
+     39  0b3e		       54 52 54 52*MusPat22   .byte.b	84,82,84,82,84,82,84,127,92,28,156,93,26,93,93,28,114,62
+     40  0b50		       60 53 60 53*MusPat23   .byte.b	96,83,96,83,96,83,96,63,28,92,92,28,157,26,93,92,63,28,28,62
+     41  0b64		       5c 5c 1c 5c*MusPat24   .byte.b	92,92,28,92,21,92,92,28,92,63,88,88,94,90,92,255,106,62
+------- FILE musicdrv_c.asm
+------- FILE /home/user/steamfrak-8bit/atarivcs/out/play/level.asm
+    325  0b76				   LogicEnd
+    326  0fe0					      org	$0FE0
+    327  0fe0					      rorg	$FFE0
+    328  0fe0		       2c f9 ff 	      bit	$FFF9	; $FFE0: -> bank 1 (which carries on at $FFE3: jmp Kernel)
+    329  0fe3		       00 00 00 	      .byte.b	0,0,0
+    330  0fe6		       00 00 00 	      .byte.b	0,0,0	; $FFE6: (bank 1: bit $FFF8)
+    331  0fe9		       4c ee f2 	      jmp	Overscan	; $FFE9: back from the kernel
+    332  0fec		       2c f8 ff 	      bit	$FFF8	; $FFEC: reset, in either bank -> bank 0
+    333  0fef		       4c b1 f1 	      jmp	Start	; $FFEF
+    334  0ffc					      org	$0FFC
+    335  0ffc					      rorg	$FFFC
+    336  0ffc		       ec ff		      .word.w	$FFEC
+    337  0ffe		       ec ff		      .word.w	$FFEC
+    338  2000 ????				      seg	bank1
+    339  1000					      org	$1000
+    340  1000					      rorg	$F000
+    341  1000		       60 50 40 30*	      .byte.b	$60,$50,$40,$30,$20,$10,$00,$F0,$E0,$D0,$C0,$B0,$A0,$90,$80,$00
+    342  1010		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    343  1020		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    344  1030		       00 00 ff ff*	      .byte.b	$00,$00,$FF,$FF,$FF,$FF,$FF,$FF,$7E,$42,$42,$42,$7E,$42,$42,$42
+    345  1040		       7e 42 42 42*	      .byte.b	$7E,$42,$42,$42,$7E,$42,$42,$42,$7E,$42,$42,$42,$7E,$42,$42,$42
+    346  1050		       7e 42 42 42*	      .byte.b	$7E,$42,$42,$42,$7E,$42,$42,$42,$7E,$42,$42,$42,$7E,$42,$42,$42
+    347  1060		       7e 42 7e 42*	      .byte.b	$7E,$42,$7E,$42,$42,$42,$7E,$42,$42,$42,$7E,$42,$42,$42,$7E,$42
+    348  1070		       42 42 7e 42*	      .byte.b	$42,$42,$7E,$42,$42,$42,$7E,$42,$42,$42,$7E,$42,$42,$42,$7E,$42
+    349  1080		       42 42 7e 42*	      .byte.b	$42,$42,$7E,$42,$42,$42,$7E,$42,$42,$42,$7E,$42,$42,$42,$42,$42
+    350  1090		       7e 42 42 42*	      .byte.b	$7E,$42,$42,$42,$7E,$42,$42,$42,$7E,$42,$42,$42,$7E,$42,$42,$42
+    351  10a0		       7e 42 42 42*	      .byte.b	$7E,$42,$42,$42,$7E,$42,$42,$42,$7E,$42,$42,$42,$7E,$42,$42,$42
+    352  10b0		       7e 42 42 42*	      .byte.b	$7E,$42,$42,$42,$7E,$42,$42,$42,$7E,$42,$42,$42,$7E,$42,$42,$42
+    353  10c0		       7e 42 42 42*	      .byte.b	$7E,$42,$42,$42,$7E,$42,$42,$42,$FF,$FF,$FF,$FF,$FF,$FF,$0F,$0F
+    354  10d0		       0f 0f 0f 0f*	      .byte.b	$0F,$0F,$0F,$0F,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    355  10e0		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    356  10f0		       00 00 ff ff*	      .byte.b	$00,$00,$FF,$FF,$FF,$FF,$FF,$FF,$00,$00,$00,$00,$00,$00,$00,$00
+    357  1100		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    358  1110		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    359  1120		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    360  1130		       00 00 00 58*	      .byte.b	$00,$00,$00,$58,$58,$00,$A4,$A4,$00,$00,$00,$00,$00,$00,$00,$58
+    361  1140		       58 00 a4 a4*	      .byte.b	$58,$00,$A4,$A4,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    362  1150		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$1E,$1E,$1E
+    363  1160		       1e 1e 00 1e*	      .byte.b	$1E,$1E,$00,$1E,$1E,$1E,$1E,$1E,$00,$58,$58,$00,$A4,$A4,$00,$00
+    364  1170		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    365  1180		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    366  1190		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    367  11a0		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$58,$58,$58,$58,$58,$58,$58,$58
+    368  11b0		       58 58 58 58*	      .byte.b	$58,$58,$58,$58,$58,$58,$58,$58,$58,$58,$58,$58,$58,$58,$58,$58
+    369  11c0		       58 58 58 58*	      .byte.b	$58,$58,$58,$58,$58,$58,$58,$58,$00,$58,$58,$00,$A4,$A4,$00,$00
+    370  11d0		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    371  11e0		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    372  11f0		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    373  1200		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    374  1210		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    375  1220		       00 00 00 18*	      .byte.b	$00,$00,$00,$18,$24,$42,$81,$42,$24,$18,$00,$00,$00,$00,$00,$00
+    376  1230		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    377  1240		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    378  1250		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$60,$90,$9F
+    379  1260		       95 60 00 00*	      .byte.b	$95,$60,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    380  1270		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$18
+    381  1280		       24 42 81 42*	      .byte.b	$24,$42,$81,$42,$24,$18,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    382  1290		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    383  12a0		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$3C,$7E,$DB,$FF,$FF,$66,$FF,$BD
+    384  12b0		       ff ff 7e 7e*	      .byte.b	$FF,$FF,$7E,$7E,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    385  12c0		       24 24 66 e7*	      .byte.b	$24,$24,$66,$E7,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    386  12d0		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    387  12e0		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$0F,$0F,$0F,$0F,$0F
+    388  12f0		       0f 0f 0f 3c*	      .byte.b	$0F,$0F,$0F,$3C,$3C,$3C,$3C,$F0,$F0,$F0,$F0,$00,$00,$00,$00,$00
+    389  1300		       00 3c 66 76*	      .byte.b	$00,$3C,$66,$76,$7E,$6E,$66,$3C,$00,$3C,$18,$18,$18,$18,$38,$18
+    390  1310		       00 7e 60 30*	      .byte.b	$00,$7E,$60,$30,$1C,$06,$66,$3C,$00,$3C,$66,$06,$1C,$06,$66,$3C
+    391  1320		       00 0c 0c 7e*	      .byte.b	$00,$0C,$0C,$7E,$6C,$3C,$1C,$0C,$00,$3C,$66,$06,$06,$7C,$60,$7E
+    392  1330		       00 3c 66 66*	      .byte.b	$00,$3C,$66,$66,$7C,$60,$30,$1C,$00,$30,$30,$30,$18,$0C,$06,$7E
+    393  1340		       00 3c 66 66*	      .byte.b	$00,$3C,$66,$66,$3C,$66,$66,$3C,$00,$38,$0C,$06,$3E,$66,$66,$3C
+    394  1350		       00 00 18 18*	      .byte.b	$00,$00,$18,$18,$00,$18,$18,$00,$07,$07,$07,$07,$08,$08,$08,$08
+    395  1360		       09 09 09 09*	      .byte.b	$09,$09,$09,$09,$09,$09,$09,$09,$09,$09,$09,$09,$09,$09,$09,$09
+    396  1370		       09 09 09 09*	      .byte.b	$09,$09,$09,$09,$09,$09,$09,$09,$09,$09,$09,$09,$08,$08,$08,$08
+    397  1380		       06 06 06 06*	      .byte.b	$06,$06,$06,$06,$02,$02,$02,$02,$04,$04,$04,$04,$09,$09,$09,$09
+    398  1390		       0e 0e 0e 0e*	      .byte.b	$0E,$0E,$0E,$0E,$FF,$FF,$FF,$FF,$00,$00,$00,$00,$1B,$1B,$1B,$1B
+    399  13a0		       a8 a8 a8 a8*	      .byte.b	$A8,$A8,$A8,$A8,$A8,$A8,$A8,$A8,$99,$99,$99,$99,$A8,$A8,$A8,$A8
+    400  13b0		       a8 a8 a8 a8*	      .byte.b	$A8,$A8,$A8,$A8,$A8,$A8,$A8,$A8,$00,$00,$00,$00,$FE,$FE,$FE,$FE
+    401  13c0		       02 02 02 02*	      .byte.b	$02,$02,$02,$02,$01,$01,$01,$01,$00,$00,$00,$00,$00,$00,$00,$00
+    402  13d0		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    403  13e0		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    404  13f0		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    405  1400		       ff ff ff ff*	      .byte.b	$FF,$FF,$FF,$FF,$00,$00,$00,$00,$95,$95,$95,$95,$55,$55,$55,$55
+    406  1410		       59 59 59 59*	      .byte.b	$59,$59,$59,$59,$D1,$D1,$D1,$D1,$59,$59,$59,$59,$54,$54,$54,$54
+    407  1420		       55 55 55 55*	      .byte.b	$55,$55,$55,$55,$00,$00,$00,$00,$FF,$FF,$FF,$FF,$00,$00,$00,$00
+    408  1430		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$03,$03,$03,$03
+    409  1440		       04 04 04 04*	      .byte.b	$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04
+    410  1450		       04 04 04 04*	      .byte.b	$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04
+    411  1460		       04 04 04 04*	      .byte.b	$04,$04,$04,$04,$03,$03,$03,$03,$00,$00,$00,$00,$00,$00,$00,$00
+    412  1470		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$C6,$C6,$C6,$C6,$1E,$1E,$1E,$1E
+    413  1480		       1e 1e 1e 1e*	      .byte.b	$1E,$1E,$1E,$1E,$1E,$1E,$1E,$1E,$1E,$1E,$1E,$1E,$1E,$1E,$1E,$1E
+    414  1490		       1e 1e 1e 1e*	      .byte.b	$1E,$1E,$1E,$1E,$1E,$1E,$1E,$1E,$1E,$1E,$1E,$1E,$1E,$1E,$1E,$1E
+    415  14a0		       c6 c6 c6 c6*	      .byte.b	$C6,$C6,$C6,$C6,$C6,$C6,$C6,$C6,$C6,$C6,$C6,$C6,$C6,$C6,$C6,$C6
+    416  14b0		       c6 c6 c6 c6*	      .byte.b	$C6,$C6,$C6,$C6,$C6,$C6,$C6,$C6,$C6,$C6,$C6,$C6,$C6,$C6,$C6,$C6
+    417  14c0		       c6 c6 c6 c6*	      .byte.b	$C6,$C6,$C6,$C6,$C6,$C6,$C6,$C6,$C6,$C6,$C6,$C6,$C6,$C6,$C6,$C6
+    418  14d0		       c6 c6 c6 c6*	      .byte.b	$C6,$C6,$C6,$C6,$C6,$C6,$C6,$C6,$C6,$C6,$C6,$C6,$00,$00,$00,$00
+    419  14e0		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    420  14f0		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    421  1500		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    422  1510		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    423  1520		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    424  1530		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    425  1540		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    426  1550		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    427  1560		       01 02 03 04*	      .byte.b	$01,$02,$03,$04,$05,$06,$07,$08,$09,$0A,$0B,$0C,$0D,$00,$00,$00
+    428  1570		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    429  1580		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    430  1590		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    431  15a0		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    432  15b0		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    433  15c0		       00 00 00 00*	      .byte.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+    434  15cd		       a5 bc	   Kernel     lda	Mode	; 0: the front screen
+    435  15cf		       f0 03		      beq	KFront
+    436  15d1		       4c 45 f6 	      jmp	KLevel
+    437  15d4				   KFront
+    438  15d4		       a0 34		      ldy	#52
+    439  15d6		       85 02	   FTop       sta	WSYNC
+    440  15d8		       88		      dey
+    441  15d9		       d0 fb		      bne	FTop
+    442  15db		       a2 00		      ldx	#0
+    443  15dd		       4c 00 f6 	      jmp	FLine	; (over any alignment padding)
+    444  15e0					      IF	(<.) > $C0
+    445  1600		       00 00 00 00*	      ALIGN	256
+    446  1600					      ENDIF
+    447  1600		       85 02	   FLine      sta	WSYNC
+    448  1602		       bd 58 f3 	      lda	FL1,x	; 4
+    449  1605		       85 0e		      sta	PF1	; 7
+    450  1607		       bd 94 f3 	      lda	FL2,x	; 11
+    451  160a		       85 0f		      sta	PF2	; 14
+    452  160c		       bc 3c f4 	      ldy	FR1,x	; 18
+    453  160f		       bd 78 f4 	      lda	FBK1,x	; 22
+    454  1612		       ea		      nop
+    455  1613		       ea		      nop
+    456  1614		       ea		      nop
+    457  1615		       24 80		      bit	$80	; 31
+    458  1617		       85 09		      sta	COLUBK	; 34: yellow from x 32-36
+    459  1619		       bd 00 f4 	      lda	FR2,x	; 38
+    460  161c		       84 0e		      sty	PF1	; 41: the right PF1
+    461  161e		       ea		      nop
+    462  161f		       ea		      nop		; 45
+    463  1620		       85 0f		      sta	PF2	; 48: the right PF2
+    464  1622		       bd a0 f4 	      lda	FBK2,x	; 52
+    465  1625		       bc c4 f2 	      ldy	FG1,x	; 56: the tail's fill (P1) for the next line
+    466  1628		       ea		      nop
+    467  1629		       ea		      nop		; 60
+    468  162a		       85 09		      sta	COLUBK	; 63: green from x 121-124
+    469  162c		       84 1c		      sty	GRP1	; 66
+    470  162e		       e8		      inx		; 68
+    471  162f		       e0 3c		      cpx	#60	; 70
+    472  1631		       d0 cd		      bne	FLine	; 73
+    473  1633		       85 02		      sta	WSYNC
+    474  1635		       a9 00		      lda	#0
+    475  1637		       85 0e		      sta	PF1
+    476  1639		       85 0f		      sta	PF2
+    477  163b		       a0 4f		      ldy	#79
+    478  163d		       85 02	   FBot       sta	WSYNC
+    479  163f		       88		      dey
+    480  1640		       d0 fb		      bne	FBot
+    481  1642		       4c ea f7 	      jmp	KEnd
+    482  1645				   KLevel
+    483  1645		       a9 00		      lda	#$00
+    484  1647		       85 09		      sta	COLUBK	; the band: black
+    485  1649		       a0 07		      ldy	#7
+    486  164b		       4c 4e f6 	      jmp	TLine	; (over any alignment padding)
+    487  164e				  -	      IF	(<.) > $D0
+    488  164e				  -	      ALIGN	256
+    489  164e					      ENDIF
+    490  164e		       85 02	   TLine      sta	WSYNC
+    491  1650		       b1 d0		      lda	(TDig),y	; 5
+    492  1652		       85 1b		      sta	GRP0	; 8: P0's first copy (x 16)
+    493  1654		       b1 d2		      lda	(TDig+2),y	; 13
+    494  1656		       85 1c		      sta	GRP1	; 16: P1's first copy (x 24)
+    495  1658		       b1 d4		      lda	(TDig+4),y	; 21
+    496  165a		       aa		      tax		; 23
+    497  165b		       b1 d6		      lda	(TDig+6),y	; 28
+    498  165d		       86 1b		      stx	GRP0	; 31: P0's second copy (x 32)
+    499  165f		       85 1c		      sta	GRP1	; 34: P1's second copy (x 40)
+    500  1661		       88		      dey
+    501  1662		       10 ea		      bpl	TLine
+    502  1664		       a9 00		      lda	#0
+    503  1666		       85 1b		      sta	GRP0
+    504  1668		       85 1c		      sta	GRP1
+    505  166a		       a9 20		      lda	#$20
+    506  166c		       85 04		      sta	NUSIZ0	; the Trogg again: one copy, a 4 px yoyo
+    507  166e		       a5 a7		      lda	Facing
+    508  1670		       85 0b		      sta	REFP0
+    509  1672		       a9 1e		      lda	#$1E
+    510  1674		       85 06		      sta	COLUP0
+    511  1676		       a9 00		      lda	#0
+    512  1678		       85 07		      sta	COLUP1
+    513  167a		       a5 a0		      lda	TX
+    514  167c		       4c 7f f6 	      jmp	TPos
+    515  167f				  -	      IF	(<.) > $E0
+    516  167f				  -	      ALIGN	256
+    517  167f					      ENDIF
+    518  167f		       85 02	   TPos       sta	WSYNC	; P0 back to TX: as PosObj (RESP0 ends at 5n + 18)
+    519  1681		       38		      sec
+    520  1682		       e9 0f	   TPosL      sbc	#15
+    521  1684		       b0 fc		      bcs	TPosL
+    522  1686		       69 0f		      adc	#15
+    523  1688		       a8		      tay
+    524  1689		       b9 00 f0 	      lda	HMTab1,y
+    525  168c		       24 80		      bit	$80
+    526  168e		       ea		      nop
+    527  168f		       8d 10 00 	      sta.w	RESP0
+    528  1692		       85 20		      sta	HMP0
+    529  1694		       85 02		      sta	WSYNC
+    530  1696		       85 2a		      sta	HMOVE	; 3 (this line's first 8 pixels are blanked)
+    531  1698		       a9 aa		      lda	#$AA	; 5
+    532  169a		       85 09		      sta	COLUBK	; 8: the level's background from this line's start
+    533  169c		       ea		      nop
+    534  169d		       ea		      nop
+    535  169e		       ea		      nop
+    536  169f		       ea		      nop
+    537  16a0		       ea		      nop
+    538  16a1		       ea		      nop
+    539  16a2		       ea		      nop
+    540  16a3		       ea		      nop
+    541  16a4		       ea		      nop
+    542  16a5		       ea		      nop
+    543  16a6		       ea		      nop
+    544  16a7		       ea		      nop
+    545  16a8		       ea		      nop
+    546  16a9		       ea		      nop
+    547  16aa		       ea		      nop
+    548  16ab		       ea		      nop
+    549  16ac		       ea		      nop
+    550  16ad		       ea		      nop
+    551  16ae		       ea		      nop
+    552  16af		       ea		      nop
+    553  16b0		       ea		      nop
+    554  16b1		       ea		      nop
+    555  16b2		       ea		      nop
+    556  16b3		       85 11		      sta	RESP1	; 57: P1 parked for the kernel
+    557  16b5		       85 2b		      sta	HMCLR	; 60
+    558  16b7		       a2 0a		      ldx	#10
+    559  16b9		       20 01 f8 	      jsr	B0
+    560  16bc		       20 00 f8 	      jsr	B0_i
+    561  16bf		       20 00 f8 	      jsr	B0_i
+    562  16c2		       20 00 f8 	      jsr	B0_i
+    563  16c5		       20 00 f8 	      jsr	B0_i
+    564  16c8		       20 00 f8 	      jsr	B0_i
+    565  16cb		       20 00 f8 	      jsr	B0_i
+    566  16ce		       20 00 f8 	      jsr	B0_i
+    567  16d1		       20 00 f8 	      jsr	B0_i
+    568  16d4		       20 00 f8 	      jsr	B0_i
+    569  16d7		       20 00 f8 	      jsr	B0_i
+    570  16da		       20 00 f8 	      jsr	B0_i
+    571  16dd		       a6 c0		      ldx	RunX+0
+    572  16df		       20 36 f8 	      jsr	B1
+    573  16e2		       20 35 f8 	      jsr	B1_i
+    574  16e5		       20 35 f8 	      jsr	B1_i
+    575  16e8		       20 35 f8 	      jsr	B1_i
+    576  16eb		       a2 32		      ldx	#50
+    577  16ed		       20 71 f8 	      jsr	B2
+    578  16f0		       20 70 f8 	      jsr	B2_i
+    579  16f3		       20 70 f8 	      jsr	B2_i
+    580  16f6		       a2 38		      ldx	#56
+    581  16f8		       20 ab f8 	      jsr	B3
+    582  16fb		       20 aa f8 	      jsr	B3_i
+    583  16fe		       20 aa f8 	      jsr	B3_i
+    584  1701		       a2 3e		      ldx	#62
+    585  1703		       20 01 f9 	      jsr	B4
+    586  1706		       20 00 f9 	      jsr	B4_i
+    587  1709		       20 00 f9 	      jsr	B4_i
+    588  170c		       a2 44		      ldx	#68
+    589  170e		       20 3e f9 	      jsr	B5
+    590  1711		       20 3d f9 	      jsr	B5_i
+    591  1714		       20 3d f9 	      jsr	B5_i
+    592  1717		       20 3d f9 	      jsr	B5_i
+    593  171a		       20 3d f9 	      jsr	B5_i
+    594  171d		       20 3d f9 	      jsr	B5_i
+    595  1720		       20 3d f9 	      jsr	B5_i
+    596  1723		       20 3d f9 	      jsr	B5_i
+    597  1726		       20 3d f9 	      jsr	B5_i
+    598  1729		       20 3d f9 	      jsr	B5_i
+    599  172c		       20 3d f9 	      jsr	B5_i
+    600  172f		       20 3d f9 	      jsr	B5_i
+    601  1732		       a6 c1		      ldx	RunX+1
+    602  1734		       20 77 f9 	      jsr	B6
+    603  1737		       20 76 f9 	      jsr	B6_i
+    604  173a		       20 76 f9 	      jsr	B6_i
+    605  173d		       a2 68		      ldx	#104
+    606  173f		       20 b4 f9 	      jsr	B7
+    607  1742		       20 b3 f9 	      jsr	B7_i
+    608  1745		       20 b3 f9 	      jsr	B7_i
+    609  1748		       a2 6e		      ldx	#110
+    610  174a		       20 3e f9 	      jsr	B5
+    611  174d		       20 3d f9 	      jsr	B5_i
+    612  1750		       20 3d f9 	      jsr	B5_i
+    613  1753		       20 3d f9 	      jsr	B5_i
+    614  1756		       20 3d f9 	      jsr	B5_i
+    615  1759		       20 3d f9 	      jsr	B5_i
+    616  175c		       20 3d f9 	      jsr	B5_i
+    617  175f		       20 3d f9 	      jsr	B5_i
+    618  1762		       a6 c2		      ldx	RunX+2
+    619  1764		       20 01 fa 	      jsr	B8
+    620  1767		       20 00 fa 	      jsr	B8_i
+    621  176a		       20 00 fa 	      jsr	B8_i
+    622  176d		       20 00 fa 	      jsr	B8_i
+    623  1770		       a2 32		      ldx	#50
+    624  1772		       20 71 f8 	      jsr	B2
+    625  1775		       20 70 f8 	      jsr	B2_i
+    626  1778		       20 70 f8 	      jsr	B2_i
+    627  177b		       a2 8e		      ldx	#142
+    628  177d		       20 3d fa 	      jsr	B9
+    629  1780		       a2 90		      ldx	#144
+    630  1782		       20 79 fa 	      jsr	B10
+    631  1785		       20 78 fa 	      jsr	B10_i
+    632  1788		       20 78 fa 	      jsr	B10_i
+    633  178b		       20 78 fa 	      jsr	B10_i
+    634  178e		       20 78 fa 	      jsr	B10_i
+    635  1791		       20 78 fa 	      jsr	B10_i
+    636  1794		       20 78 fa 	      jsr	B10_i
+    637  1797		       20 78 fa 	      jsr	B10_i
+    638  179a		       20 78 fa 	      jsr	B10_i
+    639  179d		       20 78 fa 	      jsr	B10_i
+    640  17a0		       20 78 fa 	      jsr	B10_i
+    641  17a3		       20 78 fa 	      jsr	B10_i
+    642  17a6		       a6 c3		      ldx	RunX+3
+    643  17a8		       20 af fa 	      jsr	B11
+    644  17ab		       20 ae fa 	      jsr	B11_i
+    645  17ae		       20 ae fa 	      jsr	B11_i
+    646  17b1		       20 ae fa 	      jsr	B11_i
+    647  17b4		       20 ae fa 	      jsr	B11_i
+    648  17b7		       20 ae fa 	      jsr	B11_i
+    649  17ba		       a6 c4		      ldx	RunX+4
+    650  17bc		       20 01 fb 	      jsr	B12
+    651  17bf		       20 00 fb 	      jsr	B12_i
+    652  17c2		       a2 c8		      ldx	#200
+    653  17c4		       20 3d fb 	      jsr	B13
+    654  17c7		       20 3c fb 	      jsr	B13_i
+    655  17ca		       20 3c fb 	      jsr	B13_i
+    656  17cd		       a2 ce		      ldx	#206
+    657  17cf		       20 78 fb 	      jsr	B14
+    658  17d2		       20 77 fb 	      jsr	B14_i
+    659  17d5		       20 77 fb 	      jsr	B14_i
+    660  17d8		       20 77 fb 	      jsr	B14_i
+    661  17db		       20 77 fb 	      jsr	B14_i
+    662  17de		       20 77 fb 	      jsr	B14_i
+    663  17e1		       20 77 fb 	      jsr	B14_i
+    664  17e4		       20 77 fb 	      jsr	B14_i
+    665  17e7		       20 77 fb 	      jsr	B14_i
+    666  17ea				   KEnd
+    667  17ea		       85 02		      sta	WSYNC
+    668  17ec		       a9 02		      lda	#2	; blank at once (in the horizontal blank), not part-way along the line
+    669  17ee		       85 01		      sta	VBLANK
+    670  17f0		       a9 00		      lda	#0
+    671  17f2		       85 0e		      sta	PF1
+    672  17f4		       85 0f		      sta	PF2
+    673  17f6		       85 1c		      sta	GRP1
+    674  17f8		       85 1b		      sta	GRP0
+    675  17fa		       85 1d		      sta	ENAM0
+    676  17fc		       4c e6 ff 	      jmp	$FFE6	; back to the game bank: overscan
+    677  17ff					      IF	(<.) + 55 > 256
+    678  1800		       00		      ALIGN	256
+    679  1800					      ENDIF
+    680  1800				   B0_i
+    681  1800		       e8		      inx
+    682  1801				   B0
+    683  1801		       85 02		      sta	WSYNC
+    684  1803		       e6 80		      inc	TrogPtr
+    685  1805		       38		      sec
+    686  1806		       24 80		      bit	$80
+    687  1808				   B0_s
+    688  1808		       a9 00		      lda	#0
+    689  180a		       85 1c		      sta	GRP1
+    690  180c		       b0 01		      bcs	B0_e
+    691  180e		       60		      rts
+    692  180f				   B0_e
+    693  180f		       a0 00		      ldy	#0
+    694  1811		       b1 80		      lda	(TrogPtr),y
+    695  1813		       a8		      tay
+    696  1814		       b9 82 00 	      lda	Buffer,y
+    697  1817		       e8		      inx
+    698  1818		       ea		      nop
+    699  1819		       ea		      nop
+    700  181a		       ea		      nop
+    701  181b		       ea		      nop
+    702  181c		       ea		      nop
+    703  181d		       ea		      nop
+    704  181e		       ea		      nop
+    705  181f		       ea		      nop
+    706  1820		       ea		      nop
+    707  1821		       ea		      nop
+    708  1822		       ea		      nop
+    709  1823		       ea		      nop
+    710  1824		       ea		      nop
+    711  1825		       ea		      nop
+    712  1826		       ea		      nop
+    713  1827		       ea		      nop
+    714  1828		       ea		      nop
+    715  1829		       ea		      nop
+    716  182a		       ea		      nop
+    717  182b		       ea		      nop
+    718  182c		       85 1b		      sta	GRP0
+    719  182e		       0a		      asl
+    720  182f		       85 1d		      sta	ENAM0
+    721  1831		       18		      clc
+    722  1832		       4c 08 f8 	      jmp	B0_s
+    723  1835				  -	      IF	(<.) + 61 > 256
+    724  1835				  -	      ALIGN	256
+    725  1835					      ENDIF
+    726  1835				   B1_i
+    727  1835		       e8		      inx
+    728  1836				   B1
+    729  1836		       85 02		      sta	WSYNC
+    730  1838		       e6 80		      inc	TrogPtr
+    731  183a		       38		      sec
+    732  183b		       24 80		      bit	$80
+    733  183d				   B1_s
+    734  183d		       a9 00		      lda	#0
+    735  183f		       8d 1c 00 	      sta.w	GRP1
+    736  1842		       bd 00 f2 	      lda	G0,x
+    737  1845		       bc 00 f1 	      ldy	C0,x
+    738  1848		       85 11		      sta	RESP1
+    739  184a		       84 07		      sty	COLUP1
+    740  184c		       85 1c		      sta	GRP1
+    741  184e		       a9 00		      lda	#0
+    742  1850		       85 1c		      sta	GRP1
+    743  1852		       85 11		      sta	RESP1
+    744  1854		       b0 01		      bcs	B1_e
+    745  1856		       60		      rts
+    746  1857				   B1_e
+    747  1857		       a0 00		      ldy	#0
+    748  1859		       b1 80		      lda	(TrogPtr),y
+    749  185b		       a8		      tay
+    750  185c		       b9 82 00 	      lda	Buffer,y
+    751  185f		       e8		      inx
+    752  1860		       ea		      nop
+    753  1861		       ea		      nop
+    754  1862		       ea		      nop
+    755  1863		       ea		      nop
+    756  1864		       ea		      nop
+    757  1865		       ea		      nop
+    758  1866		       ea		      nop
+    759  1867		       85 1b		      sta	GRP0
+    760  1869		       0a		      asl
+    761  186a		       85 1d		      sta	ENAM0
+    762  186c		       18		      clc
+    763  186d		       4c 3d f8 	      jmp	B1_s
+    764  1870				  -	      IF	(<.) + 60 > 256
+    765  1870				  -	      ALIGN	256
+    766  1870					      ENDIF
+    767  1870				   B2_i
+    768  1870		       e8		      inx
+    769  1871				   B2
+    770  1871		       85 02		      sta	WSYNC
+    771  1873		       e6 80		      inc	TrogPtr
+    772  1875		       38		      sec
+    773  1876		       24 80		      bit	$80
+    774  1878				   B2_s
+    775  1878		       bd 00 f0 	      lda	LPF1,x
+    776  187b		       85 0e		      sta	PF1
+    777  187d		       bd 00 f1 	      lda	Stripe,x
+    778  1880		       85 08		      sta	COLUPF
+    779  1882		       a9 00		      lda	#0
+    780  1884		       85 1c		      sta	GRP1
+    781  1886		       a9 00		      lda	#$00
+    782  1888		       24 80		      bit	$80
+    783  188a		       85 0e		      sta	PF1
+    784  188c		       b0 01		      bcs	B2_e
+    785  188e		       60		      rts
+    786  188f				   B2_e
+    787  188f		       a0 00		      ldy	#0
+    788  1891		       b1 80		      lda	(TrogPtr),y
+    789  1893		       a8		      tay
+    790  1894		       b9 82 00 	      lda	Buffer,y
+    791  1897		       e8		      inx
+    792  1898		       ea		      nop
+    793  1899		       ea		      nop
+    794  189a		       ea		      nop
+    795  189b		       ea		      nop
+    796  189c		       ea		      nop
+    797  189d		       ea		      nop
+    798  189e		       ea		      nop
+    799  189f		       ea		      nop
+    800  18a0		       ea		      nop
+    801  18a1		       85 1b		      sta	GRP0
+    802  18a3		       0a		      asl
+    803  18a4		       85 1d		      sta	ENAM0
+    804  18a6		       18		      clc
+    805  18a7		       4c 78 f8 	      jmp	B2_s
+    806  18aa				  -	      IF	(<.) + 59 > 256
+    807  18aa				  -	      ALIGN	256
+    808  18aa					      ENDIF
+    809  18aa				   B3_i
+    810  18aa		       e8		      inx
+    811  18ab				   B3
+    812  18ab		       85 02		      sta	WSYNC
+    813  18ad		       e6 80		      inc	TrogPtr
+    814  18af		       38		      sec
+    815  18b0		       24 80		      bit	$80
+    816  18b2				   B3_s
+    817  18b2		       a9 00		      lda	#$00
+    818  18b4		       85 07		      sta	COLUP1
+    819  18b6		       bd 00 f0 	      lda	Lad,x
+    820  18b9		       8d 1c 00 	      sta.w	GRP1
+    821  18bc		       85 11		      sta	RESP1
+    822  18be		       24 80		      bit	$80
+    823  18c0		       ea		      nop
+    824  18c1		       ea		      nop
+    825  18c2		       85 11		      sta	RESP1
+    826  18c4		       b0 01		      bcs	B3_e
+    827  18c6		       60		      rts
+    828  18c7				   B3_e
+    829  18c7		       a0 00		      ldy	#0
+    830  18c9		       b1 80		      lda	(TrogPtr),y
+    831  18cb		       a8		      tay
+    832  18cc		       b9 82 00 	      lda	Buffer,y
+    833  18cf		       e8		      inx
+    834  18d0		       24 80		      bit	$80
+    835  18d2		       ea		      nop
+    836  18d3		       ea		      nop
+    837  18d4		       ea		      nop
+    838  18d5		       ea		      nop
+    839  18d6		       ea		      nop
+    840  18d7		       ea		      nop
+    841  18d8		       ea		      nop
+    842  18d9		       ea		      nop
+    843  18da		       85 1b		      sta	GRP0
+    844  18dc		       0a		      asl
+    845  18dd		       85 1d		      sta	ENAM0
+    846  18df		       18		      clc
+    847  18e0		       4c b2 f8 	      jmp	B3_s
+    848  18e3					      IF	(<.) + 63 > 256
+    849  1900		       00 00 00 00*	      ALIGN	256
+    850  1900					      ENDIF
+    851  1900				   B4_i
+    852  1900		       e8		      inx
+    853  1901				   B4
+    854  1901		       85 02		      sta	WSYNC
+    855  1903		       e6 80		      inc	TrogPtr
+    856  1905		       38		      sec
+    857  1906		       24 80		      bit	$80
+    858  1908				   B4_s
+    859  1908		       a9 00		      lda	#$00
+    860  190a		       85 0e		      sta	PF1
+    861  190c		       bc 00 f0 	      ldy	Lad,x
+    862  190f		       8c 1c 00 	      sty.w	GRP1
+    863  1912		       85 11		      sta	RESP1
+    864  1914		       85 0f		      sta	PF2
+    865  1916		       bd 00 f1 	      lda	Stripe,x
+    866  1919		       85 11		      sta	RESP1
+    867  191b		       85 08		      sta	COLUPF
+    868  191d		       bd 90 f0 	      lda	RPF2,x
+    869  1920		       85 0f		      sta	PF2
+    870  1922		       bd 8a f0 	      lda	RPF1,x
+    871  1925		       85 0e		      sta	PF1
+    872  1927		       b0 01		      bcs	B4_e
+    873  1929		       60		      rts
+    874  192a				   B4_e
+    875  192a		       a0 00		      ldy	#0
+    876  192c		       b1 80		      lda	(TrogPtr),y
+    877  192e		       a8		      tay
+    878  192f		       b9 82 00 	      lda	Buffer,y
+    879  1932		       e8		      inx
+    880  1933		       ea		      nop
+    881  1934		       85 1b		      sta	GRP0
+    882  1936		       0a		      asl
+    883  1937		       85 1d		      sta	ENAM0
+    884  1939		       18		      clc
+    885  193a		       4c 08 f9 	      jmp	B4_s
+    886  193d				  -	      IF	(<.) + 59 > 256
+    887  193d				  -	      ALIGN	256
+    888  193d					      ENDIF
+    889  193d				   B5_i
+    890  193d		       e8		      inx
+    891  193e				   B5
+    892  193e		       85 02		      sta	WSYNC
+    893  1940		       e6 80		      inc	TrogPtr
+    894  1942		       38		      sec
+    895  1943		       24 80		      bit	$80
+    896  1945				   B5_s
+    897  1945		       a9 aa		      lda	#$AA
+    898  1947		       85 08		      sta	COLUPF
+    899  1949		       bd 00 f0 	      lda	Lad,x
+    900  194c		       8d 1c 00 	      sta.w	GRP1
+    901  194f		       85 11		      sta	RESP1
+    902  1951		       24 80		      bit	$80
+    903  1953		       ea		      nop
+    904  1954		       ea		      nop
+    905  1955		       85 11		      sta	RESP1
+    906  1957		       b0 01		      bcs	B5_e
+    907  1959		       60		      rts
+    908  195a				   B5_e
+    909  195a		       a0 00		      ldy	#0
+    910  195c		       b1 80		      lda	(TrogPtr),y
+    911  195e		       a8		      tay
+    912  195f		       b9 82 00 	      lda	Buffer,y
+    913  1962		       e8		      inx
+    914  1963		       24 80		      bit	$80
+    915  1965		       ea		      nop
+    916  1966		       ea		      nop
+    917  1967		       ea		      nop
+    918  1968		       ea		      nop
+    919  1969		       ea		      nop
+    920  196a		       ea		      nop
+    921  196b		       ea		      nop
+    922  196c		       ea		      nop
+    923  196d		       85 1b		      sta	GRP0
+    924  196f		       0a		      asl
+    925  1970		       85 1d		      sta	ENAM0
+    926  1972		       18		      clc
+    927  1973		       4c 45 f9 	      jmp	B5_s
+    928  1976				  -	      IF	(<.) + 63 > 256
+    929  1976				  -	      ALIGN	256
+    930  1976					      ENDIF
+    931  1976				   B6_i
+    932  1976		       e8		      inx
+    933  1977				   B6
+    934  1977		       85 02		      sta	WSYNC
+    935  1979		       e6 80		      inc	TrogPtr
+    936  197b		       38		      sec
+    937  197c		       24 80		      bit	$80
+    938  197e				   B6_s
+    939  197e		       a9 00		      lda	#$00
+    940  1980		       85 07		      sta	COLUP1
+    941  1982		       bd 00 f0 	      lda	Lad,x
+    942  1985		       8d 1c 00 	      sta.w	GRP1
+    943  1988		       85 11		      sta	RESP1
+    944  198a		       bd 00 f2 	      lda	G0,x
+    945  198d		       24 80		      bit	$80
+    946  198f		       85 11		      sta	RESP1
+    947  1991		       bd 00 f1 	      lda	C0,x
+    948  1994		       bc 00 f2 	      ldy	G0,x
+    949  1997		       84 1c		      sty	GRP1
+    950  1999		       85 07		      sta	COLUP1
+    951  199b		       ea		      nop
+    952  199c		       85 11		      sta	RESP1
+    953  199e		       b0 01		      bcs	B6_e
+    954  19a0		       60		      rts
+    955  19a1				   B6_e
+    956  19a1		       a0 00		      ldy	#0
+    957  19a3		       b1 80		      lda	(TrogPtr),y
+    958  19a5		       a8		      tay
+    959  19a6		       b9 82 00 	      lda	Buffer,y
+    960  19a9		       e8		      inx
+    961  19aa		       85 1b		      sta	GRP0
+    962  19ac		       0a		      asl
+    963  19ad		       85 1d		      sta	ENAM0
+    964  19af		       18		      clc
+    965  19b0		       4c 7e f9 	      jmp	B6_s
+    966  19b3				  -	      IF	(<.) + 63 > 256
+    967  19b3				  -	      ALIGN	256
+    968  19b3					      ENDIF
+    969  19b3				   B7_i
+    970  19b3		       e8		      inx
+    971  19b4				   B7
+    972  19b4		       85 02		      sta	WSYNC
+    973  19b6		       e6 80		      inc	TrogPtr
+    974  19b8		       38		      sec
+    975  19b9		       24 80		      bit	$80
+    976  19bb				   B7_s
+    977  19bb		       a9 00		      lda	#$00
+    978  19bd		       85 0e		      sta	PF1
+    979  19bf		       8d 07 00 	      sta.w	COLUP1
+    980  19c2		       bc 00 f0 	      ldy	Lad,x
+    981  19c5		       85 11		      sta	RESP1
+    982  19c7		       84 1c		      sty	GRP1
+    983  19c9		       8d 0f 00 	      sta.w	PF2
+    984  19cc		       85 11		      sta	RESP1
+    985  19ce		       bd 8a f0 	      lda	RPF1,x
+    986  19d1		       85 0e		      sta	PF1
+    987  19d3		       bd 00 f1 	      lda	Stripe,x
+    988  19d6		       85 08		      sta	COLUPF
+    989  19d8		       b0 01		      bcs	B7_e
+    990  19da		       60		      rts
+    991  19db				   B7_e
+    992  19db		       a0 00		      ldy	#0
+    993  19dd		       b1 80		      lda	(TrogPtr),y
+    994  19df		       a8		      tay
+    995  19e0		       b9 82 00 	      lda	Buffer,y
+    996  19e3		       e8		      inx
+    997  19e4		       24 80		      bit	$80
+    998  19e6		       ea		      nop
+    999  19e7		       85 1b		      sta	GRP0
+   1000  19e9		       0a		      asl
+   1001  19ea		       85 1d		      sta	ENAM0
+   1002  19ec		       18		      clc
+   1003  19ed		       4c bb f9 	      jmp	B7_s
+   1004  19f0					      IF	(<.) + 62 > 256
+   1005  1a00		       00 00 00 00*	      ALIGN	256
+   1006  1a00					      ENDIF
+   1007  1a00				   B8_i
+   1008  1a00		       e8		      inx
+   1009  1a01				   B8
+   1010  1a01		       85 02		      sta	WSYNC
+   1011  1a03		       e6 80		      inc	TrogPtr
+   1012  1a05		       38		      sec
+   1013  1a06		       24 80		      bit	$80
+   1014  1a08				   B8_s
+   1015  1a08		       a9 00		      lda	#$00
+   1016  1a0a		       85 07		      sta	COLUP1
+   1017  1a0c		       bd 00 f0 	      lda	Lad,x
+   1018  1a0f		       8d 1c 00 	      sta.w	GRP1
+   1019  1a12		       85 11		      sta	RESP1
+   1020  1a14		       bd 00 f2 	      lda	G0,x
+   1021  1a17		       24 80		      bit	$80
+   1022  1a19		       85 11		      sta	RESP1
+   1023  1a1b		       bc 00 f1 	      ldy	C0,x
+   1024  1a1e		       ea		      nop
+   1025  1a1f		       85 11		      sta	RESP1
+   1026  1a21		       85 1c		      sta	GRP1
+   1027  1a23		       84 07		      sty	COLUP1
+   1028  1a25		       b0 01		      bcs	B8_e
+   1029  1a27		       60		      rts
+   1030  1a28				   B8_e
+   1031  1a28		       a0 00		      ldy	#0
+   1032  1a2a		       b1 80		      lda	(TrogPtr),y
+   1033  1a2c		       a8		      tay
+   1034  1a2d		       b9 82 00 	      lda	Buffer,y
+   1035  1a30		       e8		      inx
+   1036  1a31		       ea		      nop
+   1037  1a32		       ea		      nop
+   1038  1a33		       85 1b		      sta	GRP0
+   1039  1a35		       0a		      asl
+   1040  1a36		       85 1d		      sta	ENAM0
+   1041  1a38		       18		      clc
+   1042  1a39		       4c 08 fa 	      jmp	B8_s
+   1043  1a3c				  -	      IF	(<.) + 62 > 256
+   1044  1a3c				  -	      ALIGN	256
+   1045  1a3c					      ENDIF
+   1046  1a3c				   B9_i
+   1047  1a3c		       e8		      inx
+   1048  1a3d				   B9
+   1049  1a3d		       85 02		      sta	WSYNC
+   1050  1a3f		       e6 80		      inc	TrogPtr
+   1051  1a41		       38		      sec
+   1052  1a42		       24 80		      bit	$80
+   1053  1a44				   B9_s
+   1054  1a44		       a9 00		      lda	#0
+   1055  1a46		       85 1c		      sta	GRP1
+   1056  1a48		       a9 00		      lda	#$00
+   1057  1a4a		       bd 00 f0 	      lda	Lad,x
+   1058  1a4d		       a0 00		      ldy	#$00
+   1059  1a4f		       85 11		      sta	RESP1
+   1060  1a51		       84 07		      sty	COLUP1
+   1061  1a53		       85 1c		      sta	GRP1
+   1062  1a55		       a9 00		      lda	#0
+   1063  1a57		       85 1c		      sta	GRP1
+   1064  1a59		       85 11		      sta	RESP1
+   1065  1a5b		       b0 01		      bcs	B9_e
+   1066  1a5d		       60		      rts
+   1067  1a5e				   B9_e
+   1068  1a5e		       a0 00		      ldy	#0
+   1069  1a60		       b1 80		      lda	(TrogPtr),y
+   1070  1a62		       a8		      tay
+   1071  1a63		       b9 82 00 	      lda	Buffer,y
+   1072  1a66		       e8		      inx
+   1073  1a67		       24 80		      bit	$80
+   1074  1a69		       ea		      nop
+   1075  1a6a		       ea		      nop
+   1076  1a6b		       ea		      nop
+   1077  1a6c		       ea		      nop
+   1078  1a6d		       ea		      nop
+   1079  1a6e		       ea		      nop
+   1080  1a6f		       85 1b		      sta	GRP0
+   1081  1a71		       0a		      asl
+   1082  1a72		       85 1d		      sta	ENAM0
+   1083  1a74		       18		      clc
+   1084  1a75		       4c 44 fa 	      jmp	B9_s
+   1085  1a78				  -	      IF	(<.) + 56 > 256
+   1086  1a78				  -	      ALIGN	256
+   1087  1a78					      ENDIF
+   1088  1a78				   B10_i
+   1089  1a78		       e8		      inx
+   1090  1a79				   B10
+   1091  1a79		       85 02		      sta	WSYNC
+   1092  1a7b		       e6 80		      inc	TrogPtr
+   1093  1a7d		       38		      sec
+   1094  1a7e		       24 80		      bit	$80
+   1095  1a80				   B10_s
+   1096  1a80		       bd 00 f0 	      lda	Lad,x
+   1097  1a83		       85 1c		      sta	GRP1
+   1098  1a85		       ea		      nop
+   1099  1a86		       ea		      nop
+   1100  1a87		       ea		      nop
+   1101  1a88		       85 11		      sta	RESP1
+   1102  1a8a		       ea		      nop
+   1103  1a8b		       ea		      nop
+   1104  1a8c		       ea		      nop
+   1105  1a8d		       85 11		      sta	RESP1
+   1106  1a8f		       b0 01		      bcs	B10_e
+   1107  1a91		       60		      rts
+   1108  1a92				   B10_e
+   1109  1a92		       a0 00		      ldy	#0
+   1110  1a94		       b1 80		      lda	(TrogPtr),y
+   1111  1a96		       a8		      tay
+   1112  1a97		       b9 82 00 	      lda	Buffer,y
+   1113  1a9a		       e8		      inx
+   1114  1a9b		       ea		      nop
+   1115  1a9c		       ea		      nop
+   1116  1a9d		       ea		      nop
+   1117  1a9e		       ea		      nop
+   1118  1a9f		       ea		      nop
+   1119  1aa0		       ea		      nop
+   1120  1aa1		       ea		      nop
+   1121  1aa2		       ea		      nop
+   1122  1aa3		       ea		      nop
+   1123  1aa4		       ea		      nop
+   1124  1aa5		       85 1b		      sta	GRP0
+   1125  1aa7		       0a		      asl
+   1126  1aa8		       85 1d		      sta	ENAM0
+   1127  1aaa		       18		      clc
+   1128  1aab		       4c 80 fa 	      jmp	B10_s
+   1129  1aae				  -	      IF	(<.) + 62 > 256
+   1130  1aae				  -	      ALIGN	256
+   1131  1aae					      ENDIF
+   1132  1aae				   B11_i
+   1133  1aae		       e8		      inx
+   1134  1aaf				   B11
+   1135  1aaf		       85 02		      sta	WSYNC
+   1136  1ab1		       e6 80		      inc	TrogPtr
+   1137  1ab3		       38		      sec
+   1138  1ab4		       24 80		      bit	$80
+   1139  1ab6				   B11_s
+   1140  1ab6		       a9 00		      lda	#$00
+   1141  1ab8		       85 07		      sta	COLUP1
+   1142  1aba		       bd 00 f0 	      lda	Lad,x
+   1143  1abd		       8d 1c 00 	      sta.w	GRP1
+   1144  1ac0		       85 11		      sta	RESP1
+   1145  1ac2		       bd 00 f2 	      lda	G0,x
+   1146  1ac5		       ea		      nop
+   1147  1ac6		       85 11		      sta	RESP1
+   1148  1ac8		       bc 00 f1 	      ldy	C0,x
+   1149  1acb		       24 80		      bit	$80
+   1150  1acd		       ea		      nop
+   1151  1ace		       85 11		      sta	RESP1
+   1152  1ad0		       85 1c		      sta	GRP1
+   1153  1ad2		       84 07		      sty	COLUP1
+   1154  1ad4		       b0 01		      bcs	B11_e
+   1155  1ad6		       60		      rts
+   1156  1ad7				   B11_e
+   1157  1ad7		       a0 00		      ldy	#0
+   1158  1ad9		       b1 80		      lda	(TrogPtr),y
+   1159  1adb		       a8		      tay
+   1160  1adc		       b9 82 00 	      lda	Buffer,y
+   1161  1adf		       e8		      inx
+   1162  1ae0		       ea		      nop
+   1163  1ae1		       85 1b		      sta	GRP0
+   1164  1ae3		       0a		      asl
+   1165  1ae4		       85 1d		      sta	ENAM0
+   1166  1ae6		       18		      clc
+   1167  1ae7		       4c b6 fa 	      jmp	B11_s
+   1168  1aea					      IF	(<.) + 62 > 256
+   1169  1b00		       00 00 00 00*	      ALIGN	256
+   1170  1b00					      ENDIF
+   1171  1b00				   B12_i
+   1172  1b00		       e8		      inx
+   1173  1b01				   B12
+   1174  1b01		       85 02		      sta	WSYNC
+   1175  1b03		       e6 80		      inc	TrogPtr
+   1176  1b05		       38		      sec
+   1177  1b06		       24 80		      bit	$80
+   1178  1b08				   B12_s
+   1179  1b08		       a9 00		      lda	#$00
+   1180  1b0a		       85 07		      sta	COLUP1
+   1181  1b0c		       bd 00 f0 	      lda	Lad,x
+   1182  1b0f		       8d 1c 00 	      sta.w	GRP1
+   1183  1b12		       85 11		      sta	RESP1
+   1184  1b14		       bd 00 f2 	      lda	G0,x
+   1185  1b17		       24 80		      bit	$80
+   1186  1b19		       85 1c		      sta	GRP1
+   1187  1b1b		       bd 00 f1 	      lda	C0,x
+   1188  1b1e		       8d 07 00 	      sta.w	COLUP1
+   1189  1b21		       85 11		      sta	RESP1
+   1190  1b23		       b0 01		      bcs	B12_e
+   1191  1b25		       60		      rts
+   1192  1b26				   B12_e
+   1193  1b26		       a0 00		      ldy	#0
+   1194  1b28		       b1 80		      lda	(TrogPtr),y
+   1195  1b2a		       a8		      tay
+   1196  1b2b		       b9 82 00 	      lda	Buffer,y
+   1197  1b2e		       e8		      inx
+   1198  1b2f		       ea		      nop
+   1199  1b30		       ea		      nop
+   1200  1b31		       ea		      nop
+   1201  1b32		       ea		      nop
+   1202  1b33		       85 1b		      sta	GRP0
+   1203  1b35		       0a		      asl
+   1204  1b36		       85 1d		      sta	ENAM0
+   1205  1b38		       18		      clc
+   1206  1b39		       4c 08 fb 	      jmp	B12_s
+   1207  1b3c				  -	      IF	(<.) + 61 > 256
+   1208  1b3c				  -	      ALIGN	256
+   1209  1b3c					      ENDIF
+   1210  1b3c				   B13_i
+   1211  1b3c		       e8		      inx
+   1212  1b3d				   B13
+   1213  1b3d		       85 02		      sta	WSYNC
+   1214  1b3f		       e6 80		      inc	TrogPtr
+   1215  1b41		       38		      sec
+   1216  1b42		       24 80		      bit	$80
+   1217  1b44				   B13_s
+   1218  1b44		       bd 00 f0 	      lda	LPF1,x
+   1219  1b47		       85 0e		      sta	PF1
+   1220  1b49		       bd 00 f1 	      lda	Stripe,x
+   1221  1b4c		       85 08		      sta	COLUPF
+   1222  1b4e		       bd 00 f0 	      lda	LPF2,x
+   1223  1b51		       85 0f		      sta	PF2
+   1224  1b53		       a9 00		      lda	#0
+   1225  1b55		       85 1c		      sta	GRP1
+   1226  1b57		       a9 00		      lda	#$00
+   1227  1b59		       85 0e		      sta	PF1
+   1228  1b5b		       b0 01		      bcs	B13_e
+   1229  1b5d		       60		      rts
+   1230  1b5e				   B13_e
+   1231  1b5e		       a0 00		      ldy	#0
+   1232  1b60		       b1 80		      lda	(TrogPtr),y
+   1233  1b62		       a8		      tay
+   1234  1b63		       b9 82 00 	      lda	Buffer,y
+   1235  1b66		       e8		      inx
+   1236  1b67		       ea		      nop
+   1237  1b68		       ea		      nop
+   1238  1b69		       ea		      nop
+   1239  1b6a		       ea		      nop
+   1240  1b6b		       ea		      nop
+   1241  1b6c		       ea		      nop
+   1242  1b6d		       ea		      nop
+   1243  1b6e		       85 1b		      sta	GRP0
+   1244  1b70		       0a		      asl
+   1245  1b71		       85 1d		      sta	ENAM0
+   1246  1b73		       18		      clc
+   1247  1b74		       4c 44 fb 	      jmp	B13_s
+   1248  1b77				  -	      IF	(<.) + 57 > 256
+   1249  1b77				  -	      ALIGN	256
+   1250  1b77					      ENDIF
+   1251  1b77				   B14_i
+   1252  1b77		       e8		      inx
+   1253  1b78				   B14
+   1254  1b78		       85 02		      sta	WSYNC
+   1255  1b7a		       e6 80		      inc	TrogPtr
+   1256  1b7c		       38		      sec
+   1257  1b7d		       24 80		      bit	$80
+   1258  1b7f				   B14_s
+   1259  1b7f		       a9 aa		      lda	#$AA
+   1260  1b81		       85 08		      sta	COLUPF
+   1261  1b83		       a9 00		      lda	#0
+   1262  1b85		       85 1c		      sta	GRP1
+   1263  1b87		       b0 01		      bcs	B14_e
+   1264  1b89		       60		      rts
+   1265  1b8a				   B14_e
+   1266  1b8a		       a0 00		      ldy	#0
+   1267  1b8c		       b1 80		      lda	(TrogPtr),y
+   1268  1b8e		       a8		      tay
+   1269  1b8f		       b9 82 00 	      lda	Buffer,y
+   1270  1b92		       e8		      inx
+   1271  1b93		       24 80		      bit	$80
+   1272  1b95		       ea		      nop
+   1273  1b96		       ea		      nop
+   1274  1b97		       ea		      nop
+   1275  1b98		       ea		      nop
+   1276  1b99		       ea		      nop
+   1277  1b9a		       ea		      nop
+   1278  1b9b		       ea		      nop
+   1279  1b9c		       ea		      nop
+   1280  1b9d		       ea		      nop
+   1281  1b9e		       ea		      nop
+   1282  1b9f		       ea		      nop
+   1283  1ba0		       ea		      nop
+   1284  1ba1		       ea		      nop
+   1285  1ba2		       ea		      nop
+   1286  1ba3		       ea		      nop
+   1287  1ba4		       ea		      nop
+   1288  1ba5		       85 1b		      sta	GRP0
+   1289  1ba7		       0a		      asl
+   1290  1ba8		       85 1d		      sta	ENAM0
+   1291  1baa		       18		      clc
+   1292  1bab		       4c 7f fb 	      jmp	B14_s
+   1293  1bae				   CodeEnd
+   1294  1fe0					      org	$1FE0
+   1295  1fe0					      rorg	$FFE0
+   1296  1fe0		       00 00 00 	      .byte.b	0,0,0	; $FFE0: (bank 0: bit $FFF9)
+   1297  1fe3		       4c cd f5 	      jmp	Kernel	; $FFE3
+   1298  1fe6		       2c f8 ff 	      bit	$FFF8	; $FFE6: -> bank 0 (which carries on at $FFE9: jmp Overscan)
+   1299  1fe9		       00 00 00 	      .byte.b	0,0,0
+   1300  1fec		       2c f8 ff 	      bit	$FFF8	; $FFEC: reset -> bank 0 (jmp Start at $FFEF there)
+   1301  1ffc					      org	$1FFC
+   1302  1ffc					      rorg	$FFFC
+   1303  1ffc		       ec ff		      .word.w	$FFEC
+   1304  1ffe		       ec ff		      .word.w	$FFEC

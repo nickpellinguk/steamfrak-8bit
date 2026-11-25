@@ -387,3 +387,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+    import compact                      # the compact form the game uses (musicdrv_c.asm)
+    compact.main()
