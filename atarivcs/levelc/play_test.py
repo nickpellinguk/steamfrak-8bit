@@ -213,22 +213,39 @@ def main():
     g.run(3)
     expect('released early: comes back', yo(), len=lambda v: not v < 7)
     expect('... and he can walk again', g.run(40, R), state=0, x=lambda v: v <= x0)
-    # gems and keys: touching one collects it (Collected bits: gem x34 = 1, gem x88 = 2, key x103 = 4)
+    # items (Collected bits): gem x34 = 1, gem x88 = 2, Scrubbly x94 (a meanie) = 4, key x118 = 8
     g = Game(os.path.join(outdir, 'level'))
-    col = lambda: {**g.state(), 'coll': g.m.memory[g.sym['Collected']], 'runx': list(g.m.memory[g.sym['RunX']:g.sym['RunX'] + 4])}
+    col = lambda: {**g.state(), 'coll': g.m.memory[g.sym['Collected']], 'runx': list(g.m.memory[g.sym['RunX']:g.sym['RunX'] + 5])}
     st = col()
-    g.run(60, R)
-    expect('walking right along the floor: not yet at the key', col(), coll=0) if col()['x'] < 96 else None
-    while g.state()['x'] < 97:
-        g.run(1, R)
-    g.run(1)
+    expect('walking right into the Scrubbly (x 94): he dies', g.dies(60, R), died=1, x=lambda v: v > 90)
+    expect('... it is still there', col(), coll=0)
+    g.run(100)                                     # (restarted at x 57)
+    g.run(20, R)                                   # x 67, facing right
+    g.run(1, 0, True)
+    for _ in range(40):
+        g.run(1, 0, True)
+        if col()['coll']:
+            break
     st2 = col()
-    expect('reaching the key (x 103): collected', st2, coll=4)
-    expect('... its run now uses its empty dataset', st2, runx=lambda r: r == st['runx'])
+    expect('the yoyo reaches it: the Scrubbly is gone', st2, coll=4, state=3, dead=0)
+    expect('... its runs use their empty datasets', st2, runx=lambda r: r == st['runx'])
+    expect('... and the yoyo comes back', g.run(40), state=0)
+    expect('now he walks past where it was', g.dies(30, R), died=0, x=lambda v: v < 96)
+    # gems and keys
     g = Game(os.path.join(outdir, 'level'))
     g.run(46, L)
     g.run(200, U)
     expect('climbing to the top-left ledge collects its gem (x 34)', col(), coll=1, row=20)
+    g.m.memory[g.sym['TX']] = 100                 # (onto the right ledge, row 45: the key's)
+    g.m.memory[g.sym['TRow']] = 44
+    g.run(2)
+    g.run(1, 0, True)
+    g.run(60, 0, True)
+    expect('yoyoing towards the key (passing it): no effect on it', col(), coll=1)
+    g.run(60)
+    while g.state()['x'] < 112:
+        g.run(1, R)
+    expect('walking into the key collects it', col(), coll=1 | 8)
     print('all ok' if ok else 'SOME FAILED')
     return ok
 

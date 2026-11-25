@@ -217,7 +217,7 @@ function sampleProject() {
       plat(176, 88, 127), plat(176, 140, 155), step(36, 145), step(52, 148), step(68, 145), step(104, 130),
       step(120, 136), step(136, 145), step(152, 148)],
     ladders: [lad(28, 32, 176), lad(97, 32, 176)],
-    items: [item('gem', 64, 24), item('gem', 55, 88), item('gem', 133, 88), item('key', 118, 176)],
+    items: [item('gem', 64, 24), item('gem', 55, 88), item('gem', 133, 88), item('key', 118, 90)],
     trogg: { x: 48, row: 75 }
   };
   const ak = {
@@ -240,7 +240,7 @@ function sampleProject() {
     ],
     // ladder 31 runs from the floor up to the top-left ledge
     ladders: [lad(31, 42, 168), lad(61, 48, 120), lad(58, 128, 164)],   // (58 stops 2 rows above the floor, as Frak's do)
-    items: [item('gem', 34, 42), item('gem', 88, 120), item('key', 103, 168)],
+    items: [item('gem', 34, 42), item('gem', 88, 120), item('scrubbly', 94, 168), item('key', 118, 90)],
     trogg: { x: 57, row: 83 }
   };
   return {
@@ -303,13 +303,16 @@ __SCHEDULER__
 __MIRROR__
 (function () { const chip = document.getElementById('rules-state'); chip.textContent = 'Live scheduler'; chip.className = 'chip ok'; })();
 const SCHED_CACHE = new Map();
+// P1's colour as the rows above left it (the last object drawn): a run whose first object is black
+// can only skip its colour write if P1 is already black (set by analyzeScreen for each row)
+let PREVCOL = ['imm', 0];
 function schedRow(objs, tasks) {
-  const key = JSON.stringify([objs.map(o => [o.x, o.t]), tasks]);
+  const key = JSON.stringify([objs.map(o => [o.x, o.t]), tasks, PREVCOL]);
   if (SCHED_CACHE.has(key)) return SCHED_CACHE.get(key);
   let oi = 0;
   const so = objs.map(o => o.t === 'L' ? { x: o.x, gfx: ['tbl', 'Lad'], col: ['imm', 0] }
     : (k => ({ x: o.x, gfx: ['tbl', 'G' + k], col: ['tbl', 'C' + k] }))(oi++));
-  const r = FrakScheduler.schedule(so, ['imm', 0], true, objs.length ? objs[objs.length - 1].x : null, 10, 55, tasks);
+  const r = FrakScheduler.schedule(so, PREVCOL, true, objs.length ? objs[objs.length - 1].x : null, 10, 55, tasks);
   if (SCHED_CACHE.size > 20000) SCHED_CACHE.clear();
   SCHED_CACHE.set(key, r);
   return r;
@@ -427,14 +430,19 @@ function suggest(A, ways) {
 function analyzeScreen(s) {
   const rows = [];
   let prev = null;                         // the state the row above leaves (registers, colour)
+  let lastCol = ['imm', 0];                // P1's colour as the rows above leave it (black at the top)
   for (let r = 0; r < ROWS; r++) {
     let A;
     const key = (() => { const lit = rowBlocks(s, r); const o = rowObjects(s, r, lit); return [...lit].sort((a, b) => a - b).join(',') + '|' + o.map(q => q.t).join('') + '|' + o.map(q => q.x).join(','); })();
     if (r && rows[r - 1].key === key) {   // the same renderer as the row above: its first row decides
       const B = rows[r - 1];
       A = { ...B, r, errors: B.errors.slice(), warnings: [], infos: B.infos.slice() };
-    } else A = analyzeRow(s, r, prev);
+    } else { PREVCOL = lastCol; A = analyzeRow(s, r, prev); A.prevcol = lastCol; }
     rows.push(A);
+    if (A.objs && A.objs.length) {
+      const k = A.objs.filter(o => o.t !== 'L').length - 1;
+      lastCol = A.objs[A.objs.length - 1].t === 'L' ? ['imm', 0] : ['tbl', 'C' + k];
+    }
     prev = A.end || A.fallbackEnd;
   }
   // renderer changes: the ghost rule
