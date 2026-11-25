@@ -442,7 +442,13 @@ them in the bank's ROM.
   per-line tables for its 60 lines. The display bank picks it or the level's call list from
   `Mode`; fire (after it has been up) starts the game. `levelc.py --game --check --front` checks
   it in Stella.
-* Starter screen with the game, front screen, timer and music: bank 0 2989 bytes, bank 1 2990
+* Starter screen with the game, front screen, timer and music: bank 0 3048 bytes, bank 1 3050
+* Returning meanies: a yoyoed meanie shows as a light grey ($0C) dotted outline (its edge pixels,
+  every other one) and comes back 5 s later (`Ret`, a countdown per item by 4 frames), but not
+  while that would put it on the Trogg. The outline is its collected dataset (instead of zeros), so
+  it costs no RAM or state beyond the countdown; it is harmless and the yoyo ignores it. (The
+  Trogg strip is now placed before the line tables so they fill in around its zeros: the 16
+  extra lines would otherwise have cost a page.)
 * Timed runs, no checkpoint saves: touching the last remaining key (`KEYMASK`, the compiler's mask
   of the key items' `Collected` bits) completes the level: a 90-frame pause (`Won`), then the next
   level (for now the same one again). The time on reaching a level is its checkpoint (`CkSec`,

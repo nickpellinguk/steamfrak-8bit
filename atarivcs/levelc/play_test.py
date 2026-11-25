@@ -237,7 +237,31 @@ def main():
     expect('the yoyo reaches it: the Scrubbly is gone', st2, coll=4, state=3, dead=0)
     expect('... its runs use their empty datasets', st2, runx=lambda r: r == st['runx'])
     expect('... and the yoyo comes back', g.run(40), state=0)
-    expect('now he walks past where it was', g.dies(80, R), died=0, x=lambda v: v <= 100)
+    expect('now he walks past where it was (its outline is harmless)', g.dies(80, R), died=0, x=lambda v: v <= 100)
+    # it comes back after 5 s (300 frames from the hit), but not on top of him: he's past it now
+    t = g.frames
+    g.run(40)
+    expect('... still away after 4 s or so', col(), coll=4)
+    for _ in range(200):
+        g.run(1)
+        if not col()['coll']:
+            break
+    expect('... back 5 s after the hit', {**col(), 'f': g.frames - t}, coll=0, f=lambda v: not 170 <= v <= 185)   # (120 frames already gone)
+    expect('... its runs show it again', col(), runx=lambda r: r != st['runx'])
+    # standing where it is when it is due: it waits until he moves off
+    g = Game(os.path.join(outdir, 'level'))
+    g.run(100)
+    g.run(20, R)
+    for _ in range(60):
+        g.run(1, 0, True)
+        if col()['coll']:
+            break
+    g.run(40)
+    g.m.memory[g.sym['TX']] = 92                    # (on the Scrubbly's spot)
+    g.run(320)
+    expect('due while he stands on its spot: it waits', col(), coll=4, dead=0)
+    g.run(60, L)
+    expect('... and comes back once he has moved off', col(), coll=0)
     # gems and keys
     g = Game(os.path.join(outdir, 'level'))
     g.run(46, L)

@@ -52,6 +52,8 @@ FArm    = $BD           ; front screen: fire has been up (so a press starts)
 Won     = $BE           ; frames of the level-complete pause (0: none)
 CkSec   = $E8           ; the time when this level was reached (death sets the clock back to it)
 CkMin   = $E9
+Ret     = $EA           ; per item ($EA-$F1): a yoyoed meanie's countdown to its return (by 4 frames)
+RETURN  = 75            ; 5 s
 TDig    = $D0           ; the timer: pointers to its four characters' glyphs (M, colon, S, S)
 TFr     = $D8           ; frames into the second
 TSec    = $D9           ; seconds (BCD)
@@ -253,7 +255,8 @@ Restart:
         sta Repos
         sta UDDeb
 LRet:   rts
-Alive:  jsr Collide
+Alive:  jsr Returns
+        jsr Collide
         lda SWCHA
         sta Joy
         lda INPT4               ; fire released: the next throw is allowed
@@ -631,22 +634,8 @@ Collide:
 CoL:    lda Collected
         and ItBit,x
         bne CoN
-        lda TRow
-        cmp ItTop,x
-        bcc CoN                 ; his feet are above it
-        sec
-        sbc #H - 1
-        bcc CoHit               ; (his head is off the top: the bottom test passes)
-        cmp ItBot,x
-        beq CoHit
-        bcs CoN                 ; his head is below it
-CoHit:  lda TX
-        sec
-        sbc ItX,x
-        clc
-        adc #6
-        cmp #13
-        bcs CoN                 ; more than 6 px apart
+        jsr Touch
+        bcs CoN
         lda ItKind,x            ; a meanie: he dies
         bne CoDie
         lda Collected
@@ -666,6 +655,56 @@ CoN:    dex
         rts
 CoDie:  lda #90
         sta Dead
+        rts
+
+; ---- carry clear if the Trogg's box (rows TRow - H + 1 .. TRow, x within 6 px) touches item X
+Touch:
+        lda TRow
+        cmp ItTop,x
+        bcc TNo                 ; his feet are above it
+        sec
+        sbc #H - 1
+        bcc TYes                ; (his head is off the top: the bottom test passes)
+        cmp ItBot,x
+        beq TYes
+        bcs TNo                 ; his head is below it
+TYes:   lda TX
+        sec
+        sbc ItX,x
+        clc
+        adc #6
+        cmp #13
+        rts
+TNo:    sec
+        rts
+
+; ---- yoyoed meanies come back: each one's countdown (by 4 frames); at the end its bit clears (the
+; dotted outline becomes the meanie again), but not while it would land on the Trogg
+Returns:
+        IF NITEM > 0
+        lda Frm
+        and #3
+        bne RtOut
+        ldx #NITEM - 1
+RtL:    lda ItKind,x
+        beq RtN
+        lda Collected
+        and ItBit,x
+        beq RtN
+        dec Ret,x
+        bne RtN
+        jsr Touch
+        bcs RtGo
+        inc Ret,x               ; on him: wait
+        bne RtN
+RtGo:   lda ItBit,x
+        eor #$FF
+        and Collected
+        sta Collected
+RtN:    dex
+        bpl RtL
+RtOut:
+        ENDIF
         rts
 
 ; ---- the yoyo against the meanies (ItKind 1) still there: the ball (4 px at YoX, on his hand's
@@ -698,6 +737,8 @@ YHL:    lda ItKind,x
         lda Collected
         ora ItBit,x
         sta Collected
+        lda #RETURN
+        sta Ret,x
         lda #1
         sta YoBack
 YHN:    dex

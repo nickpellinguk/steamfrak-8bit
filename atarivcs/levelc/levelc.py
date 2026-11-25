@@ -135,6 +135,9 @@ def move_maps(plan):
 
 
 
+GHOST = 0x0C                           # the returning meanie's outline: light grey
+
+
 def compile_screen(plan, outdir, game=False):
     errs = [(r['r'], e) for r in plan['runs'] for e in r['errors']]
     if game:
@@ -175,20 +178,49 @@ def compile_screen(plan, outdir, game=False):
                     data.setdefault(t, {})[nlines + k] = L.get(t, 0)
             nlines += len(lines)
         return seen[sig]
+    # a yoyoed meanie shows as a dotted outline in light grey until it returns: per item, its graphic
+    # by line, then the edge pixels (set, with a clear neighbour), every other one kept
+    ghost = {}
+    if game:
+        shape = {}
+        for run in plan['runs']:
+            k = 0
+            for o in run['objs']:
+                if o['t'] != 'L':
+                    if o.get('ref') and o['ref'][0] == 'item' and plan['items'][o['ref'][1]]['kind'] not in ('gem', 'key'):
+                        for j, L in enumerate(run['lines']):
+                            shape.setdefault(o['ref'][1], {})[2 * run['r'] + j] = L.get('G%d' % k, 0)
+                    k += 1
+        for i, g in shape.items():
+            px = lambda y, b: 0 <= b < 8 and g.get(y, 0) >> (7 - b) & 1
+            ghost[i] = {y: sum(1 << (7 - b) for b in range(8)
+                               if px(y, b) and (b + y // 2) % 2 == 0
+                               and not (px(y - 1, b) and px(y + 1, b) and px(y, b - 1) and px(y, b + 1)))
+                        for y in g}
+    plan['ghost'] = ghost
     for ri, (run, (name, code, tables)) in enumerate(zip(plan['runs'], run_body)):
         slots, k = [], 0
         for o in run['objs']:
             if o['t'] != 'L':
                 if o.get('ref') and o['ref'][0] == 'item' and o['ref'][1] in bit:
-                    slots.append((k, bit[o['ref'][1]]))
+                    slots.append((k, bit[o['ref'][1]], o['ref'][1]))
                 k += 1
         run_x.append(lines_at(name, tables, run['lines']))
         if slots:
             xs = []
             for v in range(1 << len(slots)):
-                gone = {'G%d' % kk for j, (kk, _) in enumerate(slots) if v >> j & 1}
-                xs.append(lines_at(name, tables, [{t: (0 if t in gone else val) for t, val in L.items()} for L in run['lines']]))
-            item_runs.append((ri, [b for _, b in slots], xs))
+                gone = {kk: it for j, (kk, _, it) in enumerate(slots) if v >> j & 1}
+                ls = []
+                for j, L in enumerate(run['lines']):
+                    L = dict(L)
+                    for kk, it in gone.items():
+                        gh = ghost.get(it, {}).get(2 * run['r'] + j, 0)
+                        L['G%d' % kk] = gh
+                        if gh:
+                            L['C%d' % kk] = GHOST
+                    ls.append(L)
+                xs.append(lines_at(name, tables, ls))
+            item_runs.append((ri, [b for _, b, _ in slots], xs))
     if nlines > 256:
         raise SystemExit('line index overflow: %d lines' % nlines)
     # data area from $F000, packed: each block is placed at the first address where every byte it
@@ -213,6 +245,12 @@ def compile_screen(plan, outdir, game=False):
                     labels[name] = a
                     return
         raise SystemExit('no room for ' + name)
+    # the Trogg strip first (a page's worth, mostly zeros: the tables fill in around it)
+    tr = plan['trogg']
+    frame = tr['frames'][0]['rows']
+    h = len(frame)
+    strip = [0] * 96 + list(range(1, h + 1)) + [0] * 96
+    place('TroggStrip', dict(enumerate(strip)), True)    # one page: inc TrogPtr only steps the low byte
     for t in sorted(data, key=lambda t: -len(data[t])):
         place(t, data[t], True)
     table_bytes = sum(len(d) for d in data.values())
@@ -222,11 +260,6 @@ def compile_screen(plan, outdir, game=False):
     if game:                               # the front screen's per-line tables (its own loop)
         for t, vals in front.tables().items():
             place(t, dict(enumerate(vals)), True)
-    tr = plan['trogg']
-    frame = tr['frames'][0]['rows']
-    h = len(frame)
-    strip = [0] * 96 + list(range(1, h + 1)) + [0] * 96
-    place('TroggStrip', dict(enumerate(strip)), True)    # one page: inc TrogPtr only steps the low byte
     place('TroggFrame', dict(enumerate(frame)), False, 0 if game else 1)
     nlad, handup = 0, 0
     if game:
@@ -678,7 +711,10 @@ def model(plan, palette, yoyo=True):
                 if ob['t'] != 'L':
                     gi += 1
                 if ob.get('ref') and ob['ref'][0] == 'item' and ob['ref'][1] in gone:
-                    continue
+                    gh = plan.get('ghost', {}).get(ob['ref'][1])
+                    if gh is None:
+                        continue
+                    v, c = gh.get(y, 0), GHOST
                 for b in range(8):
                     if v & (0x80 >> b):
                         img[y][ob['x'] + b] = c
