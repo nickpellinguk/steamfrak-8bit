@@ -44,6 +44,9 @@ def get_plan(outdir):
     path = os.path.join(outdir, 'plan.json')
     cmd = ['node', os.path.join(HERE, 'plan.js'), os.path.join(ROOT, 'editor', 'index.html'), path,
            opt('project', ''), opt('type', '0'), opt('screen', '0')]
+    if opt('mover'):                         # --mover=MODE,ROW,X0,X1[,SPEED] (MODE two, lr or rl): a test's
+        m = opt('mover').split(',')
+        cmd.append(json.dumps(dict(mode=m[0], row=int(m[1]), x0=int(m[2]), x1=int(m[3]), speed=int(m[4]) if len(m) > 4 else 128)))
     subprocess.run(cmd, check=True)
     return json.load(open(path))
 
@@ -59,8 +62,10 @@ def body(name, run):
             k += 1
     extra = [(lo, hi, (ld[0], ld[1]), reg) for lo, hi, ld, reg in (run['tasks'] or [])]
     prevcol = tuple(run.get('prevcol') or ('imm', 0))     # P1's colour as the run above left it
+    # (the run before the moving platform's first, and before the one below it, ends earlier: the
+    # call list writes ENABL after it, before the next run's first line)
     code, end = F.schedule(((0, 0, 0), (0, 0, 0)), ((0, 0, 0), (0, 0, 0)), objs, prevcol, True,
-                           objs[-1][0] if objs else None, t0=10, end_limit=55, extra=extra)
+                           objs[-1][0] if objs else None, t0=10, end_limit=run.get('end_limit', 55), extra=extra)
     flat = [i.strip() for c in code for i in c.split('\n') if i.strip()]
     tail = list(TAIL)
     n = 76 - (end + 3 + screens2.ncycles(tail))
@@ -72,7 +77,13 @@ def body(name, run):
     # the padding goes before the GRP0 store, so the store always ends at the same late cycle (about
     # 66, pixel 130) whatever the body: every Trogg row then shows on its row's second line and the
     # next row's first, the same for any x up to about 122
-    out += ['bcs %s_e' % name, 'rts', '%s_e:' % name] + tail[:4] + ['inx']
+    # (a body before the moving platform's ENABL write returns at a fixed cycle (50, or 49 where a
+    # 1-cycle pad would be needed), so the call list's write lands at 65-67: pixel 130 or later)
+    ret = ['rts']
+    if run.get('end_limit'):
+        p = 50 - end if 50 - end != 1 else 0
+        ret = (pad(p).split('\n') if p > 1 else []) + ['rts']
+    out += ['bcs %s_e' % name] + ret + ['%s_e:' % name] + tail[:4] + ['inx']
     if n > 1:
         out += pad(n).split('\n')
     out += [tail[4], 'asl', 'sta ENAM0', 'clc', 'jmp %s_s' % name]   # (clc after asl: the carry marks line 2)
@@ -135,7 +146,33 @@ def move_maps(plan):
 
 
 
+GHOST = 0x0C                           # the returning meanie's outline: light grey
+
+
+MV_MODES = {'two': 1, 'lr': 2, 'rl': 3}     # the moving platform: two-way, left to right, right to left
+MV_PAUSE, MV_HIDE = 60, 60                  # frames: its pause at each end, and hidden (one-way)
+
+
+def mover_runs(plan):
+    """The moving platform (the ball, 8 px, 6 lines from row mv['row']): the editor gives its rows
+    (and the rows just before its first and its last, whose bodies end by cycle 49) runs of their own,
+    with the stripe colour and the registers planned for it. The call list writes ENABL before its
+    first run's first line (MvOn: 0 while a one-way platform is away) and before the run below it."""
+    mv = plan['mover']
+    r0, r1 = mv['row'], mv['row'] + 3
+    for q in plan['runs']:
+        if r0 <= q['r'] < r1:
+            q['enabl'] = 'MvOn'
+            assert q['r'] + q['n'] <= r1, 'the editor splits runs at the moving platform'
+        elif q['r'] == r1:
+            q['enabl'] = '#0'
+        if q['r'] + q['n'] in (r0, r1):
+            q['end_limit'] = 50              # (ldx RunX 3, lda MvOn 3, sta ENABL 3: still WSYNC by 73)
+
+
 def compile_screen(plan, outdir, game=False):
+    if game and plan.get('mover'):
+        mover_runs(plan)
     errs = [(r['r'], e) for r in plan['runs'] for e in r['errors']]
     if game:
         errs += [(r['r'], 'rows 0-%d are the timer\'s band: keep them empty' % (timer.TOPROWS - 1))
@@ -146,7 +183,7 @@ def compile_screen(plan, outdir, game=False):
     # bodies: one per distinct (row key, timed writes)
     bodies, run_body = {}, []
     for run in plan['runs']:
-        bk = run['key'] + json.dumps(run['tasks']) + json.dumps(run.get('prevcol'))
+        bk = run['key'] + json.dumps(run['tasks']) + json.dumps(run.get('prevcol')) + str(run.get('end_limit'))
         if bk not in bodies:
             name = 'B%d' % len(bodies)
             code, tables = body(name, run)
@@ -175,20 +212,49 @@ def compile_screen(plan, outdir, game=False):
                     data.setdefault(t, {})[nlines + k] = L.get(t, 0)
             nlines += len(lines)
         return seen[sig]
+    # a yoyoed meanie shows as a dotted outline in light grey until it returns: per item, its graphic
+    # by line, then the edge pixels (set, with a clear neighbour), every other one kept
+    ghost = {}
+    if game:
+        shape = {}
+        for run in plan['runs']:
+            k = 0
+            for o in run['objs']:
+                if o['t'] != 'L':
+                    if o.get('ref') and o['ref'][0] == 'item' and plan['items'][o['ref'][1]]['kind'] not in ('gem', 'key'):
+                        for j, L in enumerate(run['lines']):
+                            shape.setdefault(o['ref'][1], {})[2 * run['r'] + j] = L.get('G%d' % k, 0)
+                    k += 1
+        for i, g in shape.items():
+            px = lambda y, b: 0 <= b < 8 and g.get(y, 0) >> (7 - b) & 1
+            ghost[i] = {y: sum(1 << (7 - b) for b in range(8)
+                               if px(y, b) and (b + y // 2) % 2 == 0
+                               and not (px(y - 1, b) and px(y + 1, b) and px(y, b - 1) and px(y, b + 1)))
+                        for y in g}
+    plan['ghost'] = ghost
     for ri, (run, (name, code, tables)) in enumerate(zip(plan['runs'], run_body)):
         slots, k = [], 0
         for o in run['objs']:
             if o['t'] != 'L':
                 if o.get('ref') and o['ref'][0] == 'item' and o['ref'][1] in bit:
-                    slots.append((k, bit[o['ref'][1]]))
+                    slots.append((k, bit[o['ref'][1]], o['ref'][1]))
                 k += 1
         run_x.append(lines_at(name, tables, run['lines']))
         if slots:
             xs = []
             for v in range(1 << len(slots)):
-                gone = {'G%d' % kk for j, (kk, _) in enumerate(slots) if v >> j & 1}
-                xs.append(lines_at(name, tables, [{t: (0 if t in gone else val) for t, val in L.items()} for L in run['lines']]))
-            item_runs.append((ri, [b for _, b in slots], xs))
+                gone = {kk: it for j, (kk, _, it) in enumerate(slots) if v >> j & 1}
+                ls = []
+                for j, L in enumerate(run['lines']):
+                    L = dict(L)
+                    for kk, it in gone.items():
+                        gh = ghost.get(it, {}).get(2 * run['r'] + j, 0)
+                        L['G%d' % kk] = gh
+                        if gh:
+                            L['C%d' % kk] = GHOST
+                    ls.append(L)
+                xs.append(lines_at(name, tables, ls))
+            item_runs.append((ri, [b for _, b, _ in slots], xs))
     if nlines > 256:
         raise SystemExit('line index overflow: %d lines' % nlines)
     # data area from $F000, packed: each block is placed at the first address where every byte it
@@ -213,6 +279,12 @@ def compile_screen(plan, outdir, game=False):
                     labels[name] = a
                     return
         raise SystemExit('no room for ' + name)
+    # the Trogg strip first (a page's worth, mostly zeros: the tables fill in around it)
+    tr = plan['trogg']
+    frame = tr['frames'][0]['rows']
+    h = len(frame)
+    strip = [0] * 96 + list(range(1, h + 1)) + [0] * 96
+    place('TroggStrip', dict(enumerate(strip)), True)    # one page: inc TrogPtr only steps the low byte
     for t in sorted(data, key=lambda t: -len(data[t])):
         place(t, data[t], True)
     table_bytes = sum(len(d) for d in data.values())
@@ -222,11 +294,6 @@ def compile_screen(plan, outdir, game=False):
     if game:                               # the front screen's per-line tables (its own loop)
         for t, vals in front.tables().items():
             place(t, dict(enumerate(vals)), True)
-    tr = plan['trogg']
-    frame = tr['frames'][0]['rows']
-    h = len(frame)
-    strip = [0] * 96 + list(range(1, h + 1)) + [0] * 96
-    place('TroggStrip', dict(enumerate(strip)), True)    # one page: inc TrogPtr only steps the low byte
     place('TroggFrame', dict(enumerate(frame)), False, 0 if game else 1)
     nlad, handup = 0, 0
     if game:
@@ -271,7 +338,15 @@ def compile_screen(plan, outdir, game=False):
           'START_X = %d' % tr['x'], 'START_ROW = %d' % tr['row'], 'NLAD = %d' % nlad,
           'NIR = %d' % len(item_runs), 'NITEM = %d' % len(coll), 'KEYMASK = %d' % sum(1 << b for b, i in enumerate(coll) if plan['items'][i]['kind'] == 'key'), 'HANDUP = %d' % handup, 'RunX = $C0', 'FRONT_BG = $%02X' % front.BG, 'FRONT_INK = $%02X' % front.INK,
           'FRONT_FILL = $%02X' % front.FILL, 'TOPROWS = %d' % timer.TOPROWS, 'MUSRAM = $DB', 'AUDC0 = $15', 'AUDC1 = $16', 'AUDF0 = $17',
-          'AUDF1 = $18', 'AUDV0 = $19', 'AUDV1 = $1A', 'TWHITE = $%02X' % timer.WHITE, 'TAIL_X = %d' % front.TAIL_P1_X]
+          'AUDF1 = $18', 'AUDV0 = $19', 'AUDV1 = $1A', 'TWHITE = $%02X' % timer.WHITE, 'TAIL_X = %d' % front.TAIL_P1_X, 'ENABL = $1F', 'RESBL = $14', 'HMBL = $24']
+    mv = plan.get('mover') if game else None
+    if mv:
+        a, b = (mv['x1'], mv['x0']) if mv['mode'] == 'rl' else (mv['x0'], mv['x1'])
+        o += ['MV_MODE = %d' % MV_MODES[mv['mode']], 'MV_ROW = %d' % mv['row'], 'MV_A = %d' % a, 'MV_B = %d' % b,
+              'MV_DIR = %d' % (1 if b > a else 255), 'MV_SPD = %d' % mv.get('speed', 128),
+              'MV_PAUSE = %d' % MV_PAUSE, 'MV_HIDE = %d' % MV_HIDE]
+    else:
+        o += ['MV_MODE = 0', 'MV_A = 0']
     if game and (('--check' in sys.argv and '--front' not in sys.argv) or plan.get('skipfront')):
         o.append('SKIPFRONT = 1')       # (picture checks of the level start in it)
     assert len(item_runs) <= 40, 'too many runs with items for RunX'
@@ -299,6 +374,8 @@ def compile_screen(plan, outdir, game=False):
         if run['n'] <= skip:
             continue
         calls.append('        ldx RunX+%d' % irun[ri] if ri in irun else '        ldx #%d' % (x0 + 2 * skip))
+        if run.get('enabl') and (ri == 0 or plan['runs'][ri - 1].get('enabl') != run['enabl']):
+            calls += ['        lda %s' % run['enabl'], '        sta ENABL      ; the moving platform (at cycle 65-67)']
         calls += ['        jsr %s' % name] + ['        jsr %s_i' % name] * (run['n'] - 1 - skip)
     body_code = []
     for name, code, tables in bodies.values():
@@ -313,7 +390,8 @@ def compile_screen(plan, outdir, game=False):
         sta PF2
         sta GRP1
         sta GRP0
-        sta ENAM0'''
+        sta ENAM0
+        sta ENABL'''
     overscan = '''        lda #2
         sta VBLANK
         ldx #29
@@ -518,6 +596,7 @@ Clear:  sta $00,x
         lda #YOFACE
         sta Facing
         ENDIF
+        jsr MvInit
         IFCONST SKIPFRONT
         lda #1
         sta Mode
@@ -530,6 +609,10 @@ Clear:  sta $00,x
         sta Repos           ; position P0 in the first frame
         sta CTRLPF          ; mirrored playfield
         sta NUSIZ1
+        IFCONST SKIPFRONT
+        lda #$31
+        sta CTRLPF          ; (the game's: the ball 8 px)
+        ENDIF
         lda #$20
         sta NUSIZ0          ; single-width Trogg
 Frame:  lda #2
@@ -566,6 +649,7 @@ Frame:  lda #2
         jmp Shown
 InGame: jsr Timer
         jsr Logic
+        jsr Mover           ; the moving platform (carrying him: after his move)
         jsr RunVars         ; the item runs' line indexes, from the collected bits
 Shown:
         lda #$FE            ; the frame's bit 0 (the hand row's yoyo, M0) only while it's out
@@ -678,10 +762,19 @@ def model(plan, palette, yoyo=True):
                 if ob['t'] != 'L':
                     gi += 1
                 if ob.get('ref') and ob['ref'][0] == 'item' and ob['ref'][1] in gone:
-                    continue
+                    gh = plan.get('ghost', {}).get(ob['ref'][1])
+                    if gh is None:
+                        continue
+                    v, c = gh.get(y, 0), GHOST
                 for b in range(8):
                     if v & (0x80 >> b):
                         img[y][ob['x'] + b] = c
+    mv = plan.get('mover')                  # the moving platform at its start (checks hold it there)
+    if mv and not yoyo:
+        a = mv['x1'] if mv['mode'] == 'rl' else mv['x0']
+        for k in range(6):
+            for x in range(a, a + 8):
+                img[2 * mv['row'] + k][x] = plan['stripes'][min(k, len(plan['stripes']) - 1)]
     tr = plan['trogg']
     rows = tr['frames'][0]['rows']
     yt = plan.get('yotest')
@@ -727,8 +820,6 @@ def check(base, plan, outdir, game=False):
     # the first kernel line: the background shows from the top of the visible picture
     # (VBLANK goes off part-way through the line before the first body's WSYNC)
     first = next(r for r in range(im.height) if im.getpixel((im.width - 2, r)) == bgrgb) + 1
-    if game and '--front' not in sys.argv:
-        first -= 2 * timer.TOPROWS          # (the timer's band is black: the first background line is its last)
     want = front_model() if '--front' in sys.argv else model(plan, pal, yoyo=not game)
     if game and '--front' not in sys.argv:
         want[:timer.TOPROWS * 2] = timer.model_lines()

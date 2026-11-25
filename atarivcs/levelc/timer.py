@@ -1,8 +1,8 @@
 """The time since the start, "M:SS" (to 9:59), at the top left of the level screen (x 16-47, the
-start of PF1), white on a black band: P0 and P1 both at two copies close (NUSIZ 1), P0 at x 16 and
+start of PF1), black on the level's background, 7 lines tall: P0 and P1 both at two copies close (NUSIZ 1), P0 at x 16 and
 P1 at x 24, interleaved, so four 8 px characters sit side by side; each line rewrites GRP0 and GRP1
-between their first and second copies. The band is the screen's top 5 rows (10 lines): 8 lines of
-digits, then two lines that put P0 back at the Trogg's x (a coarse RESP0, then HMOVE: whose line
+between their first and second copies. The band is the screen's top 5 rows (10 lines): 7 lines of
+digits, a line positioning the ball (the moving platform), then two lines that put P0 back at the Trogg's x (a coarse RESP0, then HMOVE: whose line
 blanks its first 8 pixels) and park P1 for the kernel. Levels can't use rows 0-4."""
 TOPROWS = 5
 
@@ -10,7 +10,7 @@ TOPROWS = 5
 def _pad(n):
     import tiatest
     return '        ' + tiatest.pad(n).replace('\n', '\n        ')       # (ends at cycle 54)
-WHITE, BAND = 0x0E, 0x00
+WHITE = 0x00                   # (the digits: black)
 
 GLYPHS = [                     # 0-9, then the colon; 7 rows (the 8th blank), in bits 6-1
     ['.XXXX.', 'XX..XX', 'XX.XXX', 'XXXXXX', 'XXX.XX', 'XX..XX', '.XXXX.'],
@@ -46,7 +46,7 @@ def band(level_bg, trogg_col):
     24, are drawn from cycles 28 and 31); GRP0 again at 31 (its first copy is done at 30.3, the
     second starts at 33.3) and GRP1 at 34 (window 33-36)."""
     return """        lda #$%02X
-        sta COLUBK          ; the band: black
+        sta COLUBK          ; the band: the level's background
         ldy #7
         jmp TLine           ; (over any alignment padding)
         IF (<.) > $D0
@@ -63,10 +63,40 @@ TLine:  sta WSYNC
         stx GRP0            ; 31: P0's second copy (x 32)
         sta GRP1            ; 34: P1's second copy (x 40)
         dey
-        bpl TLine
-        lda #0
-        sta GRP0
-        sta GRP1
+        bne TLine           ; (7 lines: the glyphs' blank 8th row isn't shown)
+        sty GRP0
+        sty GRP1
+        ldx MvX             ; the ball (the moving platform) at MvX: as PosObj, a missile's x + 1
+        inx
+        txa
+        jmp TBall           ; (over any alignment padding: neither loop's branch crosses a page)
+        IF (<.) > $C8
+        ALIGN 256
+        ENDIF
+TBall:  sta WSYNC           ; (the band's 8th line)
+        sec
+TBalL:  sbc #15
+        bcs TBalL
+        adc #15
+        tay
+        lda HMTab1,y
+        bit $80
+        nop
+        sta.w RESBL
+        sta HMBL            ; (71 at most: x up to 144)
+TPos:   sta WSYNC           ; P0 back to TX: as PosObj (RESP0 ends at 5n + 18)
+        lda TX
+        sec
+TPosL:  sbc #15
+        bcs TPosL
+        adc #15
+        tay
+        lda HMTab1,y
+        nop
+        sta.w RESP0
+        sta HMP0
+        sta WSYNC
+        sta HMOVE           ; 3 (this line's first 8 pixels are blanked)
         lda #$20
         sta NUSIZ0          ; the Trogg again: one copy, a 4 px yoyo
         lda Facing
@@ -74,38 +104,18 @@ TLine:  sta WSYNC
         lda #$%02X
         sta COLUP0
         lda #0
-        sta COLUP1
-        lda TX
-        jmp TPos
-        IF (<.) > $E0
-        ALIGN 256
-        ENDIF
-TPos:   sta WSYNC           ; P0 back to TX: as PosObj (RESP0 ends at 5n + 18)
-        sec
-TPosL:  sbc #15
-        bcs TPosL
-        adc #15
-        tay
-        lda HMTab1,y
-        bit $80
-        nop
-        sta.w RESP0
-        sta HMP0
-        sta WSYNC
-        sta HMOVE           ; 3 (this line's first 8 pixels are blanked)
-        lda #$%02X          ; 5
-        sta COLUBK          ; 8: the level's background from this line's start
+        sta COLUP1          ; 24
 %s
         sta RESP1           ; 57: P1 parked for the kernel
-        sta HMCLR           ; 60""" % (BAND, trogg_col, level_bg, _pad(46))
+        sta HMCLR           ; 60""" % (level_bg, trogg_col, _pad(30))
 
 
 def model_lines(minutes=0, seconds=0):
     """The band's 10 lines as the checker expects them: colour index per pixel (None: background)."""
-    img = [[BAND] * 160 for _ in range(9)] + [[BAND] * 8 + [None] * 152]
+    img = [[None] * 160 for _ in range(9)] + [[0] * 8 + [None] * 152]
     chars = [minutes, 10, seconds // 10, seconds % 10]
     for k, c in enumerate(chars):
-        for y, v in enumerate(glyph_rows(c)):
+        for y, v in enumerate(glyph_rows(c)[:7]):
             for b in range(8):
                 if v & (0x80 >> b):
                     img[y][16 + 8 * k + b] = WHITE

@@ -30,13 +30,37 @@
     return [...m.values()];
   }
   // lit: Set of lit blocks; prev: {col: 'bg'|'stripe', PF1, PF2} or null. Returns [[way, tasks, endState]].
-  function tasks(lit, prev) {
+  // moverX: the row has the moving platform (the ball, coloured by COLUPF) from x moverX on: only
+  // the rewrite way, with the stripe colour from the line's start (or the ball) and the registers
+  // exactly the row's blocks (anything left above would show)
+  function tasks(lit, prev, moverX) {
     if (!prev) prev = { col: 'bg', PF1: 0, PF2: 0 };
     for (const k of lit) if (k < 4 || k > 35) return [];
     const L = {}, R = {};
     for (const r of REGS) { L[r] = value(lit, r, 'L'); R[r] = value(lit, r, 'R'); }
     const out = [], litX = [...lit].map(k => 4 * k).sort((a, b) => a - b);
     const regsOf = o => ({ PF1: o.PF1, PF2: o.PF2 });
+    if (moverX !== undefined) {
+      const first = Math.min(moverX, ...litX);
+      const tk = [T('Stripe', 0, colNewBy(first), 'COLUPF')];
+      for (const r of REGS) {
+        for (const P of new Set([prev[r], R[r]])) {
+          const diff = L[r] ^ P;
+          if (diff) {
+            const xs = bits(diff).map(b => 4 * blockOf(r, 'L', b));
+            tk.push(L[r] ? T('L' + r, 0, pfNewBy(Math.min(...xs)), r) : IMM(0, 0, pfNewBy(Math.min(...xs)), r));
+          }
+        }
+        if (L[r] !== R[r]) {
+          const d = bits(L[r] ^ R[r]);
+          const lo = Math.max(...d.map(b => pfOldUntil(4 * blockOf(r, 'L', b))));
+          const hi = Math.min(...d.map(b => pfNewBy(4 * blockOf(r, 'R', b))));
+          if (lo > hi) return [];
+          tk.push(R[r] ? T('R' + r, lo, hi, r) : IMM(0, lo, hi, r));
+        }
+      }
+      return [['rewrite', dedupe(tk), { col: 'stripe', ...R }]];
+    }
     if (!lit.size) {
       const vis = [];
       for (const r of REGS) for (const side of 'LR') for (const [k, b] of blocksOf(r, side)) if (prev[r] >> b & 1) vis.push(4 * k);

@@ -442,7 +442,29 @@ them in the bank's ROM.
   per-line tables for its 60 lines. The display bank picks it or the level's call list from
   `Mode`; fire (after it has been up) starts the game. `levelc.py --game --check --front` checks
   it in Stella.
-* Starter screen with the game, front screen, timer and music: bank 0 2989 bytes, bank 1 2990
+* Starter screen with the game, front screen, timer and music: bank 0 3048 bytes, bank 1 3127 (with a moving platform: 3227, 3306)
+* Moving platform (one per screen, set in the editor: none, two-way, left to right, right to left;
+  its top row on a 6-line boundary, a range of x 16-120 for its left edge, a speed of 0.25-1 px a
+  frame): the ball (CTRLPF $31: 8 px), 6 lines. Kernel: the ball is positioned from `MvX` on the
+  timer band's 8th line (and moved by the band's HMOVE with P0); the call list writes ENABL (from
+  `MvOn`, 0 while a one-way platform is away) before its first run and 0 before the run below. The
+  editor gives its rows renderers of their own (key tag M): the stripe colour by the ball's
+  leftmost x and the playfield registers exactly the row's blocks (no hiding by colour). The rows
+  before its first and its last (tag E) end by cycle 50 and pad their return to a fixed cycle, so
+  the ENABL writes land at cycles 65-67 (pixel 130 on: hence x up to 120). Logic (`Mover`, after
+  `Logic`): pause 60 frames at its start; move; pause at its end; two-way comes back, one-way goes
+  for 60 frames and comes back at its start. `Floor` treats its top as solid where it is; standing
+  on it (or yoyoing) carries the Trogg (TX and the frame's HMP0). Picture checks hold it at its
+  start. Cost: about 200 bytes of logic and 80 of display, plus a body or two per screen that uses
+  it. Vertical blank worst case about 1940 of 2752 cycles.
+* Timer band: 7 lines, black digits on the level's background (the HMOVE line's first 8 pixels,
+  blanked by the hardware, now show as a short black dash under it).
+* Returning meanies: a yoyoed meanie shows as a light grey ($0C) dotted outline (its edge pixels,
+  every other one) and comes back 5 s later (`Ret`, a countdown per item by 4 frames), but not
+  while that would put it on the Trogg. The outline is its collected dataset (instead of zeros), so
+  it costs no RAM or state beyond the countdown; it is harmless and the yoyo ignores it. (The
+  Trogg strip is now placed before the line tables so they fill in around its zeros: the 16
+  extra lines would otherwise have cost a page.)
 * Timed runs, no checkpoint saves: touching the last remaining key (`KEYMASK`, the compiler's mask
   of the key items' `Collected` bits) completes the level: a 90-frame pause (`Won`), then the next
   level (for now the same one again). The time on reaching a level is its checkpoint (`CkSec`,

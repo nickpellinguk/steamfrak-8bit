@@ -237,7 +237,31 @@ def main():
     expect('the yoyo reaches it: the Scrubbly is gone', st2, coll=4, state=3, dead=0)
     expect('... its runs use their empty datasets', st2, runx=lambda r: r == st['runx'])
     expect('... and the yoyo comes back', g.run(40), state=0)
-    expect('now he walks past where it was', g.dies(80, R), died=0, x=lambda v: v <= 100)
+    expect('now he walks past where it was (its outline is harmless)', g.dies(80, R), died=0, x=lambda v: v <= 100)
+    # it comes back after 5 s (300 frames from the hit), but not on top of him: he's past it now
+    t = g.frames
+    g.run(40)
+    expect('... still away after 4 s or so', col(), coll=4)
+    for _ in range(200):
+        g.run(1)
+        if not col()['coll']:
+            break
+    expect('... back 5 s after the hit', {**col(), 'f': g.frames - t}, coll=0, f=lambda v: not 170 <= v <= 185)   # (120 frames already gone)
+    expect('... its runs show it again', col(), runx=lambda r: r != st['runx'])
+    # standing where it is when it is due: it waits until he moves off
+    g = Game(os.path.join(outdir, 'level'))
+    g.run(100)
+    g.run(20, R)
+    for _ in range(60):
+        g.run(1, 0, True)
+        if col()['coll']:
+            break
+    g.run(40)
+    g.m.memory[g.sym['TX']] = 92                    # (on the Scrubbly's spot)
+    g.run(320)
+    expect('due while he stands on its spot: it waits', col(), coll=4, dead=0)
+    g.run(60, L)
+    expect('... and comes back once he has moved off', col(), coll=0)
     # gems and keys
     g = Game(os.path.join(outdir, 'level'))
     g.run(46, L)
@@ -274,6 +298,40 @@ def main():
     g.dies(200, R)                                 # off the floor's end, and the restart
     expect('a death: the clock goes back to the checkpoint (0:02)',
            {**g.state(), 'clock': tm()[:2], 'was': t1[:2]}, clock=lambda v: v[0] != 0 or not 2 <= v[1] <= 4)
+    # the moving platform (rows 66-68, x 48 to 100, below the middle-left ledge's right end)
+    for mode in ('lr', 'two', 'rl'):
+        mdir = os.path.join(outdir, 'mv_' + mode)
+        os.makedirs(mdir, exist_ok=True)
+        subprocess.run([sys.executable, os.path.join(HERE, 'levelc.py'), '--game', '--mover=%s,66,48,100' % mode, mdir],
+                       check=True, stdout=subprocess.DEVNULL)
+        g = Game(os.path.join(mdir, 'level'))
+        mv = lambda: {**g.state(), 'mx': g.m.memory[g.sym['MvX']], 'on': g.m.memory[g.sym['MvOn']], 'ph': g.m.memory[g.sym['MvPh']]}
+        hold = lambda x, ph=0: [g.m.memory.__setitem__(g.sym[k], v) for k, v in
+                                (('MvX', x), ('MvPh', ph), ('MvT', 250), ('MvOn', 2))]
+        g.run(2)
+        if mode == 'rl':
+            expect('rl: starts at its right end, paused', mv(), mx=100, on=2)
+        a = 100 if mode == 'rl' else 48
+        hold(a)                                     # (paused at its start)
+        for k, v in (('TX', a), ('TRow', 58), ('State', 1), ('XV', 0), ('VYL', 0), ('VYH', 0), ('Repos', 1)):
+            g.m.memory[g.sym[k]] = v                # (just above it, falling)
+        expect(mode + ': lands on it (row 65)', g.run(30), row=65, state=0, dead=0)
+        g.m.memory[g.sym['MvT']] = 1
+        g.run(40)
+        st = mv()
+        expect(mode + ': carries him as it moves', st, row=65, state=0, x=lambda v: v - a != st['mx'] - a or v == a)
+        g.run(120)
+        b = 48 if mode == 'rl' else 100
+        expect(mode + ': ... to its far end (x %d)' % b, mv(), mx=b, row=65, x=b)
+        if mode != 'two':
+            st = g.run(70)
+            expect(mode + ': then it goes (hidden), and he falls', {**mv(), 'fell': int(st['row'] != 65)}, on=0, fell=1)
+            ons = [(g.run(1), mv()['on'])[1] for _ in range(80)]
+            expect(mode + ': back a second later', {**mv(), 'back': ons[-1]}, back=2)
+        else:
+            xs = [(g.run(1), mv())[1] for _ in range(200)]
+            low = min(xs, key=lambda q: q['mx'])
+            expect('two: and back again, carrying him', low, mx=48, row=65, x=48)
     print('all ok' if ok else 'SOME FAILED')
     return ok
 

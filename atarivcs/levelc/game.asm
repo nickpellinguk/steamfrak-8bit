@@ -52,6 +52,14 @@ FArm    = $BD           ; front screen: fire has been up (so a press starts)
 Won     = $BE           ; frames of the level-complete pause (0: none)
 CkSec   = $E8           ; the time when this level was reached (death sets the clock back to it)
 CkMin   = $E9
+Ret     = $EA           ; per item ($EA-$F1): a yoyoed meanie's countdown to its return (by 4 frames)
+RETURN  = 75            ; 5 s
+MvX     = $F2           ; the moving platform (the ball): x, step fraction, phase, timer,
+MvF     = $F3           ; ENABL value (2 shown, 0 away), and this frame's step (-1, 0, 1)
+MvPh    = $F4           ; phases: 0 paused at its start (MV_A), 1 moving to MV_B, 2 paused there,
+MvT     = $F5           ; 3 two-way: moving back; one-way: away (hidden, back at MV_A)
+MvOn    = $F6
+MvD     = $F7
 TDig    = $D0           ; the timer: pointers to its four characters' glyphs (M, colon, S, S)
 TFr     = $D8           ; frames into the second
 TSec    = $D9           ; seconds (BCD)
@@ -98,7 +106,20 @@ PosL:   sbc #15
         rts
 
 ; ---- A = feet row; returns A != 0 when a platform is right under the feet (X, Y, Tmp used)
-Floor:  tay
+Floor:
+        IF MV_MODE > 0
+        cmp #MV_ROW - 1         ; the moving platform's top: solid where it is
+        bne FlMap
+        pha
+        jsr MvUnder
+        beq FlNot
+        pla
+        lda #1
+        rts
+FlNot:  pla
+FlMap:
+        ENDIF
+        tay
         lda FB,y
         bmi FloorNo
         tay
@@ -232,6 +253,7 @@ LDead:  lda Dead
         lda CkMin
         sta TMin
 Restart:
+        jsr MvInit
         lda #0
         sta TFr
         IFCONST START_COLL
@@ -253,7 +275,8 @@ Restart:
         sta Repos
         sta UDDeb
 LRet:   rts
-Alive:  jsr Collide
+Alive:  jsr Returns
+        jsr Collide
         lda SWCHA
         sta Joy
         lda INPT4               ; fire released: the next throw is allowed
@@ -631,22 +654,8 @@ Collide:
 CoL:    lda Collected
         and ItBit,x
         bne CoN
-        lda TRow
-        cmp ItTop,x
-        bcc CoN                 ; his feet are above it
-        sec
-        sbc #H - 1
-        bcc CoHit               ; (his head is off the top: the bottom test passes)
-        cmp ItBot,x
-        beq CoHit
-        bcs CoN                 ; his head is below it
-CoHit:  lda TX
-        sec
-        sbc ItX,x
-        clc
-        adc #6
-        cmp #13
-        bcs CoN                 ; more than 6 px apart
+        jsr Touch
+        bcs CoN
         lda ItKind,x            ; a meanie: he dies
         bne CoDie
         lda Collected
@@ -666,6 +675,56 @@ CoN:    dex
         rts
 CoDie:  lda #90
         sta Dead
+        rts
+
+; ---- carry clear if the Trogg's box (rows TRow - H + 1 .. TRow, x within 6 px) touches item X
+Touch:
+        lda TRow
+        cmp ItTop,x
+        bcc TNo                 ; his feet are above it
+        sec
+        sbc #H - 1
+        bcc TYes                ; (his head is off the top: the bottom test passes)
+        cmp ItBot,x
+        beq TYes
+        bcs TNo                 ; his head is below it
+TYes:   lda TX
+        sec
+        sbc ItX,x
+        clc
+        adc #6
+        cmp #13
+        rts
+TNo:    sec
+        rts
+
+; ---- yoyoed meanies come back: each one's countdown (by 4 frames); at the end its bit clears (the
+; dotted outline becomes the meanie again), but not while it would land on the Trogg
+Returns:
+        IF NITEM > 0
+        lda Frm
+        and #3
+        bne RtOut
+        ldx #NITEM - 1
+RtL:    lda ItKind,x
+        beq RtN
+        lda Collected
+        and ItBit,x
+        beq RtN
+        dec Ret,x
+        bne RtN
+        jsr Touch
+        bcs RtGo
+        inc Ret,x               ; on him: wait
+        bne RtN
+RtGo:   lda ItBit,x
+        eor #$FF
+        and Collected
+        sta Collected
+RtN:    dex
+        bpl RtL
+RtOut:
+        ENDIF
         rts
 
 ; ---- the yoyo against the meanies (ItKind 1) still there: the ball (4 px at YoX, on his hand's
@@ -698,6 +757,8 @@ YHL:    lda ItKind,x
         lda Collected
         ora ItBit,x
         sta Collected
+        lda #RETURN
+        sta Ret,x
         lda #1
         sta YoBack
 YHN:    dex
@@ -744,7 +805,9 @@ FLDown: lda FArm
         sta Mode
         sta Repos               ; position the Trogg
         sta NUSIZ1              ; P1 back to the kernel's two copies, the playfield behind
-        sta CTRLPF
+        lda #$31
+        sta CTRLPF              ; (mirrored, the ball 8 px: the moving platform)
+        lda #1
         sta YoDeb               ; (the press doesn't throw the yoyo)
         sta UDDeb
         jsr MusicInit           ; the tune starts with the game
@@ -809,4 +872,135 @@ TPtr:   lda TMin
         sta TDig+3
         sta TDig+5
         sta TDig+7
+        rts
+
+; ---- the moving platform: the ball, 8 px, rows MV_ROW .. + 2. Two-way: pauses at each end; one-way
+; (left to right or right to left): pauses at its start, crosses, pauses, then is away (hidden) and
+; comes back at its start. It carries the Trogg standing on it.
+MvInit:
+        lda #MV_A
+        sta MvX
+        IF MV_MODE > 0
+        lda #2
+        sta MvOn
+        lda #MV_PAUSE
+        sta MvT
+        lda #0
+        sta MvPh
+        sta MvF
+        ENDIF
+        rts
+
+; Z clear if the Trogg's centre is over the platform (and it's there)
+MvUnder:
+        IF MV_MODE > 0
+        lda MvOn
+        beq MvURet
+        lda TX
+        clc
+        adc #4
+        sec
+        sbc MvX
+        cmp #8
+        lda #0
+        bcs MvURet
+        lda #1
+MvURet:
+        ENDIF
+        rts
+
+Mover:
+        IF MV_MODE > 0
+        IFCONST NOTIMER
+        rts                     ; (picture checks: it stays at its start)
+        ENDIF
+        lda #0
+        sta MvD
+        sta Tmp                 ; 1: he's standing on it (carried)
+        lda Dead
+        ora Won
+        bne MvOut
+        lda State
+        beq MvSt
+        cmp #ST_YOYO
+        bne MvGo
+MvSt:   lda TRow
+        cmp #MV_ROW - 1
+        bne MvGo
+        jsr MvUnder
+        sta Tmp
+MvGo:   lda MvPh
+        lsr
+        bcs MvRun
+        dec MvT                 ; paused (0, 2)
+        bne MvOut
+        inc MvPh
+        IF MV_MODE > 1
+        lda MvPh
+        cmp #3                  ; one-way: the end of its pause at MV_B: away, back at MV_A
+        bne MvOut
+        lda #0
+        sta MvOn
+        lda #MV_A
+        sta MvX
+        lda #MV_HIDE
+        sta MvT
+        ENDIF
+MvOut:  rts
+MvRun:
+        IF MV_MODE > 1
+        lda MvPh
+        cmp #3
+        bne MvMove
+        dec MvT                 ; away
+        bne MvOut
+        jmp MvInit
+MvMove:
+        ENDIF
+        clc
+        lda MvF
+        adc #MV_SPD
+        sta MvF
+        bcc MvOut
+        ldy #MV_DIR             ; a pixel: towards MV_B (phase 1), or back (two-way, phase 3)
+        lda MvPh
+        cmp #1
+        beq MvStep
+        ldy #(256 - MV_DIR) & 255
+MvStep: sty MvD
+        tya
+        clc
+        adc MvX
+        sta MvX
+        ldy MvPh
+        cpy #1
+        bne MvBack
+        cmp #MV_B
+        bne MvCarry
+        beq MvEnd
+MvBack: cmp #MV_A
+        bne MvCarry
+MvEnd:  iny                     ; 1 -> 2, 3 -> 0
+        tya
+        and #3
+        sta MvPh
+        lda #MV_PAUSE
+        sta MvT
+MvCarry:
+        lda Tmp
+        beq MvOut
+        lda MvD                 ; carried: TX and this frame's HMP0 by its step
+        clc
+        adc TX
+        sta TX
+        lda MvD
+        asl
+        asl
+        asl
+        asl
+        eor #$FF
+        sec
+        adc HMV                 ; HMV - step x 16 (+1: $F0 more to the right)
+        sta HMV
+        ENDIF
         rts
