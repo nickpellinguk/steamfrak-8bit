@@ -239,7 +239,7 @@ function sampleProject() {
       { b0: 4, b1: 27, top: 84, rows: 3 }         // floor, x 16-111
     ],
     // ladder 31 runs from the floor up to the top-left ledge
-    ladders: [lad(31, 42, 168), lad(61, 48, 120), lad(58, 128, 168)],
+    ladders: [lad(31, 42, 168), lad(61, 48, 120), lad(58, 128, 164)],   // (58 stops 2 rows above the floor, as Frak's do)
     items: [item('gem', 34, 42), item('gem', 88, 120), item('key', 103, 168)],
     trogg: { x: 57, row: 83 }
   };
@@ -461,12 +461,12 @@ function projectChecks() {
 // ---------------------------------------------------------------- movement maps ---------------
 // Built per bank (level type) from all its screens. Platform map: one entry per 6 lines (platforms
 // are 6 lines tall with tops on 6-line boundaries), 16 cells of 8 px across x 16-143, 2 bytes, bit 7 of byte 0 = x 16-23.
-// Ladder map: one entry per 4-pixel column (x 0-127), 32 bands of 6 lines down (the platform grid,
-// so a ladder's top meets its platform), 4 bytes, bit 7 of byte 0 = rows 0-2; a cell is set where its centre (4c + 2) is over a ladder.
-// Each level has an index (32 + 32 bytes) of byte offsets into the bank's shared pools; offset 0
+// Ladder map: one entry per 3-pixel column on the P1 grid (x 19 + 3c, 36 columns), 32 bands of 6 lines down (the platform grid,
+// so a ladder's top meets its platform), 4 bytes, bit 7 of byte 0 = rows 0-2; a cell is set where its centre (x 20 + 3c) is over a ladder.
+// Each level has an index (32 + 36 bytes) of byte offsets into the bank's shared pools; offset 0
 // is the one all-zero entry, so empty rows and columns cost nothing but their index byte, and
 // identical rows / columns are stored once for the whole bank.
-const PMAP_ROWS = 32, LMAP_COLS = 32, LMAP_BANDS = 32;
+const PMAP_ROWS = 32, LMAP_COLS = 36, LMAP_BANDS = 32;
 function floorBits(s, i) {
   let v = 0;
   for (const p of s.platforms) if (Math.floor(p.top / PROWS) === i) for (let k = Math.max(4, p.b0); k <= Math.min(35, p.b1); k++) v |= 1 << (15 - ((k - 4) >> 1));
@@ -474,7 +474,7 @@ function floorBits(s, i) {
 }
 function ladderBits(s, c) {
   let v = 0;
-  for (const l of s.ladders) if (4 * c + 2 >= l.x && 4 * c + 2 < l.x + 8 && l.bottom > l.top)
+  for (const l of s.ladders) if (20 + 3 * c >= l.x && 20 + 3 * c < l.x + 8 && l.bottom > l.top)
     for (let b = Math.floor(l.top / 3); b <= Math.floor((l.bottom - 1) / 3); b++) v = (v | (1 << (31 - b))) >>> 0;
   return v;
 }
@@ -620,8 +620,8 @@ function draw() {
     for (let x = 0; x <= W; x += 8) cx.fillRect(x * S, 0, 1, LINES * S);
   }
   if (document.getElementById('chk-maps').checked) {     // what the game logic sees
-    cx.fillStyle = 'rgba(255,214,10,0.45)';               // ladder cells: 4 px x 6 lines
-    for (let c = 0; c < LMAP_COLS; c++) { const v = ladderBits(s, c); for (let b = 0; b < LMAP_BANDS; b++) if (v >>> (31 - b) & 1) cx.fillRect(4 * c * S, 6 * b * S, 4 * S - 1, 6 * S - 1); }
+    cx.fillStyle = 'rgba(255,214,10,0.45)';               // ladder cells: 3 px (P1 grid) x 6 lines
+    for (let c = 0; c < LMAP_COLS; c++) { const v = ladderBits(s, c); for (let b = 0; b < LMAP_BANDS; b++) if (v >>> (31 - b) & 1) cx.fillRect((19 + 3 * c) * S, 6 * b * S, 3 * S - 1, 6 * S - 1); }
     cx.fillStyle = 'rgba(40,255,120,0.9)';                // floor cells: 8 px, on a platform's top line
     for (let i = 0; i < PMAP_ROWS; i++) { const v = floorBits(s, i); for (let k = 0; k < 16; k++) if (v >> (15 - k) & 1) cx.fillRect((16 + 8 * k) * S, 6 * i * S, 8 * S - 1, S); }
   }
