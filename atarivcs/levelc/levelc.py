@@ -293,6 +293,8 @@ def compile_screen(plan, outdir, game=False):
         body_code += ['        IF (<.) + %d > 256' % (nbytes(code) + 2), '        ALIGN 256', '        ENDIF']
         body_code += [c if c.endswith(':') else '        ' + c for c in code]
     kernel_end = '''        sta WSYNC
+        lda #2              ; blank at once (in the horizontal blank), not part-way along the line
+        sta VBLANK
         lda #0
         sta PF1
         sta PF2
