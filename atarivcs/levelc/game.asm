@@ -53,6 +53,7 @@ TDig    = $D0           ; the timer: pointers to its four characters' glyphs (M,
 TFr     = $D8           ; frames into the second
 TSec    = $D9           ; seconds (BCD)
 TMin    = $DA
+; MUSRAM ($DB-$E7, defined by levelc.py): the music driver's 13 bytes
 ; RunX ($C0 on, defined by levelc.py): the line index of each run showing items, for the kernel
 
 ST_STAND = 0
@@ -715,6 +716,7 @@ FLDown: lda FArm
         sta CTRLPF
         sta YoDeb               ; (the press doesn't throw the yoyo)
         sta UDDeb
+        jsr MusicInit           ; the tune starts with the game
 FLRet:  rts
 
 ; ---- the time since the start: frames, BCD seconds, minutes (stops at 9:59); then the band's

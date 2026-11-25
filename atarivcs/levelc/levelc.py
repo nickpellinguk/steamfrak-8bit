@@ -270,7 +270,8 @@ def compile_screen(plan, outdir, game=False):
           'TIM64T = $296', 'H = %d' % h,
           'START_X = %d' % tr['x'], 'START_ROW = %d' % tr['row'], 'NLAD = %d' % nlad,
           'NIR = %d' % len(item_runs), 'NITEM = %d' % len(coll), 'HANDUP = %d' % handup, 'RunX = $C0', 'FRONT_BG = $%02X' % front.BG, 'FRONT_INK = $%02X' % front.INK,
-          'FRONT_FILL = $%02X' % front.FILL, 'TOPROWS = %d' % timer.TOPROWS, 'TWHITE = $%02X' % timer.WHITE, 'TAIL_X = %d' % front.TAIL_P1_X]
+          'FRONT_FILL = $%02X' % front.FILL, 'TOPROWS = %d' % timer.TOPROWS, 'MUSRAM = $DB', 'AUDC0 = $15', 'AUDC1 = $16', 'AUDF0 = $17',
+          'AUDF1 = $18', 'AUDV0 = $19', 'AUDV1 = $1A', 'TWHITE = $%02X' % timer.WHITE, 'TAIL_X = %d' % front.TAIL_P1_X]
     if game and (('--check' in sys.argv and '--front' not in sys.argv) or plan.get('skipfront')):
         o.append('SKIPFRONT = 1')       # (picture checks of the level start in it)
     assert len(item_runs) <= 40, 'too many runs with items for RunX'
@@ -330,6 +331,7 @@ OS:     sta WSYNC
         o.append('Overscan:')
         o.append(overscan)
         o.append('        include "%s"' % os.path.join(HERE, 'game.asm'))
+        o.append('        include "musicdrv.asm"     ; the Frak tune (atarivcs/music), 13 bytes of RAM at MUSRAM')
         o.append('LogicEnd:')
         o.append('''        org $0FE0
         rorg $FFE0
@@ -382,7 +384,7 @@ OS:     sta WSYNC
         o.append('        org $FFFC\n        .word Start\n        .word Start')
     base = os.path.join(outdir, 'level')
     open(base + '.asm', 'w').write('\n'.join(o) + '\n')
-    r = subprocess.run(['dasm', base + '.asm', '-f3', '-o' + base + '.bin', '-l' + base + '.lst', '-s' + base + '.sym'],
+    r = subprocess.run(['dasm', base + '.asm', '-I' + os.path.join(ROOT, 'music'), '-f3', '-o' + base + '.bin', '-l' + base + '.lst', '-s' + base + '.sym'],
                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     if r.returncode:
         print(r.stdout[-2000:])
@@ -553,6 +555,7 @@ Frame:  lda #2
         jsr FrontLogic
         jmp Shown
 InGame: jsr Timer
+        jsr MusicTick       ; the tune, a frame on
         jsr Logic
         jsr RunVars         ; the item runs' line indexes, from the collected bits
 Shown:

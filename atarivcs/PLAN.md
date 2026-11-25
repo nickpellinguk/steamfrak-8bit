@@ -415,6 +415,11 @@ them in the bank's ROM.
   a line that puts P0 back at the Trogg's x (coarse RESP0) and one with its HMOVE (that line's first
   8 pixels are blanked, a notch under the band) that also parks P1 for the kernel. Levels can't use
   rows 0-4 (the compiler refuses them), and the Trogg's head stays below the band.
+* The music (atarivcs/music: `musicdrv.asm` and `frakmusic.inc`, about 1.4K) is in the game bank:
+  `MusicInit` when fire starts the game, `MusicTick` every frame in the vertical blank while
+  playing (the front screen is silent); its 13 bytes of RAM at $DB-$E7. The vertical blank's worst
+  frame now uses 2382 of its 2752 cycles (measured in py65 with WSYNC emulated): more game code
+  will need the overscan.
 * `--game` builds an 8K F8 ROM in two 4K banks. Bank 1, the display: the per-line tables, the
   Trogg strip, the call list and the bodies. Bank 0, the game: start-up, the vertical blank and
   overscan, the game code, the movement maps, item tables, Trogg frames and positioning tables.
@@ -433,8 +438,8 @@ them in the bank's ROM.
   per-line tables for its 60 lines. The display bank picks it or the level's call list from
   `Mode`; fire (after it has been up) starts the game. `levelc.py --game --check --front` checks
   it in Stella.
-* Starter screen with the game and the front screen: bank 0 1733 bytes, bank 1 2615 bytes (of
-  4096 each).
+* Starter screen with the game, front screen, timer and music: bank 0 3415 bytes, bank 1 2990
+  bytes (of 4096 each).
 
 ## Optimisation pass (backlog)
 
