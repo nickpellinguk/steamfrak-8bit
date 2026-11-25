@@ -109,7 +109,7 @@ def move_maps(plan):
     def ladder_bits(c):
         v = 0
         for l in plan['ladders']:
-            if l['x'] <= 4 * c + 2 < l['x'] + 8 and l['bottom'] > l['top']:
+            if l['x'] <= 19 + 3 * c + 1 < l['x'] + 8 and l['bottom'] > l['top']:
                 for b in range(l['top'] // 3, (l['bottom'] - 1) // 3 + 1):
                     v |= 1 << (31 - b)
         return v
@@ -119,7 +119,7 @@ def move_maps(plan):
         if v not in ppool:
             ppool.append(v)
         pidx.append(2 * ppool.index(v))
-    for c in range(32):
+    for c in range(36):                # 3 px columns on the P1 grid, x 19 + 3c
         v = ladder_bits(c)
         if v not in lpool:
             lpool.append(v)
@@ -193,7 +193,7 @@ def compile_screen(plan, outdir, game=False):
         hh = max(len(f) for f in fr)
         frames = [b for f in fr for b in [0] * (hh - len(f)) + f]
         fb = [(r + 1) // 3 if (r + 1) % 3 == 0 else 0xFF for r in range(97)]
-        for name, vals in (('PIdx', pidx), ('PPool', pb), ('LIdx', lidx), ('LPool', lb), ('FB', fb), ('Band3', [r // 3 for r in range(97)]),
+        for name, vals in (('PIdx', pidx), ('PPool', pb), ('LIdx', lidx), ('LPool', lb), ('FB', fb), ('Band3', [r // 3 for r in range(128)]),
                            ('Mask8', [0x80 >> i for i in range(8)]), ('TroggFrames', frames)):
             place(name, dict(enumerate(vals)), False)
         lad = [b for l in plan['ladders'] if l['bottom'] > l['top']

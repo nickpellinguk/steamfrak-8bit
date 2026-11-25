@@ -9,8 +9,10 @@
 ;   up/down are ignored after landing until released (Frak's updowndebounce)
 ; Movement is tested against the level's movement maps (atarivcs/PLAN.md, "Movement maps"):
 ;   PIdx (32 bands of 6 lines) -> byte offset into PPool (2 bytes: 16 cells of 8 px, x 16-143)
-;   LIdx (32 columns of 4 px)  -> byte offset into LPool (4 bytes: 32 bands of 6 lines)
-;   FB: feet row -> platform band right under the feet, or $FF; Band3: row -> 6-line band
+;   LIdx (36 columns of 3 px on the P1 grid, x 19-126) -> byte offset into LPool (4 bytes: 32
+;     bands of 6 lines)
+;   FB: feet row -> platform band right under the feet, or $FF; Band3: n -> n / 3 (rows to
+;     6-line bands, and pixels to 3 px columns)
 ;   LadL: the level's ladders (x, top band, bottom band), NLAD of them: the one being climbed
 ;     gives the climbing centre (columns can hold different ladders at different heights)
 ; Included by levelc.py, which defines H, START_X, START_ROW and the data labels.
@@ -121,14 +123,17 @@ Ladder: tay
 LadNo:  lda #0
         rts
 
-; ---- Y = the 4 px column under the Trogg's centre; carry set when it is off the map
+; ---- Y = the 3 px column (P1 grid: x 19 + 3c) under the Trogg's centre; carry set when off the map
 Column: lda TX
-        clc
-        adc #4
-        lsr
-        lsr
-        cmp #32
+        sec
+        sbc #15                 ; centre (TX + 4) - 19
+        bcc ColOff
         tay
+        lda Band3,y
+        cmp #36
+        tay
+        rts
+ColOff: sec
         rts
 
 ; ---- A = -1, 0, 1: move a pixel (within x 16-135), through this frame's HMOVE; only on even
@@ -286,10 +291,10 @@ FLLoop: cpx #3 * NLAD
         bcs DSRet
         lda TX
         clc
-        adc #4 + 3
+        adc #4 + 1
         sec
-        sbc LadL,x              ; centre - ladder x, + 3: within 0-13 when over it (the ladder
-        cmp #14                 ; map's 4 px cells reach up to 3 px past its edges)
+        sbc LadL,x              ; centre - ladder x, + 1: within 0-9 when over it (the ladder
+        cmp #10                 ; map's 3 px cells reach a pixel past its edges)
         bcs FLNext
         lda Tmp2
         cmp LadL+1,x

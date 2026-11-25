@@ -339,10 +339,10 @@ them in the bank's ROM.
 * **Platform map**: platforms are exactly 6 lines (3 rows) tall, with tops on 6-line boundaries
   (the editor enforces both), so there is one entry per 6 lines: 32 entries. 16 cells of 8 px across x 16-143 (platforms are on 8 px boundaries, so this is
   exact). 2 bytes per entry; bit 7 of byte 0 is x 16-23.
-* **Ladder map**: one entry per 4 px column (x 0-127), 32 bands of 6 lines down (the platform
+* **Ladder map**: one entry per 3 px column on the P1 grid (x 19 + 3c, 36 columns), 32 bands of 6 lines down (the platform
   grid, so a ladder's top meets its platform). 4 bytes per entry; bit 7 of byte 0 is rows 0-2. A
-  cell is set where its centre (4c + 2) is over a ladder.
-* **Indexes and sharing**: each level has an index (32 platform rows + 32 ladder columns = 64
+  cell is set where its centre (x 20 + 3c) is over a ladder.
+* **Indexes and sharing**: each level has an index (32 platform rows + 36 ladder columns = 68
   bytes) of byte offsets into two pools shared by the whole bank. Offset 0 is the one all-zero
   entry, so an empty row or column costs only its index byte, and identical rows / columns are
   stored once across the bank's levels. Pools are limited to 128 platform rows and 64 ladder
@@ -364,7 +364,7 @@ them in the bank's ROM.
       lda PPool,y
       and CellMask-2,x    ; non-zero: floor
 
-  The ladder test is the same shape: column x >> 2 indexes LIdx, then the 6-line band (a row / 3 table) >> 3 picks the byte
+  The ladder test is the same shape: column (centre - 19) / 3 indexes LIdx, then the 6-line band (a row / 3 table) >> 3 picks the byte
   and band & 7 the bit.
 
 ## Level compiler and first game code (`levelc/`)
