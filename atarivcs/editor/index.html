@@ -130,6 +130,7 @@ textarea { width: 100%; min-height: 220px; background: var(--panel2); border: 1p
       <label class="row-inline"><input type="checkbox" id="chk-blocks"> Platform grid (8 px)</label>
       <label class="row-inline"><input type="checkbox" id="chk-regs" checked> Playfield registers</label>
       <label class="row-inline"><input type="checkbox" id="chk-bands" checked> Shade problem rows</label>
+      <label class="row-inline"><input type="checkbox" id="chk-maps"> Movement maps</label>
       <h2>Keys</h2>
       <p class="note">Clicking an existing object selects it, whatever the tool; the drawing tools only create on empty space. Arrow keys move the selection (3 px for ladders and items, a 4 px block for platforms, a row up or down). Shift + arrows resize it: a platform's rows (up/down) and width (left/right), a ladder's length. Delete removes it. Click the gutter to inspect a row.</p>
     </aside>
@@ -671,6 +672,7 @@ function analyzeScreen(s) {
       A.warnings.push('Renderer change: its first strobe (cycle ' + A.first + ') is not earlier than the last strobe above (cycle ' + prevP1.last + ', row ' + prevP1.r + '), so that ghost survives unless GRP1 stays 0 until it has passed (16 px left of x ' + (3 * prevP1.last - 47) + '). That may not fit.');
     if (A.objs.length && A.last !== null) prevP1 = A;
   }
+  for (const p of s.platforms) if (p.top % 2) rows[p.top].errors.push('Platform top on odd row ' + p.top + ': the platform map has one entry per two rows, so tops must be on even rows (move it up or down a row).');
   const t = s.trogg;
   if (t && t.x > 120) rows[Math.min(ROWS - 1, t.row)].warnings.push('Trogg at x ' + t.x + ': his graphics are written late in the even line, so this far right his rows can split by a line.');
   return rows;
@@ -682,6 +684,39 @@ function projectChecks() {
     if ((b & 1) && i !== f.yoyoRow) out.push('Trogg frame "' + f.name + '", row ' + (i + 1) + ': the front pixel (bit 0) switches the yoyo on. Only the hand row of the walking frame may set it.');
   }));
   return out;
+}
+
+// ---------------------------------------------------------------- movement maps ---------------
+// Built per bank (level type) from all its screens. Platform map: one entry per two rows (platform
+// tops are on even rows), 16 cells of 8 px across x 16-143, 2 bytes, bit 7 of byte 0 = x 16-23.
+// Ladder map: one entry per 4-pixel column (x 0-127), 24 bands of 4 rows (8 lines) down, 3 bytes,
+// bit 7 of byte 0 = rows 0-3; a cell is set where its centre (4c + 2) is over a ladder.
+// Each level has an index (48 + 32 bytes) of byte offsets into the bank's shared pools; offset 0
+// is the one all-zero entry, so empty rows and columns cost nothing but their index byte, and
+// identical rows / columns are stored once for the whole bank.
+const PMAP_ROWS = 48, LMAP_COLS = 32, LMAP_BANDS = 24;
+function floorBits(s, i) {
+  let v = 0;
+  for (const p of s.platforms) if ((p.top >> 1) === i) for (let k = Math.max(4, p.b0); k <= Math.min(35, p.b1); k++) v |= 1 << (15 - ((k - 4) >> 1));
+  return v;
+}
+function ladderBits(s, c) {
+  let v = 0;
+  for (const l of s.ladders) if (4 * c + 2 >= l.x && 4 * c + 2 < l.x + 8 && l.bottom > l.top)
+    for (let b = l.top >> 2; b <= (l.bottom - 1) >> 2; b++) v |= 1 << (23 - b);
+  return v;
+}
+function moveMaps(T) {
+  const pPool = [0], lPool = [0], screens = [];
+  const at = (pool, v) => { let i = pool.indexOf(v); if (i < 0) { i = pool.length; pool.push(v); } return i; };
+  for (const s of T.screens) {
+    const pIdx = [], lIdx = [];
+    for (let i = 0; i < PMAP_ROWS; i++) pIdx.push(2 * at(pPool, floorBits(s, i)));
+    for (let c = 0; c < LMAP_COLS; c++) lIdx.push(3 * at(lPool, ladderBits(s, c)));
+    screens.push({ pIdx, lIdx });
+  }
+  const bytes = T.screens.length * (PMAP_ROWS + LMAP_COLS) + 2 * pPool.length + 3 * lPool.length;
+  return { pPool, lPool, screens, bytes, ok: 2 * pPool.length <= 256 && 3 * lPool.length <= 256 };
 }
 
 function budgets() {
@@ -734,11 +769,12 @@ function budgets() {
   const frames = P.graphics.trogg.frames.reduce((a, f) => a + f.rows.length, 0);
   const maxH = Math.max(...P.graphics.trogg.frames.map(f => f.rows.length));
   const itemsB = P.graphics.items.reduce((a, i) => a + 2 * i.rows.length, 0) + P.types[typeI].ladder.length;
-  const rom = { bodies: keys.size * BODY_BYTES, calls, tables: tableBytes, trogg: 128 + frames, items: itemsB, kernel: KERNEL_BYTES, logic: +P.budget.logic || 0 };
+  const MM = moveMaps(T);
+  const rom = { bodies: keys.size * BODY_BYTES, calls, tables: tableBytes, maps: MM.bytes, trogg: 128 + frames, items: itemsB, kernel: KERNEL_BYTES, logic: +P.budget.logic || 0 };
   const romTotal = Object.values(rom).reduce((a, b) => a + b, 0);
   const ram = { trogg: 2 + maxH + 1, removable, stack: 4, logic: +P.budget.ram || 0 };
   const ramTotal = Object.values(ram).reduce((a, b) => a + b, 0);
-  return { rom, romTotal, ram, ramTotal, lines, bodies: keys.size, tables: tables.size };
+  return { rom, romTotal, ram, ramTotal, lines, bodies: keys.size, tables: tables.size, MM };
 }
 function lineSig(s, y) {
   const r = y >> 1, b = rowBlocks(s, r);
@@ -810,6 +846,12 @@ function draw() {
   if (document.getElementById('chk-blocks').checked) {   // platform edges: 8-pixel units
     cx.fillStyle = 'rgba(0,0,0,0.22)';
     for (let x = 0; x <= W; x += 8) cx.fillRect(x * S, 0, 1, LINES * S);
+  }
+  if (document.getElementById('chk-maps').checked) {     // what the game logic sees
+    cx.fillStyle = 'rgba(255,214,10,0.45)';               // ladder cells: 4 px x 8 lines
+    for (let c = 0; c < LMAP_COLS; c++) { const v = ladderBits(s, c); for (let b = 0; b < LMAP_BANDS; b++) if (v >> (23 - b) & 1) cx.fillRect(4 * c * S, 8 * b * S, 4 * S - 1, 8 * S - 1); }
+    cx.fillStyle = 'rgba(40,255,120,0.9)';                // floor cells: 8 px, on the top line of the row pair
+    for (let i = 0; i < PMAP_ROWS; i++) { const v = floorBits(s, i); for (let k = 0; k < 16; k++) if (v >> (15 - k) & 1) cx.fillRect((16 + 8 * k) * S, 4 * i * S, 8 * S - 1, S); }
   }
   if (document.getElementById('chk-bands').checked) ROWS_A.forEach(A => {
     if (A.errors.length) { cx.fillStyle = 'rgba(236,91,82,0.18)'; cx.fillRect(0, A.r * 2 * S, W * S, 2 * S); }
@@ -939,7 +981,7 @@ function showBudgets() {
   const r = B.rom;
   box.innerHTML =
     meter('ROM, bank "' + esc(P.types[typeI].name) + '"', B.romTotal, BANK,
-      'bodies ' + r.bodies + ' (' + B.bodies + ' × ~' + BODY_BYTES + ') · call lists ' + r.calls + ' · tables ' + r.tables + ' (' + B.tables + ' tables) · Trogg ' + r.trogg + ' · items ' + r.items + ' · kernel ' + r.kernel + ' · game code ' + r.logic) +
+      'bodies ' + r.bodies + ' (' + B.bodies + ' × ~' + BODY_BYTES + ') · call lists ' + r.calls + ' · tables ' + r.tables + ' (' + B.tables + ' tables) · Trogg ' + r.trogg + ' · items ' + r.items + ' · movement maps ' + r.maps + ' (' + (B.MM.pPool.length - 1) + ' platform rows, ' + (B.MM.lPool.length - 1) + ' ladder columns, shared' + (B.MM.ok ? '' : '; TOO MANY for byte offsets') + ')' + ' · kernel ' + r.kernel + ' · game code ' + r.logic) +
     meter('Line index (X) for this bank', B.lines, 256, 'per-line data of every renderer run, shared where runs are identical; X counts lines 0-255') +
     meter('RAM', B.ramTotal, 128, 'Trogg pointer + frame buffer ' + B.ram.trogg + ' · collectables ' + B.ram.removable + ' · stack ' + B.ram.stack + ' · game ' + B.ram.logic);
 }
@@ -999,7 +1041,7 @@ cv.addEventListener('pointermove', ev => {
   else if (drag.mode === 'ladder') { drag.r1 = row; drag.preview = [drag.x, Math.min(drag.r0, drag.r1) * 2, drag.x + 8, (Math.max(drag.r0, drag.r1) + 1) * 2]; draw(); }
   else if (drag.mode === 'move') {
     const dx = p.x - drag.start.x, dy = p.y - drag.start.y, o = objOf(sel), O = drag.orig, dr = Math.round(dy / 2);
-    if (sel.type === 'platform') { const db = 2 * Math.round(dx / 8), w = O.b1 - O.b0; o.b0 = Math.max(0, Math.min(39 - w, O.b0 + db)); o.b0 -= o.b0 % 2; o.b1 = o.b0 + w + ((o.b0 + w) % 2 ? 0 : 1); o.top = Math.max(0, Math.min(ROWS - o.rows, O.top + dr)); }
+    if (sel.type === 'platform') { const db = 2 * Math.round(dx / 8), w = O.b1 - O.b0; o.b0 = Math.max(0, Math.min(39 - w, O.b0 + db)); o.b0 -= o.b0 % 2; o.b1 = o.b0 + w + ((o.b0 + w) % 2 ? 0 : 1); o.top = Math.max(0, Math.min(ROWS - o.rows, O.top + dr)); o.top -= o.top % 2; }
     if (sel.type === 'ladder') { o.x = snapX(O.x + dx); const h = O.bottom - O.top; o.top = Math.max(0, Math.min(ROWS - h, O.top + dr)); o.bottom = o.top + h; }
     if (sel.type === 'item') { o.x = snapX(O.x + dx); o.bottom = Math.max(1, Math.min(LINES, O.bottom + 2 * dr)); }
     if (sel.type === 'trogg') { o.x = snapTX(O.x + dx); o.row = clampI(O.row + dr, 0, ROWS - 1); }
@@ -1012,6 +1054,7 @@ cv.addEventListener('pointerup', () => {
   if (d.mode === 'platform') {
     let a = 2 * Math.min(d.u0, d.u1), z = 2 * Math.max(d.u0, d.u1) + 1, top = Math.min(d.r0, d.r1), rows = Math.abs(d.r1 - d.r0) + 1;
     if (a + 1 === z && rows === 1) { z = Math.min(39, a + 3); rows = 4; }
+    top -= top % 2;
     s.platforms.push({ b0: a, b1: z, top, rows: Math.min(rows, ROWS - top) }); sel = { type: 'platform', i: s.platforms.length - 1 }; rowSel = top;
   } else if (d.mode === 'ladder') {
     let top = Math.min(d.r0, d.r1), bottom = Math.max(d.r0, d.r1) + 1;
@@ -1044,14 +1087,14 @@ cv.addEventListener('keydown', ev => {
     else o.x = snapX(o.x + 3 * d);
   } else if (k === 'ArrowUp' || k === 'ArrowDown') {
     const d = k === 'ArrowUp' ? -1 : 1;
-    if (sel.type === 'platform') o.top = Math.max(0, Math.min(ROWS - o.rows, o.top + d));
+    if (sel.type === 'platform') { o.top = Math.max(0, Math.min(ROWS - o.rows, o.top - o.top % 2 + 2 * d)); o.top -= o.top % 2; }
     else if (sel.type === 'ladder') { const h = o.bottom - o.top; o.top = Math.max(0, Math.min(ROWS - h, o.top + d)); o.bottom = o.top + h; }
     else if (sel.type === 'item') o.bottom = Math.max(1, Math.min(LINES, o.bottom + 2 * d));
     else o.row = clampI(o.row + d, 0, ROWS - 1);
   } else done = false;
   if (done) { ev.preventDefault(); commit(); }
 });
-['chk-grid', 'chk-blocks', 'chk-bands', 'chk-regs'].forEach(id => document.getElementById(id).addEventListener('change', draw));
+['chk-grid', 'chk-blocks', 'chk-bands', 'chk-regs', 'chk-maps'].forEach(id => document.getElementById(id).addEventListener('change', draw));
 
 // ---------------------------------------------------------------- level types and screens -----
 function fillSelects() {
