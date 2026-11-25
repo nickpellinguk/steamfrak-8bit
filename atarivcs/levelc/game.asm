@@ -1,10 +1,10 @@
 ; Trogg control, after Steam Frak's TroggStanding / TroggFalling / TroggClimbing (js/trogg.js),
 ; scaled from its 34-pixel Trogg to ours (13 rows): 1 Frak pixel = 13/34 row.
-;   standing: left/right walk a pixel a frame; up climbs a ladder at the feet, or jumps (keeping
+;   standing: left/right walk a pixel every other frame (our pixels are twice Frak's); up climbs a ladder at the feet, or jumps (keeping
 ;     the walking direction); down climbs onto a ladder below the platform; nothing underfoot falls
 ;   falling: gravity to a terminal speed; up/down catches a ladder when not falling fast; landing
 ;     too fast, or reaching the bottom of the screen, kills him (he restarts at the level's start)
-;   climbing: a row a frame, sliding a pixel a frame towards the ladder's centre; left/right walks
+;   climbing: a row every other frame, sliding a pixel every other frame to the ladder's centre; left/right walks
 ;     off onto a platform, or falls; climbing down onto a platform stands; the top steps off
 ;   up/down are ignored after landing until released (Frak's updowndebounce)
 ; Movement is tested against the level's movement maps (atarivcs/PLAN.md, "Movement maps"):
@@ -129,9 +129,14 @@ Column: lda TX
         tay
         rts
 
-; ---- A = -1, 0, 1: move a pixel (within x 16-135), through this frame's HMOVE
+; ---- A = -1, 0, 1: move a pixel (within x 16-135), through this frame's HMOVE; only on even
+; frames (our pixels are twice as wide as Frak's, so a pixel every other frame matches its speed)
 MoveX:  tax
         beq MXDone
+        lda Frm
+        lsr
+        bcs MXDone
+        txa
         bmi MXLeft
         lda TX
         cmp #135
@@ -387,6 +392,9 @@ DCV:    lda Joy
         lda TRow
         jsr Ladder
         beq DCTop
+        lda Frm                 ; a row every other frame
+        lsr
+        bcs DCRet
         lda TRow
         cmp #H
         bcc DCRet
@@ -412,6 +420,9 @@ DCDown: lda Joy
         adc #1
         jsr Ladder
         beq DCOff
+        lda Frm
+        lsr
+        bcs DCRet
         inc TRow
 DCRet:  rts
 DCOff:  lda #0                  ; off the bottom of the ladder

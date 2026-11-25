@@ -380,10 +380,10 @@ them in the bank's ROM.
   rows shows on its row's second line and the next row's first, the same everywhere up to x 122.
 * Game code (`game.asm`), after Steam Frak's TroggStanding / TroggFalling / TroggClimbing, scaled
   from its 34-pixel Trogg to ours (1 Frak pixel = 13/34 row; vertical position in 8.8 rows):
-  walk a pixel a frame (HMOVE in vertical blank); up jumps where there's no ladder (1.25 px/tick,
+  walk a pixel every other frame (our pixels are twice as wide as Frak's; HMOVE in vertical blank); up jumps where there's no ladder (1.25 px/tick,
   gravity 0.05, terminal 4), keeping the walking direction; landing at 1.6 px/tick or faster, or
   reaching the bottom of the screen, kills (restart at the level's start, P0 repositioned by a
-  divide-by-15 RESP0 + HMOVE); climbing a row a frame, sliding a pixel a frame to the ladder's
+  divide-by-15 RESP0 + HMOVE); climbing a row every other frame, sliding a pixel every other frame to the ladder's
   centre (a per-column ladder x table); left/right walks off a ladder onto a platform or into a
   fall; up/down catches a ladder unless falling fast; climbing down onto a platform stands; up/down
   ignored after landing until released. `play_test.py` drives it in py65 with scripted joystick

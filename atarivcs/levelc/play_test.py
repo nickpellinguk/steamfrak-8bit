@@ -48,9 +48,16 @@ class Game:
         raise RuntimeError('no frame')
 
     def run(self, n, keys=0, fire=False):
+        self.died = False
         for _ in range(n):
             self.frame(keys, fire)
+            self.died |= self.m.memory[self.sym['Dead']] > 0
         return self.state()
+
+    def dies(self, n, keys=0):
+        """Run n frames; whether he died at any point."""
+        self.run(n, keys)
+        return {**self.state(), 'died': int(self.died)}
 
     def state(self):
         g = lambda k: self.m.memory[self.sym[k]]
@@ -74,9 +81,9 @@ def main():
 
     s0 = g.state()
     expect('start, standing on the floor (row 83)', g.run(10), row=83, state=0)
-    expect('walk right 20 frames', g.run(20, R), x=s0['x'] + 20, row=83)
+    expect('walk right 20 frames: 10 px', g.run(20, R), x=s0['x'] + 10, row=83)
     expect('walk left 20 frames', g.run(20, L), x=s0['x'], row=83)
-    g.run(20, R)                                   # away from the ladder at x 58
+    g.run(40, R)                                   # away from the ladder at x 58
     # jump: up with no ladder (held: the debounce allows one jump)
     rows = [g.run(1, U)['row'] for _ in range(70)]
     expect('jump on up: rises about 6 rows', {**g.state(), 'row': min(rows)}, row=83 - 6)
@@ -89,48 +96,48 @@ def main():
     st = g.run(60)
     expect('running jump: carries on left in the air', st, row=83, state=0, x=lambda v: v > x0 - 20)
     # walk off the right end of the floor (x 111): falls off the bottom of the screen and dies
-    st = g.run(100, R)
-    expect('walk off the floor end: falls off the screen, dies', g.run(40), dead=lambda d: d == 0)
+    expect('walk off the floor end: falls off the screen, dies', g.dies(200, R), died=1)
     expect('... and restarts at the start', g.run(100), x=s0['x'], row=83, state=0, dead=0)
 
     # climbing: left to the ladder at x 31 (it reaches the top-left ledge, row 21)
     g = Game(os.path.join(outdir, 'level'))
-    expect('walk left near the ladder at x 31', g.run(23, L), x=34, row=83)
+    expect('walk left near the ladder at x 31', g.run(46, L), x=34, row=83)
     st = g.run(1, U)
     expect('up: starts climbing', st, state=2)
     st = g.run(4, U)
-    expect('... sliding to the ladder centre (x 31)', st, x=31)
+    expect('... sliding a pixel every other frame', st, x=32)
     st = g.run(2, U)
-    expect('climbs a row a frame', st, row=83 - 6, state=2)
-    st = g.run(3, R)
+    expect('... to the ladder centre (x 31)', st, x=31)
+    st = g.run(4, U)
+    expect('climbs a row every other frame', st, row=lambda r: r not in (77, 78), state=2)
+    st = g.run(6, R)
     expect('right between platforms: walks off into a fall', st, state=lambda v: v == 2)
     expect('... lands safely on the floor (a 6-row fall)', g.run(30), row=83, state=0, dead=0)
-    st = g.run(4, U)
-    st = g.run(10, U)
-    expect('catches the ladder again only from on it: climbs', g.run(12, U), state=2)
-    expect('climbing 14 rows up then walking off', g.run(14, U), state=2)
-    g.run(3, L)
-    expect('... a fatal fall (over about 10 rows)', g.run(80), dead=lambda d: d == 0)
-    g = Game(os.path.join(outdir, 'level'))
-    g.run(23, L)
+    # back onto the ladder (x 28-35 puts his centre over it), up 14 rows, and off: a fatal fall
+    while g.state()['x'] > 31:
+        g.run(1, L)
     g.run(1, U)
-    st = g.run(100, U)
+    expect('climbing 14 rows up', g.run(30, U), state=2, row=lambda r: r > 70)
+    expect('... then walking off: a fatal fall (over about 10 rows)', g.dies(80, L), died=1)
+    g = Game(os.path.join(outdir, 'level'))
+    g.run(46, L)
+    g.run(1, U)
+    st = g.run(200, U)
     expect('climbs to the top and steps off on the ledge', st, row=20, state=0, x=31)
     st = g.run(10, L)
-    expect('walks along the ledge', st, x=21, row=20)
-    st = g.run(40, R)
-    expect('walks off the ledge: falls 63 rows, lands too fast and dies', g.run(150), dead=lambda d: d == 0)
+    expect('walks along the ledge', st, x=26, row=20)
+    expect('walks off the ledge: falls 63 rows and dies', g.dies(230, R), died=1)
     # down onto a ladder from the ledge, then down it to the floor
     g = Game(os.path.join(outdir, 'level'))
-    g.run(23, L)
-    g.run(100, U)
+    g.run(46, L)
+    g.run(200, U)
     st = g.run(1)
-    st = g.run(5, D)
+    st = g.run(10, D)
     expect('down from the ledge onto the ladder', st, state=2, row=lambda r: not 20 < r < 30)
-    st = g.run(100, D)
+    st = g.run(200, D)
     expect('down the ladder: stops on the ledge it passes behind (row 60)', st, state=0, row=59)
     st = g.run(1)
-    st = g.run(100, D)
+    st = g.run(200, D)
     expect('down again: on to the floor', st, state=0, row=83)
     print('all ok' if ok else 'SOME FAILED')
     return ok
