@@ -61,6 +61,9 @@ MvT     = $F5           ; 3 two-way: moving back; one-way: away (hidden, back at
 MvOn    = $F6
 MvD     = $F7
 TDig    = $D0           ; the timer: pointers to its four characters' glyphs (M, colon, S, S)
+TTx     = $9B           ; ... and the difficulty word's two letter pairs ($9B-$9E: after the Trogg's
+TTmp    = $9F           ; buffer, 25 bytes at most), a byte the band's loop needs,
+TLn     = $BF           ; and its line count
 TFr     = $D8           ; frames into the second
 TSec    = $D9           ; seconds (BCD)
 TMin    = $DA
@@ -871,6 +874,18 @@ TPtr:   lda TMin
         sta TDig+3
         sta TDig+5
         sta TDig+7
+        ldx #<TFont             ; the word: the left difficulty switch, B EASY, A HARD
+        bit SWCHB
+        bvc TEasy
+        ldx #<(TFont + 16)
+TEasy:  stx TTx
+        txa
+        clc
+        adc #8
+        sta TTx+2
+        lda #>TFont
+        sta TTx+1
+        sta TTx+3
         rts
 
 ; ---- the moving platform: the ball, 8 px, rows MV_ROW .. + 2. Two-way: pauses at each end; one-way

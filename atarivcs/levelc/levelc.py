@@ -290,6 +290,7 @@ def compile_screen(plan, outdir, game=False):
     table_bytes = sum(len(d) for d in data.values())
     if game:                               # the timer's font, and P0's fine moves, for the band
         place('Font', dict(enumerate(timer.font())), True)
+        place('TFont', dict(enumerate(timer.text_font())), True)   # (the difficulty word's letter pairs)
         place('HMTab1', {r: (-(r - 6) & 15) << 4 for r in range(15)}, True)
     if game:                               # the front screen's per-line tables (its own loop)
         for t, vals in front.tables().items():
@@ -340,7 +341,7 @@ def compile_screen(plan, outdir, game=False):
           'START_X = %d' % tr['x'], 'START_ROW = %d' % tr['row'], 'NLAD = %d' % nlad,
           'NIR = %d' % len(item_runs), 'NITEM = %d' % len(coll), 'KEYMASK = %d' % sum(1 << b for b, i in enumerate(coll) if plan['items'][i]['kind'] == 'key'), 'HANDUP = %d' % handup, 'RunX = $C0', 'FRONT_BG = $%02X' % front.BG, 'FRONT_INK = $%02X' % front.INK,
           'FRONT_FILL = $%02X' % front.FILL, 'TOPROWS = %d' % timer.TOPROWS, 'MUSRAM = $DB', 'AUDC0 = $15', 'AUDC1 = $16', 'AUDF0 = $17',
-          'AUDF1 = $18', 'AUDV0 = $19', 'AUDV1 = $1A', 'TWHITE = $%02X' % timer.WHITE, 'TAIL_X = %d' % front.TAIL_P1_X, 'ENABL = $1F', 'RESBL = $14', 'HMBL = $24', 'HMK = %d' % timer.HMK]
+          'AUDF1 = $18', 'AUDV0 = $19', 'AUDV1 = $1A', 'TWHITE = $%02X' % timer.WHITE, 'TAIL_X = %d' % front.TAIL_P1_X, 'ENABL = $1F', 'RESBL = $14', 'HMBL = $24', 'HMK = %d' % timer.HMK, 'VDELP0 = $25', 'VDELP1 = $26', 'SWCHB = $282']
     mv = plan.get('mover') if game else None
     if mv:
         a, b = (mv['x1'], mv['x0']) if mv['mode'] == 'rl' else (mv['x0'], mv['x1'])
@@ -449,7 +450,8 @@ OSWait: lda INTIM
         o.append('Kernel: lda Mode         ; 0: the front screen')
         o.append('        beq KFront')
         o.append('        jmp KLevel')
-        o.append('KFront:')
+        o.append('KFront: lda #0')
+        o.append('        sta VBLANK')
         o.append(front.kernel())
         o.append('        jmp KEnd')
         o.append('KLevel:')
@@ -727,13 +729,19 @@ NoYo:   sta WSYNC
         lda #24
         ldx #1
         jsr PosObj
-        lda #1
-        sta NUSIZ0          ; two copies close: x 16 and 32 (P1: 24 and 40)
+        lda #3
+        sta NUSIZ0          ; three copies close: x 16, 32, 48 (P1: 24, 40, 56)
+        sta NUSIZ1
         lda #TWHITE
         sta COLUP0
         sta COLUP1
         lda #0
         sta REFP0
+        lda #1
+        sta VDELP0          ; (the band's six characters: both vertically delayed)
+        sta VDELP1
+        ldy #7              ; the band's line count (and Y, kept to the kernel's start)
+        sty TLn
 NoTime: lda Mode            ; the front screen: P1 is the tail's fill (double width, yellow,
         bne NoTail          ; behind the playfield)
         lda #TAIL_X - 1     ; (a double-width player starts a pixel later)
@@ -754,9 +762,7 @@ NoTail: lda TX              ; for the band: P0 and the ball HMK right (its HMOVE
         sta Tmp2
 WaitVB: lda INTIM
         bne WaitVB
-        sta WSYNC
-        lda #0
-        sta VBLANK''' % (plan['background'], tr['colour'], pad(57).replace('\n', '\n        '))
+        sta WSYNC           ; (the kernel turns VBLANK off: the band after writing ahead)''' % (plan['background'], tr['colour'], pad(57).replace('\n', '\n        '))
 
 
 def front_model():
@@ -840,7 +846,7 @@ def check(base, plan, outdir, game=False):
     first = next(r for r in range(im.height) if im.getpixel((im.width - 2, r)) == bgrgb) + 1
     want = front_model() if '--front' in sys.argv else model(plan, pal, yoyo=not game)
     if game and '--front' not in sys.argv:
-        want[:timer.TOPROWS * 2] = timer.model_lines()
+        want[:timer.TOPROWS * 2] = timer.model_lines(hard='--hard' in sys.argv)
     bad = []
     for y in range(192):
         got = [im.getpixel((int((x + 0.5) * sx), first + y)) for x in range(160)]

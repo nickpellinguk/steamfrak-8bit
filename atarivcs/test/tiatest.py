@@ -106,7 +106,8 @@ def snapshot(rom, outdir):
     for f in os.listdir(outdir):
         if f.endswith('.png') and f.startswith('snap'):
             os.remove(os.path.join(outdir, f))
-    script = ('stella -uimessages 0 -fullscreen 0 -ss1x 1 -sssingle 1 -snapname int -snapsavedir %s %s '
+    script = ('stella -uimessages 0 -fullscreen 0 -ss1x 1 -sssingle 1 -snapname int -snapsavedir %s ' +
+              os.environ.get('STELLA_ARGS', '') + ' %s '
               '>/dev/null 2>&1 & sleep 4; W=$(xdotool search --name Stella | head -1); xdotool windowfocus $W; '
               'xdotool key --window $W F12 >/dev/null 2>&1; sleep 2; kill %%1') % (outdir, rom)
     subprocess.run(['xvfb-run', '-a', '-s', '-screen 0 1280x1024x24', 'bash', '-c', script], env=env)
