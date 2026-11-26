@@ -737,14 +737,14 @@ NoYo:   sta WSYNC
         sta HMCLR
         lda Mode            ; playing: P0 and P1 for the timer (the band puts P0 back)
         beq NoTime
-        lda #16
+        lda #40
         ldx #0
         jsr PosObj
-        lda #24
+        lda #48
         ldx #1
         jsr PosObj
         lda #4
-        sta NUSIZ0          ; two copies wide: x 16 and 80 (P1: 24 and 88)
+        sta NUSIZ0          ; two copies wide: x 40 and 104 (P1: 48 and 112), as on the front screen
         sta NUSIZ1
         lda #TWHITE
         sta COLUP0

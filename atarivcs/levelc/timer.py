@@ -63,11 +63,11 @@ def tables():
 
 def band(level_bg, trogg_col):
     """The display bank's code for the band, run at the start of the level's kernel (in the line
-    left over from the vertical blank). P0 at x 16 and P1 at x 24, two copies wide (+64): the time
-    on the left (P0 "M:", P1 "SS", x 16-31), the difficulty on the right (P0 and P1's second copies,
-    x 80-95). Each byte is two 3 x 7 glyphs; the time's are made as they're drawn (DHi | TColon, DHi
-    | DLo). GRP0 by 28 and GRP1 by 30.7 (the first copies), then again after them (30.7, 33.3) and
-    before the second copies (49.3, 52)."""
+    left over from the vertical blank). P0 at x 40 and P1 at x 48, two copies wide (+64), as on the
+    front screen: the time on the left (P0 "M:", P1 "SS", x 40-55), the difficulty on the right
+    (their second copies, x 104-119). Each byte is two 3 x 7 glyphs; the time's are made as they're
+    drawn (DHi | TColon, DHi | DLo). GRP0 by 36 and GRP1 by 38.7 (the first copies), then again
+    after them (38.7, 41.3) and before the second copies (57.3, 60)."""
     return """        lda #0
         sta VBLANK
         lda #$%02X
@@ -85,15 +85,19 @@ TLine:  sta WSYNC
         ora (TDig+4),y      ; 22: S
         sta GRP1            ; 25: x 24
         lda (TDig+6),y      ; 30: the difficulty's first pair
-        sta GRP0            ; 33: x 80
-        lda (TTx),y         ; 38: its second
-        sta GRP1            ; 41: x 88
+        tax                 ; 32
+        lda (TTx),y         ; 37: its second
+        stx GRP0            ; 40: x 104 (P0's first copy is done at 38.7)
+        sta GRP1            ; 43: x 112 (P1's at 41.3)
         dey
-        bne TLine           ; 45 (7 lines: index 0 is blank)
-        lda Tmp2            ; 48: the ball (the moving platform): MvX + 1 + HMK (see the HMOVE below)
-        nop                 ; 50
-        sty GRP0            ; 53: after P0's second copy (to 51.7)
-        sty GRP1            ; 56: after P1's (to 54.7)
+        bne TLine           ; 47 (7 lines: index 0 is blank)
+        lda Tmp2            ; 50: the ball (the moving platform): MvX + 1 + HMK (see the HMOVE below)
+        nop
+        nop
+        nop
+        nop                 ; 58
+        sty GRP0            ; 61: after P0's second copy (to 60)
+        sty GRP1            ; 64: after P1's (to 62.7)
         jmp TBall           ; (over any alignment padding: neither loop's branch crosses a page)
         IF (<.) > $C8
         ALIGN 256
@@ -144,7 +148,7 @@ def model_lines(minutes=0, seconds=0, hard=False):
     img = [[None] * 160 for _ in range(10)]
     t = '%d:%02d' % (minutes, seconds)
     w = 'HARD' if hard else 'EASY'
-    for x, rws in ((16, rows(t[0], t[1])), (24, rows(t[2], t[3])), (80, rows(w[0], w[1])), (88, rows(w[2], w[3]))):
+    for x, rws in ((40, rows(t[0], t[1])), (48, rows(t[2], t[3])), (104, rows(w[0], w[1])), (112, rows(w[2], w[3]))):
         for y, v in enumerate(rws):
             for b in range(8):
                 if v & (0x80 >> b):

@@ -458,7 +458,7 @@ them in the bank's ROM.
   start. Cost: about 200 bytes of logic and 80 of display, plus a body or two per screen that uses
   it. Vertical blank worst case about 1940 of 2752 cycles.
 * Labels: the front screen's top 7 lines show LVL1-3 (x 40-55) and EASY / HARD (x 104-119); the
-  game's band shows the time (x 16-31) and the difficulty (x 80-95). Both: P0 and P1 two copies
+  game's band shows the time (x 40-55) and the difficulty (x 104-119), lined up. Both: P0 and P1 two copies
   wide (+64), each byte two 3 x 7 glyphs (timer.tables: TPair, DHi, DLo, TColon); the time's bytes
   are made as they're drawn (DHi | TColon, DHi | DLo). SELECT cycles the level (front screen, on a press:
   SwPrev); the right difficulty switch sets the difficulty (A HARD, B EASY; read on the front screen); the level also picks the front screen's
