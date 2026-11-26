@@ -21,10 +21,12 @@ MusPtr0  = MUSRAM + 7       ; 2: bass pattern pointer
 MusPtr1  = MUSRAM + 9       ; 2: lead pattern pointer
 MusSl    = MUSRAM + 11      ; 2: each channel's position in its slide table ($FF: none)
 
-BASS_TOP = 10
-BASS_FLOOR = 6
-LEAD_TOP = 12
-LEAD_FLOOR = 5
+BASS_TOP = 12               ; the envelope: each note starts at TOP and falls a step every RATE + 1
+BASS_FLOOR = 2              ; frames to FLOOR (bass: plucked, 12 to 2 in 20 frames; lead: a long
+BASS_RATE = 1               ; fade, 15 to 3 in 48)
+LEAD_TOP = 15
+LEAD_FLOOR = 3
+LEAD_RATE = 3
 
 MusicInit:
         lda #0
@@ -49,7 +51,7 @@ MusicInit:
 
 MusEnd: .byte 62            ; an empty pattern: the first tick moves to each channel's first
 
-  MAC CHANNEL               ; {1} channel (0/1), {2} Bass/Lead, {3} top volume, {4} floor
+  MAC CHANNEL               ; {1} channel (0/1), {2} Bass/Lead, {3} top volume, {4} floor, {5} rate mask
         dec MusTim+{1}
         bne .env
 .next:
@@ -122,7 +124,7 @@ MusEnd: .byte 62            ; an empty pattern: the first tick moves to each cha
         sta AUDF0+{1}
         inc MusSl+{1}
 .dec:   lda MusFrame
-        and #3
+        and #{5}
         bne .out
         lda MusVol+{1}
         cmp #{4}+1
@@ -134,8 +136,8 @@ MusEnd: .byte 62            ; an empty pattern: the first tick moves to each cha
 
 MusicTick:
         inc MusFrame
-        CHANNEL 0, Bass, BASS_TOP, BASS_FLOOR
-        CHANNEL 1, Lead, LEAD_TOP, LEAD_FLOOR
+        CHANNEL 0, Bass, BASS_TOP, BASS_FLOOR, BASS_RATE
+        CHANNEL 1, Lead, LEAD_TOP, LEAD_FLOOR, LEAD_RATE
         rts
 
         include "frakmusic.inc"

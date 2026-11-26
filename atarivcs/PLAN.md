@@ -526,6 +526,10 @@ costs. Aim: three levels per 4K bank.
 
 ## Music (`music/`)
 
+* Envelopes, accentuated: bass 12 falling a step every 2 frames to 2 (plucked); lead 15 a step every
+  4 frames to 3 (a long note fades over 48 frames). MusRate per channel. (It was 10 to 6 and 12 to
+  5, every 4 frames: too slight to hear.)
+
 The main Frak theme on the TIA's two channels: the bass (looping all through) on channel 0, the
 other parts merged onto channel 1, no drums. Judged by ear (via the WAV renders) as acceptable.
 
