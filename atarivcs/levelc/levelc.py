@@ -474,7 +474,7 @@ OSWait: lda INTIM
         o.append('        jmp KLevel')
         o.append('KFront: lda #0')
         o.append('        sta VBLANK')
-        o.append(front.kernel())
+        o.append(front.compact(front.kernel()))
         o.append('        jmp KEnd')
         o.append('KLevel:')
         o.append(timer.band(plan['background'], tr['colour']))

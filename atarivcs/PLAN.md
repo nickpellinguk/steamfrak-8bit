@@ -464,6 +464,12 @@ them in the bank's ROM.
   on it (or yoyoing) carries the Trogg (TX and the frame's HMP0). Picture checks hold it at its
   start. Cost: about 200 bytes of logic and 80 of display, plus a body or two per screen that uses
   it. Vertical blank worst case about 1940 of 2752 cycles.
+* Front screen, compacted (display bank 3694 to 3240 bytes): the bubble's tables have one entry per
+  design row (each is 4 identical lines), stored backwards; a main loop (rows 0-9: X the row
+  counting down, Y the line in the row, the row step in the second COLUBK write's slack) and a
+  tail loop (rows 10-14: no fill, so it writes the tail's GRP1 early in the same line). Padding
+  of 15 cycles or more is LDX # / JSR FDelay (front.compact). Beware: no BIT padding between a
+  DEY and its branch (BIT sets Z).
 * Front screen, below the bubble: BEST and the level's best time (x 40 / 104, as the top labels;
   BestM, BestS by level, 9:59 at power-on, a faster level completion replaces it; not saved), then
   "(c) 2026" and "N Pelling" as two lines of six characters (12 glyphs: P0 at 56, P1 at 64, three

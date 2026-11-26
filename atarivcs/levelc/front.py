@@ -76,22 +76,41 @@ def tail_byte(i):
     return sum(0x80 >> p for p in range(8) if span[0] <= TAIL_P1_X + 2 * p and TAIL_P1_X + 2 * p + 2 <= span[1])
 
 
+MAIN_ROWS = 10                 # design rows 0-9: the outline, the fill, the letters (the main loop)
+
+
 def tables():
-    """Per-line tables of the bubble's lines (index 0 = its first line)."""
-    t = {k: [] for k in ('FL1', 'FL2', 'FR2', 'FR1', 'FMask', 'FFill', 'FG1')}
+    """The bubble's tables, one entry per design row (each is 4 identical lines), stored backwards
+    (the loops count X down): the main loop's rows 0-9 (playfield, the fill or the background) and
+    the tail loop's rows 10-14 (playfield, the tail's fill: P1)."""
+    t = {k: [] for k in ('FL1', 'FL2', 'FR2', 'FR1', 'FMask', 'FFill', 'TL1', 'TL2', 'TR2', 'TR1', 'TG1')}
     for i, r in enumerate(design()):
         lit = {FIRST_BLOCK + k for k, c in enumerate(r) if c == 'k'}
-        for _ in range(LINES_PER):
-            t['FL1'].append(_M.value(lit, 'PF1', 'L'))
-            t['FL2'].append(_M.value(lit, 'PF2', 'L'))
-            t['FR2'].append(_M.value(lit, 'PF2', 'R'))
-            t['FR1'].append(_M.value(lit, 'PF1', 'R'))
-            t['FMask'].append(0 if i in FILL_ROWS else 0xFF)     # (the background: FBg, by level)
-            t['FFill'].append(FILL if i in FILL_ROWS else 0)
-            t['FG1'].append(tail_byte(i))
-    # GRP1 is written at the end of a line, so it shows from the next: FG1[k] is line k + 1's
-    t['FG1'] = t['FG1'][1:] + [0]
+        pf = [_M.value(lit, 'PF1', 'L'), _M.value(lit, 'PF2', 'L'), _M.value(lit, 'PF2', 'R'), _M.value(lit, 'PF1', 'R')]
+        if i < MAIN_ROWS:
+            assert not tail_byte(i)
+            for k, v in zip(('FL1', 'FL2', 'FR2', 'FR1'), pf):
+                t[k].insert(0, v)
+            t['FMask'].insert(0, 0 if i in FILL_ROWS else 0xFF)   # (the background: FBg, by level)
+            t['FFill'].insert(0, FILL if i in FILL_ROWS else 0)
+        else:
+            assert i not in FILL_ROWS
+            for k, v in zip(('TL1', 'TL2', 'TR2', 'TR1'), pf):
+                t[k].insert(0, v)
+            t['TG1'].insert(0, tail_byte(i))
     return t
+
+
+def _delay(n):
+    """n cycles in few bytes: LDX # and JSR FDelay (DEX / BNE / RTS: 5k + 13 cycles), then the rest
+    as NOPs. (X is free wherever it's used.)"""
+    k = (n - 13) // 5
+    r = n - (5 * k + 13)
+    if r == 1:
+        k, r = k - 1, r + 5
+    if k < 1:                               # (a count of 0 would loop 256 times)
+        return _pad(n)
+    return ['ldx #%d' % k, 'jsr FDelay'] + _pad(r)
 
 
 def kernel():
@@ -104,6 +123,7 @@ def kernel():
     top = FIRST_ROW * 2 - LABEL_LINES - 2   # (the label lines, then a line clearing, a line moving P1)
     n = LINES_PER * len(design())
     assert FIRST_ROW * 2 + n + 1 + sum(k for k, _ in BOTTOM) == 192
+    assert len(design()) == MAIN_ROWS + 5
     return """        ldy #7              ; the labels: LVLn (x 40-55), EASY / HARD (x 104-119): P0 at 40 and P1 at
         jmp FLab            ; 48, two copies wide; black (the vertical blank sets them up)
         IF (<.) > $D0
@@ -166,9 +186,10 @@ FLab:   sta WSYNC
 FTop:   sta WSYNC
         dey
         bne FTop
-        ldx #0
+        ldx #9              ; the bubble (MAIN_ROWS - 1): X its row (counting down), Y its line in the row (4 to 1)
+        ldy #4
         jmp FLine           ; (over any alignment padding)
-        IF (<.) > $C0
+        IF (<.) > $A0
         ALIGN 256
         ENDIF
 FLine:  sta WSYNC
@@ -176,31 +197,56 @@ FLine:  sta WSYNC
         sta PF1             ; 7
         lda FL2,x           ; 11
         sta PF2             ; 14
-        ldy FR1,x           ; 18
-        lda FBg             ; 21: the level's background
-        and FMask,x         ; 25
-        ora FFill,x         ; 29: or the fill
+        lda FBg             ; 17: the level's background
+        and FMask,x         ; 21
+        ora FFill,x         ; 25: or the fill
+        nop
+        nop
         nop                 ; 31
         sta COLUBK          ; 34: yellow from x 32-36
-        lda FR2,x           ; 38
-        sty PF1             ; 41: the right PF1
+        lda FR1,x           ; 38
+        sta PF1             ; 41: the right PF1
+        lda FR2,x           ; 45
+        sta PF2             ; 48: the right PF2
+        lda FBg             ; 51
+        dey                 ; 53 (its flags kept to the BNE: no BIT here)
+        nop
+        nop
+        sta $2D             ; 60 (3 cycles, an unused TIA address: the flags untouched)
+        sta COLUBK          ; 63: the background from x 121-124
+        bne FLine           ; 66: the row's next line
+        ldy #4              ; 67
+        dex                 ; 69: the next row
+        bpl FLine           ; 72
+        ldx #4              ; 73: the tail (rows 10-14), the same way; no fill, so no COLUBK
+FTail:  sta WSYNC
+        lda TL1,x           ; 4
+        sta PF1             ; 7
+        lda TL2,x           ; 11
+        sta PF2             ; 14
+        lda TG1,x           ; 18
+        sta GRP1            ; 21: the tail's fill (P1, from x 36), this line
+        lda TR1,x           ; 25
+        nop
+        nop
+        nop
+        bit $80             ; 34
+        sta PF1             ; 37: the right PF1 (window 37-59)
+        lda TR2,x           ; 41
         nop
         nop                 ; 45
         sta PF2             ; 48: the right PF2
-        lda FBg             ; 51
-        ldy FG1,x           ; 55: the tail's fill (P1) for the next line
-        nop
-        bit $80             ; 60
-        sta COLUBK          ; 63: the background from x 121-124
-        sty GRP1            ; 66
-        inx                 ; 68
-        cpx #%d             ; 70
-        bne FLine           ; 73
+        dey
+        bne FTail
+        ldy #4
+        dex
+        bpl FTail
         sta WSYNC
         lda #0
         sta PF1
         sta PF2
-""" % (top, n) + bottom()
+        sta GRP1
+""" % top + bottom()
 
 
 # below the bubble (from its last line + 1): (lines, what)
@@ -280,6 +326,32 @@ def bottom():
             if i == last6:
                 out += ['sta VDELP0', 'sta VDELP1']
     return '\n'.join(('        ' + c) if not c.endswith(':') and not c.startswith('FB') else c for c in out)
+
+
+def compact(code):
+    """Runs of NOP / BIT $80 padding of 15 cycles or more become _delay's LDX / JSR FDelay."""
+    out, run = [], []
+
+    def flush():
+        n = sum(2 if l.split()[0] == 'nop' else 3 for l in run)
+        out.extend(['        ' + c for c in _delay(n)] if n >= 15 else run)
+        run.clear()
+    for line in code.split('\n'):
+        w = line.split(';')[0].split()
+        if w in (['nop'], ['bit', '$80']):
+            run.append(line)
+            continue
+        flush()
+        out.append(line)
+    flush()
+    return '\n'.join(out) + '''
+        jmp KEnd
+        IF (<.) > $FC
+        ALIGN 256
+        ENDIF
+FDelay: dex                 ; (5 cycles a pass, 4 the last, then RTS)
+        bne FDelay
+        rts'''
 
 
 def model(level=1, hard=False):
