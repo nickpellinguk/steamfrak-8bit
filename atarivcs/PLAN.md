@@ -337,8 +337,8 @@ logic in vertical blank stays short. The editor builds them (overlay: "Movement 
 them in the bank's ROM.
 
 * **Platform map**: platforms are exactly 6 lines (3 rows) tall, with tops on 6-line boundaries
-  (the editor enforces both), so there is one entry per 6 lines: 32 entries. 16 cells of 8 px across x 16-143 (platforms are on 8 px boundaries, so this is
-  exact). 2 bytes per entry; bit 7 of byte 0 is x 16-23.
+  (the editor enforces both), so there is one entry per 6 lines: 32 entries. 32 cells of 4 px (playfield blocks) across x 16-143 (platforms are on 4 px block boundaries, so this
+  is exact). 4 bytes per entry; bit 7 of byte 0 is x 16-19.
 * **Ladder map**: one entry per 3 px column on the P1 grid (x 19 + 3c, 36 columns), 32 bands of 6 lines down (the platform
   grid, so a ladder's top meets its platform). 4 bytes per entry; bit 7 of byte 0 is rows 0-2. A
   cell is set where its centre (x 20 + 3c) is over a ladder.
@@ -355,7 +355,7 @@ them in the bank's ROM.
       lsr
       lsr
       lsr
-      tax                 ; 8 px cell, 2-17
+      tax                 ; 4 px cell
       ldy FeetBand        ; 6-line band (kept by the game, 0-31)
       lda (PIdx),y        ; this level's platform index
       clc
