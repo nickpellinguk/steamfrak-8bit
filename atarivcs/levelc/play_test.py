@@ -294,6 +294,8 @@ def main():
     ck = (g.m.memory[g.sym['CkMin']], g.m.memory[g.sym['CkSec']])
     expect('... then the level again: items back, at the start', col(), coll=0, x=s0['x'], row=83)
     expect('... the time when it was reached is the checkpoint', {**g.state(), 'ck': ck}, ck=t0[:2])
+    best = (g.m.memory[g.sym['BestM']], g.m.memory[g.sym['BestS']])
+    expect('... and it is the level\'s best time (was 9:59)', {**g.state(), 'best': best}, best=t0[:2])
     # death sets the clock back to the checkpoint
     g = Game(os.path.join(outdir, 'level'))
     g.run(200)                                     # (3 s or so on the clock)

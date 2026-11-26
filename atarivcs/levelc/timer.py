@@ -37,15 +37,30 @@ GLYPHS = {
     'H': ['X.X', 'X.X', 'X.X', 'XXX', 'X.X', 'X.X', 'X.X'],
     'R': ['XX.', 'X.X', 'X.X', 'XX.', 'X.X', 'X.X', 'X.X'],
     'D': ['XX.', 'X.X', 'X.X', 'X.X', 'X.X', 'X.X', 'XX.'],
+    'B': ['XX.', 'X.X', 'X.X', 'XX.', 'X.X', 'X.X', 'XX.'],
+    'T': ['XXX', '.X.', '.X.', '.X.', '.X.', '.X.', '.X.'],
+    'N': ['X..X', 'XX.X', 'XX.X', 'X.XX', 'X.XX', 'X..X', 'X..X'],   # (4 wide: left half only, its gap too)
+    'P': ['XX.', 'X.X', 'X.X', 'XX.', 'X..', 'X..', 'X..'],
+    'c': ['...', '...', '.XX', 'X..', 'X..', 'X..', '.XX'],
+    'e': ['...', '...', '.X.', 'X.X', 'XXX', 'X..', '.XX'],
+    'l': ['XX.', '.X.', '.X.', '.X.', '.X.', '.X.', 'XXX'],
+    'i': ['.X.', '...', 'XX.', '.X.', '.X.', '.X.', 'XXX'],
+    'n': ['...', '...', 'XX.', 'X.X', 'X.X', 'X.X', 'X.X'],
+    'g': ['...', '.XX', 'X.X', 'X.X', '.XX', '..X', 'XX.'],
+    '(': ['..X', '.X.', 'X..', 'X..', 'X..', '.X.', '..X'],
+    ')': ['X..', '.X.', '..X', '..X', '..X', '.X.', 'X..'],
+    ' ': ['...'] * 7,
 }
-PAIRS = ['LV', 'L1', 'L2', 'L3', 'EA', 'SY', 'HA', 'RD']   # TPair + 8 x index
+PAIRS = ['LV', 'L1', 'L2', 'L3', 'EA', 'SY', 'HA', 'RD', 'BE', 'ST']   # TPair + 8 x index
+COPYRIGHT = ['  (c) 2026  ', '  N Pelling ']   # the front screen's last two lines: 12 glyphs each
 _bits = lambda r: int(r.replace('X', '1').replace('.', '0'), 2)
 
 
 def rows(left, right):
     """7 line bytes, top first, of two glyphs in one byte (None: blank)."""
     g = lambda c: GLYPHS[c] if c else ['...'] * 7
-    return [_bits(a) << 4 | _bits(b) for a, b in zip(g(left), g(right))]
+    assert len(g(right)[0]) == 3, 'a 4-wide glyph goes in a byte\'s left half'
+    return [_bits(a) << (7 - len(a)) | _bits(b) for a, b in zip(g(left), g(right))]
 
 
 def stored(rws):
@@ -58,7 +73,9 @@ def tables():
     return {'TPair': [b for p in PAIRS for b in stored(rows(p[0], p[1]))],
             'DHi': [b for d in '0123456789' for b in stored(rows(d, None))],
             'DLo': [b for d in '0123456789' for b in stored(rows(None, d))],
-            'TColon': stored(rows(None, ':'))}
+            'TColon': stored(rows(None, ':')),
+            **{'C%d%d' % (n, k): stored(rows(line[2 * k], line[2 * k + 1]))
+               for n, line in enumerate(COPYRIGHT) for k in range(6)}}
 
 
 def band(level_bg, trogg_col):

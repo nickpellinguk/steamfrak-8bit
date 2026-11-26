@@ -63,6 +63,9 @@ MvD     = $F7
 TDig    = $D0           ; the timer: pointers to its four characters' glyphs (M, colon, S, S)
 TTx     = $9B           ; ... the difficulty word's second letter pair ($9B-$9C: after the Trogg's
                         ; buffer, 17 bytes at most: 16 rows)
+BestM   = $93           ; the best time by level: minutes ($93-$95), BCD seconds ($96-$98)
+BestS   = $96
+BestP   = $99           ; the front screen: a pointer to the best time's last digit ($99-$9A)
 Level   = $9D           ; 0-2: LVL1-3 (SELECT)
 Diff    = $9E           ; 0 EASY, 1 HARD (the right difficulty switch, read on the front screen)
 SwPrev  = $9F           ; last frame's SWCHB (the buttons: a press is a change to 0)
@@ -672,7 +675,19 @@ CoL:    lda Collected
         bne CoN
         lda #90
         sta Won
-        rts
+        ldx Level               ; a better time than the level's best: the new best
+        lda TMin
+        cmp BestM,x
+        bcc CoBest
+        bne CoRet
+        lda TSec
+        cmp BestS,x
+        bcs CoRet
+CoBest: lda TMin
+        sta BestM,x
+        lda TSec
+        sta BestS,x
+CoRet:  rts
         ENDIF
 CoN:    dex
         bpl CoL
@@ -918,6 +933,29 @@ Labels:
         ldx Level
         lda LevelBg,x
         sta FBg
+        lda BestM,x             ; the front screen's best time: M (TDig+2), S S (TDig+4, BestP)
+        asl
+        asl
+        asl
+        adc #<DHi
+        sta TDig+2
+        lda BestS,x
+        and #$F0
+        lsr
+        adc #<DHi
+        sta TDig+4
+        lda BestS,x
+        and #$0F
+        asl
+        asl
+        asl
+        adc #<DLo
+        sta BestP
+        lda #>DHi
+        sta TDig+3
+        sta TDig+5
+        lda #>DLo
+        sta BestP+1
         rts
 LevelBg: .byte FRONT_BG1, FRONT_BG2, FRONT_BG3
 

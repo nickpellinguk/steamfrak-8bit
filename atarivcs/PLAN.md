@@ -457,6 +457,12 @@ them in the bank's ROM.
   on it (or yoyoing) carries the Trogg (TX and the frame's HMP0). Picture checks hold it at its
   start. Cost: about 200 bytes of logic and 80 of display, plus a body or two per screen that uses
   it. Vertical blank worst case about 1940 of 2752 cycles.
+* Front screen, below the bubble: BEST and the level's best time (x 40 / 104, as the top labels;
+  BestM, BestS by level, 9:59 at power-on, a faster level completion replaces it; not saved), then
+  "(c) 2026" and "N Pelling" as two lines of six characters (12 glyphs: P0 at 56, P1 at 64, three
+  copies close, vertically delayed, four timed stores at 45-54; C0k / C1k tables). Each set of
+  lines is placed by a positioning line with a late HMOVE (front.bottom, _posline). N is 4 px wide
+  (a byte's left half and its gap).
 * Labels: the front screen's top 7 lines show LVL1-3 (x 40-55) and EASY / HARD (x 104-119); the
   game's band shows the time (x 40-55) and the difficulty (x 104-119), lined up. Both: P0 and P1 two copies
   wide (+64), each byte two 3 x 7 glyphs (timer.tables: TPair, DHi, DLo, TColon); the time's bytes

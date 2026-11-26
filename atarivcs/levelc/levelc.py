@@ -342,7 +342,7 @@ def compile_screen(plan, outdir, game=False):
           'START_X = %d' % tr['x'], 'START_ROW = %d' % tr['row'], 'NLAD = %d' % nlad,
           'NIR = %d' % len(item_runs), 'NITEM = %d' % len(coll), 'KEYMASK = %d' % sum(1 << b for b, i in enumerate(coll) if plan['items'][i]['kind'] == 'key'), 'HANDUP = %d' % handup, 'RunX = $C0', 'FRONT_BG = $%02X' % front.BG, 'FRONT_BG1 = $%02X' % front.BGS[0], 'FRONT_BG2 = $%02X' % front.BGS[1], 'FRONT_BG3 = $%02X' % front.BGS[2], 'FRONT_INK = $%02X' % front.INK,
           'FRONT_FILL = $%02X' % front.FILL, 'TOPROWS = %d' % timer.TOPROWS, 'MUSRAM = $DB', 'AUDC0 = $15', 'AUDC1 = $16', 'AUDF0 = $17',
-          'AUDF1 = $18', 'AUDV0 = $19', 'AUDV1 = $1A', 'TWHITE = $%02X' % timer.WHITE, 'TAIL_X = %d' % front.TAIL_P1_X, 'ENABL = $1F', 'RESBL = $14', 'HMBL = $24', 'HMK = %d' % timer.HMK, 'SWCHB = $282', 'HMP1 = $21']
+          'AUDF1 = $18', 'AUDV0 = $19', 'AUDV1 = $1A', 'TWHITE = $%02X' % timer.WHITE, 'TAIL_X = %d' % front.TAIL_P1_X, 'ENABL = $1F', 'RESBL = $14', 'HMBL = $24', 'HMK = %d' % timer.HMK, 'SWCHB = $282', 'HMP1 = $21', 'VDELP0 = $25', 'VDELP1 = $26']
     mv = plan.get('mover') if game else None
     if mv:
         a, b = (mv['x1'], mv['x0']) if mv['mode'] == 'rl' else (mv['x0'], mv['x1'])
@@ -623,6 +623,13 @@ Clear:  sta $00,x
         lda #1
         sta Diff
         ENDIF
+        ldx #2              ; the best times: 9:59 to start with
+BInit:  lda #9
+        sta BestM,x
+        lda #$59
+        sta BestS,x
+        dex
+        bpl BInit
         jsr Labels          ; the labels' pointers and the front screen's colour
         IFCONST SKIPFRONT
         lda #1
@@ -767,6 +774,9 @@ NoTime: lda Mode            ; the front screen: the labels first (P0 at 40, P1 a
         lda #FRONT_INK
         sta COLUP0
         sta COLUP1
+        lda #0
+        sta VDELP0          ; (the copyright's lines turn it on)
+        sta VDELP1
 NoTail: lda TX              ; for the band: P0 and the ball HMK right (its HMOVE is late)
         clc
         adc #HMK
