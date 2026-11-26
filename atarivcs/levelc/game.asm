@@ -61,9 +61,12 @@ MvT     = $F5           ; 3 two-way: moving back; one-way: away (hidden, back at
 MvOn    = $F6
 MvD     = $F7
 TDig    = $D0           ; the timer: pointers to its four characters' glyphs (M, colon, S, S)
-TTx     = $9B           ; ... and the difficulty word's two letter pairs ($9B-$9E: after the Trogg's
-TTmp    = $9F           ; buffer, 25 bytes at most), a byte the band's loop needs,
-TLn     = $BF           ; and its line count
+TTx     = $9B           ; ... the difficulty word's second letter pair ($9B-$9C: after the Trogg's
+                        ; buffer, 17 bytes at most: 16 rows)
+Level   = $9D           ; 0-2: LVL1-3 (SELECT)
+Diff    = $9E           ; 0 EASY, 1 HARD (RESET)
+SwPrev  = $9F           ; last frame's SWCHB (the buttons: a press is a change to 0)
+FBg     = $BF           ; the front screen's background: by level
 TFr     = $D8           ; frames into the second
 TSec    = $D9           ; seconds (BCD)
 TMin    = $DA
@@ -796,6 +799,27 @@ RV2:    ldy Tmp
 
 ; ---- the front screen: a press of fire (after it has been up) starts the game
 FrontLogic:
+        lda SWCHB               ; SELECT: the next level; RESET: the other difficulty (on a press)
+        tax
+        eor #$FF
+        and SwPrev              ; (1: up last frame, down now)
+        stx SwPrev
+        lsr
+        bcc FLSel
+        tax
+        lda Diff
+        eor #1
+        sta Diff
+        txa
+FLSel:  lsr
+        bcc FLLab
+        ldx Level
+        inx
+        cpx #3
+        bcc FLLv
+        ldx #0
+FLLv:   stx Level
+FLLab:  jsr Labels
         lda INPT4
         bpl FLDown
         lda #1
@@ -846,47 +870,58 @@ TInc:   sed
         sta TSec
         inc TMin
         ENDIF
-TPtr:   lda TMin
+TPtr:   lda TMin            ; the time's glyphs: M (high half) with the colon, S S (high, low)
         asl
         asl
         asl
-        clc
-        adc #<Font
+        adc #<DHi               ; (carry clear: TMin < 10)
         sta TDig
-        lda #<(Font + 80)
-        sta TDig+2
         lda TSec
         and #$F0
         lsr
-        clc
-        adc #<Font
-        sta TDig+4
+        adc #<DHi
+        sta TDig+2
         lda TSec
         and #$0F
         asl
         asl
         asl
-        clc
-        adc #<Font
-        sta TDig+6
-        lda #>Font
+        adc #<DLo
+        sta TDig+4
+        lda #>DHi
         sta TDig+1
         sta TDig+3
+        lda #>DLo
         sta TDig+5
-        sta TDig+7
-        ldx #<TFont             ; the word: the left difficulty switch, B EASY, A HARD
-        bit SWCHB
-        bvc TEasy
-        ldx #<(TFont + 16)
-TEasy:  stx TTx
-        txa
-        clc
-        adc #8
-        sta TTx+2
-        lda #>TFont
-        sta TTx+1
-        sta TTx+3
         rts
+
+; ---- the labels' pointers: the level's pair (TDig: "L1" - "L3", the front screen), the difficulty's
+; pairs (TDig+6, TTx: "EA" "SY" or "HA" "RD"), and the front screen's colour
+Labels:
+        lda Level
+        asl
+        asl
+        asl
+        adc #<(TPair + 8)       ; (carry clear)
+        sta TDig
+        lda Diff
+        asl
+        asl
+        asl
+        asl
+        adc #<(TPair + 32)
+        sta TDig+6
+        adc #8
+        sta TTx
+        lda #>TPair
+        sta TDig+1
+        sta TDig+7
+        sta TTx+1
+        ldx Level
+        lda LevelBg,x
+        sta FBg
+        rts
+LevelBg: .byte FRONT_BG1, FRONT_BG2, FRONT_BG3
 
 ; ---- the moving platform: the ball, 8 px, rows MV_ROW .. + 2. Two-way: pauses at each end; one-way
 ; (left to right or right to left): pauses at its start, crosses, pauses, then is away (hidden) and

@@ -16,7 +16,7 @@ R, L, D, U, FIRE = 0x80, 0x40, 0x20, 0x10, 'fire'
 
 
 class Game:
-    def __init__(self, base, no_meanie=False):
+    def __init__(self, base, no_meanie=False, front_only=False):
         self.sym = {}
         for line in open(base + '.sym'):
             p = line.split()
@@ -41,8 +41,11 @@ class Game:
         self.select(len(self.banks) - 1)       # (power-on: any bank; the reset stub copes)
         self.m.pc = self.banks[-1][0xFFC] | self.banks[-1][0xFFD] << 8
         self.frames = 0
+        self.swchb = 0x0B                   # the console: SELECT and RESET up (bits 1, 0)
         self.frame(0)                       # start-up, then a frame of the front screen (fire up)
         self.frame(0)
+        if front_only:
+            return
         self.mode0 = self.m.memory[self.sym['Mode']]
         self.frame(0, True)                 # fire starts the game
         self.frame(0)
@@ -61,6 +64,7 @@ class Game:
         m.memory[0x280] = 0xFF & ~keys       # SWCHA: 0 = pressed
         m.memory[0x0C] = 0x00 if fire else 0x80
         m.memory[0x284] = 0                  # INTIM: the timer has always run out
+        m.memory[0x282] = self.swchb
         target = self.sym['Frame']
         for _ in range(200000):
             m.step()
@@ -298,6 +302,26 @@ def main():
     g.dies(200, R)                                 # off the floor's end, and the restart
     expect('a death: the clock goes back to the checkpoint (0:02)',
            {**g.state(), 'clock': tm()[:2], 'was': t1[:2]}, clock=lambda v: v[0] != 0 or not 2 <= v[1] <= 4)
+    # the front screen's buttons: SELECT the next level (1-3, then 1), RESET the other difficulty
+    g = Game(os.path.join(outdir, 'level'), front_only=True)
+    lv = lambda: {'level': g.m.memory[g.sym['Level']] + 1, 'hard': g.m.memory[g.sym['Diff']],
+                  'bg': g.m.memory[g.sym['FBg']]}
+    press = lambda bit: [g.__setattr__('swchb', 0x0B & ~bit), g.frame(0), g.__setattr__('swchb', 0x0B), g.frame(0)]
+    expect('front screen: level 1, EASY, cyan', lv(), level=1, hard=0, bg=0xA8)
+    press(2)
+    expect('SELECT: level 2, green', lv(), level=2, bg=0xC6)
+    g.swchb = 0x09
+    for _ in range(30):
+        g.frame(0)
+    g.swchb = 0x0B
+    g.frame(0)
+    expect('SELECT held 30 frames: one step (level 3, red)', lv(), level=3, bg=0x44)
+    press(2)
+    expect('SELECT: back to level 1', lv(), level=1)
+    press(1)
+    expect('RESET: HARD', lv(), hard=1)
+    press(1)
+    expect('RESET: EASY again', lv(), hard=0)
     # the moving platform (rows 66-68, x 48 to 100, below the middle-left ledge's right end)
     for mode in ('lr', 'two', 'rl'):
         mdir = os.path.join(outdir, 'mv_' + mode)
