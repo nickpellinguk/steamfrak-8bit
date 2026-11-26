@@ -306,6 +306,8 @@ def compile_screen(plan, outdir, game=False):
     if game:                               # the timer's font, and P0's fine moves, for the band
         for t, vals in timer.tables().items():   # the labels' and the time's 3 x 7 glyphs
             place(t, dict(enumerate(vals)), True)
+            if t in ('TPair', 'DHi', 'DLo', 'TColon'):   # (and the band's own, in the game bank)
+                place(t + 'G', dict(enumerate(vals)), True, 0)
         place('HMTab1', {r: (-(r - 6) & 15) << 4 for r in range(15)}, True)
     if game:                               # the front screen's per-line tables (its own loop)
         for t, vals in front.tables().items():
@@ -382,7 +384,7 @@ def compile_screen(plan, outdir, game=False):
     if game and plan.get('yotest'):
         o += ['YOTEST = %d' % plan['yotest'][0], 'YOFACE = %d' % plan['yotest'][1]]
     o += ['GRP0 = $1B', 'COLUP0 = $06', 'RESM0 = $12', 'ENAM0 = $1D', 'COLUPF = $08',
-          'PF0 = $0D', 'PF1 = $0E', 'PF2 = $0F', 'TrogPtr = $80', 'TroggGfx = $82']
+          'PF0 = $0D', 'PF1 = $0E', 'PF2 = $0F', 'TrogPtr = $80', 'TroggGfx = $82', 'LvBg = $84', 'LEVEL_BG = $%02X' % plan['background']]
     o += ['%-12s = $%04X' % (k, v) for k, v in labels.items()]
     def data_bytes(mem):
         out, a = [], 0xF000
@@ -439,7 +441,11 @@ OS:     sta WSYNC
         o.append('        seg bank0\n        org $0000\n        rorg $F000')
         o += data_bytes(mems[0])
         o.append(game_frame(plan, tr, h, labels, tx))
-        o.append('        jmp $FFE0           ; to the display bank: the kernel')
+        o.append('''        lda Mode
+        bne GBand
+        jmp $FFE0           ; the front screen: the display bank's kernel
+GBand:                      ; a level: the band here (shared by every level), then the display bank''')
+        o.append(timer.band(tr['colour']))
         o.append('Overscan:')
         o.append('''        lda #2
         sta VBLANK
@@ -455,7 +461,10 @@ OSWait: lda INTIM
         o.append('        include "%s"' % os.path.join(HERE, 'game.asm'))
         o.append("        include \"musicdrv_c.asm\"   ; the Frak tune, compact (atarivcs/music), 13 bytes of RAM at MUSRAM")
         o.append('LogicEnd:')
-        o.append('''        org $0FE0
+        o.append('''        org $0FD0
+        rorg $FFD0
+        bit $FFF9           ; $FFD0: -> bank 1, from the band (which carries on at $FFD3: jmp BandEnd)
+        org $0FE0
         rorg $FFE0
         bit $FFF9           ; $FFE0: -> bank 1 (which carries on at $FFE3: jmp Kernel)
         .byte 0,0,0
@@ -469,22 +478,27 @@ OSWait: lda INTIM
         .word $FFEC''')
         o.append('        seg bank1\n        org $1000\n        rorg $F000')
         o += data_bytes(mems[1])
-        o.append('Kernel: lda Mode         ; 0: the front screen')
-        o.append('        beq KFront')
-        o.append('        jmp KLevel')
+        o.append('Kernel:                  ; (the front screen: a level comes in at BandEnd, from the band)')
         o.append('KFront: lda #0')
         o.append('        sta VBLANK')
-        o.append(front.kernel())
+        o.append(front.compact(front.kernel()))
         o.append('        jmp KEnd')
         o.append('KLevel:')
-        o.append(timer.band(plan['background'], tr['colour']))
+        o.append('''BandEnd:                    ; (from the band, in the game bank: 49 cycles into its last line)
+        nop
+        bit $80             ; 54
+        sta RESP1           ; 57: P1 parked for the kernel''')
         o += calls
         o.append('KEnd:')
         o.append(kernel_end)
         o.append('        jmp $FFE6           ; back to the game bank: overscan')
         o += body_code
         o.append('CodeEnd:')
-        o.append('''        org $1FE0
+        o.append('''        org $1FD0
+        rorg $FFD0
+        .byte 0,0,0         ; $FFD0: (bank 0: bit $FFF9, from the band)
+        jmp BandEnd         ; $FFD3
+        org $1FE0
         rorg $FFE0
         .byte 0,0,0         ; $FFE0: (bank 0: bit $FFF9)
         jmp Kernel          ; $FFE3
@@ -639,6 +653,8 @@ Clear:  sta $00,x
         lda #1
         sta Diff
         ENDIF
+        lda #LEVEL_BG       ; the level's background (the band, in the game bank, reads it)
+        sta LvBg
         ldx #2              ; the best times: 9:59 to start with
 BInit:  lda #9
         sta BestM,x

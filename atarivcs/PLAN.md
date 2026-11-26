@@ -464,6 +464,18 @@ them in the bank's ROM.
   on it (or yoyoing) carries the Trogg (TX and the frame's HMP0). Picture checks hold it at its
   start. Cost: about 200 bytes of logic and 80 of display, plus a body or two per screen that uses
   it. Vertical blank worst case about 1940 of 2752 cycles.
+* The top band runs in the game bank (shared by every level): after the vertical blank, a level's
+  frame runs timer.band there (its own glyph copies: TPairG, DHiG, DLoG, TColonG; the background
+  from LvBg, $84), and part-way through the band's last line jumps to $FFD0: bit $FFF9 switches to
+  the display bank, which carries on at $FFD3 (jmp BandEnd: P1 parked at 57, then the call list's
+  late HMOVE and first body as before). The front screen still goes through $FFE0 to its kernel.
+  Bank 0 3572 bytes (+361), bank 1 3125 (-115; the front screen keeps its own glyphs).
+* Front screen, compacted (display bank 3694 to 3240 bytes): the bubble's tables have one entry per
+  design row (each is 4 identical lines), stored backwards; a main loop (rows 0-9: X the row
+  counting down, Y the line in the row, the row step in the second COLUBK write's slack) and a
+  tail loop (rows 10-14: no fill, so it writes the tail's GRP1 early in the same line). Padding
+  of 15 cycles or more is LDX # / JSR FDelay (front.compact). Beware: no BIT padding between a
+  DEY and its branch (BIT sets Z).
 * Front screen, below the bubble: BEST and the level's best time (x 40 / 104, as the top labels;
   BestM, BestS by level, 9:59 at power-on, a faster level completion replaces it; not saved), then
   "(c) 2026" and "N Pelling" as two lines of six characters (12 glyphs: P0 at 56, P1 at 64, three
@@ -526,6 +538,11 @@ costs. Aim: three levels per 4K bank.
 
 ## Music (`music/`)
 
+* Streams: each channel is one stream of note bytes (its patterns, each played once, in order:
+  no order list, pointer table or end markers but one), a loop point each (MusLoopLo / Hi); chains
+  of three or more 32-frame ties are code 60 and a frame count. Driver + tune 832 bytes (was 951);
+  equiv_test identical for 200 s. No RAM used (the order positions, 2 bytes, are free now). Slides
+  left as they are (run lengths would need RAM).
 * Envelopes, accentuated: bass 12 falling a step every 2 frames to 2 (plucked); lead 15 a step every
   4 frames to 3 (a long note fades over 48 frames). MusRate per channel. (It was 10 to 6 and 12 to
   5, every 4 frames: too slight to hear.)

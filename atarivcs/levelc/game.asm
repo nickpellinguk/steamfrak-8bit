@@ -883,29 +883,41 @@ TInc:   sed
         sta TSec
         inc TMin
         ENDIF
-TPtr:   lda TMin            ; the time's glyphs: M (high half) with the colon, S S (high, low)
+TPtr:   lda TMin            ; the band's glyphs (the game bank's copies): M (high half) with the
+        asl                     ; colon, S S (high, low), and the difficulty's pairs
         asl
         asl
-        asl
-        adc #<DHi               ; (carry clear: TMin < 10)
+        adc #<DHiG              ; (carry clear: TMin < 10)
         sta TDig
         lda TSec
         and #$F0
         lsr
-        adc #<DHi
+        adc #<DHiG
         sta TDig+2
         lda TSec
         and #$0F
         asl
         asl
         asl
-        adc #<DLo
+        adc #<DLoG
         sta TDig+4
-        lda #>DHi
+        lda Diff
+        asl
+        asl
+        asl
+        asl
+        adc #<(TPairG + 32)
+        sta TDig+6
+        adc #8
+        sta TTx
+        lda #>DHiG
         sta TDig+1
         sta TDig+3
-        lda #>DLo
+        lda #>DLoG
         sta TDig+5
+        lda #>TPairG
+        sta TDig+7
+        sta TTx+1
         rts
 
 ; ---- the labels' pointers: the level's pair (TDig: "L1" - "L3", the front screen), the difficulty's

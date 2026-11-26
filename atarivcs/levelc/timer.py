@@ -78,16 +78,17 @@ def tables():
                for n, line in enumerate(COPYRIGHT) for k in range(6)}}
 
 
-def band(level_bg, trogg_col):
-    """The display bank's code for the band, run at the start of the level's kernel (in the line
-    left over from the vertical blank). P0 at x 40 and P1 at x 48, two copies wide (+64), as on the
+def band(trogg_col):
+    """The game bank's code for the band (shared by every level: the background from LvBg), run at
+    the end of the vertical blank (in its last line) and ending part-way through the band's last
+    line with the switch to the display bank (see levelc: the stub at $FFD0). P0 at x 40 and P1 at x 48, two copies wide (+64), as on the
     front screen: the time on the left (P0 "M:", P1 "SS", x 40-55), the difficulty on the right
     (their second copies, x 104-119). Each byte is two 3 x 7 glyphs; the time's are made as they're
     drawn (DHi | TColon, DHi | DLo). GRP0 by 36 and GRP1 by 38.7 (the first copies), then again
     after them (38.7, 41.3) and before the second copies (57.3, 60)."""
     return """        lda #0
         sta VBLANK
-        lda #$%02X
+        lda LvBg
         sta COLUBK          ; the band: the level's background
         ldy #7
         jmp TLine           ; (over any alignment padding)
@@ -96,7 +97,7 @@ def band(level_bg, trogg_col):
         ENDIF
 TLine:  sta WSYNC
         lda (TDig),y        ; 5: M
-        ora TColon,y        ; 9
+        ora TColonG,y       ; 9
         sta GRP0            ; 12: x 16
         lda (TDig+2),y      ; 17: S
         ora (TDig+4),y      ; 22: S
@@ -125,7 +126,7 @@ TBalL:  sbc #15
         bcs TBalL
         adc #15
         tay
-        lda HMTab1,y
+        lda HMTab,y
         bit $80
         nop
         sta.w RESBL
@@ -137,7 +138,7 @@ TPosL:  sbc #15
         bcs TPosL
         adc #15
         tay
-        lda HMTab1,y
+        lda HMTab,y
         nop
         sta.w RESP0
         sta HMP0
@@ -156,8 +157,8 @@ TPosL:  sbc #15
         inc TrogPtr         ; 34: the first body's (entered after its WSYNC and inc)
         lda #1
         sta NUSIZ1          ; 39: P1 the kernel's two copies again
-%s
-        sta RESP1           ; 57: P1 parked for the kernel""" % (level_bg, trogg_col, _pad(15))
+        jmp $FFD0           ; 42: to the display bank (bit $FFF9 there, 46; jmp BandEnd, 49):
+                            ; BandEnd parks P1 at 57 and the call list does the late HMOVE""" % (trogg_col,)
 
 
 def model_lines(minutes=0, seconds=0, hard=False):
