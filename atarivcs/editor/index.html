@@ -1367,9 +1367,9 @@ function buildTrogg() {
   const top = card('Trogg', 'Player 0, single width; each row is two scanlines. Every frame is the same height (the game\'s RAM buffer: ' + (h + 1) + ' bytes), and rows are added or removed at the top, so the feet stay on the same line. Bit 0 (the right-hand column, outlined) switches the yoyo (M0) on: only a frame\'s hand row may set it.');
   const ctl = document.createElement('div'); ctl.className = 'row-inline';
   const hl = document.createElement('label'); hl.className = 'row-inline';
-  hl.innerHTML = 'Rows <input type="number" min="4" max="24" value="' + h + '">';
+  hl.innerHTML = 'Rows <input type="number" min="4" max="16" value="' + h + '">';
   hl.querySelector('input').addEventListener('change', e => {
-    const n = clampI(e.target.value, 4, 24), d = n - h;
+    const n = clampI(e.target.value, 4, 16), d = n - h;
     for (const f of T.frames) {
       if (d > 0) f.rows.unshift(...Array(d).fill(0)); else f.rows.splice(0, -d);
       if (f.yoyoRow >= 0) f.yoyoRow = Math.max(-1, f.yoyoRow + d);

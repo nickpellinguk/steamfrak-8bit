@@ -457,7 +457,21 @@ them in the bank's ROM.
   on it (or yoyoing) carries the Trogg (TX and the frame's HMP0). Picture checks hold it at its
   start. Cost: about 200 bytes of logic and 80 of display, plus a body or two per screen that uses
   it. Vertical blank worst case about 1940 of 2752 cycles.
-* Timer band: 7 lines, black digits on the level's background. Its HMOVE (P0 back to the Trogg,
+* Front screen, below the bubble: BEST and the level's best time (x 40 / 104, as the top labels;
+  BestM, BestS by level, 9:59 at power-on, a faster level completion replaces it; not saved), then
+  "(c) 2026" and "N Pelling" as two lines of six characters (12 glyphs: P0 at 56, P1 at 64, three
+  copies close, vertically delayed, four timed stores at 45-54; C0k / C1k tables). Each set of
+  lines is placed by a positioning line with a late HMOVE (front.bottom, _posline). N is 4 px wide
+  (a byte's left half and its gap).
+* Labels: the front screen's top 7 lines show LVL1-3 (x 40-55) and EASY / HARD (x 104-119); the
+  game's band shows the time (x 40-55) and the difficulty (x 104-119), lined up. Both: P0 and P1 two copies
+  wide (+64), each byte two 3 x 7 glyphs (timer.tables: TPair, DHi, DLo, TColon); the time's bytes
+  are made as they're drawn (DHi | TColon, DHi | DLo). SELECT cycles the level (front screen, on a press:
+  SwPrev); the right difficulty switch sets the difficulty (A HARD, B EASY; read on the front screen); the level also picks the front screen's
+  background (cyan, green, red: FBg, read by its kernel through masks). Labels sets the pointers.
+  The front kernel then moves P1 to the tail with a late HMOVE (no blanked pixels). The in-game
+  background stays compiled into each level (the colour-hiding trick depends on it). The Trogg is
+  at most 16 rows (his buffer, $82-$92). Timer band: 7 lines, black digits. Its HMOVE (P0 back to the Trogg,
   the ball to the moving platform) is written at cycle 73 of its last line, so no pixels are
   blanked; a late HMOVE moves everything HMK (8) px further left, so P0 and the ball are positioned
   8 px right (Tmp, Tmp2: set before the vertical blank's end), and M0 and P1 get HMxx $80 to cancel

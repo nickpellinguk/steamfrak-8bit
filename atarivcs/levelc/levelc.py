@@ -283,13 +283,15 @@ def compile_screen(plan, outdir, game=False):
     tr = plan['trogg']
     frame = tr['frames'][0]['rows']
     h = len(frame)
+    assert h <= 16, 'the Trogg is at most 16 rows (his buffer, $82-$92, is followed by other RAM)'
     strip = [0] * 96 + list(range(1, h + 1)) + [0] * 96
     place('TroggStrip', dict(enumerate(strip)), True)    # one page: inc TrogPtr only steps the low byte
     for t in sorted(data, key=lambda t: -len(data[t])):
         place(t, data[t], True)
     table_bytes = sum(len(d) for d in data.values())
     if game:                               # the timer's font, and P0's fine moves, for the band
-        place('Font', dict(enumerate(timer.font())), True)
+        for t, vals in timer.tables().items():   # the labels' and the time's 3 x 7 glyphs
+            place(t, dict(enumerate(vals)), True)
         place('HMTab1', {r: (-(r - 6) & 15) << 4 for r in range(15)}, True)
     if game:                               # the front screen's per-line tables (its own loop)
         for t, vals in front.tables().items():
@@ -338,9 +340,9 @@ def compile_screen(plan, outdir, game=False):
     o += ['HMP0 = $20', 'HMM0 = $22', 'REFP0 = $0B', 'INPT4 = $0C', 'SWCHA = $280', 'INTIM = $284',
           'TIM64T = $296', 'H = %d' % h,
           'START_X = %d' % tr['x'], 'START_ROW = %d' % tr['row'], 'NLAD = %d' % nlad,
-          'NIR = %d' % len(item_runs), 'NITEM = %d' % len(coll), 'KEYMASK = %d' % sum(1 << b for b, i in enumerate(coll) if plan['items'][i]['kind'] == 'key'), 'HANDUP = %d' % handup, 'RunX = $C0', 'FRONT_BG = $%02X' % front.BG, 'FRONT_INK = $%02X' % front.INK,
+          'NIR = %d' % len(item_runs), 'NITEM = %d' % len(coll), 'KEYMASK = %d' % sum(1 << b for b, i in enumerate(coll) if plan['items'][i]['kind'] == 'key'), 'HANDUP = %d' % handup, 'RunX = $C0', 'FRONT_BG = $%02X' % front.BG, 'FRONT_BG1 = $%02X' % front.BGS[0], 'FRONT_BG2 = $%02X' % front.BGS[1], 'FRONT_BG3 = $%02X' % front.BGS[2], 'FRONT_INK = $%02X' % front.INK,
           'FRONT_FILL = $%02X' % front.FILL, 'TOPROWS = %d' % timer.TOPROWS, 'MUSRAM = $DB', 'AUDC0 = $15', 'AUDC1 = $16', 'AUDF0 = $17',
-          'AUDF1 = $18', 'AUDV0 = $19', 'AUDV1 = $1A', 'TWHITE = $%02X' % timer.WHITE, 'TAIL_X = %d' % front.TAIL_P1_X, 'ENABL = $1F', 'RESBL = $14', 'HMBL = $24', 'HMK = %d' % timer.HMK]
+          'AUDF1 = $18', 'AUDV0 = $19', 'AUDV1 = $1A', 'TWHITE = $%02X' % timer.WHITE, 'TAIL_X = %d' % front.TAIL_P1_X, 'ENABL = $1F', 'RESBL = $14', 'HMBL = $24', 'HMK = %d' % timer.HMK, 'SWCHB = $282', 'HMP1 = $21', 'VDELP0 = $25', 'VDELP1 = $26']
     mv = plan.get('mover') if game else None
     if mv:
         a, b = (mv['x1'], mv['x0']) if mv['mode'] == 'rl' else (mv['x0'], mv['x1'])
@@ -354,6 +356,10 @@ def compile_screen(plan, outdir, game=False):
     assert len(item_runs) <= 40, 'too many runs with items for RunX'
     if game and plan.get('collected'):
         o.append('START_COLL = %d' % sum(bit[i] for i in plan['collected'] if i in bit))
+    if game and opt('level'):
+        o.append('START_LEVEL = %d' % (int(opt('level')) - 1))   # (checks: SELECT can't be pressed)
+    if game and '--hard' in sys.argv:
+        o.append('START_HARD = 1')
     if game and '--check' in sys.argv:
         o.append('NOTIMER = 1')         # (picture checks: the time stays 0:00)
     if game and plan.get('yotest'):
@@ -449,7 +455,8 @@ OSWait: lda INTIM
         o.append('Kernel: lda Mode         ; 0: the front screen')
         o.append('        beq KFront')
         o.append('        jmp KLevel')
-        o.append('KFront:')
+        o.append('KFront: lda #0')
+        o.append('        sta VBLANK')
         o.append(front.kernel())
         o.append('        jmp KEnd')
         o.append('KLevel:')
@@ -608,6 +615,22 @@ Clear:  sta $00,x
         sta Facing
         ENDIF
         jsr MvInit
+        IFCONST START_LEVEL
+        lda #START_LEVEL
+        sta Level
+        ENDIF
+        IFCONST START_HARD
+        lda #1
+        sta Diff
+        ENDIF
+        ldx #2              ; the best times: 9:59 to start with
+BInit:  lda #9
+        sta BestM,x
+        lda #$59
+        sta BestS,x
+        dex
+        bpl BInit
+        jsr Labels          ; the labels' pointers and the front screen's colour
         IFCONST SKIPFRONT
         lda #1
         sta Mode
@@ -652,7 +675,7 @@ Frame:  lda #2
         inc Frm
         lda Mode
         bne InGame
-        lda #FRONT_BG       ; the front screen: green, black blocks, no Trogg, fire starts
+        lda FBg             ; the front screen: the level's colour, black blocks, no Trogg, fire starts
         sta COLUBK
         lda #FRONT_INK
         sta COLUPF
@@ -721,29 +744,39 @@ NoYo:   sta WSYNC
         sta HMCLR
         lda Mode            ; playing: P0 and P1 for the timer (the band puts P0 back)
         beq NoTime
-        lda #16
+        lda #40
         ldx #0
         jsr PosObj
-        lda #24
+        lda #48
         ldx #1
         jsr PosObj
-        lda #1
-        sta NUSIZ0          ; two copies close: x 16 and 32 (P1: 24 and 40)
+        lda #4
+        sta NUSIZ0          ; two copies wide: x 40 and 104 (P1: 48 and 112), as on the front screen
+        sta NUSIZ1
         lda #TWHITE
         sta COLUP0
         sta COLUP1
         lda #0
         sta REFP0
-NoTime: lda Mode            ; the front screen: P1 is the tail's fill (double width, yellow,
-        bne NoTail          ; behind the playfield)
-        lda #TAIL_X - 1     ; (a double-width player starts a pixel later)
+NoTime: lda Mode            ; the front screen: the labels first (P0 at 40, P1 at 48, two copies
+        bne NoTail          ; wide, black); the kernel then moves P1 to the tail's fill
+        lda #40
+        ldx #0
+        jsr PosObj
+        lda #48
         ldx #1
         jsr PosObj
-        lda #5
+        lda #4
+        sta NUSIZ0
         sta NUSIZ1
+        lda #5
         sta CTRLPF          ; mirrored playfield, over the players
-        lda #FRONT_FILL
+        lda #FRONT_INK
+        sta COLUP0
         sta COLUP1
+        lda #0
+        sta VDELP0          ; (the copyright's lines turn it on)
+        sta VDELP1
 NoTail: lda TX              ; for the band: P0 and the ball HMK right (its HMOVE is late)
         clc
         adc #HMK
@@ -754,13 +787,11 @@ NoTail: lda TX              ; for the band: P0 and the ball HMK right (its HMOVE
         sta Tmp2
 WaitVB: lda INTIM
         bne WaitVB
-        sta WSYNC
-        lda #0
-        sta VBLANK''' % (plan['background'], tr['colour'], pad(57).replace('\n', '\n        '))
+        sta WSYNC           ; (the kernel turns VBLANK off: the band after writing ahead)''' % (plan['background'], tr['colour'], pad(57).replace('\n', '\n        '))
 
 
 def front_model():
-    return front.model()
+    return front.model(int(opt('level', '1')), '--hard' in sys.argv)
 
 
 def model(plan, palette, yoyo=True):
@@ -827,6 +858,8 @@ def check(base, plan, outdir, game=False):
     palette = json.load(open(os.path.join(ROOT, 'editor', 'palette.json')))
     rgb = lambda h: tuple(int(h[i:i + 2], 16) for i in (1, 3, 5))
     pal = [rgb(h) for h in palette]
+    if '--hard' in sys.argv:               # (the right difficulty switch at A)
+        os.environ['STELLA_ARGS'] = os.environ.get('STELLA_ARGS', '') + ' -rd A'
     png = tiatest.snapshot(base + '.bin', outdir)
     os.replace(png, base + '.png')
     im = Image.open(base + '.png').convert('RGB')
@@ -840,7 +873,7 @@ def check(base, plan, outdir, game=False):
     first = next(r for r in range(im.height) if im.getpixel((im.width - 2, r)) == bgrgb) + 1
     want = front_model() if '--front' in sys.argv else model(plan, pal, yoyo=not game)
     if game and '--front' not in sys.argv:
-        want[:timer.TOPROWS * 2] = timer.model_lines()
+        want[:timer.TOPROWS * 2] = timer.model_lines(hard='--hard' in sys.argv)
     bad = []
     for y in range(192):
         got = [im.getpixel((int((x + 0.5) * sx), first + y)) for x in range(160)]

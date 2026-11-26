@@ -61,6 +61,15 @@ MvT     = $F5           ; 3 two-way: moving back; one-way: away (hidden, back at
 MvOn    = $F6
 MvD     = $F7
 TDig    = $D0           ; the timer: pointers to its four characters' glyphs (M, colon, S, S)
+TTx     = $9B           ; ... the difficulty word's second letter pair ($9B-$9C: after the Trogg's
+                        ; buffer, 17 bytes at most: 16 rows)
+BestM   = $93           ; the best time by level: minutes ($93-$95), BCD seconds ($96-$98)
+BestS   = $96
+BestP   = $99           ; the front screen: a pointer to the best time's last digit ($99-$9A)
+Level   = $9D           ; 0-2: LVL1-3 (SELECT)
+Diff    = $9E           ; 0 EASY, 1 HARD (the right difficulty switch, read on the front screen)
+SwPrev  = $9F           ; last frame's SWCHB (the buttons: a press is a change to 0)
+FBg     = $BF           ; the front screen's background: by level
 TFr     = $D8           ; frames into the second
 TSec    = $D9           ; seconds (BCD)
 TMin    = $DA
@@ -666,7 +675,19 @@ CoL:    lda Collected
         bne CoN
         lda #90
         sta Won
-        rts
+        ldx Level               ; a better time than the level's best: the new best
+        lda TMin
+        cmp BestM,x
+        bcc CoBest
+        bne CoRet
+        lda TSec
+        cmp BestS,x
+        bcs CoRet
+CoBest: lda TMin
+        sta BestM,x
+        lda TSec
+        sta BestS,x
+CoRet:  rts
         ENDIF
 CoN:    dex
         bpl CoL
@@ -793,6 +814,25 @@ RV2:    ldy Tmp
 
 ; ---- the front screen: a press of fire (after it has been up) starts the game
 FrontLogic:
+        lda SWCHB               ; the right difficulty switch: A HARD, B EASY
+        asl
+        lda #0
+        rol
+        sta Diff
+        lda SWCHB               ; SELECT: the next level (on a press)
+        tax
+        eor #$FF
+        and SwPrev              ; (1: up last frame, down now)
+        stx SwPrev
+        and #2
+        beq FLLab
+        ldx Level
+        inx
+        cpx #3
+        bcc FLLv
+        ldx #0
+FLLv:   stx Level
+FLLab:  jsr Labels
         lda INPT4
         bpl FLDown
         lda #1
@@ -843,35 +883,81 @@ TInc:   sed
         sta TSec
         inc TMin
         ENDIF
-TPtr:   lda TMin
+TPtr:   lda TMin            ; the time's glyphs: M (high half) with the colon, S S (high, low)
         asl
         asl
         asl
-        clc
-        adc #<Font
+        adc #<DHi               ; (carry clear: TMin < 10)
         sta TDig
-        lda #<(Font + 80)
-        sta TDig+2
         lda TSec
         and #$F0
         lsr
-        clc
-        adc #<Font
-        sta TDig+4
+        adc #<DHi
+        sta TDig+2
         lda TSec
         and #$0F
         asl
         asl
         asl
-        clc
-        adc #<Font
-        sta TDig+6
-        lda #>Font
+        adc #<DLo
+        sta TDig+4
+        lda #>DHi
         sta TDig+1
         sta TDig+3
+        lda #>DLo
         sta TDig+5
-        sta TDig+7
         rts
+
+; ---- the labels' pointers: the level's pair (TDig: "L1" - "L3", the front screen), the difficulty's
+; pairs (TDig+6, TTx: "EA" "SY" or "HA" "RD"), and the front screen's colour
+Labels:
+        lda Level
+        asl
+        asl
+        asl
+        adc #<(TPair + 8)       ; (carry clear)
+        sta TDig
+        lda Diff
+        asl
+        asl
+        asl
+        asl
+        adc #<(TPair + 32)
+        sta TDig+6
+        adc #8
+        sta TTx
+        lda #>TPair
+        sta TDig+1
+        sta TDig+7
+        sta TTx+1
+        ldx Level
+        lda LevelBg,x
+        sta FBg
+        lda BestM,x             ; the front screen's best time: M (TDig+2), S S (TDig+4, BestP)
+        asl
+        asl
+        asl
+        adc #<DHi
+        sta TDig+2
+        lda BestS,x
+        and #$F0
+        lsr
+        adc #<DHi
+        sta TDig+4
+        lda BestS,x
+        and #$0F
+        asl
+        asl
+        asl
+        adc #<DLo
+        sta BestP
+        lda #>DHi
+        sta TDig+3
+        sta TDig+5
+        lda #>DLo
+        sta BestP+1
+        rts
+LevelBg: .byte FRONT_BG1, FRONT_BG2, FRONT_BG3
 
 ; ---- the moving platform: the ball, 8 px, rows MV_ROW .. + 2. Two-way: pauses at each end; one-way
 ; (left to right or right to left): pauses at its start, crosses, pauses, then is away (hidden) and
