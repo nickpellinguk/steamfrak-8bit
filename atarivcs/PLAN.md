@@ -464,6 +464,12 @@ them in the bank's ROM.
   on it (or yoyoing) carries the Trogg (TX and the frame's HMP0). Picture checks hold it at its
   start. Cost: about 200 bytes of logic and 80 of display, plus a body or two per screen that uses
   it. Vertical blank worst case about 1940 of 2752 cycles.
+* The top band runs in the game bank (shared by every level): after the vertical blank, a level's
+  frame runs timer.band there (its own glyph copies: TPairG, DHiG, DLoG, TColonG; the background
+  from LvBg, $84), and part-way through the band's last line jumps to $FFD0: bit $FFF9 switches to
+  the display bank, which carries on at $FFD3 (jmp BandEnd: P1 parked at 57, then the call list's
+  late HMOVE and first body as before). The front screen still goes through $FFE0 to its kernel.
+  Bank 0 3572 bytes (+361), bank 1 3125 (-115; the front screen keeps its own glyphs).
 * Front screen, compacted (display bank 3694 to 3240 bytes): the bubble's tables have one entry per
   design row (each is 4 identical lines), stored backwards; a main loop (rows 0-9: X the row
   counting down, Y the line in the row, the row step in the second COLUBK write's slack) and a
