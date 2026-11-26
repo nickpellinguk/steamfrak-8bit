@@ -618,9 +618,21 @@ function ladderByte(l, y) {
   if (y < 2 * l.top || y >= 2 * l.bottom || !sec.length) return 0;
   return sec[y % sec.length];
 }
+// a level type's platform style: 'dashed' leaves every other block of a platform's middle two lines
+// unlit, phased from the screen's centre (block k and its mirror 39 - k alike). Only the data
+// changes: the row keeps its renderer (its PF writes already come from per-line tables), and those
+// two lines' table entries hold the dashed values (dashedLit)
+const dashedOff = k => (k < 20 ? k : 39 - k) % 2 === 0;
+const isDashed = () => P.types[typeI].platformStyle === 'dashed';
 function rowBlocks(s, r) {
   const b = new Set();
   for (const p of s.platforms) if (r >= p.top && r < p.top + p.rows) for (let k = p.b0; k <= p.b1; k++) b.add(k);
+  return b;
+}
+function dashedLit(s, r) {                 // a row's lit blocks on a dashed platform's middle lines
+  const b = new Set();
+  for (const p of s.platforms) if (r >= p.top && r < p.top + p.rows)
+    for (let k = p.b0; k <= p.b1; k++) if (!(r === p.top + 1 && dashedOff(k))) b.add(k);
   return b;
 }
 // the moving platform (one per screen, the ball: 8 px, 6 lines): its rows, and a key tag that gives
@@ -879,10 +891,11 @@ function draw() {
   const s = scr(), g = P.graphics;
   cx.fillStyle = col(g.background); cx.fillRect(0, 0, W * S, LINES * S);
   // platforms (per line stripes)
+  const dashed = isDashed();
   for (const p of s.platforms) for (let k = 0; k < p.rows * 2; k++) {
     const y = 2 * p.top + k; if (y >= LINES) break;
     cx.fillStyle = col(g.stripes[Math.min(k, g.stripes.length - 1)]);
-    cx.fillRect(p.b0 * 4 * S, y * S, (p.b1 - p.b0 + 1) * 4 * S, S);
+    for (let b = p.b0; b <= p.b1; b++) if (!(dashed && (k === 2 || k === 3) && dashedOff(b))) cx.fillRect(b * 4 * S, y * S, 4 * S, S);
   }
   const mv = moverOf(s);                   // the moving platform: at its start, and its range
   if (mv) {
@@ -1291,6 +1304,12 @@ function buildGfx() {
   ic.appendChild(ib); box.appendChild(ic);
   // ladder
   P.types.forEach((T, ti) => {
+    const ps = card('Platform style: ' + T.name, 'Plain, or dashed: the middle two lines of every platform show every other 4 px block (phased from the screen\'s centre, so mirrored rows need no extra writes). It costs only table data: the row keeps its renderer.');
+    const psel = document.createElement('select'); psel.setAttribute('aria-label', 'Platform style');
+    psel.innerHTML = '<option value="plain">Plain</option><option value="dashed">Dashed middle</option>';
+    psel.value = T.platformStyle || 'plain';
+    psel.addEventListener('change', () => { T.platformStyle = psel.value; commit(); });
+    ps.appendChild(psel); box.appendChild(ps);
     const c = card('Ladder: ' + T.name, 'Black (fixed colour). One section, repeated down every ladder in this level type and anchored to the screen\'s lines, so all ladders on a line show the same byte and share one GRP1 write. One row per scanline.');
     c.appendChild(pixelEditor(T.ladder, '#000000', {}));
     const ctl = document.createElement('div'); ctl.className = 'row-inline'; ctl.appendChild(heightControl(T.ladder, 1, 32, 'Lines'));
