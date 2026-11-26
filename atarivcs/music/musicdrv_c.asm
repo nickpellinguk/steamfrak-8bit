@@ -10,7 +10,7 @@
 ; SLIDE0 on a pitch slide (MusSlide: its offset into MusSlides, one pitch a frame, ended by $FF:
 ; the last pitch is held), 61 tie (carry on, no new attack), 62 end of pattern, 63 rest. Each
 ; channel has an order list in MusOrder (ended by $FF) and a loop position (MusLoop). A new note
-; starts at the channel's top volume and falls by one every 4 frames to its floor.
+; starts at the channel's top volume and falls by one every 2 (bass) or 4 (lead) frames to its floor.
 ;
 ; RAM (MUSRAM defined by the includer, 13 bytes): each channel's variables are 2 bytes apart, so
 ; X = 0 (bass) or 2 (lead) indexes them all, its pattern pointer read with (MusPtr,x).
@@ -31,8 +31,9 @@ MIL:    lda MusInit,x
 MusInit: .byte <MusEnd,>MusEnd,<MusEnd,>MusEnd, 1,0,1,0
         .byte $FF,$FF,MUSORD1,$FF, 0   ; (order positions: just before each channel's list)
 MusEnd: .byte 62            ; an empty pattern: the first tick moves to each channel's first
-MusTop:   .byte 10,12       ; top volume (bass, lead)
-MusFloor: .byte 6+1,5+1     ; floor + 1
+MusTop:   .byte 12,15       ; top volume (bass, lead)
+MusFloor: .byte 2+1,3+1     ; floor + 1
+MusRate:  .byte 1,3         ; a step down every 2 (bass) / 4 (lead) frames
 
 MusicTick:
         inc MusFrame
@@ -139,7 +140,7 @@ MDec:   txa
         lsr
         tay
         lda MusFrame
-        and #3
+        and MusRate,y
         bne MOut
         lda MusVol,x
         cmp MusFloor,y
