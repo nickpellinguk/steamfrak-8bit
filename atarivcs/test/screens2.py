@@ -107,9 +107,28 @@ for a, b in [
          "ins_s = 'st%s%s %s' % ({'a': 'a', 'x': 'y', 'y': 'y'}[r], '.w' if st == 4 else '', reg)"),
         ("                res = search(end, rem - {i}, si, ha, hx)",
          "                res = search(end, rem - {i}, si, ha, hx)"),
+        # YZERO: Y must hold 0 when the block ends (the Trogg tail then needs no LDY #0): a zero
+        # load into Y may go anywhere it fits (idle time before a strobe), and zero stores use it
+        ("        if not rem and si == len(strobes):\n            return [], t\n",
+         "        if not rem and si == len(strobes):\n"
+         "            if YZERO and hx != 'lda #$00':\n"
+         "                fail.add(key)\n"
+         "                return None\n"
+         "            return [], t\n"),
+        ("        for hi, _, end, st, i, r, what in sorted(opts):\n            lo, _, ins, ln, reg = T[i]\n",
+         "        if YZERO and hx != 'lda #$00' and ok(t + 2):\n"
+         "            opts.append((999, 1, t + 2, 0, -1, 'x', 'zload'))\n"
+         "        for hi, _, end, st, i, r, what in sorted(opts):\n"
+         "            if what == 'zload':\n"
+         "                res = search(end, rem, si, ha, 'lda #$00')\n"
+         "                if res is not None:\n"
+         "                    return ['ldy #$00'] + res[0], res[1]\n"
+         "                continue\n"
+         "            lo, _, ins, ln, reg = T[i]\n"),
 ]:
     assert a in _src, a
     _src = _src.replace(a, b)
+_src = _src.replace("('lda #0', 2)", "('lda #$00', 2)")      # (one spelling of zero: loads of it are shared)
 _ns = dict(fr.__dict__)
 
 
@@ -124,6 +143,7 @@ def _load(src):
 
 _ns['load'] = _load
 _ns['FREEY'] = False
+_ns['YZERO'] = False
 exec(_src, _ns)
 schedule = _ns['schedule']
 

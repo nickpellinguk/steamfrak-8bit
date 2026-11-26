@@ -61,8 +61,8 @@ MvT     = $F5           ; 3 two-way: moving back; one-way: away (hidden, back at
 MvOn    = $F6
 MvD     = $F7
 TDig    = $D0           ; the timer: pointers to its four characters' glyphs (M, colon, S, S)
-TTx     = $9B           ; ... the difficulty word's second letter pair ($9B-$9C: after the Trogg's
-                        ; buffer, 17 bytes at most: 16 rows)
+TTx     = $9B           ; ... the difficulty word's second letter pair ($9B-$9C)
+                        ; ($84-$92: free since the Trogg's frame is read from ROM, TroggGfx $82)
 BestM   = $93           ; the best time by level: minutes ($93-$95), BCD seconds ($96-$98)
 BestS   = $96
 BestP   = $99           ; the front screen: a pointer to the best time's last digit ($99-$9A)

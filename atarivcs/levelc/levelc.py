@@ -33,7 +33,11 @@ import timer  # noqa: E402
 
 F._setup()
 pad = tiatest.pad
-TAIL = ['ldy #0', 'lda (TrogPtr),y', 'tay', 'lda Buffer,y', 'sta GRP0', 'inx']
+TAIL = ['ldy #0', 'lda (TrogPtr),y', 'tay', 'lda (TroggGfx),y', 'sta GRP0', 'inx']
+# a body's timing, tried in turn: the shared block from t0, its last store ending by the limit (less
+# the given amount), and whether Y must hold 0 at its end (then the tail needs no LDY #0: 17 cycles,
+# else 19, so the block ends a cycle earlier or starts a cycle later)
+TIMINGS = ((10, 0, True), (10, 1, False), (11, 0, False))
 
 
 def opt(name, default=None):
@@ -64,16 +68,26 @@ def body(name, run):
     prevcol = tuple(run.get('prevcol') or ('imm', 0))     # P1's colour as the run above left it
     # (the run before the moving platform's first, and before the one below it, ends earlier: the
     # call list writes ENABL after it, before the next run's first line)
-    code, end = F.schedule(((0, 0, 0), (0, 0, 0)), ((0, 0, 0), (0, 0, 0)), objs, prevcol, True,
-                           objs[-1][0] if objs else None, t0=10, end_limit=run.get('end_limit', 55), extra=extra)
+    lim = run.get('end_limit', 55)
+    for t0, less, yzero in TIMINGS:
+        try:
+            code, end = F.schedule(((0, 0, 0), (0, 0, 0)), ((0, 0, 0), (0, 0, 0)), objs, prevcol, True,
+                                   objs[-1][0] if objs else None, t0=t0, end_limit=lim - less, extra=extra,
+                                   yzero=yzero)
+            break
+        except ValueError:
+            continue
+    else:
+        raise ValueError('no fit')
     flat = [i.strip() for c in code for i in c.split('\n') if i.strip()]
-    tail = list(TAIL)
-    n = 76 - (end + 3 + screens2.ncycles(tail))
+    tail = list(TAIL[1:] if yzero else TAIL)
+    n = 66 + t0 - (end + 3 + screens2.ncycles(tail))     # (t0 11: the GRP0 store a cycle later)
     if n < 0:
         raise ValueError('tail does not fit')
     if n == 1:
-        tail[4] = 'sta.w GRP0'
-    out = ['%s_i:' % name, 'inx', '%s:' % name, 'sta WSYNC', 'inc TrogPtr', '%s_c:' % name, 'sec', 'bit $80', '%s_s:' % name] + flat
+        tail[-2] = 'sta.w GRP0'
+    out = ['%s_i:' % name, 'inx', '%s:' % name, 'sta WSYNC', 'inc TrogPtr', '%s_c:' % name, 'sec',
+           'bit $80' if t0 == 10 else 'nop\nnop', '%s_s:' % name] + flat
     # the padding goes before the GRP0 store, so the store always ends at the same late cycle (about
     # 66, pixel 130) whatever the body: every Trogg row then shows on its row's second line and the
     # next row's first, the same for any x up to about 122
@@ -83,10 +97,10 @@ def body(name, run):
     if run.get('end_limit'):
         p = 50 - end if 50 - end != 1 else 0
         ret = (pad(p).split('\n') if p > 1 else []) + ['rts']
-    out += ['bcs %s_e' % name] + ret + ['%s_e:' % name] + tail[:4] + ['inx']
+    out += ['bcs %s_e' % name] + ret + ['%s_e:' % name] + tail[:-2] + ['inx']
     if n > 1:
         out += pad(n).split('\n')
-    out += [tail[4], 'asl', 'sta ENAM0', 'clc', 'jmp %s_s' % name]   # (clc after asl: the carry marks line 2)
+    out += [tail[-2], 'asl', 'sta ENAM0', 'clc', 'jmp %s_s' % name]   # (clc after asl: the carry marks line 2)
     tables = sorted({i.split()[1][:-2] for i in flat if i.startswith(('lda ', 'ldy ')) and i.endswith(',x')})
     return out, tables
 
@@ -296,7 +310,15 @@ def compile_screen(plan, outdir, game=False):
     if game:                               # the front screen's per-line tables (its own loop)
         for t, vals in front.tables().items():
             place(t, dict(enumerate(vals)), True)
-    place('TroggFrame', dict(enumerate(frame)), False, 0 if game else 1)
+    # the Trogg's frames, in the display bank, each a blank byte then its rows (the strip's row
+    # indices, 1..h, read them through TroggGfx; no read crosses a page): walking (the hand row's bit
+    # 0, the yoyo, off), walking with the yoyo out, climbing
+    by = lambda k: next((f for f in tr['frames'] if f.get('set') == k), None)
+    fw = (by('walk') or tr['frames'][0])['rows']
+    fc = (by('climb') or by('walk') or tr['frames'][0])['rows']
+    fy = (by('yoyo') or by('walk') or tr['frames'][0])['rows']
+    for name, rws in (('TGfxW', [v & 0xFE for v in fw]), ('TGfxY', fy if game else fw), ('TGfxC', [v & 0xFE for v in fc])):
+        place(name, dict(enumerate([0] + [0] * (h - len(rws)) + rws)), True, 1)
     nlad, handup = 0, 0
     if game:
         f0 = tr['frames'][0]
@@ -305,13 +327,9 @@ def compile_screen(plan, outdir, game=False):
         pidx, pb, lidx, lb = move_maps(plan)
         # the game's two frames for now: the first walking one and the first climbing one (the
         # editor keeps the frames in set order: walking, climbing, yoyoing)
-        by = lambda k: next((f for f in tr['frames'] if f.get('set') == k), None)
-        fr = [f['rows'] for f in (by('walk') or tr['frames'][0], by('climb') or by('walk') or tr['frames'][0])]
-        hh = max(len(f) for f in fr)
-        frames = [b for f in fr for b in [0] * (hh - len(f)) + f]
         fb = [(r + 1) // 3 if (r + 1) % 3 == 0 else 0xFF for r in range(97)]
         for name, vals in (('PIdx', pidx), ('PPool', pb), ('LIdx', lidx), ('LPool', lb), ('FB', fb), ('Band3', [r // 3 for r in range(128)]),
-                           ('Mask8', [0x80 >> i for i in range(8)]), ('TroggFrames', frames)):
+                           ('Mask8', [0x80 >> i for i in range(8)])):
             place(name, dict(enumerate(vals)), False, 0)
         lad = [b for l in plan['ladders'] if l['bottom'] > l['top']
                for b in (l['x'], l['top'], l['bottom'] - 1)]
@@ -329,7 +347,6 @@ def compile_screen(plan, outdir, game=False):
             place(name, dict(enumerate(vals or [0])), False, 0)
         place('HMTab', {r: (-(r - 6) & 15) << 4 for r in range(15)}, True, 0)   # PosObj's fine move
         maps_bytes = len(pidx) + len(pb) + len(lidx) + len(lb)
-        h = hh
     # Trogg pointer: the first body call increments it before reading, so row k reads ptr0 + k + 1;
     # rows feet-h+1 .. feet show frame rows 1..h (strip index 96 .. 95+h)
     ptr0 = labels['TroggStrip'] + 95 - (tr['row'] - h + 1)
@@ -365,7 +382,7 @@ def compile_screen(plan, outdir, game=False):
     if game and plan.get('yotest'):
         o += ['YOTEST = %d' % plan['yotest'][0], 'YOFACE = %d' % plan['yotest'][1]]
     o += ['GRP0 = $1B', 'COLUP0 = $06', 'RESM0 = $12', 'ENAM0 = $1D', 'COLUPF = $08',
-          'PF0 = $0D', 'PF1 = $0E', 'PF2 = $0F', 'TrogPtr = $80', 'Buffer = $82']
+          'PF0 = $0D', 'PF1 = $0E', 'PF2 = $0F', 'TrogPtr = $80', 'TroggGfx = $82']
     o += ['%-12s = $%04X' % (k, v) for k, v in labels.items()]
     def data_bytes(mem):
         out, a = [], 0xF000
@@ -561,15 +578,14 @@ Frame:  lda #2
         sta NUSIZ1
         lda #$20
         sta NUSIZ0          ; single-width Trogg, 4 px yoyo
-        ldy #%d
-CopyF:  lda TroggFrame-1,y
-        sta Buffer,y
-        dey
-        bne CopyF
+        lda #<TGfxY         ; the frame as it is
+        sta TroggGfx
+        lda #>TGfxY
+        sta TroggGfx+1
         lda #>$%04X
         sta TrogPtr+1
         lda #<$%04X
-        sta TrogPtr''' % (plan['background'], tr['colour'], h, ptr0, ptr0))
+        sta TrogPtr''' % (plan['background'], tr['colour'], ptr0, ptr0))
     # coarse position with RESP0 / RESM0 (measured: a strobe ending at cycle c puts P0 at 3c - 63 and
     # M0 at 3c - 64), then HMOVE moves each right by the remaining 0-2 px (HM values: negative = right)
     hm = {}
@@ -685,29 +701,23 @@ InGame: jsr Timer
         jsr Logic
         jsr Mover           ; the moving platform (carrying him: after his move)
         jsr RunVars         ; the item runs' line indexes, from the collected bits
-Shown:
-        lda #$FE            ; the frame's bit 0 (the hand row's yoyo, M0) only while it's out
-        ldx State
-        cpx #ST_YOYO
-        bne CFm
-        lda #$FF
-CFm:    ldx Mode
-        bne CFm2
-        lda #0              ; (front screen: an empty Trogg buffer)
-CFm2:   sta Tmp
-        ldx #0              ; the Trogg's frame (walking, or climbing) into the buffer
+Shown:  ldx #<TGfxW          ; the Trogg's frame: walking, the yoyo out, climbing, or (the front
+        ldy #>TGfxW         ; screen) none: the strip's zeros
         lda State
-        cmp #ST_CLIMB
-        bne CF0
-        ldx #H
-CF0:    ldy #1
-CopyF:  lda TroggFrames,x
-        and Tmp
-        sta Buffer,y
-        inx
-        iny
-        cpy #H+1
-        bne CopyF
+        cmp #ST_YOYO
+        bne CF1
+        ldx #<TGfxY
+        ldy #>TGfxY
+CF1:    cmp #ST_CLIMB
+        bne CF2
+        ldx #<TGfxC
+        ldy #>TGfxC
+CF2:    lda Mode
+        bne CF3
+        ldx #<TroggStrip
+        ldy #>TroggStrip
+CF3:    stx TroggGfx
+        sty TroggGfx+1
         lda Facing
         sta REFP0
         lda #<(TroggStrip+94+H+TOPROWS)   ; (the kernel's first body is row TOPROWS)

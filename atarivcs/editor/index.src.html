@@ -336,13 +336,21 @@ const SCHED_CACHE = new Map();
 // P1's colour as the rows above left it (the last object drawn): a run whose first object is black
 // can only skip its colour write if P1 is already black (set by analyzeScreen for each row)
 let PREVCOL = ['imm', 0];
+// a body's timings, tried in turn (as levelc.py's TIMINGS): the shared block from cycle 10 to the
+// limit with Y ending at 0 (the Trogg tail then needs no LDY #0), or ending a cycle earlier, or
+// starting a cycle later (the tail's GRP0 store then a cycle later)
+const TIMINGS = [[10, 0, true], [10, 1, false], [11, 0, false]];
 function schedRow(objs, tasks, endLimit = 55) {
   const key = JSON.stringify([objs.map(o => [o.x, o.t]), tasks, PREVCOL, endLimit]);
   if (SCHED_CACHE.has(key)) return SCHED_CACHE.get(key);
   let oi = 0;
   const so = objs.map(o => o.t === 'L' ? { x: o.x, gfx: ['tbl', 'Lad'], col: ['imm', 0] }
     : (k => ({ x: o.x, gfx: ['tbl', 'G' + k], col: ['tbl', 'C' + k] }))(oi++));
-  const r = FrakScheduler.schedule(so, PREVCOL, true, objs.length ? objs[objs.length - 1].x : null, 10, endLimit, tasks);
+  let r = null;
+  for (const [t0, less, yz] of TIMINGS) {
+    r = FrakScheduler.schedule(so, PREVCOL, true, objs.length ? objs[objs.length - 1].x : null, t0, endLimit - less, tasks, yz);
+    if (r) break;
+  }
   if (SCHED_CACHE.size > 20000) SCHED_CACHE.clear();
   SCHED_CACHE.set(key, r);
   return r;

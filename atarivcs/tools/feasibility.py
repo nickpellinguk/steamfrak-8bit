@@ -59,7 +59,9 @@ def _setup():
     ns2['FREEY'] = True
     parked, unparked = ns['schedule'], ns2['schedule']
 
-    def schedule(*a, **k):
+    def schedule(*a, yzero=False, **k):
+        # (yzero: Y must hold 0 at the block's end; see screens2)
+        ns['YZERO'] = ns2['YZERO'] = yzero
         # park a single object (the spare strobe) where there is room; otherwise unparked
         try:
             return parked(*a, **k)

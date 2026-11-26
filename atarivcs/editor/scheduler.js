@@ -7,14 +7,16 @@
 // schedule(objs, prevLastColour, prevHadObjs, prevLastX, t0, endLimit, extra)
 //   objs: [{x, gfx, col}] in x order; gfx/col are ['imm', value] or ['tbl', name] (col also ['none', 0])
 //   extra: [[lo, hi, [load, cycles], register]]: stores that must END within [lo, hi]
+// yzero: Y must hold 0 when the block ends (the Trogg tail then needs no LDY #0).
 // Returns {end, strobes} (strobe end cycles) or null if nothing fits.
 (function (root) {
   'use strict';
   const same = (a, b) => a[0] === b[0] && a[1] === b[1];
   const load = src => src[0] === 'imm' ? ['lda #$' + (src[1] & 255).toString(16).toUpperCase().padStart(2, '0'), 2] : ['lda ' + src[1] + ',x', 4];
   const ceilDiv3 = a => Math.ceil(a / 3);
+  const Z = 'lda #$00';   // (one spelling of zero: loads of it are shared)
 
-  function schedule1(objs, prevLastColour, prevHadObjs, prevLastX, t0, endLimit, extra, park) {
+  function schedule1(objs, prevLastColour, prevHadObjs, prevLastX, t0, endLimit, extra, park, yzero) {
     const tasks = [];                               // [lo, hi, ins, len, reg]
     objs = objs.slice();
     // a single object with no room to clear GRP1 and park P1 after it: an invisible copy at x 19
@@ -26,7 +28,7 @@
       const main = prevLastX - 16;
       const c0 = objs[0].col[0] === 'none' ? 3 : Math.floor((objs[0].x + 47) / 3);
       if (c0 >= Math.floor((prevLastX + 47) / 3)) {
-        tasks.push([0, Math.floor((68 + main) / 3), 'lda #0', 2, 'GRP1']);
+        tasks.push([0, Math.floor((68 + main) / 3), 'lda #$00', 2, 'GRP1']);
         afterMain = ceilDiv3(68 + main + 8);
       }
     }
@@ -54,15 +56,18 @@
       prevEnd = ceilDiv3(68 + o.x + 8);
       prevCol = o.col[0] !== 'none' && o.col[0] !== 'fake' ? o.col : prevCol;
     });
-    if (objs.length === 1) tasks.push([prevEnd, endLimit, 'lda #0', 2, 'GRP1']);
-    if (!objs.length && prevHadObjs) tasks.push([0, endLimit, 'lda #0', 2, 'GRP1']);
+    if (objs.length === 1) tasks.push([prevEnd, endLimit, 'lda #$00', 2, 'GRP1']);
+    if (!objs.length && prevHadObjs) tasks.push([0, endLimit, 'lda #$00', 2, 'GRP1']);
     for (const [lo, hi, [ins, len], reg] of extra) tasks.push([lo, hi, ins, len, reg]);
 
     const n = tasks.length, fail = new Set();
     function search(t, rem, si, ha, hx) {
       const key = t + '|' + rem + '|' + si + '|' + ha + '|' + hx;
       if (fail.has(key)) return null;
-      if (rem === 0 && si === strobes.length) return t;
+      if (rem === 0 && si === strobes.length) {
+        if (yzero && hx !== Z) { fail.add(key); return null; }   // (Y must hold 0 at the end)
+        return t;
+      }
       const nxt = si < strobes.length ? strobes[si] : null;
       const limit = nxt !== null ? nxt - 3 : endLimit;
       for (let i = 0; i < n; i++) if (rem & (1 << i)) {
@@ -88,10 +93,12 @@
           }
         }
       }
+      if (yzero && hx !== Z && ok(t + 2)) opts.push([999, 1, t + 2, 0, -1, 'x', 'zload']);   // a zero into Y, in idle time
       opts.sort((p, q) => { for (let j = 0; j < 6; j++) { if (p[j] < q[j]) return -1; if (p[j] > q[j]) return 1; } return 0; });
       for (const [, , end, , i, r, what] of opts) {
-        const ins = tasks[i][2];
         let res;
+        if (what === 'zload') { res = search(end, rem, si, ha, Z); if (res !== null) return res; continue; }
+        const ins = tasks[i][2];
         if (what === 'store') res = search(end, rem & ~(1 << i), si, ha, hx);
         else res = search(end, rem, si, r === 'a' ? ins : ha, r === 'x' ? ins : hx);
         if (res !== null) return res;
@@ -122,12 +129,12 @@
   }
   // parked where there's room, else unparked; a single object that still doesn't fit gets an
   // invisible copy (GRP1 = 0, 'fake') strobed at the first x from 19 to its x - 21 that fits
-  function schedule(objs, prevLastColour, prevHadObjs, prevLastX, t0, endLimit, extra) {
+  function schedule(objs, prevLastColour, prevHadObjs, prevLastX, t0, endLimit, extra, yzero) {
     const a = [prevLastColour, prevHadObjs, prevLastX, t0, endLimit, extra];
-    let r = schedule1(objs, ...a, true);
+    let r = schedule1(objs, ...a, true, yzero);
     if (r || objs.length !== 1) return r;
     for (let fx = 19; fx <= objs[0].x - 21; fx += 3) {
-      r = schedule1([{ x: fx, gfx: ['imm', 0], col: ['fake', 0] }, objs[0]], ...a, false);
+      r = schedule1([{ x: fx, gfx: ['imm', 0], col: ['fake', 0] }, objs[0]], ...a, false, yzero);
       if (r) return { ...r, fakeAt: fx };
     }
     return null;

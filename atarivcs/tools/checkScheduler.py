@@ -33,15 +33,16 @@ for n in range(N):
         else:
             objs.append({'x': x, 'gfx': ['tbl', 'Lad'], 'col': ['imm', 0]})
     for way, tk, endst in M.tasks(lit, prev):
+        t0, lim, yz = random.choice(((10, 55, False), (10, 55, True), (10, 54, False), (11, 55, False)))
         try:
             code, end = F.schedule(((0, 0, 0), (0, 0, 0)), ((0, 0, 0), (0, 0, 0)),
                                    [(o['x'], tuple(o['gfx']), tuple(o['col'])) for o in objs], ('imm', 0), True,
-                                   xs[-1] if xs else None, t0=10, end_limit=55, extra=list(tk))
-            py = {'end': end, 'strobes': F.strobe_cycles(code, 10)}
+                                   xs[-1] if xs else None, t0=t0, end_limit=lim, extra=list(tk), yzero=yz)
+            py = {'end': end, 'strobes': F.strobe_cycles(code, t0)}
         except ValueError:
             py = None
         cases.append({'objs': objs, 'extra': [[lo, hi, list(ld), reg] for lo, hi, ld, reg in tk], 'py': py,
-                      'lit': sorted(lit), 'prev': prev, 'way': way})
+                      'lit': sorted(lit), 'prev': prev, 'way': way, 't': [t0, lim, yz]})
 path = os.path.join(HERE, 'scheduler_cases.json')
 json.dump(cases, open(path, 'w'))
 js = r'''
@@ -53,7 +54,7 @@ const cases = JSON.parse(require('fs').readFileSync(process.argv[2], 'utf8'));
 let agree = 0, bad = [];
 for (const c of cases) {
   const xs = c.objs.map(o => o.x);
-  const r = schedule(c.objs, ['imm', 0], true, xs.length ? xs[xs.length - 1] : null, 10, 55, c.extra);
+  const r = schedule(c.objs, ['imm', 0], true, xs.length ? xs[xs.length - 1] : null, c.t[0], c.t[1], c.extra, c.t[2]);
   if ((r === null) === (c.py === null) && (!r || JSON.stringify(r.strobes) === JSON.stringify(c.py.strobes))) agree++; else bad.push({ c, js: r });
   const ways = M.tasks(new Set(c.lit), c.prev);
   const mine = ways.filter(w => w[0] === c.way).map(w => norm(w[1]));
