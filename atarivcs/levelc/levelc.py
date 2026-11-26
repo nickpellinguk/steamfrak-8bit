@@ -770,7 +770,7 @@ def model(plan, palette, yoyo=True):
     for run in plan['runs']:
         for k, L in enumerate(run['lines']):
             y = 2 * run['r'] + k
-            for b in run['lit']:
+            for b in L.get('Lit', run['lit']):          # (a dashed platform's middle lines: their own)
                 for x in range(4 * b, 4 * b + 4):
                     img[y][x] = L['Stripe']
             gi = 0

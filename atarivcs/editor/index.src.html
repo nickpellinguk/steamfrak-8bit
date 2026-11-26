@@ -369,14 +369,21 @@ function ladderByte(l, y) {
   if (y < 2 * l.top || y >= 2 * l.bottom || !sec.length) return 0;
   return sec[y % sec.length];
 }
-// a level type's platform style: 'dashed' leaves every other block of a platform's middle row (its
-// middle two lines) unlit, phased from the screen's centre (block k and its mirror 39 - k alike), so
-// a row's registers are the same as the plain platform's would be on both halves
+// a level type's platform style: 'dashed' leaves every other block of a platform's middle two lines
+// unlit, phased from the screen's centre (block k and its mirror 39 - k alike). Only the data
+// changes: the row keeps its renderer (its PF writes already come from per-line tables), and those
+// two lines' table entries hold the dashed values (dashedLit)
 const dashedOff = k => (k < 20 ? k : 39 - k) % 2 === 0;
-function rowBlocks(s, r, full) {
-  const b = new Set(), dashed = !full && P.types[typeI].platformStyle === 'dashed';
+const isDashed = () => P.types[typeI].platformStyle === 'dashed';
+function rowBlocks(s, r) {
+  const b = new Set();
+  for (const p of s.platforms) if (r >= p.top && r < p.top + p.rows) for (let k = p.b0; k <= p.b1; k++) b.add(k);
+  return b;
+}
+function dashedLit(s, r) {                 // a row's lit blocks on a dashed platform's middle lines
+  const b = new Set();
   for (const p of s.platforms) if (r >= p.top && r < p.top + p.rows)
-    for (let k = p.b0; k <= p.b1; k++) if (!(dashed && r === p.top + 1 && dashedOff(k))) b.add(k);
+    for (let k = p.b0; k <= p.b1; k++) if (!(r === p.top + 1 && dashedOff(k))) b.add(k);
   return b;
 }
 // the moving platform (one per screen, the ball: 8 px, 6 lines): its rows, and a key tag that gives
@@ -390,7 +397,6 @@ function moverTag(s, r) {
   return (r >= m.row && r < m.row + PROWS ? 'M' : '') + (r === m.row - 1 || r === m.row + PROWS - 1 ? 'E' : '');
 }
 function rowObjects(s, r, blocks) {
-  blocks = rowBlocks(s, r, true);          // (a ladder stays hidden behind a dashed row's gaps)
   const objs = [];
   const lines = [2 * r, 2 * r + 1];
   s.ladders.forEach((l, i) => {
@@ -636,7 +642,7 @@ function draw() {
   const s = scr(), g = P.graphics;
   cx.fillStyle = col(g.background); cx.fillRect(0, 0, W * S, LINES * S);
   // platforms (per line stripes)
-  const dashed = P.types[typeI].platformStyle === 'dashed';
+  const dashed = isDashed();
   for (const p of s.platforms) for (let k = 0; k < p.rows * 2; k++) {
     const y = 2 * p.top + k; if (y >= LINES) break;
     cx.fillStyle = col(g.stripes[Math.min(k, g.stripes.length - 1)]);
@@ -653,7 +659,7 @@ function draw() {
   // ladders (not drawn on rows where a platform covers them)
   s.ladders.forEach(l => {
     for (let r = l.top; r < l.bottom; r++) {
-      const b = rowBlocks(s, r, true); let behind = false;
+      const b = rowBlocks(s, r); let behind = false;
       for (let x = l.x; x < l.x + 8; x++) if (b.has(x >> 2)) behind = true;
       if (behind) continue;
       for (const y of [2 * r, 2 * r + 1]) drawByte(ladderByte(l, y), l.x, y, '#000000', 1);
@@ -1049,7 +1055,7 @@ function buildGfx() {
   ic.appendChild(ib); box.appendChild(ic);
   // ladder
   P.types.forEach((T, ti) => {
-    const ps = card('Platform style: ' + T.name, 'Plain, or dashed: the middle two lines of every platform show every other 4 px block (phased from the screen\'s centre, so mirrored rows need no extra writes). A dashed platform\'s middle row is a renderer of its own.');
+    const ps = card('Platform style: ' + T.name, 'Plain, or dashed: the middle two lines of every platform show every other 4 px block (phased from the screen\'s centre, so mirrored rows need no extra writes). It costs only table data: the row keeps its renderer.');
     const psel = document.createElement('select'); psel.setAttribute('aria-label', 'Platform style');
     psel.innerHTML = '<option value="plain">Plain</option><option value="dashed">Dashed middle</option>';
     psel.value = T.platformStyle || 'plain';

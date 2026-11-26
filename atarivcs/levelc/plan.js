@@ -23,7 +23,9 @@ const fs = require('fs');
         const plat = s.platforms.find(q => rr >= q.top && rr < q.top + q.rows);
         const mv = moverOf(s), top = plat ? plat.top : mv && rr >= mv.row && rr < mv.row + PROWS ? mv.row : null;
         L.Stripe = top !== null ? g.stripes[Math.min(y - 2 * top, g.stripes.length - 1)] : 0;
-        for (const reg of ['PF1', 'PF2']) { L['L' + reg] = FrakMirror.value(A.lit, reg, 'L'); L['R' + reg] = FrakMirror.value(A.lit, reg, 'R'); }
+        const lit = isDashed() && plat && rr === plat.top + 1 ? dashedLit(s, rr) : A.lit;   // (a dashed platform's middle lines)
+        if (lit !== A.lit) L.Lit = [...lit];
+        for (const reg of ['PF1', 'PF2']) { L['L' + reg] = FrakMirror.value(lit, reg, 'L'); L['R' + reg] = FrakMirror.value(lit, reg, 'R'); }
         let k = 0;
         for (const o of A.objs) {
           if (o.t === 'L') { L.Lad = ladderByte(s.ladders[o.ref[1]], y); continue; }
