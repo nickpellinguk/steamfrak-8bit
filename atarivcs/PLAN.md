@@ -227,9 +227,16 @@ with `test/screens2.py`, `test/limits.py`, `test/ghost_test.py` and `test/leftpf
   instead pad the even line to exactly 76 cycles and fall into the odd line. The row boundary always
   keeps its `WSYNC`. (FR: 17 of 18 bodies use `WSYNC`; AK: 20 of 22.) The odd prefix ends with the `JMP` to the
   shared block (in place of its 3-cycle pad), and the even prefix falls into it.
-* **Trogg:** `TrogPtr` points into a ROM strip of row indices (0 = blank), and the current frame is
-  copied once per frame into a RAM buffer (Buffer+0 = 0): `ldy #0 / lda (TrogPtr),y / tay /
-  lda Buffer,y / sta GRP0` in the even tail. RAM: 2 + (frame height + 1) bytes.
+* **Trogg:** `TrogPtr` points into a ROM strip of row indices (0 = blank), and `TroggGfx` at the
+  current frame in ROM (the display bank: a blank byte, then its rows; walking, the yoyo out,
+  climbing; no read crosses a page): `ldy #0 / lda (TrogPtr),y / tay / lda (TroggGfx),y / sta GRP0`
+  in the even tail (19 cycles). RAM: 4 bytes (it was a RAM buffer of the frame, 4 cycles: 2 + the
+  frame's height + 1 bytes, and a copy every frame). Each body takes the first timing that fits:
+  the shared block from 10 to 55 with Y holding 0 at its end (the schedulers' YZERO: a zero load
+  into Y in idle time, zero stores use it; the tail then has no LDY #0: 17 cycles); 10 to 54; or
+  11 to 55 (its GRP0 store a cycle later). Against the buffer (all layouts, positions every 3 px):
+  as many or more fit everywhere except the wide right platform (x 80-143) with two or three
+  ladders (208 to 202, 20 to 14); e.g. centre with three ladders 971 to 1023.
 * **Two entry points per renderer:** `name_i: inx` falls into `name:`. A run's first row is
   `ldx #line / jsr name`, its other rows `jsr name_i`, and a body ends `bcs even / rts`. The `INX`
   runs before the next line's `STA WSYNC` (in time the line was waiting anyway), and a renderer
@@ -471,7 +478,7 @@ them in the bank's ROM.
   background (cyan, green, red: FBg, read by its kernel through masks). Labels sets the pointers.
   The front kernel then moves P1 to the tail with a late HMOVE (no blanked pixels). The in-game
   background stays compiled into each level (the colour-hiding trick depends on it). The Trogg is
-  at most 16 rows (his buffer, $82-$92). Timer band: 7 lines, black digits. Its HMOVE (P0 back to the Trogg,
+  at most 16 rows. Timer band: 7 lines, black digits. Its HMOVE (P0 back to the Trogg,
   the ball to the moving platform) is written at cycle 73 of its last line, so no pixels are
   blanked; a late HMOVE moves everything HMK (8) px further left, so P0 and the ball are positioned
   8 px right (Tmp, Tmp2: set before the vertical blank's end), and M0 and P1 get HMxx $80 to cancel
