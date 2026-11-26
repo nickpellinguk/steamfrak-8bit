@@ -118,7 +118,7 @@ def move_maps(plan):
         for p in plan['platforms']:
             if p['top'] // 3 == i:
                 for k in range(max(4, p['b0']), min(35, p['b1']) + 1):
-                    v |= 1 << (15 - ((k - 4) >> 1))
+                    v |= 1 << (35 - k)          # 32 cells of 4 px (playfield blocks), x 16-143
         return v
 
     def ladder_bits(c):
@@ -133,13 +133,13 @@ def move_maps(plan):
         v = floor_bits(i)
         if v not in ppool:
             ppool.append(v)
-        pidx.append(2 * ppool.index(v))
+        pidx.append(4 * ppool.index(v))
     for c in range(36):                # 3 px columns on the P1 grid, x 19 + 3c
         v = ladder_bits(c)
         if v not in lpool:
             lpool.append(v)
         lidx.append(4 * lpool.index(v))
-    pb = [b for v in ppool for b in (v >> 8, v & 255)]
+    pb = [b for v in ppool for b in (v >> 24, (v >> 16) & 255, (v >> 8) & 255, v & 255)]
     lb = [b for v in lpool for b in (v >> 24, (v >> 16) & 255, (v >> 8) & 255, v & 255)]
     return pidx, pb, lidx, lb
 

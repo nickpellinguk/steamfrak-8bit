@@ -137,12 +137,12 @@ textarea { width: 100%; min-height: 220px; background: var(--panel2); border: 1p
       <p class="note">One per screen: the ball, 8 px wide and 6 lines tall, between From and To (its left edge). Two-way pauses at each end; one way pauses at its start, carries the Trogg across, pauses, and is gone for a second before it starts again. Speed: pixels per frame.</p>
       <h2>View</h2>
       <label class="row-inline"><input type="checkbox" id="chk-grid" checked> P1 grid</label>
-      <label class="row-inline"><input type="checkbox" id="chk-blocks"> Platform grid (8 px)</label>
+      <label class="row-inline"><input type="checkbox" id="chk-blocks"> Platform grid (4 px)</label>
       <label class="row-inline"><input type="checkbox" id="chk-regs" checked> Playfield registers</label>
       <label class="row-inline"><input type="checkbox" id="chk-bands" checked> Shade problem rows</label>
       <label class="row-inline"><input type="checkbox" id="chk-maps"> Movement maps</label>
       <h2>Keys</h2>
-      <p class="note">Clicking an existing object selects it, whatever the tool; the drawing tools only create on empty space. Arrow keys move the selection (3 px for ladders and items, 8 px for platforms; up/down a row, or 6 lines for platforms). Platforms are always 6 lines (3 rows) tall, with tops on 6-line boundaries. Shift + arrows resize: a platform's width (left/right), a ladder's length. Delete removes it. Click the gutter to inspect a row.</p>
+      <p class="note">Clicking an existing object selects it, whatever the tool; the drawing tools only create on empty space. Arrow keys move the selection (3 px for ladders and items, 4 px (a playfield block) for platforms; up/down a row, or 6 lines for platforms). Platforms are always 6 lines (3 rows) tall, with tops on 6-line boundaries. Shift + arrows resize: a platform's width (left/right), a ladder's length. Delete removes it. Click the gutter to inspect a row.</p>
     </aside>
 
     <div class="screenbox">
@@ -606,7 +606,7 @@ function describe(lit) {
 
 const snapX = x => Math.max(P1MIN, Math.min(154, P1MIN + Math.round((x - P1MIN) / 3) * 3));
 const snapTX = x => Math.max(0, Math.min(150, 3 * Math.round(x / 3)));   // Trogg (player 0): x a multiple of 3
-const unitOf = x => Math.max(0, Math.min(19, Math.floor(x / 8)));        // platforms: 8-pixel units (2 blocks)
+const unitOf = x => Math.max(0, Math.min(39, Math.floor(x / 4)));        // platforms: 4-pixel units (playfield blocks)
 const onGrid = x => x >= P1MIN && (x - P1MIN) % 3 === 0;
 const itemDef = k => P.graphics.items.find(i => i.kind === k) || P.graphics.items[0];
 const itemLines = it => [it.bottom - itemDef(it.kind).rows.length, it.bottom];   // [first, end)
@@ -672,8 +672,6 @@ function analyzeRow(s, r, prev) {
   A.fallbackEnd = { col: lit.size ? 'stripe' : (prev ? prev.col : 'bg'), PF1: FrakMirror.value(lit, 'PF1', 'R'), PF2: FrakMirror.value(lit, 'PF2', 'R') };
   if ([...lit].some(k => k < 4 || k > 35))
     A.errors.push('Platforms can\'t use x 0-15 or x 144-159: in mirrored mode those are PF0, which is never written (the screen edges).');
-  for (const p of s.platforms) if (r >= p.top && r < p.top + p.rows && (p.b0 % 2 || !(p.b1 % 2)))
-    A.errors.push('Platform at x ' + p.b0 * 4 + '-' + ((p.b1 + 1) * 4 - 1) + ' isn\'t on 8-pixel boundaries: select it and move or resize it, and it snaps.');
   for (const o of objs) {
     if (!onGrid(o.x)) A.errors.push((o.t === 'L' ? 'Ladder' : 'Item') + ' at x ' + o.x + ' is off the P1 grid: x must be 19, 22, 25 ... (3-pixel steps).');
     else if (o.x > P1MAX) A.errors.push((o.t === 'L' ? 'Ladder' : 'Item') + ' at x ' + o.x + ' is too far right: P1 objects stop at x 118 (the last strobe must end by cycle 55).');
@@ -763,7 +761,7 @@ function projectChecks() {
 
 // ---------------------------------------------------------------- movement maps ---------------
 // Built per bank (level type) from all its screens. Platform map: one entry per 6 lines (platforms
-// are 6 lines tall with tops on 6-line boundaries), 16 cells of 8 px across x 16-143, 2 bytes, bit 7 of byte 0 = x 16-23.
+// are 6 lines tall with tops on 6-line boundaries), 32 cells of 4 px (playfield blocks) across x 16-143, 4 bytes, bit 7 of byte 0 = x 16-19.
 // Ladder map: one entry per 3-pixel column on the P1 grid (x 19 + 3c, 36 columns), 32 bands of 6 lines down (the platform grid,
 // so a ladder's top meets its platform), 4 bytes, bit 7 of byte 0 = rows 0-2; a cell is set where its centre (x 20 + 3c) is over a ladder.
 // Each level has an index (32 + 36 bytes) of byte offsets into the bank's shared pools; offset 0
@@ -772,7 +770,7 @@ function projectChecks() {
 const PMAP_ROWS = 32, LMAP_COLS = 36, LMAP_BANDS = 32;
 function floorBits(s, i) {
   let v = 0;
-  for (const p of s.platforms) if (Math.floor(p.top / PROWS) === i) for (let k = Math.max(4, p.b0); k <= Math.min(35, p.b1); k++) v |= 1 << (15 - ((k - 4) >> 1));
+  for (const p of s.platforms) if (Math.floor(p.top / PROWS) === i) for (let k = Math.max(4, p.b0); k <= Math.min(35, p.b1); k++) v = (v | (1 << (35 - k))) >>> 0;
   return v;
 }
 function ladderBits(s, c) {
@@ -786,12 +784,12 @@ function moveMaps(T) {
   const at = (pool, v) => { let i = pool.indexOf(v); if (i < 0) { i = pool.length; pool.push(v); } return i; };
   for (const s of T.screens) {
     const pIdx = [], lIdx = [];
-    for (let i = 0; i < PMAP_ROWS; i++) pIdx.push(2 * at(pPool, floorBits(s, i)));
+    for (let i = 0; i < PMAP_ROWS; i++) pIdx.push(4 * at(pPool, floorBits(s, i)));
     for (let c = 0; c < LMAP_COLS; c++) lIdx.push(4 * at(lPool, ladderBits(s, c)));
     screens.push({ pIdx, lIdx });
   }
-  const bytes = T.screens.length * (PMAP_ROWS + LMAP_COLS) + 2 * pPool.length + 4 * lPool.length;
-  return { pPool, lPool, screens, bytes, ok: 2 * pPool.length <= 256 && 4 * lPool.length <= 256 };
+  const bytes = T.screens.length * (PMAP_ROWS + LMAP_COLS) + 4 * pPool.length + 4 * lPool.length;
+  return { pPool, lPool, screens, bytes, ok: 4 * pPool.length <= 256 && 4 * lPool.length <= 256 };
 }
 
 function budgets() {
@@ -926,15 +924,15 @@ function draw() {
     }
     cx.fillStyle = 'rgba(236,91,82,0.5)'; cx.fillRect((P1MAX + 1) * S, 0, 1, LINES * S);
   }
-  if (document.getElementById('chk-blocks').checked) {   // platform edges: 8-pixel units
+  if (document.getElementById('chk-blocks').checked) {   // platform edges: 4-pixel units
     cx.fillStyle = 'rgba(0,0,0,0.22)';
-    for (let x = 0; x <= W; x += 8) cx.fillRect(x * S, 0, 1, LINES * S);
+    for (let x = 0; x <= W; x += 4) cx.fillRect(x * S, 0, 1, LINES * S);
   }
   if (document.getElementById('chk-maps').checked) {     // what the game logic sees
     cx.fillStyle = 'rgba(255,214,10,0.45)';               // ladder cells: 3 px (P1 grid) x 6 lines
     for (let c = 0; c < LMAP_COLS; c++) { const v = ladderBits(s, c); for (let b = 0; b < LMAP_BANDS; b++) if (v >>> (31 - b) & 1) cx.fillRect((19 + 3 * c) * S, 6 * b * S, 3 * S - 1, 6 * S - 1); }
-    cx.fillStyle = 'rgba(40,255,120,0.9)';                // floor cells: 8 px, on a platform's top line
-    for (let i = 0; i < PMAP_ROWS; i++) { const v = floorBits(s, i); for (let k = 0; k < 16; k++) if (v >> (15 - k) & 1) cx.fillRect((16 + 8 * k) * S, 6 * i * S, 8 * S - 1, S); }
+    cx.fillStyle = 'rgba(40,255,120,0.9)';                // floor cells: 4 px, on a platform's top line
+    for (let i = 0; i < PMAP_ROWS; i++) { const v = floorBits(s, i); for (let k = 0; k < 32; k++) if (v >>> (31 - k) & 1) cx.fillRect((16 + 4 * k) * S, 6 * i * S, 4 * S - 1, S); }
   }
   if (document.getElementById('chk-bands').checked) ROWS_A.forEach(A => {
     if (A.errors.length) { cx.fillStyle = 'rgba(236,91,82,0.18)'; cx.fillRect(0, A.r * 2 * S, W * S, 2 * S); }
@@ -1004,8 +1002,8 @@ function showSel() {
     const p = s.platforms[sel.i];
     h = '<h3>Platform</h3><p class="mono note" style="margin:0">x ' + p.b0 * 4 + '-' + ((p.b1 + 1) * 4 - 1) + ', rows ' + p.top + '-' + (p.top + p.rows - 1) + '</p>' +
       '<div class="row-inline">' +
-      '<label>Left x <input type="number" id="in-pl" step="8" min="0" max="152" value="' + p.b0 * 4 + '"></label>' +
-      '<label>Right x <input type="number" id="in-pr" step="8" min="7" max="159" value="' + ((p.b1 + 1) * 4 - 1) + '"></label></div>';
+      '<label>Left x <input type="number" id="in-pl" step="4" min="0" max="156" value="' + p.b0 * 4 + '"></label>' +
+      '<label>Right x <input type="number" id="in-pr" step="4" min="3" max="159" value="' + ((p.b1 + 1) * 4 - 1) + '"></label></div>';
   } else if (sel.type === 'ladder') {
     const l = s.ladders[sel.i];
     h = '<h3>Ladder</h3><div class="row-inline"><label>x <input type="number" id="in-lx" step="3" min="19" max="154" value="' + l.x + '"></label>' +
@@ -1021,8 +1019,8 @@ function showSel() {
   }
   box.innerHTML = h + '<div class="row-inline"><button id="btn-del-sel">Delete</button></div>';
   const bind = (id, fn) => { const e = document.getElementById(id); if (e) e.addEventListener('change', () => { fn(e); commit(); }); };
-  bind('in-pl', e => { const q = s.platforms[sel.i]; q.b0 = Math.min(q.b1 - 1, 2 * clampI(e.value / 8, 0, 19)); q.b1 += (q.b1 - q.b0 + 1) % 2; });
-  bind('in-pr', e => { const q = s.platforms[sel.i]; q.b1 = Math.max(q.b0 + 1, 2 * clampI((+e.value + 1) / 8, 1, 20) - 1); q.b0 -= q.b0 % 2; });
+  bind('in-pl', e => { const q = s.platforms[sel.i]; q.b0 = Math.min(q.b1, clampI(Math.floor(e.value / 4), 0, 39)); });
+  bind('in-pr', e => { const q = s.platforms[sel.i]; q.b1 = Math.max(q.b0, clampI(Math.floor((+e.value + 1) / 4) - 1, 0, 39)); });
   bind('in-lx', e => s.ladders[sel.i].x = snapX(+e.value));
   bind('in-lt', e => s.ladders[sel.i].top = clampI(e.value, 0, s.ladders[sel.i].bottom - 1));
   bind('in-lb', e => s.ladders[sel.i].bottom = clampI(+e.value + 1, s.ladders[sel.i].top + 1, 96));
@@ -1113,17 +1111,17 @@ cv.addEventListener('pointermove', ev => {
   const g2 = !drag && p.x < W && !hit(p.x, p.y) ? (
     tool === 'ladder' ? [snapX(p.x - 4), 2 * row, snapX(p.x - 4) + 8, 2 * row + 32] :
     tool === 'item' ? (() => { const n = itemDef(kind).rows.length; const x = snapX(p.x - 4); return [x, 2 * row + 2 - n, x + 8, 2 * row + 2]; })() :
-    tool === 'platform' ? [unitOf(p.x) * 8, 2 * snapPTop(row), unitOf(p.x) * 8 + 16, 2 * snapPTop(row) + 2 * PROWS] :
+    tool === 'platform' ? [unitOf(p.x) * 4, 2 * snapPTop(row), unitOf(p.x) * 4 + 4, 2 * snapPTop(row) + 2 * PROWS] :
     tool === 'trogg' ? (() => { const h = P.graphics.trogg.frames[0].rows.length, x = snapTX(p.x - 4); return [x, 2 * (row - h + 1), x + 8, 2 * row + 2]; })() : null) : null;
   if (JSON.stringify(g2) !== JSON.stringify(ghost)) { ghost = g2; if (!drag) draw(); }
   const A = ROWS_A[row];
   document.getElementById('status').textContent = 'x ' + Math.floor(Math.min(p.x, W - 1)) + ' · line ' + Math.floor(p.y) + ' · row ' + row + (A ? ' · ' + A.desc + (A.errors.length ? ' · can\'t be drawn' : '') : '');
   if (!drag) return;
-  if (drag.mode === 'platform') { drag.u1 = unitOf(p.x); drag.r1 = row; const a = Math.min(drag.u0, drag.u1), z = Math.max(drag.u0, drag.u1); const t = snapPTop(Math.min(drag.r0, drag.r1)); drag.preview = [a * 8, t * 2, (z + 1) * 8, (t + PROWS) * 2]; draw(); }
+  if (drag.mode === 'platform') { drag.u1 = unitOf(p.x); drag.r1 = row; const a = Math.min(drag.u0, drag.u1), z = Math.max(drag.u0, drag.u1); const t = snapPTop(Math.min(drag.r0, drag.r1)); drag.preview = [a * 4, t * 2, (z + 1) * 4, (t + PROWS) * 2]; draw(); }
   else if (drag.mode === 'ladder') { drag.r1 = row; drag.preview = [drag.x, Math.min(drag.r0, drag.r1) * 2, drag.x + 8, (Math.max(drag.r0, drag.r1) + 1) * 2]; draw(); }
   else if (drag.mode === 'move') {
     const dx = p.x - drag.start.x, dy = p.y - drag.start.y, o = objOf(sel), O = drag.orig, dr = Math.round(dy / 2);
-    if (sel.type === 'platform') { const db = 2 * Math.round(dx / 8), w = O.b1 - O.b0; o.b0 = Math.max(0, Math.min(39 - w, O.b0 + db)); o.b0 -= o.b0 % 2; o.b1 = o.b0 + w + ((o.b0 + w) % 2 ? 0 : 1); o.top = snapPTop(O.top + dr); }
+    if (sel.type === 'platform') { const db = Math.round(dx / 4), w = O.b1 - O.b0; o.b0 = Math.max(0, Math.min(39 - w, O.b0 + db)); o.b1 = o.b0 + w; o.top = snapPTop(O.top + dr); }
     if (sel.type === 'ladder') { o.x = snapX(O.x + dx); const h = O.bottom - O.top; o.top = Math.max(0, Math.min(ROWS - h, O.top + dr)); o.bottom = o.top + h; }
     if (sel.type === 'item') { o.x = snapX(O.x + dx); o.bottom = Math.max(1, Math.min(LINES, O.bottom + 2 * dr)); }
     if (sel.type === 'trogg') { o.x = snapTX(O.x + dx); o.row = clampI(O.row + dr, 0, ROWS - 1); }
@@ -1134,7 +1132,7 @@ cv.addEventListener('pointerup', () => {
   if (!drag) return;
   const s = scr(), d = drag; drag = null;
   if (d.mode === 'platform') {
-    let a = 2 * Math.min(d.u0, d.u1), z = 2 * Math.max(d.u0, d.u1) + 1, top = Math.min(d.r0, d.r1), rows = Math.abs(d.r1 - d.r0) + 1;
+    let a = Math.min(d.u0, d.u1), z = Math.max(d.u0, d.u1), top = Math.min(d.r0, d.r1), rows = Math.abs(d.r1 - d.r0) + 1;
     if (a + 1 === z && rows === 1) z = Math.min(39, a + 3);
     top = snapPTop(top);
     s.platforms.push({ b0: a, b1: z, top, rows: PROWS }); sel = { type: 'platform', i: s.platforms.length - 1 }; rowSel = top;
@@ -1159,12 +1157,12 @@ cv.addEventListener('keydown', ev => {
   else if (ev.shiftKey && (k.startsWith('Arrow'))) {
     const up = k === 'ArrowUp' || k === 'ArrowLeft' ? -1 : 1;
     if (sel.type === 'platform' && (k === 'ArrowUp' || k === 'ArrowDown')) { /* fixed height */ }
-    else if (sel.type === 'platform') { o.b1 = Math.max(o.b0 + 1, Math.min(39, o.b1 + 2 * up)); o.b1 -= (o.b1 - o.b0 + 1) % 2; }
+    else if (sel.type === 'platform') o.b1 = Math.max(o.b0, Math.min(39, o.b1 + up));
     else if (sel.type === 'ladder') o.bottom = Math.max(o.top + 1, Math.min(ROWS, o.bottom + up));
     else done = false;
   } else if (k === 'ArrowLeft' || k === 'ArrowRight') {
     const d = k === 'ArrowLeft' ? -1 : 1;
-    if (sel.type === 'platform') { const w = o.b1 - o.b0; o.b0 = Math.max(0, Math.min(39 - w, o.b0 + 2 * d)); o.b0 -= o.b0 % 2; o.b1 = o.b0 + w; o.b1 += (o.b1 - o.b0 + 1) % 2; o.b1 = Math.min(39, o.b1); }
+    if (sel.type === 'platform') { const w = o.b1 - o.b0; o.b0 = Math.max(0, Math.min(39 - w, o.b0 + d)); o.b1 = o.b0 + w; }
     else if (sel.type === 'trogg') o.x = snapTX(o.x + 3 * d);
     else o.x = snapX(o.x + 3 * d);
   } else if (k === 'ArrowUp' || k === 'ArrowDown') {

@@ -132,12 +132,11 @@ FlMap:
         cmp #128
         bcs FloorNo
         lsr
-        lsr
-        lsr                     ; 8 px cell, 0-15
+        lsr                     ; 4 px cell (a playfield block), 0-31
         tax
         lsr
         lsr
-        lsr                     ; its byte in the entry, 0-1
+        lsr                     ; its byte in the entry, 0-3
         clc
         adc Tmp
         tay
