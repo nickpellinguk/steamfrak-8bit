@@ -538,6 +538,11 @@ costs. Aim: three levels per 4K bank.
 
 ## Music (`music/`)
 
+* Streams: each channel is one stream of note bytes (its patterns, each played once, in order:
+  no order list, pointer table or end markers but one), a loop point each (MusLoopLo / Hi); chains
+  of three or more 32-frame ties are code 60 and a frame count. Driver + tune 832 bytes (was 951);
+  equiv_test identical for 200 s. No RAM used (the order positions, 2 bytes, are free now). Slides
+  left as they are (run lengths would need RAM).
 * Envelopes, accentuated: bass 12 falling a step every 2 frames to 2 (plucked); lead 15 a step every
   4 frames to 3 (a long note fades over 48 frames). MusRate per channel. (It was 10 to 6 and 12 to
   5, every 4 frames: too slight to hear.)

@@ -5,12 +5,14 @@ musicdrv.asm) and writes frakmusic_c.inc. Nothing about the sound changes (equiv
 two drivers' register writes frame by frame); only the encoding:
 
   * one byte per note: bits 0-5 the code, bits 6-7 its length (8, 16, 24 or 32 frames). Longer
-    notes are split into ties (code 61), which carry on without a new attack. End of pattern: 62.
+    notes are split into ties (code 61), which carry on without a new attack; three or more in a
+    row become code 60 and a byte, their total frames. End of a channel's stream: 62 (back to its
+    loop point).
   * both channels share one note table: a byte per pitch, AUDF in bits 0-4 and bit 7 set for
     AUDC 4 (clear: AUDC 12); the bass's notes first, then the lead's. Codes: notes 0-, slides
     from SLIDE0, 61 tie, 62 end, 63 rest.
-  * one slide table, one order list (the bass's then the lead's, each ended by $FF), one pattern
-    pointer table.
+  * one slide table; each channel one stream (its patterns, each played once, in order) and a loop
+    point (MusLoopLo / Hi).
 
     python3 atarivcs/music/compact.py
 """
@@ -93,27 +95,56 @@ def main():
             body.append(62)
             pat_of[(ch, n[0])] = len(pats)
             pats.append(body)
-    order, starts, loops = [], [], []
+    # each channel as one stream: its patterns in order (each is played once, in order), the end
+    # markers dropped, one 62 at the stream's end (back to its loop point); chains of three or more
+    # 32-frame ties become code 60 and a frame count (up to 255)
+    streams, loopofs = [], []
     for ch in ('Bass', 'Lead'):
-        starts.append(len(order))
-        loops.append(len(order) + int(consts[ch + 'Loop']))
-        order += [pat_of[(ch, num(v))] for v in tabs[ch + 'Order'] if v != '$FF'] + [0xFF]
+        idx = [pat_of[(ch, num(v))] for v in tabs[ch + 'Order'] if v != '$FF']
+        loop = int(consts[ch + 'Loop'])
+        body, lofs = [], 0
+        for k, pi in enumerate(idx):
+            if k == loop:
+                lofs = len(body)
+                body.append(None)                # (a barrier: no tie chain crosses the loop point)
+            body += pats[pi][:-1]
+        out_b, k = [], 0
+        while k < len(body):
+            v = body[k]
+            if v is None:
+                lofs = len(out_b)
+                k += 1
+                continue
+            run = 0
+            while k + run < len(body) and body[k + run] is not None and body[k + run] & 0x3F == 61:
+                run += 1
+            if run >= 3:
+                frames = 0
+                n = 0
+                while n < run and frames + LENS[body[k + n] >> 6] <= 255:
+                    frames += LENS[body[k + n] >> 6]
+                    n += 1
+                if n >= 3:
+                    out_b += [60, frames]
+                    k += n
+                    continue
+            out_b.append(v)
+            k += 1
+        streams.append(out_b + [62])
+        loopofs.append(lofs)
     out.append('SLIDE0 = %d' % slide0)
     out.append('MusNote: .byte ' + ','.join(str(v) for v in notes))
     out.append('MusSlide: .byte ' + ','.join(str(v) for v in slide_ofs))
     for k in range(0, len(slides), 32):
         out.append(('MusSlides: .byte ' if k == 0 else '        .byte ') + ','.join('$%02X' % v for v in slides[k:k + 32]))
-    out.append('MusOrder: .byte ' + ','.join('$%02X' % v for v in order))
-    out.append('MusLoop: .byte %d,%d' % tuple(loops))
-    assert starts[0] == 0
-    out.append('MUSORD1 = %d' % (starts[1] - 1))
-    out.append('MusPatLo: .byte ' + ','.join('<MusPat%d' % i for i in range(len(pats))))
-    out.append('MusPatHi: .byte ' + ','.join('>MusPat%d' % i for i in range(len(pats))))
-    for i, p in enumerate(pats):
-        out.append('MusPat%d: .byte %s' % (i, ','.join(str(v) for v in p)))
+    out.append('MusLoopLo: .byte <(MusBass+%d),<(MusLead+%d)' % tuple(loopofs))
+    out.append('MusLoopHi: .byte >(MusBass+%d),>(MusLead+%d)' % tuple(loopofs))
+    for name, st in zip(('MusBass', 'MusLead'), streams):
+        for k in range(0, len(st), 32):
+            out.append(('%s: .byte ' % name if k == 0 else '        .byte ') + ','.join(str(v) for v in st[k:k + 32]))
     open(os.path.join(HERE, 'frakmusic_c.inc'), 'w').write('\n'.join(out) + '\n')
-    size = len(notes) + len(slide_ofs) + len(slides) + len(order) + 4 + 2 * len(pats) + sum(map(len, pats))
-    print('frakmusic_c.inc: %d bytes of data (patterns %d)' % (size, sum(map(len, pats))))
+    size = len(notes) + len(slide_ofs) + len(slides) + 4 + sum(map(len, streams))
+    print('frakmusic_c.inc: %d bytes of data (streams %d)' % (size, sum(map(len, streams))))
 
 
 if __name__ == '__main__':
