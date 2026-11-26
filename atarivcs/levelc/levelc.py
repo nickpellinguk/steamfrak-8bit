@@ -848,6 +848,8 @@ def check(base, plan, outdir, game=False):
     palette = json.load(open(os.path.join(ROOT, 'editor', 'palette.json')))
     rgb = lambda h: tuple(int(h[i:i + 2], 16) for i in (1, 3, 5))
     pal = [rgb(h) for h in palette]
+    if '--hard' in sys.argv:               # (the right difficulty switch at A)
+        os.environ['STELLA_ARGS'] = os.environ.get('STELLA_ARGS', '') + ' -rd A'
     png = tiatest.snapshot(base + '.bin', outdir)
     os.replace(png, base + '.png')
     im = Image.open(base + '.png').convert('RGB')

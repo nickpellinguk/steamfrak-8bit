@@ -302,11 +302,11 @@ def main():
     g.dies(200, R)                                 # off the floor's end, and the restart
     expect('a death: the clock goes back to the checkpoint (0:02)',
            {**g.state(), 'clock': tm()[:2], 'was': t1[:2]}, clock=lambda v: v[0] != 0 or not 2 <= v[1] <= 4)
-    # the front screen's buttons: SELECT the next level (1-3, then 1), RESET the other difficulty
+    # the front screen: SELECT the next level (1-3, then 1); the right difficulty switch: A HARD, B EASY
     g = Game(os.path.join(outdir, 'level'), front_only=True)
     lv = lambda: {'level': g.m.memory[g.sym['Level']] + 1, 'hard': g.m.memory[g.sym['Diff']],
                   'bg': g.m.memory[g.sym['FBg']]}
-    press = lambda bit: [g.__setattr__('swchb', 0x0B & ~bit), g.frame(0), g.__setattr__('swchb', 0x0B), g.frame(0)]
+    press = lambda bit: [g.__setattr__('swchb', g.swchb & ~bit), g.frame(0), g.__setattr__('swchb', g.swchb | bit), g.frame(0)]
     expect('front screen: level 1, EASY, cyan', lv(), level=1, hard=0, bg=0xA8)
     press(2)
     expect('SELECT: level 2, green', lv(), level=2, bg=0xC6)
@@ -318,10 +318,14 @@ def main():
     expect('SELECT held 30 frames: one step (level 3, red)', lv(), level=3, bg=0x44)
     press(2)
     expect('SELECT: back to level 1', lv(), level=1)
+    g.swchb = 0x8B
+    g.frame(0)
+    expect('right difficulty A: HARD', lv(), hard=1)
     press(1)
-    expect('RESET: HARD', lv(), hard=1)
-    press(1)
-    expect('RESET: EASY again', lv(), hard=0)
+    expect('... RESET does nothing to it', lv(), hard=1, level=1)
+    g.swchb = 0x0B
+    g.frame(0)
+    expect('right difficulty B: EASY', lv(), hard=0)
     # the moving platform (rows 66-68, x 48 to 100, below the middle-left ledge's right end)
     for mode in ('lr', 'two', 'rl'):
         mdir = os.path.join(outdir, 'mv_' + mode)

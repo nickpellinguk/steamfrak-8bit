@@ -64,7 +64,7 @@ TDig    = $D0           ; the timer: pointers to its four characters' glyphs (M,
 TTx     = $9B           ; ... the difficulty word's second letter pair ($9B-$9C: after the Trogg's
                         ; buffer, 17 bytes at most: 16 rows)
 Level   = $9D           ; 0-2: LVL1-3 (SELECT)
-Diff    = $9E           ; 0 EASY, 1 HARD (RESET)
+Diff    = $9E           ; 0 EASY, 1 HARD (the right difficulty switch, read on the front screen)
 SwPrev  = $9F           ; last frame's SWCHB (the buttons: a press is a change to 0)
 FBg     = $BF           ; the front screen's background: by level
 TFr     = $D8           ; frames into the second
@@ -799,20 +799,18 @@ RV2:    ldy Tmp
 
 ; ---- the front screen: a press of fire (after it has been up) starts the game
 FrontLogic:
-        lda SWCHB               ; SELECT: the next level; RESET: the other difficulty (on a press)
+        lda SWCHB               ; the right difficulty switch: A HARD, B EASY
+        asl
+        lda #0
+        rol
+        sta Diff
+        lda SWCHB               ; SELECT: the next level (on a press)
         tax
         eor #$FF
         and SwPrev              ; (1: up last frame, down now)
         stx SwPrev
-        lsr
-        bcc FLSel
-        tax
-        lda Diff
-        eor #1
-        sta Diff
-        txa
-FLSel:  lsr
-        bcc FLLab
+        and #2
+        beq FLLab
         ldx Level
         inx
         cpx #3

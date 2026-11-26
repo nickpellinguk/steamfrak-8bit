@@ -460,8 +460,8 @@ them in the bank's ROM.
 * Labels: the front screen's top 7 lines show LVL1-3 (x 40-55) and EASY / HARD (x 104-119); the
   game's band shows the time (x 16-31) and the difficulty (x 80-95). Both: P0 and P1 two copies
   wide (+64), each byte two 3 x 7 glyphs (timer.tables: TPair, DHi, DLo, TColon); the time's bytes
-  are made as they're drawn (DHi | TColon, DHi | DLo). SELECT cycles the level, RESET toggles the
-  difficulty (front screen, on a press: SwPrev); the level also picks the front screen's
+  are made as they're drawn (DHi | TColon, DHi | DLo). SELECT cycles the level (front screen, on a press:
+  SwPrev); the right difficulty switch sets the difficulty (A HARD, B EASY; read on the front screen); the level also picks the front screen's
   background (cyan, green, red: FBg, read by its kernel through masks). Labels sets the pointers.
   The front kernel then moves P1 to the tail with a late HMOVE (no blanked pixels). The in-game
   background stays compiled into each level (the colour-hiding trick depends on it). The Trogg is
