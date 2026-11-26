@@ -630,16 +630,34 @@ function ladderByte(l, y) {
 // changes: the row keeps its renderer (its PF writes already come from per-line tables), and those
 // two lines' table entries hold the dashed values (dashedLit)
 const dashedOff = k => (k < 20 ? k : 39 - k) % 2 === 0;
-const isDashed = () => P.types[typeI].platformStyle === 'dashed';
 function rowBlocks(s, r) {
   const b = new Set();
   for (const p of s.platforms) if (r >= p.top && r < p.top + p.rows) for (let k = p.b0; k <= p.b1; k++) b.add(k);
   return b;
 }
-function dashedLit(s, r) {                 // a row's lit blocks on a dashed platform's middle lines
+// line y's lit blocks (row A.r): the row's, or a platform style's variation of them: 'dashed' (the
+// middle two lines), 'rounded' (the bottom line: a platform of 3 blocks or more loses a block at each
+// end, a curve to its bottom edge). Only per-line table data changes, so a variation is kept only
+// where the row's writes are table loads: each changed left value needs its L table write; a right
+// value, its R table write (or, with none, to equal the left: the register isn't rewritten)
+function lineLit(s, A, y) {
+  const style = P.types[typeI].platformStyle, r = A.r, line = y - 2 * r;
+  if (!A.lit.size || !A.tasks) return A.lit;
   const b = new Set();
+  let changed = false;
   for (const p of s.platforms) if (r >= p.top && r < p.top + p.rows)
-    for (let k = p.b0; k <= p.b1; k++) if (!(r === p.top + 1 && dashedOff(k))) b.add(k);
+    for (let k = p.b0; k <= p.b1; k++) {
+      const off = style === 'dashed' ? r === p.top + 1 && dashedOff(k)
+        : style === 'rounded' ? r === p.top + 2 && line === 1 && p.b1 - p.b0 >= 2 && (k === p.b0 || k === p.b1) : false;
+      if (off) changed = true; else b.add(k);
+    }
+  if (!changed) return A.lit;
+  const has = n => A.tasks.some(t => t[2][0] === 'lda ' + n + ',x');
+  for (const reg of FrakMirror.REGS) {
+    const L0 = FrakMirror.value(A.lit, reg, 'L'), L1 = FrakMirror.value(b, reg, 'L'), R0 = FrakMirror.value(A.lit, reg, 'R'), R1 = FrakMirror.value(b, reg, 'R');
+    if (L1 !== L0 && !has('L' + reg)) return A.lit;
+    if (R1 !== R0 && !(has('R' + reg) || (!has('R' + reg) && R1 === L1 && R0 === L0))) return A.lit;
+  }
   return b;
 }
 // the moving platform (one per screen, the ball: 8 px, 6 lines): its rows, and a key tag that gives
@@ -898,11 +916,11 @@ function draw() {
   const s = scr(), g = P.graphics;
   cx.fillStyle = col(g.background); cx.fillRect(0, 0, W * S, LINES * S);
   // platforms (per line stripes)
-  const dashed = isDashed();
   for (const p of s.platforms) for (let k = 0; k < p.rows * 2; k++) {
     const y = 2 * p.top + k; if (y >= LINES) break;
+    const A = ROWS_A[y >> 1], lit = A ? lineLit(s, A, y) : null;
     cx.fillStyle = col(g.stripes[Math.min(k, g.stripes.length - 1)]);
-    for (let b = p.b0; b <= p.b1; b++) if (!(dashed && (k === 2 || k === 3) && dashedOff(b))) cx.fillRect(b * 4 * S, y * S, 4 * S, S);
+    for (let b = p.b0; b <= p.b1; b++) if (!lit || lit.has(b)) cx.fillRect(b * 4 * S, y * S, 4 * S, S);
   }
   const mv = moverOf(s);                   // the moving platform: at its start, and its range
   if (mv) {
@@ -1311,9 +1329,9 @@ function buildGfx() {
   ic.appendChild(ib); box.appendChild(ic);
   // ladder
   P.types.forEach((T, ti) => {
-    const ps = card('Platform style: ' + T.name, 'Plain, or dashed: the middle two lines of every platform show every other 4 px block (phased from the screen\'s centre, so mirrored rows need no extra writes). It costs only table data: the row keeps its renderer.');
+    const ps = card('Platform style: ' + T.name, 'Plain; dashed: the middle two lines of every platform show every other 4 px block (phased from the screen\'s centre, so mirrored rows need no extra writes); or rounded bottom: a platform 3 blocks or longer loses a block at each end on its bottom line. Either costs only table data (the rows keep their renderers); where a row\'s writes aren\'t table loads, that platform stays plain.');
     const psel = document.createElement('select'); psel.setAttribute('aria-label', 'Platform style');
-    psel.innerHTML = '<option value="plain">Plain</option><option value="dashed">Dashed middle</option>';
+    psel.innerHTML = '<option value="plain">Plain</option><option value="dashed">Dashed middle</option><option value="rounded">Rounded bottom</option>';
     psel.value = T.platformStyle || 'plain';
     psel.addEventListener('change', () => { T.platformStyle = psel.value; commit(); });
     ps.appendChild(psel); box.appendChild(ps);

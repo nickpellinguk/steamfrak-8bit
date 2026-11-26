@@ -23,7 +23,7 @@ const fs = require('fs');
         const plat = s.platforms.find(q => rr >= q.top && rr < q.top + q.rows);
         const mv = moverOf(s), top = plat ? plat.top : mv && rr >= mv.row && rr < mv.row + PROWS ? mv.row : null;
         L.Stripe = top !== null ? g.stripes[Math.min(y - 2 * top, g.stripes.length - 1)] : 0;
-        const lit = isDashed() && plat && rr === plat.top + 1 ? dashedLit(s, rr) : A.lit;   // (a dashed platform's middle lines)
+        const lit = lineLit(s, rows[rr], y);   // (a platform style's line: dashed, rounded)
         if (lit !== A.lit) L.Lit = [...lit];
         for (const reg of ['PF1', 'PF2']) { L['L' + reg] = FrakMirror.value(lit, reg, 'L'); L['R' + reg] = FrakMirror.value(lit, reg, 'R'); }
         let k = 0;
